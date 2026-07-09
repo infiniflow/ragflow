@@ -1,4 +1,3 @@
-
 """
 Thanks to https://github.com/onyx-dot-app/onyx
 
@@ -47,17 +46,12 @@ from .imap_connector import ImapConnector
 from .zendesk_connector import ZendeskConnector
 from .seafile_connector import SeaFileConnector
 from .rdbms_connector import RDBMSConnector
+from .bigquery_connector import BigQueryConnector
 from .webdav_connector import WebDAVConnector
 from .rest_api_connector import RestAPIConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
-from .exceptions import (
-    ConnectorMissingCredentialError,
-    ConnectorValidationError,
-    CredentialExpiredError,
-    InsufficientPermissionsError,
-    UnexpectedValidationError
-)
+from .exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError, UnexpectedValidationError
 
 __all__ = [
     "BlobStorageConnector",
@@ -94,6 +88,7 @@ __all__ = [
     "ZendeskConnector",
     "SeaFileConnector",
     "RDBMSConnector",
+    "BigQueryConnector",
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",

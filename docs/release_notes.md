@@ -9,6 +9,109 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.4
+
+Released on July 7, 2026.
+
+### New features
+
+- NLP/Tokenization: Adds a language-aware Snowball stemmer supporting 16 languages, integrates the dataset `language` parameter across the tokenization pipeline, and adds Dutch to the frontend. [#14140](https://github.com/infiniflow/ragflow/pull/14140)
+
+### Bug fixes
+
+- The system crashed with a `ValueError` when parsing LM-Studio model names containing an '@' symbol. [#16467](https://github.com/infiniflow/ragflow/pull/16467)
+- The MCP server crashed because the list_chats function expected a list from the `/chats` API but received a paginated dictionary instead. [#16639](https://github.com/infiniflow/ragflow/pull/16639)
+- The Docling parser silently dropped mathematical formulas from documents instead of extracting them. [#16645](https://github.com/infiniflow/ragflow/pull/16645)
+- The system failed to persist inline edits made to metadata values to the backend. [#16655](https://github.com/infiniflow/ragflow/pull/16655)
+- The system removed existing links when bulk-linking files to datasets. [#16587](https://github.com/infiniflow/ragflow/pull/16587)
+- The filter failed to use Chinese. [#16673](https://github.com/infiniflow/ragflow/pull/16673)
+- The system failed to enforce that tag weights must be greater than zero. [#16657](https://github.com/infiniflow/ragflow/pull/16657)
+- The layout of the agent prompt dropdown menu rendered incorrectly. [#16653](https://github.com/infiniflow/ragflow/pull/16653)
+- The Laws chunker incorrectly classified dotted-number cross-references as headings. [#16626](https://github.com/infiniflow/ragflow/pull/16626)
+- The system failed to prevent users from saving duplicate MCP server names during the editing process. [#16588](https://github.com/infiniflow/ragflow/pull/16588)
+- The system allowed users to export an empty MCP server selection. [#16589](https://github.com/infiniflow/ragflow/pull/16589)
+
+## v0.26.3
+
+Released on July 2, 2026.
+
+### New features
+
+- Data source connector: Introduces Google BigQuery as a data source connector for document ingestion and incremental syncing. [#15871](https://github.com/infiniflow/ragflow/pull/15871)
+- MCP: Adds two MCP tools `ragflow_list_datasets` and `ragflow_list_chats` to the RAGFlow MCP server. [#15384](https://github.com/infiniflow/ragflow/pull/15384)
+- File ingestion
+  - Integrates the layout-aware SoMark OCR parser into the system for extracting and indexing complex document elements like tables and figures. [#16482](https://github.com/infiniflow/ragflow/pull/16482)
+  - API: Exposes the [Ingest documents](./references/http_api_reference.md#ingest-documents) endpoint for processing documents using a customized pipeline. [#16395](https://github.com/infiniflow/ragflow/pull/16395)
+
+### Improvements
+
+- Backend: Introduces partial success handling for batch document uploads, ensuring that a single failed file no longer causes the entire batch to be discarded. [#16438](https://github.com/infiniflow/ragflow/pull/16438)
+- UI/UX: Refactors the global header to dynamically switch between a full desktop navigation bar and a mobile-friendly side drawer based on available screen space, resolving overlapping issues and significantly improving the mobile user experience. [#15984](https://github.com/infiniflow/ragflow/pull/15984)
+
+### Bug fixes
+
+- After setting up the Ollama provider, the system returned the error: 'Failed to access model(name) using this api key'. [#16519](https://github.com/infiniflow/ragflow/pull/16519)
+- Deleting a user/assistant chat message pair mistakenly removed the previous conversation turn's reference due to an index misalignment. [#16436](https://github.com/infiniflow/ragflow/pull/16436)
+
+## v0.26.2
+
+Released on June 29, 2026.
+
+### New features
+
+- Chat channels:
+  - Integrates WhatsApp via a QR code scan. [#16238](https://github.com/infiniflow/ragflow/pull/16238)
+  - Integrates DingTalk via bot API credentials. [#16183](https://github.com/infiniflow/ragflow/pull/16183)
+  - Integrates WeCom via WebSocket connection. [#16175](https://github.com/infiniflow/ragflow/pull/16175)
+- File parsing: Adds fallback logic for PP-OCRv6 and similar text recognition models, and integrates image parsing within the PaddleOCR pipeline. [#16150](https://github.com/infiniflow/ragflow/pull/16150)
+
+### Improvements
+
+- Datasets
+  - Adds an edge-case check to the file ingestion logic to safely link empty folders to a dataset. [#16296](https://github.com/infiniflow/ragflow/pull/16296)
+  - Adds pagination to the `get_flatted_meta_by_kbs()` method to prevent CRUD failures relating to datasets with more than 10,000 documents. [#16095](https://github.com/infiniflow/ragflow/pull/16095)
+- Chat channels: Ensures end-user conversation histories persist across restarts but still separate when a channel is bound to a new dialog. [#16274](https://github.com/infiniflow/ragflow/pull/16274)
+
+### i18n
+
+- Expands i18n coverage and refines translations for the Korean UI. [#16203](https://github.com/infiniflow/ragflow/pull/16203)；
+- Adds missing French translations for chat channels, username validation, and model editing. [#16217](https://github.com/infiniflow/ragflow/pull/16217)
+
+### Bug fixes
+
+- File parsing:
+  - A `ValueError` was raised during `.docx` parsing on 'Heading' styles. [#16284](https://github.com/infiniflow/ragflow/pull/16284)
+  - Tables in `.docx` files were silently removed by the laws document parser. [#16155](https://github.com/infiniflow/ragflow/pull/16155)
+  - Lone Markdown headers were separated from their subsequent sections when a DeepDoc delimiter was set. [#16109](https://github.com/infiniflow/ragflow/pull/16109)
+  - Markdown tables appeared twice in chunk results, once as a standalone chunk and again within a regular text chunk. [#16143](https://github.com/infiniflow/ragflow/pull/16143)
+- MCP
+  - The MCP server hung indefinitely when encountering empty document pages; the final page of documents was silently dropped due to flawed pagination. [#16285](https://github.com/infiniflow/ragflow/pull/16285)
+  - The MCP connection and dataset discovery process failed because the server's hardcoded fetch limit exceeded the introduced `page_size` restriction. [#16148](https://github.com/infiniflow/ragflow/pull/16148)
+- Dataflow
+  - Restores the dataflow rerun endpoint and ensures the ingestion response includes the DSL payload to reliably render the timeline and parser views. [#16292](https://github.com/infiniflow/ragflow/pull/16292)
+  - Restores dataflow parser defaults and returns the actual SSE payload, ensuring pipeline runs correctly surface message IDs and log updates. [#16290](https://github.com/infiniflow/ragflow/pull/16290)
+- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly routing multi-region requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of the synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
+- UI/UX: The metadata add modal sent empty values to the backend. [#15229](https://github.com/infiniflow/ragflow/pull/15229)
+
+## v0.26.1
+
+Released on June 17, 2026.
+
+### New features
+
+- **Model providers**: Allows users to modify the model type of existing model configurations. [#16029](https://github.com/infiniflow/ragflow/pull/16029)
+- **Chat channels**: Enables users to deploy RAGFlow assistants as chatbots within external messaging platforms like Discord and Feishu. [#15850](https://github.com/infiniflow/ragflow/pull/15850)
+- **Observability**: Groups multi-turn chat traces by session within Langfuse to facilitate conversation debugging and replay. [#15679](https://github.com/infiniflow/ragflow/pull/15679)
+
+### i18n
+
+- Adds ~70 missing translation keys for the French UI. [#15983](https://github.com/infiniflow/ragflow/pull/15983)
+
+### Bug fixes
+
+- **Model provider**: Fixes inaccurate token billing, corrects embedding truncation limits to prevent indexing failures, and refactors error handling to surface root error causes. [#15424](https://github.com/infiniflow/ragflow/pull/15424)
+- **API**: Adds a legacy mode to the `/chat/completions` endpoint to restore the v0.23.0 style `<think>` output for backward compatibility. [#16014](https://github.com/infiniflow/ragflow/pull/16014) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+
 ## v0.26.0
 
 Released on June 11, 2026.
@@ -322,7 +425,7 @@ Released on December 31, 2025.
 
 ### Fixed issues
 
-- Memory: 
+- Memory:
   - The RAGFlow server failed to start if an empty memory object existed.
   - Unable to delete a newly created empty Memory.
 - RAG: MDX file parsing was not supported.
@@ -558,7 +661,7 @@ Ecommerce Customer Service Workflow: A template designed to handle enquiries abo
 
 ### Fixed issues
 
-- Dataset:  
+- Dataset:
   - Unable to share resources with the team.
   - Inappropriate restrictions on the number and size of uploaded files.
 - Chat:
@@ -574,13 +677,13 @@ Released on August 20, 2025.
 
 ### Improvements
 
-- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.
 - Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
 - Search: Supports creating search apps tailored to various business scenarios
 - Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
-- Agent:  
-  - Implements a toggle in the **Agent** component to enable or disable citation.  
-  - Introduces a drag-and-drop method for creating components.  
+- Agent:
+  - Implements a toggle in the **Agent** component to enable or disable citation.
+  - Introduces a drag-and-drop method for creating components.
 - Documentation: Corrects inaccuracies in the API reference.
 
 ### New Agent templates
@@ -590,8 +693,8 @@ Released on August 20, 2025.
 ### Fixed issues
 
 - The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
-- Predefined opening greeting in the **Agent** component was missing during conversations.  
-- An automatic line break issue in the prompt editor.  
+- Predefined opening greeting in the **Agent** component was missing during conversations.
+- An automatic line break issue in the prompt editor.
 - A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
 
 ### API changes
@@ -675,7 +778,7 @@ Released on June 23, 2025.
 
 ### Newly supported models
 
-- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
+- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184)
 - Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
 
 ## v0.19.0

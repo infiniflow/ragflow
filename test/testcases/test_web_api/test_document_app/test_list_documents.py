@@ -47,7 +47,6 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
 
-
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
@@ -97,10 +96,10 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
-            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"orderby": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "create_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", True), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "name", False), "", marks=pytest.mark.skip(reason="issues/5851")),
             pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
@@ -118,14 +117,14 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
-            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "true"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": "True"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            ({"desc": True}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", True), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": False}, 0, lambda r: is_sorted(r["data"]["docs"], "create_time", False), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: is_sorted(r["data"]["docs"], "update_time", False), ""),
             pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )

@@ -53,13 +53,13 @@ def list_all_sessions(chat_assistant: Chat, *, limit: int | None = None, page_si
 
 def valid_chat_llm_id(client: RAGFlow) -> str:
     # SDK tests use the tenant's configured chat model; this helper discovers test fixture state, not SDK behavior.
-    res = client.get('/users/me/models')
+    res = client.get("/users/me/models")
     data = res.json()
-    if data.get('code') == 0:
-        llm_id = (data.get('data') or {}).get('llm_id')
+    if data.get("code") == 0:
+        llm_id = (data.get("data") or {}).get("llm_id")
         if llm_id:
             return llm_id
-    raise Exception('No valid chat llm_id is configured for the current tenant')
+    raise Exception("No valid chat llm_id is configured for the current tenant")
 
 
 # DATASET MANAGEMENT

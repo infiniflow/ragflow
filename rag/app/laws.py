@@ -16,8 +16,11 @@
 
 import logging
 import re
+from html import escape as html_escape
 from io import BytesIO
 from docx import Document
+from docx.table import Table as DocxTable
+from docx.text.paragraph import Paragraph
 
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
@@ -53,15 +56,56 @@ class Docx(DocxParser):
                     pn += 1
         return [line for line in lines if line]
 
+    def __table_to_html(self, tb):
+        html = "<table>"
+        for r in tb.rows:
+            html += "<tr>"
+            col_idx = 0
+            try:
+                while col_idx < len(r.cells):
+                    span = 1
+                    c = r.cells[col_idx]
+                    for j in range(col_idx + 1, len(r.cells)):
+                        if c.text == r.cells[j].text:
+                            span += 1
+                            col_idx = j
+                        else:
+                            break
+                    col_idx += 1
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
+            except Exception as e:
+                logging.warning(f"Error parsing table, ignore: {e}")
+            html += "</tr>"
+        html += "</table>"
+        return html
+
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
         level_set = set()
         bull = bullets_category([p.text for p in self.doc.paragraphs])
-        for p in self.doc.paragraphs:
+        # Tables carry no heading level; assign a sentinel deeper than any heading so
+        # build_tree merges them into the enclosing section as leaf content (keeping the
+        # section's title path as retrieval context) instead of dropping them.
+        table_level = 10**6
+        # Iterate over the document body so tables are visited in order alongside
+        # paragraphs (self.doc.paragraphs only yields paragraph elements, skipping tables).
+        for block in self.doc._element.body:
             if pn > to_page:
                 break
+
+            if block.tag.endswith("tbl"):
+                html = self.__table_to_html(DocxTable(block, self.doc))
+                if html:
+                    lines.append((table_level, html))
+                continue
+
+            if not block.tag.endswith("p"):
+                continue
+
+            p = Paragraph(block, self.doc)
             question_level, p_text = docx_question_level(p, bull)
             if not p_text.strip("\n"):
                 continue
@@ -76,8 +120,11 @@ class Docx(DocxParser):
 
         sorted_levels = sorted(level_set)
 
-        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
+        if not sorted_levels:
+            h2_level = 1
+        else:
+            h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
+            h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
 
         root = Node(level=0, depth=h2_level, texts=[])
         root.build_tree(lines)
@@ -133,7 +180,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         chunks = Docx()(filename, binary)
         callback(0.7, "Finish parsing.")
-        return tokenize_chunks(chunks, doc, eng, None)
+        return tokenize_chunks(chunks, doc, eng, None, language=lang)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
@@ -214,7 +261,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     if not res:
         callback(0.99, "No chunk parsed out.")
 
-    return tokenize_chunks(res, doc, eng, pdf_parser)
+    return tokenize_chunks(res, doc, eng, pdf_parser, language=lang)
 
     # chunks = hierarchical_merge(bull, sections, 5)
     #     return tokenize_chunks(["\n".join(ck)for ck in chunks], doc, eng, pdf_parser)

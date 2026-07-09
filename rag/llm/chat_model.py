@@ -32,12 +32,14 @@ from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
-from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from common.llm_request_context import current_llm_user
+from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
+
 
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
@@ -95,10 +97,12 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
 
 # LiteLLM additionally understands reasoning-control parameters that the
 # model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `reasoning_effort` for OpenAI o-series).
+# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
+# `reasoning_effort` for OpenAI o-series).
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
+        "enable_thinking",
         "reasoning_effort",
         "extra_body",
     }
@@ -117,9 +121,43 @@ def _apply_model_family_policies(
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
-    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    def _thinking_type():
+        val = sanitized_gen_conf.get("thinking")
+        if isinstance(val, dict):
+            val = val.get("type")
+
+        enable_thinking = sanitized_gen_conf.get("enable_thinking")
+
+        if isinstance(val, str) and val in {"enabled", "disabled"}:
+            return val
+        if isinstance(enable_thinking, bool):
+            return "enabled" if enable_thinking else "disabled"
+        return None
+
+    def _pop_thinking_controls():
+        sanitized_gen_conf.pop("thinking", None)
+        sanitized_gen_conf.pop("enable_thinking", None)
+
+    def _merge_extra_body(target: dict, extra: dict) -> None:
+        body = target.get("extra_body")
+        if not isinstance(body, dict):
+            body = {}
+        body.update(extra)
+        target["extra_body"] = body
+
+    thinking_type = _thinking_type()
+
+    # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
-        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+        _pop_thinking_controls()
+        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        if backend == "litellm" and provider in {
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        }:
+            sanitized_gen_conf["enable_thinking"] = enable_thinking
+        else:
+            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -137,25 +175,45 @@ def _apply_model_family_policies(
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
-            reasoning = sanitized_gen_conf.pop("reasoning", None)
-            thinking = {"type": "enabled"}
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            sanitized_gen_conf["thinking"] = thinking
+        elif provider == SupportedLiteLLMProvider.Moonshot:
+            if thinking_type:
+                _pop_thinking_controls()
+                sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
-            thinking_enabled = thinking.get("type") == "enabled"
-            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            sanitized_gen_conf["top_p"] = 0.95
-            sanitized_gen_conf["n"] = 1
-            sanitized_gen_conf["presence_penalty"] = 0.0
-            sanitized_gen_conf["frequency_penalty"] = 0.0
+            if thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
+                sanitized_gen_conf.pop("temperature", None)
+                sanitized_gen_conf["top_p"] = 0.95
+                sanitized_gen_conf["n"] = 1
+                sanitized_gen_conf["presence_penalty"] = 0.0
+                sanitized_gen_conf["frequency_penalty"] = 0.0
+        elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
+            _pop_thinking_controls()
+            sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
         return sanitized_gen_conf, sanitized_kwargs
 
     return sanitized_gen_conf, sanitized_kwargs
+
+
+def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str | None, completion_args: dict) -> dict:
+    provider_body_fields = {
+        SupportedLiteLLMProvider.Tongyi_Qianwen: {"enable_thinking"},
+        SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
+        SupportedLiteLLMProvider.Moonshot: {"thinking"},
+        SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+    }.get(provider, set())
+
+    body = completion_args.get("extra_body")
+    if not isinstance(body, dict):
+        body = {}
+    moved = False
+    for key in provider_body_fields:
+        if key in completion_args:
+            body[key] = completion_args.pop(key)
+            moved = True
+    if moved or body:
+        completion_args["extra_body"] = body
+    return completion_args
 
 
 class Base(ABC):
@@ -172,6 +230,9 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        # Token usage split (prompt/completion/total) of the most recent chat call.
+        # Consumed by LLMBundle for accurate Langfuse reporting and run aggregation.
+        self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -198,12 +259,6 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="base",
-            gen_conf=gen_conf,
-        )
-
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -214,10 +269,17 @@ class Base(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         request_kwargs = {"model": self.model_name, "messages": history, "stream": True, **gen_conf}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
+        request_kwargs.update(extra_request_kwargs)
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
         async for resp in response:
@@ -254,6 +316,8 @@ class Base(ABC):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
+        # Reset so a stale split from a previous call can't leak into this one.
+        self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -408,19 +472,37 @@ class Base(ABC):
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
         tk_count = 0
+        # Aggregate prompt/completion/total across all tool-calling rounds.
+        agg_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        def _add_round_usage(resp):
+            nonlocal tk_count
+            u = usage_from_response(resp)
+            agg_usage["prompt_tokens"] += u["prompt_tokens"]
+            agg_usage["completion_tokens"] += u["completion_tokens"]
+            agg_usage["total_tokens"] += u["total_tokens"] or total_token_count_from_response(resp)
+            tk_count = agg_usage["total_tokens"]
+            self.last_usage = dict(agg_usage)
+
         hist = deepcopy(history)
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
-                    tk_count += total_token_count_from_response(response)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
+                    _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
@@ -440,9 +522,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tc.function.arguments)
                             if not isinstance(args, dict):
-                                raise TypeError(
-                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
-                                )
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -462,7 +542,13 @@ class Base(ABC):
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response, token_count = await self._async_chat(history, gen_conf)
                 ans += response
-                tk_count += token_count
+                # _async_chat set self.last_usage to its own call; fold it into the aggregate.
+                _fb = getattr(self, "last_usage", None) or {}
+                agg_usage["prompt_tokens"] += int(_fb.get("prompt_tokens", 0) or 0)
+                agg_usage["completion_tokens"] += int(_fb.get("completion_tokens", 0) or 0)
+                agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
+                tk_count = agg_usage["total_tokens"]
+                self.last_usage = dict(agg_usage)
                 return ans, tk_count
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
@@ -474,12 +560,33 @@ class Base(ABC):
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
+        # Aggregate prompt/completion/total across all tool-calling rounds. The split is
+        # captured opportunistically when the provider reports usage on a chunk; otherwise
+        # only the (estimated) total accumulates.
+        agg_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         hist = deepcopy(history)
+
+        def _commit_round(round_usage, round_estimate):
+            nonlocal total_tokens
+            if round_usage and round_usage["total_tokens"]:
+                agg_usage["prompt_tokens"] += round_usage["prompt_tokens"]
+                agg_usage["completion_tokens"] += round_usage["completion_tokens"]
+                agg_usage["total_tokens"] += round_usage["total_tokens"]
+            else:
+                agg_usage["total_tokens"] += round_estimate
+            total_tokens = agg_usage["total_tokens"]
+            self.last_usage = dict(agg_usage)
 
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
@@ -488,12 +595,20 @@ class Base(ABC):
                     reasoning_start = False
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(
+                        model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
+                    )
 
                     final_tool_calls = {}
                     answer = ""
+                    round_estimate = 0
+                    round_usage = None
 
                     async for resp in response:
+                        _u = usage_from_response(resp)
+                        if _u["total_tokens"]:
+                            round_usage = _u
+
                         if not hasattr(resp, "choices") or not resp.choices:
                             continue
 
@@ -526,15 +641,16 @@ class Base(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = total_token_count_from_response(resp)
-                        if not tol:
-                            total_tokens += num_tokens_from_string(delta.content)
-                        else:
-                            total_tokens = tol
+                        if not _u["total_tokens"]:
+                            round_estimate += num_tokens_from_string(delta.content)
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
                             yield self._length_stop("")
+
+                    # Commit this round's tokens (each round is a separate provider
+                    # request — accumulate, never overwrite).
+                    _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
                         logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
@@ -546,9 +662,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tc.function.arguments)
                             if not isinstance(args, dict):
-                                raise TypeError(
-                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
-                                )
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -574,21 +688,32 @@ class Base(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                response = await self.async_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=history,
+                    stream=True,
+                    tools=tools,
+                    tool_choice="auto",
+                    **gen_conf,
+                    **extra_request_kwargs,
+                )
 
+                fb_estimate = 0
+                fb_usage = None
                 async for resp in response:
+                    _u = usage_from_response(resp)
+                    if _u["total_tokens"]:
+                        fb_usage = _u
                     if not hasattr(resp, "choices") or not resp.choices:
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = total_token_count_from_response(resp)
-                    if not tol:
-                        total_tokens += num_tokens_from_string(delta.content)
-                    else:
-                        total_tokens = tol
+                    if not _u["total_tokens"]:
+                        fb_estimate += num_tokens_from_string(delta.content)
                     yield delta.content
 
+                _commit_round(fb_usage, fb_estimate)
                 yield total_tokens
                 return
 
@@ -620,14 +745,17 @@ class Base(ABC):
 
             return final_ans.strip(), tol_token
 
-        _, kwargs = _apply_model_family_policies(
+        gen_conf, kwargs = _apply_model_family_policies(
             self.model_name,
             backend="base",
+            gen_conf=gen_conf,
             request_kwargs=kwargs,
         )
 
         response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
+        # Capture prompt/completion split for accurate Langfuse + run aggregation.
+        self.last_usage = usage_from_response(response)
         if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
             return "", 0
         ans = response.choices[0].message.content.strip()
@@ -917,6 +1045,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -981,9 +1118,7 @@ class ReplicateChat(Base):
                 msgs = [{"role": "system", "content": system}]
 
             system_msg = msgs[0]["content"] if msgs and msgs[0].get("role") == "system" else ""
-            prompt = "\n".join(
-                [item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"]
-            )
+            prompt = "\n".join([item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"])
             try:
                 response = self.client.run(
                     self.model_name,
@@ -1109,6 +1244,22 @@ class BaiduYiyanChat(Base):
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
 
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
@@ -1139,11 +1290,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1430,6 +1591,9 @@ class LiteLLMBase(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        # Token usage split (prompt/completion/total) of the most recent chat call.
+        # Consumed by LLMBundle for accurate Langfuse reporting and run aggregation.
+        self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
@@ -1518,6 +1682,9 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
+                # Capture the prompt/completion split for accurate per-call usage
+                # reporting (Langfuse + agent run aggregation).
+                self.last_usage = usage_from_response(response)
                 if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                     return "", 0
                 ans = response.choices[0].message.content.strip()
@@ -1539,11 +1706,16 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        # Reset so a stale split from a previous call can't leak into this one.
+        self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
+        # Ask the provider to include authoritative usage in the final streaming chunk.
+        # drop_params=True ensures this is silently ignored by providers that don't support it.
+        completion_args.setdefault("stream_options", {})["include_usage"] = True
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1554,6 +1726,14 @@ class LiteLLMBase(ABC):
                 )
 
                 async for resp in stream:
+                    # Authoritative usage may arrive on a usage-only final chunk that
+                    # carries no choices (OpenAI/OpenRouter with include_usage). Read it
+                    # before the choices guard so the prompt/completion split is captured.
+                    _usage = usage_from_response(resp)
+                    if _usage["total_tokens"]:
+                        total_tokens = _usage["total_tokens"]
+                        self.last_usage = _usage
+
                     if not hasattr(resp, "choices") or not resp.choices:
                         continue
 
@@ -1572,10 +1752,9 @@ class LiteLLMBase(ABC):
                         reasoning_start = False
                         ans = delta.content
 
-                    tol = total_token_count_from_response(resp)
-                    if not tol:
-                        tol = num_tokens_from_string(delta.content)
-                    total_tokens += tol
+                    if not _usage["total_tokens"]:
+                        # No authoritative usage yet: keep a running estimate as fallback.
+                        total_tokens += num_tokens_from_string(delta.content)
 
                     finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                     if finish_reason == "length":
@@ -1625,11 +1804,15 @@ class LiteLLMBase(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps(
-            {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
-            ensure_ascii=False,
-            indent=2,
-        ) + "</tool_call>"
+        return (
+            "<tool_call>"
+            + json.dumps(
+                {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "</tool_call>"
+        )
 
     def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
         assistant_msg = {
@@ -1724,6 +1907,19 @@ class LiteLLMBase(ABC):
 
         ans = ""
         tk_count = 0
+        # Aggregate prompt/completion/total across every tool-calling round so the
+        # whole multi-round exchange is reported once with a correct split.
+        agg_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        def _add_usage(resp):
+            nonlocal tk_count
+            u = usage_from_response(resp)
+            agg_usage["prompt_tokens"] += u["prompt_tokens"]
+            agg_usage["completion_tokens"] += u["completion_tokens"]
+            agg_usage["total_tokens"] += u["total_tokens"] or total_token_count_from_response(resp)
+            tk_count = agg_usage["total_tokens"]
+            self.last_usage = dict(agg_usage)
+
         hist = deepcopy(history)
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
@@ -1738,7 +1934,7 @@ class LiteLLMBase(ABC):
                         timeout=self.timeout,
                     )
 
-                    tk_count += total_token_count_from_response(response)
+                    _add_usage(response)
 
                     if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -1786,7 +1982,13 @@ class LiteLLMBase(ABC):
 
                 response, token_count = await self.async_chat("", history, gen_conf)
                 ans += response
-                tk_count += token_count
+                # self.async_chat set self.last_usage to its own call; fold it into the aggregate.
+                _fb = getattr(self, "last_usage", None) or {}
+                agg_usage["prompt_tokens"] += int(_fb.get("prompt_tokens", 0) or 0)
+                agg_usage["completion_tokens"] += int(_fb.get("completion_tokens", 0) or 0)
+                agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
+                tk_count = agg_usage["total_tokens"]
+                self.last_usage = dict(agg_usage)
                 return ans, tk_count
 
             except Exception as e:
@@ -1804,7 +2006,22 @@ class LiteLLMBase(ABC):
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
+        # Aggregate usage across every tool-calling round (each round is a separate
+        # provider request). Committing per round avoids the previous bug where a later
+        # round's total overwrote earlier rounds.
+        agg_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         hist = deepcopy(history)
+
+        def _commit_round(round_usage, round_estimate):
+            nonlocal total_tokens
+            if round_usage and round_usage["total_tokens"]:
+                agg_usage["prompt_tokens"] += round_usage["prompt_tokens"]
+                agg_usage["completion_tokens"] += round_usage["completion_tokens"]
+                agg_usage["total_tokens"] += round_usage["total_tokens"]
+            else:
+                agg_usage["total_tokens"] += round_estimate
+            total_tokens = agg_usage["total_tokens"]
+            self.last_usage = dict(agg_usage)
 
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
@@ -1815,6 +2032,8 @@ class LiteLLMBase(ABC):
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                    # Request authoritative usage on the final streaming chunk.
+                    completion_args.setdefault("stream_options", {})["include_usage"] = True
                     response = await litellm.acompletion(
                         **completion_args,
                         drop_params=True,
@@ -1823,8 +2042,15 @@ class LiteLLMBase(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    round_usage = None
+                    round_estimate = 0
 
                     async for resp in response:
+                        # Usage-only final chunk may carry no choices — read it first.
+                        _u = usage_from_response(resp)
+                        if _u["total_tokens"]:
+                            round_usage = _u
+
                         if not hasattr(resp, "choices") or not resp.choices:
                             continue
 
@@ -1859,15 +2085,15 @@ class LiteLLMBase(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = total_token_count_from_response(resp)
-                        if not tol:
-                            total_tokens += num_tokens_from_string(delta.content)
-                        else:
-                            total_tokens = tol
+                        if not _u["total_tokens"]:
+                            round_estimate += num_tokens_from_string(delta.content)
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
                             yield self._length_stop("")
+
+                    # Commit this round's tokens to the running aggregate.
+                    _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
                         logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
@@ -1910,25 +2136,29 @@ class LiteLLMBase(ABC):
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
                 completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                completion_args.setdefault("stream_options", {})["include_usage"] = True
                 response = await litellm.acompletion(
                     **completion_args,
                     drop_params=True,
                     timeout=self.timeout,
                 )
 
+                fb_usage = None
+                fb_estimate = 0
                 async for resp in response:
+                    _u = usage_from_response(resp)
+                    if _u["total_tokens"]:
+                        fb_usage = _u
                     if not hasattr(resp, "choices") or not resp.choices:
                         continue
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = total_token_count_from_response(resp)
-                    if not tol:
-                        total_tokens += num_tokens_from_string(delta.content)
-                    else:
-                        total_tokens = tol
+                    if not _u["total_tokens"]:
+                        fb_estimate += num_tokens_from_string(delta.content)
                     yield delta.content
 
+                _commit_round(fb_usage, fb_estimate)
                 yield total_tokens
                 return
 
@@ -1949,6 +2179,15 @@ class LiteLLMBase(ABC):
             "num_retries": self.max_retries,
             **kwargs,
         }
+        # Forward the originating session/user as the OpenAI-standard `user` field so
+        # providers (OpenAI, OpenRouter, ...) receive it in the request body and
+        # upstream activity can be correlated back to the session. An explicit
+        # caller-supplied `user` (including an empty string to suppress it) wins, so
+        # check key presence rather than truthiness.
+        if "user" not in completion_args:
+            request_user = current_llm_user()
+            if request_user:
+                completion_args["user"] = request_user
         if stream:
             completion_args.update(
                 {
@@ -2037,10 +2276,11 @@ class LiteLLMBase(ABC):
         if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
             extra_headers["Authorization"] = f"Bearer {self.api_key}"
         # MiniMax requires GroupId as a query parameter for API authentication
-        if self.provider == SupportedLiteLLMProvider.MiniMax and hasattr(self, 'group_id') and self.group_id:
+        if self.provider == SupportedLiteLLMProvider.MiniMax and hasattr(self, "group_id") and self.group_id:
             api_base = completion_args.get("api_base", self.base_url)
             separator = "&" if "?" in api_base else "?"
             completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
+        _move_litellm_provider_body_fields(self.provider, completion_args)
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
@@ -2060,4 +2300,14 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class NewAPIChat(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)

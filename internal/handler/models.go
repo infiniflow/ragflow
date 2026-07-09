@@ -17,9 +17,9 @@
 package handler
 
 import (
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,63 +36,56 @@ func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelH
 	}
 }
 
-type ShowModelRequest struct {
-	ModelName *string `json:"model_name"`
-	Page      int     `json:"page"`
-	PageSize  int     `json:"page_size"`
-}
-
 func (h *ModelHandler) ListAllModels(c *gin.Context) {
 
-	var req ShowModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
+	page := 0
+	if v := c.Query("page"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 0
+	if v := c.Query("page_size"); v != "" {
+		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	// list tenant models
+	models, err := h.modelProviderService.ListAllModels(page, pageSize)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	if req.ModelName == nil {
-		// list models
-		page := req.Page
-		pageSize := req.PageSize
+	common.SuccessWithData(c, models, "success")
+	return
+}
 
-		// list tenant models
-		models, err := h.modelProviderService.ListAllModels(page, pageSize)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"message": err.Error(),
-				"data":    nil,
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    models,
-		})
-	} else {
-		// show model
-		model, err := h.modelProviderService.ShowModel(*req.ModelName)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"message": err.Error(),
-				"data":    nil,
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    model,
-		})
+func (h *ModelHandler) ShowModel(c *gin.Context) {
+	encodedModelName := c.Param("model_name")
+	if encodedModelName == "" {
+		common.ErrorWithCode(c, 400, "Encoded model name is empty")
+		return
 	}
 
-	return
+	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
+	if err != nil {
+		common.ErrorWithCode(c, 400, err.Error())
+		return
+	}
+	if decodedModelName == "" {
+		common.ErrorWithCode(c, 400, "Decoded model name is empty")
+		return
+	}
+
+	// Get model
+	model, err := h.modelProviderService.ShowModel(decodedModelName)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, model, "success")
 }

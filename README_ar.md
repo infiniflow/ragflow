@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://cloud.ragflow.io/">
-<img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow/main/web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
 
@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -87,6 +87,7 @@
 
 ## 🔥 آخر التحديثات
 
+- 15-06-2026 يدعم قنوات دردشة متعددة مثل Feishu و Discord و Telegram و Line وما إلى ذلك.
 - 24-04-2026 يدعم DeepSeek v4.
 - 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — توفر مهارة رسمية للوصول إلى مجموعات بيانات RAGFlow عبر OpenClaw.
 - 26-12-2025 يدعم ميزة "Memory" لوكلاء الذكاء الاصطناعي.
@@ -97,7 +98,6 @@
 - 08-08-2025 يدعم أحدث موديلات سلسلة OpenAI.
 - 01-08-2025 يدعم سير العمل الوكيل وMCP.
 - 23-05-2025 تمت إضافة مكون منفذ كود Python/JavaScript إلى Agent.
-- 05-05-2025 يدعم الاستعلام بين اللغات.
 - 19-03-2025 يدعم استخدام نموذج متعدد الوسائط لفهم الصور داخل ملفات PDF أو DOCX.
 
 ## 🎉 تابعونا
@@ -193,12 +193,12 @@
 > جميع الصور Docker مصممة لمنصات x86. لا نعرض حاليًا صور Docker لـ ARM64.
 > إذا كنت تستخدم نظامًا أساسيًا ARM64، فاتبع [هذا الدليل](https://ragflow.io/docs/dev/build_docker_image) لإنشاء صورة Docker متوافقة مع نظامك.
 
-> يقوم الأمر أدناه بتنزيل إصدار `v0.26.0` من الصورة RAGFlow Docker. راجع الجدول التالي للحصول على أوصاف لإصدارات RAGFlow المختلفة. لتنزيل إصدار RAGFlow مختلف عن `v0.26.0`، قم بتحديث المتغير `RAGFLOW_IMAGE` وفقًا لذلك في **docker/.env** قبل استخدام `docker compose` لبدء تشغيل الخادم.
+> يقوم الأمر أدناه بتنزيل إصدار `v0.26.4` من الصورة RAGFlow Docker. راجع الجدول التالي للحصول على أوصاف لإصدارات RAGFlow المختلفة. لتنزيل إصدار RAGFlow مختلف عن `v0.26.4`، قم بتحديث المتغير `RAGFLOW_IMAGE` وفقًا لذلك في **docker/.env** قبل استخدام `docker compose` لبدء تشغيل الخادم.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   git checkout v0.26.4
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -319,10 +319,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 إطلاق الخدمة من المصدر للتطوير
 
-1. قم بتثبيت `uv` و`pre-commit`، أو قم بتخطي هذه الخطوة إذا كانا مثبتين بالفعل:
+1. قم بتثبيت `uv`، أو قم بتخطي هذه الخطوة إذا كان مثبتًا بالفعل:
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    ```
 2. استنساخ الكود المصدري وتثبيت تبعيات بايثون:
 
@@ -330,8 +330,8 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
-   pre-commit install
+   uv run python3 ragflow_deps/download_deps.py
+   lefthook install
    ```
 3. قم بتشغيل الخدمات التابعة (MinIO وElasticsearch وRedis وMySQL) باستخدام Docker Compose:
 

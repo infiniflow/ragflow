@@ -1,5 +1,6 @@
 {
   "name": "DeepSeek",
+  "rank": 996,
   "url": {
     "default": "https://api.deepseek.com"
   },

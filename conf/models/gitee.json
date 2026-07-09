@@ -1,5 +1,5 @@
 {
-  "name": "Gitee",
+  "name": "GiteeAI",
   "url": {
     "default": "https://api.moark.ai/v1",
     "china": "https://api.moark.com/v1",
@@ -69,6 +69,12 @@
       "name": "PaddleOCR-VL-1.5",
       "model_types": [
         "ocr"
+      ]
+    },
+    {
+      "name": "jina-clip-v2",
+      "model_types": [
+        "embedding"
       ]
     },
     {

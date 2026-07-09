@@ -49,7 +49,7 @@ func (a *AvianModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (a *AvianModel) Name() string {
-	return "avian"
+	return "Avian"
 }
 
 func (a *AvianModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
@@ -309,7 +309,7 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	}
 
 	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	if err = json.Unmarshal(body, &modelList.Models); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -364,4 +364,3 @@ func (a *AvianModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 func (a *AvianModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
-

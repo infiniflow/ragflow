@@ -79,8 +79,8 @@ async def create_memory(memory_info: dict):
         "memory_type": list[str],
         "embd_id": str,
         "llm_id": str,
-        "tenant_embd_id": str,
-        "tenant_llm_id": str
+        "tenant_embd_id": str | None,
+        "tenant_llm_id": str | None
     }
     """
     # check name length
@@ -103,7 +103,9 @@ async def create_memory(memory_info: dict):
         name=memory_name,
         memory_type=memory_type,
         embd_id=memory_info["embd_id"],
-        llm_id=memory_info["llm_id"]
+        llm_id=memory_info["llm_id"],
+        tenant_embd_id=memory_info.get("tenant_embd_id"),
+        tenant_llm_id=memory_info.get("tenant_llm_id"),
     )
     if success:
         return True, format_ret_data_from_memory(res)
@@ -243,7 +245,7 @@ async def delete_memory(memory_id):
     return True
 
 
-async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size: int = 50):
+async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_size: int = 50):
     """
     :param filter_params: {
         "memory_type": list[str],
@@ -268,9 +270,7 @@ async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size
 
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
     [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
-    return {
-        "memory_list": memory_list, "total_count": count
-    }
+    return {"memory_list": memory_list, "total_count": count}
 
 
 async def get_memory_config(memory_id):
@@ -280,10 +280,9 @@ async def get_memory_config(memory_id):
     return format_ret_data_from_memory(memory)
 
 
-async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int=1, page_size: int = 50):
+async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int = 1, page_size: int = 50):
     memory = _require_memory_access(memory_id)
-    messages = MessageService.list_message(
-        memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
+    messages = MessageService.list_message(memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
     agent_name_mapping = {}
     extract_task_mapping = {}
     if messages["message_list"]:
@@ -291,7 +290,7 @@ async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, pa
         agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
         task_list = TaskService.get_tasks_progress_by_doc_ids([memory_id])
         if task_list:
-            task_list.sort(key=lambda t: t["create_time"]) # asc, use newer when exist more than one task
+            task_list.sort(key=lambda t: t["create_time"])  # asc, use newer when exist more than one task
             for task in task_list:
                 # the 'digest' field carries the source_id when a task is created, so use 'digest' as key
                 extract_task_mapping.update({int(task["digest"]): task})
@@ -324,10 +323,7 @@ async def forget_message(memory_id: str, message_id: int):
     memory = _require_memory_access(memory_id)
 
     forget_time = timestamp_to_date(current_timestamp())
-    update_succeed = MessageService.update_message(
-        {"memory_id": memory_id, "message_id": int(message_id)},
-        {"forget_at": forget_time},
-        memory.tenant_id, memory_id)
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": int(message_id)}, {"forget_at": forget_time}, memory.tenant_id, memory_id)
     if update_succeed:
         return True
     raise Exception(f"Failed to forget message '{message_id}' in memory '{memory_id}'.")
@@ -336,10 +332,7 @@ async def forget_message(memory_id: str, message_id: int):
 async def update_message_status(memory_id: str, message_id: int, status: bool):
     memory = _require_memory_access(memory_id)
 
-    update_succeed = MessageService.update_message(
-        {"memory_id": memory_id, "message_id": int(message_id)},
-        {"status": status},
-        memory.tenant_id, memory_id)
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": int(message_id)}, {"status": status}, memory.tenant_id, memory_id)
     if update_succeed:
         return True
     raise Exception(f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
@@ -383,13 +376,7 @@ async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: st
         return []
     uids = [memory.tenant_id for memory in memory_list]
     accessible_memory_ids = [memory.id for memory in memory_list]
-    res = MessageService.get_recent_messages(
-        uids,
-        accessible_memory_ids,
-        agent_id,
-        session_id,
-        limit
-    )
+    res = MessageService.get_recent_messages(uids, accessible_memory_ids, agent_id, session_id, limit)
     return res
 
 

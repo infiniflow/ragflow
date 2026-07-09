@@ -12,9 +12,9 @@
 
 ## 🐳 Docker Compose
 
-- **docker-compose.yml**  
+- **docker-compose.yml**
   Sets up environment for RAGFlow and its dependencies.
-- **docker-compose-base.yml**  
+- **docker-compose-base.yml**
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 > [!CAUTION]
@@ -26,97 +26,108 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 ### Elasticsearch
 
-- `STACK_VERSION`  
+- `STACK_VERSION`
   The version of Elasticsearch. Defaults to `8.11.3`
-- `ES_PORT`  
+- `ES_PORT`
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
-- `ELASTIC_PASSWORD`  
+- `ELASTIC_PASSWORD`
   The password for Elasticsearch.
 
 ### Kibana
 
-- `KIBANA_PORT`  
+- `KIBANA_PORT`
   The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
-- `KIBANA_USER`  
+- `KIBANA_USER`
   The username for Kibana. Defaults to `rag_flow`.
-- `KIBANA_PASSWORD`  
+- `KIBANA_PASSWORD`
   The password for Kibana. Defaults to `infini_rag_flow`.
 
 ### Resource management
 
-- `MEM_LIMIT`  
+- `MEM_LIMIT`
   The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
 
 ### MySQL
 
-- `MYSQL_PASSWORD`  
+- `MYSQL_PASSWORD`
   The password for MySQL.
-- `MYSQL_PORT`  
+- `MYSQL_PORT`
   The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
-- `EXPOSE_MYSQL_PORT`  
+- `EXPOSE_MYSQL_PORT`
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
 
-- `MINIO_CONSOLE_PORT`  
+- `MINIO_CONSOLE_PORT`
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
-- `MINIO_PORT`  
+- `MINIO_PORT`
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
-- `MINIO_USER`  
+- `MINIO_USER`
   The username for MinIO.
-- `MINIO_PASSWORD`  
+- `MINIO_PASSWORD`
   The password for MinIO.
 
 ### Redis
 
-- `REDIS_PORT`  
+- `REDIS_PORT`
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
-- `REDIS_PASSWORD`  
+- `REDIS_PASSWORD`
   The password for Redis.
 
 ### RAGFlow
 
-- `SVR_HTTP_PORT`  
+- `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
-- `RAGFLOW_IMAGE`  
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.0`. The RAGFlow Docker image does not include embedding models.
+- `RAGFLOW_IMAGE`
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.4`. The RAGFlow Docker image does not include embedding models.
 
-  
-> [!TIP]  
-> If you cannot download the RAGFlow Docker image, try the following mirrors.  
-> 
-> - For the `nightly` edition:  
+
+> [!TIP]
+> If you cannot download the RAGFlow Docker image, try the following mirrors.
+>
+> - For the `nightly` edition:
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 
+### DeepDoc Vision Service (OSS)
+
+- `DEEPDOC_URL`
+  URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:9390`. When unset, the parser falls back to inline ONNX Runtime inference.
+
+  > The OSS deepdoc service runs on CPU using ONNX Runtime models. No GPU required.
+  > API endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr`.
+
+- `DEEPDOC_IMAGE`
+  Docker image for the OSS deepdoc service. Defaults to `infiniflow/deepdoc_oss:latest`.
+
 ### Timezone
 
-- `TZ`  
+- `TZ`
   The local time zone. Defaults to `'Asia/Shanghai'`.
 
 ### Hugging Face mirror site
 
-- `HF_ENDPOINT`  
+- `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
 ### MacOS
 
-- `MACOS`  
+- `MACOS`
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
 ### Maximum file size
 
-- `MAX_CONTENT_LENGTH`  
+- `MAX_CONTENT_LENGTH`
   The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit. After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
 ### Doc bulk size
 
-- `DOC_BULK_SIZE`  
+- `DOC_BULK_SIZE`
   The number of document chunks processed in a single batch during document parsing. Defaults to `4`.
 
 ### Embedding batch size
 
-- `EMBEDDING_BATCH_SIZE`  
+- `EMBEDDING_BATCH_SIZE`
   The number of text chunks processed in a single batch during embedding vectorization. Defaults to `16`.
 
 ### OceanBase prerequisites
@@ -166,6 +177,13 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+
+- `deepdoc`
+  The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.
+  Defined in `docker-compose.yml`, it is started automatically as a dependency of `ragflow-cpu` and `ragflow-gpu`.
+  - `image`: Docker image. Defaults to `infiniflow/deepdoc_oss:latest`.
+  - `port`: Serving port inside the container. Defaults to `9390`.
+  - Health check: `curl -f http://localhost:9390/health` every 10s.
 
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.
@@ -222,8 +240,8 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
     - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
 
-- `user_default_llm`  
-  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  
+- `user_default_llm`
+  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
   - `factory`: The LLM supplier. Available options:
     - `"OpenAI"`
     - `"DeepSeek"`
@@ -233,7 +251,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `"ZHIPU-AI"`
   - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
 
-> [!TIP]  
+> [!TIP]
 > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
 
 
@@ -255,20 +273,20 @@ If you want your instance to be available under `https`, follow these steps:
    ```bash
    # Ubuntu/Debian
    sudo apt update && sudo apt install certbot
-   
+
    # CentOS/RHEL
    sudo yum install certbot
-   
+
    # Obtain certificates (replace with your actual domain)
    sudo certbot certonly --standalone -d your-ragflow-domain.com
    ```
 
-2. **Locate your certificates**  
+2. **Locate your certificates**
    Once generated, your certificates will be located at:
    - Certificate: `/etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem`
    - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
 
-3. **Update docker-compose.yml**  
+3. **Update docker-compose.yml**
    Add the certificate volumes to the `ragflow` service in your `docker-compose.yml`:
    ```yaml
    services:
@@ -281,10 +299,10 @@ If you want your instance to be available under `https`, follow these steps:
          # Switch to HTTPS nginx configuration
          - ./nginx/ragflow.https.conf:/etc/nginx/conf.d/ragflow.conf
          # ...other existing volumes...
-  
+
    ```
 
-4. **Update nginx configuration**  
+4. **Update nginx configuration**
    Edit `nginx/ragflow.https.conf` and replace `my_ragflow_domain.com` with your actual domain name.
 
 5. **Restart the services**

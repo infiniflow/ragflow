@@ -77,7 +77,7 @@ env:
 ragflow:
   image:
     repository: infiniflow/ragflow
-    tag: v0.26.0
+    tag: v0.26.4
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides
@@ -193,8 +193,8 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: quay.io/minio/minio
-    tag: RELEASE.2023-12-20T01-00-02Z
+    repository: pgsty/minio
+    tag: RELEASE.2026-03-25T00-00-00Z
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:

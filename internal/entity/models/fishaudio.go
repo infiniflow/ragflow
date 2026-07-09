@@ -50,7 +50,7 @@ func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (f *FishAudioModel) Name() string {
-	return "fishaudio"
+	return "Fish Audio"
 }
 
 func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -89,6 +89,8 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	writer := multipart.NewWriter(&body)
 
 	// audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -379,14 +381,19 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Items))
+	modelList := ModelList{Object: "list"}
 	for _, item := range result.Items {
-		models = append(models, ListModelResponse{
-			Name: item.Title,
-		})
+		name := strings.TrimSpace(item.Title)
+		if name == "" {
+			name = strings.TrimSpace(item.ID)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

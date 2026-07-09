@@ -1,18 +1,25 @@
+import message from '@/components/ui/message';
 import { useExportMcpServer } from '@/hooks/use-mcp-request';
+import { IMcpServer } from '@/interfaces/database/mcp';
+import i18n from '@/locales/config';
 import { downloadJsonFile } from '@/utils/file-util';
 import { useCallback } from 'react';
 
-export function useExportMcp() {
+export function useExportMcp(mcp?: IMcpServer) {
   const { exportMcpServer } = useExportMcpServer();
 
   const handleExportMcpJson = useCallback(
     (ids: string[]) => async () => {
+      if (ids.length === 0) {
+        message.warning(i18n.t('mcp.noServerSelected'));
+        return;
+      }
       const data = await exportMcpServer(ids);
       if (data.code === 0) {
-        downloadJsonFile(data.data, `mcp.json`);
+        downloadJsonFile(data.data, `${mcp?.name || 'mcp'}.json`);
       }
     },
-    [exportMcpServer],
+    [exportMcpServer, mcp],
   );
 
   return {

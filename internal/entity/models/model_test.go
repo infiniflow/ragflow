@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 )
+
 // joinModelNames extracts model names from a ListModelResponse slice and
 // joins them with sep, for use in test assertions.
 func joinModelNames(models []ListModelResponse, sep string) string {
@@ -31,8 +32,6 @@ func joinModelNames(models []ListModelResponse, sep string) string {
 	}
 	return strings.Join(names, sep)
 }
-
-
 
 func readProviderConfig(t *testing.T, fileName string) []byte {
 	t.Helper()
@@ -56,13 +55,52 @@ func readPPIOProviderConfig(t *testing.T) []byte {
 	return readProviderConfig(t, "ppio.json")
 }
 
-func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"mineru.json", "paddleocr.json"} {
+// setupProviderTestDir creates a temporary directory populated with provider
+// config files and conf/all_models.json, then changes the working directory to
+// it. InitProviderManager hardcodes a read of conf/all_models.json relative to
+// CWD, so the test must run from a directory that contains conf/all_models.json.
+//
+// Provider configs MUST be copied before the chdir because readProviderConfig
+// resolves file paths relative to the test binary's original CWD.
+//
+// Caller must defer the returned restore function.
+func setupProviderTestDir(t *testing.T, configFileNames ...string) (dir string, restore func()) {
+	t.Helper()
+	dir = t.TempDir()
+
+	// Copy provider configs first — readProviderConfig uses relative paths
+	// that are only valid from the original CWD.
+	for _, fileName := range configFileNames {
 		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
 			t.Fatalf("write %s config: %v", fileName, err)
 		}
 	}
+
+	confDir := filepath.Join(dir, "conf")
+	if err := os.MkdirAll(confDir, 0o755); err != nil {
+		t.Fatalf("create conf dir: %v", err)
+	}
+
+	allModelsSrc := filepath.Join("..", "..", "..", "conf", "all_models.json")
+	data, err := os.ReadFile(allModelsSrc)
+	if err != nil {
+		t.Fatalf("read all_models.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(confDir, "all_models.json"), data, 0o600); err != nil {
+		t.Fatalf("write all_models.json: %v", err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	return dir, func() { os.Chdir(orig) }
+}
+
+func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "mineru.json", "paddleocr.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -101,12 +139,8 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"mineru_local.json", "paddleocr_local.json"} {
-		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
-			t.Fatalf("write %s config: %v", fileName, err)
-		}
-	}
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "paddleocr_local.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -139,12 +173,8 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 }
 
 func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"cohere.json", "xai.json"} {
-		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
-			t.Fatalf("write %s config: %v", fileName, err)
-		}
-	}
+	dir, restore := setupProviderTestDir(t, "cohere.json", "xai.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -152,13 +182,12 @@ func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
-
-	cohere := pm.FindProvider("CoHere")
+	cohere := pm.FindProvider("Cohere")
 	if cohere == nil {
-		t.Fatal("CoHere provider not found")
+		t.Fatal("Cohere provider not found")
 	}
 	if cohere.URLSuffix.Embedding != "v2/embed" {
-		t.Errorf("CoHere embedding suffix=%q", cohere.URLSuffix.Embedding)
+		t.Errorf("Cohere embedding suffix=%q", cohere.URLSuffix.Embedding)
 	}
 
 	xAI := pm.FindProvider("xAI")
@@ -206,10 +235,8 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 }
 
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ppio.json"), readPPIOProviderConfig(t), 0o600); err != nil {
-		t.Fatalf("write ppio config: %v", err)
-	}
+	dir, restore := setupProviderTestDir(t, "ppio.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -217,7 +244,6 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
-
 	provider := pm.FindProvider("ppio")
 	if provider == nil {
 		t.Fatal("PPIO provider not found")
@@ -295,10 +321,8 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 }
 
 func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "siliconflow.json"), readProviderConfig(t, "siliconflow.json"), 0o600); err != nil {
-		t.Fatalf("write siliconflow config: %v", err)
-	}
+	dir, restore := setupProviderTestDir(t, "siliconflow.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -306,10 +330,9 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
-
-	provider := pm.FindProvider("SiliconFlow")
+	provider := pm.FindProvider("SILICONFLOW")
 	if provider == nil {
-		t.Fatal("SiliconFlow provider not found")
+		t.Fatal("SILICONFLOW provider not found")
 	}
 	if provider.URL["default"] != "https://api.siliconflow.cn/v1" {
 		t.Errorf("default URL=%q", provider.URL["default"])
@@ -320,14 +343,14 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if _, ok := provider.ModelDriver.(*SiliconflowModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.SiliconflowModel", provider.ModelDriver)
 	}
-	if provider.ModelDriver.Name() != "siliconflow" {
+	if provider.ModelDriver.Name() != "SILICONFLOW" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 12 {
-		t.Fatalf("SiliconFlow model count=%d, want 12", len(provider.Models))
+	if len(provider.Models) != 13 {
+		t.Fatalf("SILICONFLOW model count=%d, want 13", len(provider.Models))
 	}
 
-	deepSeekV4Pro, err := pm.GetModelByName("SiliconFlow", "Pro/deepseek-ai/DeepSeek-V4-Pro")
+	deepSeekV4Pro, err := pm.GetModelByName("SILICONFLOW", "Pro/deepseek-ai/DeepSeek-V4-Pro")
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
@@ -338,7 +361,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
 	}
 
-	kimiK26, err := pm.GetModelByName("SiliconFlow", "Pro/moonshotai/Kimi-K2.6")
+	kimiK26, err := pm.GetModelByName("SILICONFLOW", "Pro/moonshotai/Kimi-K2.6")
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}

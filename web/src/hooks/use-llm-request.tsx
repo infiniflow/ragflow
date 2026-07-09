@@ -12,13 +12,17 @@ import {
   IAddInstanceModelRequestBody,
   IAddProviderInstanceRequestBody,
   IAddProviderRequestBody,
+  IDeleteInstanceModelsRequestBody,
   IDeleteProviderInstanceRequestBody,
+  IEditInstanceModelRequestBody,
   IListAllModelsRequestParams,
   IListProviderModelsRequestBody,
   IListProvidersRequestParams,
   IModelInfo,
+  IPatchInstanceModelRequestBody,
   ISetDefaultModelRequestBody,
   IUpdateModelStatusRequestBody,
+  IUpdateProviderInstanceRequestBody,
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -37,7 +41,11 @@ export const enum LLMApiAction {
   VerifyProviderConnection = 'verifyProviderConnection',
   ListProviderModels = 'listProviderModels',
   AddInstanceModel = 'addInstanceModel',
+  EditInstanceModel = 'editInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
+  DeleteInstanceModels = 'deleteInstanceModels',
+  UpdateProviderInstance = 'updateProviderInstance',
+  PatchInstanceModel = 'patchInstanceModel',
   ListDefaultModels = 'listDefaultModels',
   SetDefaultModel = 'setDefaultModel',
 }
@@ -151,12 +159,6 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
-/**
- * Fetch full details of a single provider instance (used in viewMode to
- * retrieve fields like `baseUrl` that the list endpoint does not return).
- * Disabled by default; call from an event handler (e.g. onClick) and
- * rely on the returned `refetch` to actually trigger the request.
- */
 export const useFetchProviderInstance = (
   providerName: string,
   instanceName: string,
@@ -184,7 +186,7 @@ export const useFetchInstanceModels = (
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
     gcTime: 0,
-    enabled: !!providerName && !!instanceName,
+    enabled: !!providerName && !!instanceName && instanceName !== '__draft__',
     queryFn: async () => {
       const { data } = await llmService.listInstanceModels(
         { provider_name: providerName, instance_name: instanceName },
@@ -244,27 +246,37 @@ export const useAddProviderInstance = () => {
       try {
         await addProvider({ provider_name: params.llm_factory });
 
-        const { data: instancesRes } = await llmService.listProviderInstances(
-          { provider_name: params.llm_factory },
-          true,
-        );
-        const instanceExists = instancesRes?.data?.some(
-          (i: IProviderInstance) => i.instance_name === params.instance_name,
-        );
-        if (instanceExists && !params.verify) {
-          return { code: 0, data: null };
+        // When `id` is supplied the caller is updating an existing
+        // instance (blur-save on a saved card), so do not short-circuit
+        // on the "already exists" check — we *want* the server call.
+        if (!params.id) {
+          const { data: instancesRes } = await llmService.listProviderInstances(
+            { provider_name: params.llm_factory },
+            true,
+          );
+          const instanceExists = instancesRes?.data?.some(
+            (i: IProviderInstance) => i.instance_name === params.instance_name,
+          );
+          if (instanceExists && !params.verify) {
+            return { code: 0, data: null };
+          }
         }
       } catch {
         // ignore list failure and proceed to add
       }
 
-      const { data } = await llmService.addProviderInstance(params);
+      // The provider is carried in the URL path
+      // (`/providers/<llm_factory>/instances`), so `llm_factory` must not
+      // be duplicated in the request body. Keep it only for URL building
+      // (native-config form) and send the remaining fields as the body.
+      const { llm_factory, ...body } = params;
+      const { data } = await llmService.addProviderInstance(
+        { llm_factory, data: body },
+        true,
+      );
       if (data.code === 0 && !params.verify) {
         queryClient.invalidateQueries({
-          queryKey: LlmKeys.addedProviders(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: LlmKeys.allModels(),
+          queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
       }
       return data;
@@ -340,11 +352,22 @@ export const useAddInstanceModel = () => {
     ) => {
       const { data } = await llmService.addInstanceModel(params);
       if (data.code === 0) {
+        // `exact: true` keeps the invalidation to the provider summary
+        // list. Without it the [AddedProviders] prefix would also match
+        // every providerInstances / instanceModels query and refetch
+        // every provider's instances — we only want the current one.
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
+          exact: true,
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
         });
       }
       return data;
@@ -352,6 +375,44 @@ export const useAddInstanceModel = () => {
   });
 
   return { data, loading, addInstanceModel: mutateAsync };
+};
+
+export const useEditInstanceModel = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.EditInstanceModel],
+    mutationFn: async (
+      params: {
+        provider_name: string;
+        instance_name: string;
+      } & IEditInstanceModelRequestBody,
+    ) => {
+      const { data } = await llmService.editInstanceModel(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, editInstanceModel: mutateAsync };
 };
 
 export const useDeleteProviderInstance = () => {
@@ -413,6 +474,119 @@ export const useUpdateModelStatus = () => {
   });
 
   return { loading, updateModelStatus: mutateAsync };
+};
+
+/**
+ * PATCH `/providers/{name}/instances/{name}/models/{model_name}` — updates
+ * a single model's editable fields (max_tokens, model_type, status, is_tools).
+ * Used by the per-row Edit dialog. Distinct from `useUpdateModelStatus`
+ * (which only flips the active/inactive bit) so call sites can pass the
+ * full set of editable fields without coercing them into the status hook.
+ */
+export const usePatchInstanceModel = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.PatchInstanceModel],
+    mutationFn: async (params: IPatchInstanceModelRequestBody) => {
+      const { data } = await llmService.patchInstanceModel(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, patchInstanceModel: mutateAsync };
+};
+
+export const useDeleteInstanceModels = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.DeleteInstanceModels],
+    mutationFn: async (params: IDeleteInstanceModelsRequestBody) => {
+      const { data } = await llmService.deleteInstanceModels(params);
+      if (data.code === 0) {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, deleteInstanceModels: mutateAsync };
+};
+
+export const useUpdateProviderInstance = () => {
+  const queryClient = useQueryClient();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.UpdateProviderInstance],
+    mutationFn: async (params: IUpdateProviderInstanceRequestBody) => {
+      const { data } = await llmService.updateProviderInstance(params);
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.providerInstances(params.provider_name),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.providerInstance(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, updateProviderInstance: mutateAsync };
 };
 
 export const useFetchDefaultModels = () => {

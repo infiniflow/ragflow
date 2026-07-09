@@ -36,6 +36,8 @@ export default {
       preview: 'Pratinjau',
       move: 'Pindahkan',
       warn: 'Peringatan',
+      owner: 'Pemilik',
+      running: 'Berjalan...',
     },
     login: {
       login: 'Masuk',
@@ -288,11 +290,11 @@ export default {
         Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel and panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
         </p>`,
       knowledgeGraph: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
- 
+
      <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
      Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
      <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
- 
+
      Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
@@ -334,6 +336,8 @@ export default {
     },
     chunk: {
       chunk: 'Potongan',
+      createChunk: 'Buat potongan',
+      editChunk: 'Edit potongan',
       bulk: 'Massal',
       selectAll: 'Pilih Semua',
       enabledSelected: 'Aktifkan yang Dipilih',
@@ -474,6 +478,12 @@ export default {
         'Dalam percakapan multi-putaran, kueri ke basis pengetahuan dioptimalkan. Model besar akan dipanggil untuk mengonsumsi token tambahan.',
       languageSelectionTip: 'Pilih bahasa yang digunakan dalam percakapan.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Tampilkan metadata chunk',
+      showChunkMetadataTip:
+        'Tampilkan metadata dokumen (mis. judul, nomor halaman, tanggal unggah) bersama potongan teks yang diambil',
+      metadataFields: 'Bidang metadata',
+      metadataFieldsTip:
+        'Pilih bidang metadata yang akan ditampilkan untuk setiap chunk',
     },
     setting: {
       profile: 'Profil',
@@ -1136,6 +1146,11 @@ export default {
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
+      tags: 'Tag',
+      canvasCategory: 'Kategori kanvas',
+      created: 'Dibuat',
+      id: 'ID',
+      logTitle: 'Judul',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',

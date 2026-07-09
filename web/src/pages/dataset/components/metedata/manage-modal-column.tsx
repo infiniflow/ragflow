@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import { ListChevronsDownUp, LucidePencil, Trash2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   getMetadataValueTypeLabel,
@@ -13,7 +13,7 @@ import {
   MetadataType,
   metadataValueTypeEnum,
 } from './constant';
-import { IMetaDataTableData } from './interface';
+import { IMetaDataTableData, MetadataValueType } from './interface';
 
 interface IUseMetadataColumns {
   isDeleteSingleValue: boolean;
@@ -25,6 +25,12 @@ interface IUseMetadataColumns {
   isShowDescription: boolean;
   setTableData: React.Dispatch<React.SetStateAction<IMetaDataTableData[]>>;
   setShouldSave: React.Dispatch<React.SetStateAction<boolean>>;
+  addUpdateValue: (
+    key: string,
+    originalValue: string,
+    newValue: string | string[],
+    type?: MetadataValueType,
+  ) => void;
 }
 
 export const useMetadataColumns = ({
@@ -36,6 +42,7 @@ export const useMetadataColumns = ({
   isShowDescription,
   setTableData,
   setShouldSave,
+  addUpdateValue,
 }: IUseMetadataColumns) => {
   const { t } = useTranslation();
   const [deleteDialogContent, setDeleteDialogContent] = useState({
@@ -51,23 +58,27 @@ export const useMetadataColumns = ({
     field: string;
     value: string;
     newValue: string;
+    valueType: MetadataValueType;
   } | null>(null);
   const [rowExpandedStates, setRowExpandedStates] = useState<
     Record<string, boolean>
   >({});
 
-  const isSettingsMode =
-    metadataType === MetadataType.Setting ||
-    metadataType === MetadataType.SingleFileSetting ||
-    metadataType === MetadataType.UpdateSingle;
-
-  const showTypeColumn = isSettingsMode;
-  const handleEditValue = (field: string, value: string) => {
-    setEditingValue({ field, value, newValue: value });
+  const handleEditValue = (
+    field: string,
+    value: string,
+    valueType: MetadataValueType,
+  ) => {
+    setEditingValue({ field, value, newValue: value, valueType });
   };
 
   const saveEditedValue = useCallback(
-    (newValue?: { field: string; value: string; newValue: string }) => {
+    (newValue?: {
+      field: string;
+      value: string;
+      newValue: string;
+      valueType: MetadataValueType;
+    }) => {
       const realValue = newValue || editingValue;
       if (realValue) {
         setTableData((prev) => {
@@ -81,11 +92,19 @@ export const useMetadataColumns = ({
             return row;
           });
         });
+        if (realValue.value !== realValue.newValue) {
+          addUpdateValue(
+            realValue.field,
+            realValue.value,
+            realValue.newValue,
+            realValue.valueType,
+          );
+        }
         setEditingValue(null);
         setShouldSave(true);
       }
     },
-    [editingValue, setTableData, setShouldSave],
+    [editingValue, setTableData, setShouldSave, addUpdateValue],
   );
 
   const cancelEditValue = () => {
@@ -193,6 +212,35 @@ export const useMetadataColumns = ({
             }));
           };
 
+          const handleToggleExpand = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            toggleRowExpanded();
+          };
+
+          const handleDeleteValueClick =
+            (value: string): React.MouseEventHandler =>
+            (e) => {
+              e.stopPropagation();
+              setDeleteDialogContent({
+                visible: true,
+                title:
+                  t('common.delete') +
+                  ' ' +
+                  t('knowledgeDetails.metadata.value'),
+                name: value,
+                warnText:
+                  MetadataDeleteMap(t)[metadataType as MetadataType]
+                    .warnValueText,
+                onOk: () => {
+                  hideDeleteModal();
+                  handleDeleteSingleValue(row.getValue('field'), value);
+                },
+                onCancel: () => {
+                  hideDeleteModal();
+                },
+              });
+            };
+
           const displayedValues = isRowExpanded ? values : values.slice(0, 2);
           const hasMore = Array.isArray(values) && values.length > 2;
 
@@ -255,7 +303,12 @@ export const useMetadataColumns = ({
                       variant={'ghost'}
                       className="border border-border-button"
                       onClick={() =>
-                        handleEditValue(row.getValue('field'), value)
+                        handleEditValue(
+                          row.getValue('field'),
+                          value,
+                          row.original.valueType ||
+                            metadataValueTypeEnum.string,
+                        )
                       }
                       aria-label="Edit"
                     >
@@ -269,32 +322,7 @@ export const useMetadataColumns = ({
                           <Button
                             variant={'delete'}
                             className="p-0 bg-transparent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              //   showDeleteDialogContent(value, row);
-                              setDeleteDialogContent({
-                                visible: true,
-                                title:
-                                  t('common.delete') +
-                                  ' ' +
-                                  t('knowledgeDetails.metadata.value'),
-                                name: value,
-                                warnText:
-                                  MetadataDeleteMap(t)[
-                                    metadataType as MetadataType
-                                  ].warnValueText,
-                                onOk: () => {
-                                  hideDeleteModal();
-                                  handleDeleteSingleValue(
-                                    row.getValue('field'),
-                                    value,
-                                  );
-                                },
-                                onCancel: () => {
-                                  hideDeleteModal();
-                                },
-                              });
-                            }}
+                            onClick={handleDeleteValueClick(value)}
                           >
                             <Trash2 />
                           </Button>
@@ -308,10 +336,7 @@ export const useMetadataColumns = ({
                 <Button
                   variant={'ghost'}
                   className="border border-border-button h-auto px-2 py-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRowExpanded();
-                  }}
+                  onClick={handleToggleExpand}
                 >
                   <div className="text-text-secondary">
                     +{values.length - 2}
@@ -323,10 +348,7 @@ export const useMetadataColumns = ({
                 <Button
                   variant={'ghost'}
                   className="bg-transparent px-2 py-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRowExpanded();
-                  }}
+                  onClick={handleToggleExpand}
                 >
                   <div className="text-text-secondary">
                     <ListChevronsDownUp size={14} />

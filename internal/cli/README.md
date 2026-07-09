@@ -21,8 +21,8 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 ### Build and run
 
 ```bash
-go build -o ragflow_cli ./cmd/ragflow_cli.go
-./ragflow_cli
+go build -o ragflow-cli ./cmd/ragflow-cli.go
+./ragflow-cli
 ```
 
 ## Architecture
@@ -39,7 +39,7 @@ internal/cli/
 └── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── base.go         # Provider interface definition    
+    ├── base.go         # Provider interface definition
     ├── dataset.go      # Dataset provider implementation
     ├── file.go         # File manager provider implementation
     └── utils.go        # Helper functions

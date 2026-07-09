@@ -279,16 +279,20 @@ def normalize_str(v: Any) -> Any:
 
 def validate_uuid1_hex(v: Any) -> str:
     """
-    Validates and converts input to a UUID version 1 hexadecimal string.
+    Validates and converts input to a UUID hexadecimal string.
 
-    This function performs strict validation and normalization:
+    The function name is retained for backward compatibility; only UUID
+    *format* is enforced (any version is accepted), because some IDs in the
+    system originate from external imports and use non-v1 UUIDs.
+
+    This function performs validation and normalization:
     1. Accepts either UUID objects or UUID-formatted strings
-    2. Verifies the UUID is version 1 (time-based)
-    3. Returns the 32-character hexadecimal representation
+    2. Returns the 32-character hexadecimal representation
+    3. Rejects anything that is not a valid UUID
 
     Args:
         v (Any): Input value to validate. Can be:
-                - UUID object (must be version 1)
+                - UUID object (any version)
                 - String in UUID format (e.g. "550e8400-e29b-41d4-a716-446655440000")
 
     Returns:
@@ -296,9 +300,8 @@ def validate_uuid1_hex(v: Any) -> str:
              Example: "550e8400e29b41d4a716446655440000"
 
     Raises:
-        PydanticCustomError: With code "invalid_UUID1_format" when:
+        PydanticCustomError: With code "invalid_uuid_format" when:
             - Input is not a UUID object or valid UUID string
-            - UUID version is not 1
             - String doesn't match UUID format
 
     Examples:
@@ -311,20 +314,22 @@ def validate_uuid1_hex(v: Any) -> str:
         Invalid cases:
             >>> validate_uuid1_hex("not-a-uuid")  # raises PydanticCustomError
             >>> validate_uuid1_hex(12345)  # raises PydanticCustomError
-            >>> validate_uuid1_hex(UUID(int=0))  # v4, raises PydanticCustomError
 
     Notes:
         - Uses Python's built-in UUID parser for format validation
-        - Version check prevents accidental use of other UUID versions
+        - UUID version is no longer enforced (v1, v4, v7, etc. all accepted)
         - Hyphens in input strings are automatically removed in output
     """
     try:
-        uuid_obj = UUID(v) if isinstance(v, str) else v
-        if uuid_obj.version != 1:
-            raise PydanticCustomError("invalid_UUID1_format", "Must be a UUID1 format")
+        if isinstance(v, UUID):
+            uuid_obj = v
+        elif isinstance(v, str):
+            uuid_obj = UUID(v)
+        else:
+            raise TypeError
         return uuid_obj.hex
     except (AttributeError, ValueError, TypeError):
-        raise PydanticCustomError("invalid_UUID1_format", "Invalid UUID1 format")
+        raise PydanticCustomError("invalid_uuid_format", "Invalid UUID format")
 
 
 class Base(BaseModel):
@@ -418,6 +423,7 @@ class ParserConfig(Base):
     filename_embd_weight: Annotated[float | None, Field(default=0.1, ge=0.0, le=1.0)]
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
+    compilation_template_group_id: Annotated[list[str], Field(default_factory=list)]
     ext: Annotated[dict, Field(default={})]
     # Table parser: column name -> "indexing" | "metadata" | "both". Absence => all columns "both".
     # Table parser: "auto" = all columns both (default), "manual" = use table_column_roles. None → treated as "auto".
@@ -438,6 +444,25 @@ class ParserConfig(Base):
             k = key if isinstance(key, str) else str(key)
             out[k] = "indexing" if val == "vectorize" else val
         return out
+
+    @field_validator("compilation_template_group_id", mode="before")
+    @classmethod
+    def normalize_compilation_template_group_ids(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        raw = [v] if isinstance(v, str) else v
+        if not isinstance(raw, list):
+            return []
+        ids: list[str] = []
+        seen: set[str] = set()
+        for group_id in raw:
+            if not isinstance(group_id, str):
+                continue
+            group_id = group_id.strip()
+            if group_id and group_id not in seen:
+                seen.add(group_id)
+                ids.append(group_id)
+        return ids
 
 
 class UpdateDocumentReq(Base):
@@ -558,7 +583,7 @@ class CreateDatasetReq(Base):
             CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
             ```
         """
-        if not v: # cover both None and empty string
+        if not v:  # cover both None and empty string
             return v
 
         if "," in v:
@@ -592,13 +617,14 @@ class CreateDatasetReq(Base):
         Validation pipeline:
         1. Structural format verification
         2. Component non-empty check
-        3. Value normalization
+        3. Tenant model id passthrough
+        4. Value normalization
 
         Args:
             v (str): Raw model identifier
 
         Returns:
-            str: Validated <model_name>@<provider> format
+            str: Validated <model_name>@<provider> format or tenant_model id
 
         Raises:
             PydanticCustomError: For these violations:
@@ -608,11 +634,15 @@ class CreateDatasetReq(Base):
 
         Examples:
             Valid: "text-embedding-3-large@openai"
+            Valid: "2f3c0f9c7b1d11f0a1b2c3d4e5f67890"  # tenant_model.id
             Invalid: "invalid_model" (no @)
             Invalid: "@openai" (empty model_name)
             Invalid: "text-embedding-3-large@" (empty provider)
         """
         if isinstance(v, str):
+            if re.fullmatch(r"[0-9a-fA-F]{32}", v):
+                return v
+
             if "@" not in v:
                 raise PydanticCustomError("format_invalid", "Embedding model identifier must follow <model_name>@<provider> format")
 
@@ -801,7 +831,7 @@ class DeleteReq(Base):
 
         This post-processing validator performs:
         1. None input handling (pass-through)
-        2. UUID version 1 validation for each list item
+        2. UUID format validation for each list item (any version accepted)
         3. Duplicate value detection
         4. Returns normalized UUID hex strings or None
 
@@ -814,18 +844,18 @@ class DeleteReq(Base):
             - None if input was None
             - List of normalized UUID hex strings otherwise:
             * 32-character lowercase
-            * Valid UUID version 1
+            * Valid UUID format (any version)
             * Unique within list
 
         Raises:
             PydanticCustomError: With structured error details when:
-                - "invalid_UUID1_format": Any string fails UUIDv1 validation
+                - "invalid_uuid_format": Any string fails UUID format validation
                 - "duplicate_uuids": If duplicate IDs are detected
 
         Validation Rules:
             - None input returns None
             - Empty list returns empty list
-            - All non-None items must be valid UUIDv1
+            - All non-None items must be valid UUIDs (any version)
             - No duplicates permitted
             - Original order preserved
 
@@ -840,12 +870,12 @@ class DeleteReq(Base):
 
             Invalid cases:
                 >>> validate_ids(["invalid"])
-                # raises PydanticCustomError(invalid_UUID1_format)
+                # raises PydanticCustomError(invalid_uuid_format)
                 >>> validate_ids(["550e...", "550e..."])
                 # raises PydanticCustomError(duplicate_uuids)
 
         Security Notes:
-            - Validates UUID version to prevent version spoofing
+            - Validates UUID format (any version)
             - Duplicate check prevents data injection
             - None handling maintains pipeline integrity
         """
@@ -917,7 +947,7 @@ class SearchDatasetReq(BaseModel):
     keyword: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
-    tenant_rerank_id: Annotated[int | None, Field(default=None)]
+    tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
 
 
@@ -939,7 +969,7 @@ class SearchDatasetsReq(BaseModel):
     keyword: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
-    tenant_rerank_id: Annotated[int | None, Field(default=None)]
+    tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
 
 
@@ -1041,13 +1071,13 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         A tuple of (error_message, error_code) if validation fails,
         or (None, None) if validation passes.
     """
-    if update_doc_req.chunk_count and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
+    if update_doc_req.chunk_count is not None and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
         return "Can't change `chunk_count`.", RetCode.DATA_ERROR
 
-    if update_doc_req.token_count and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
+    if update_doc_req.token_count is not None and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
         return "Can't change `token_count`.", RetCode.DATA_ERROR
 
-    if update_doc_req.progress:
+    if update_doc_req.progress is not None:
         progress_from_db = float(getattr(doc, "progress", -1.0))
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):

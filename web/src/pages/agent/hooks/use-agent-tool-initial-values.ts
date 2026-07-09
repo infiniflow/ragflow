@@ -51,6 +51,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'top_n', 'sort_by');
         case Operator.PubMed:
           return pick(initialValues, 'top_n', 'email');
+        case Operator.BGPT:
+          return pick(initialValues, 'top_n', 'api_key', 'days_back');
         case Operator.GitHub:
           return pick(initialValues, 'top_n');
         case Operator.WenCai:
@@ -59,6 +61,8 @@ export function useAgentToolInitialValues() {
           return {};
         case Operator.SearXNG:
           return pick(initialValues, 'searxng_url', 'top_n');
+        case Operator.KeenableSearch:
+          return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
 
         default:
           return initialValues;

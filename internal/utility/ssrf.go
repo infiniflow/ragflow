@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,28 @@ var AllowedURLSchemes = []string{"http", "https"}
 // LookupHost is the indirection used to resolve hostnames. Tests override it.
 var LookupHost = net.LookupHost
 
+// AllowAnyHostForTest is a test-only override that bypasses the
+// SSRF guard (no public-IP check, no DNS resolution, no DNS
+// pinning). Production code MUST leave this at its zero value
+// (false). Tests that need to talk to a local httptest server
+// flip it on and reset it in t.Cleanup.
+//
+// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
+// toggle that any operator could flip to disable the SSRF guard
+// globally — including the DNS pinning that the Invoke component
+// relies on. PR review round 6, Major #3: this variable lives in
+// process memory only, so it cannot be enabled by an env var or
+// a deployment mistake. The explicit "_ForTest" suffix is the
+// signal that production code must never touch it.
+var AllowAnyHostForTest = false
+
+// allowAnyHost reads the test-only override. Kept as a private
+// helper so the call sites don't all have to know about the
+// exported variable name.
+func allowAnyHost() bool {
+	return AllowAnyHostForTest
+}
+
 // AssertURLSafe parses rawURL and rejects it if the scheme is disallowed,
 // the host is missing, or any resolved IP is not globally routable
 // (private, loopback, link-local, multicast, reserved). Returns the hostname
@@ -41,53 +64,45 @@ var LookupHost = net.LookupHost
 //
 // Mirrors common/ssrf_guard.py:assert_url_is_safe.
 func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
-	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
-	if perr != nil {
-		return "", "", fmt.Errorf("Invalid url.")
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", fmt.Errorf("invalid url")
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
-	if !schemeAllowed(scheme) {
+	if !slices.Contains(AllowedURLSchemes, scheme) {
 		sorted := append([]string(nil), AllowedURLSchemes...)
 		sort.Strings(sorted)
-		return "", "", fmt.Errorf("Disallowed URL scheme: '%s'. Only %v are allowed.", scheme, sorted)
+		return "", "", fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
 	}
 
 	hostname = parsed.Hostname()
 	if hostname == "" {
-		return "", "", fmt.Errorf("URL is missing a host.")
+		return "", "", fmt.Errorf("URL is missing a host")
 	}
 
-	addrs, err := LookupHost(hostname)
+	allowAny := allowAnyHost()
+	addresses, err := LookupHost(hostname)
 	if err != nil {
-		return "", "", fmt.Errorf("Could not resolve hostname '%s': %v", hostname, err)
+		return "", "", fmt.Errorf("could not resolve hostname '%s': %v", hostname, err)
 	}
-	if len(addrs) == 0 {
-		return "", "", fmt.Errorf("Hostname '%s' resolved to no addresses.", hostname)
+	if len(addresses) == 0 {
+		return "", "", fmt.Errorf("hostname '%s' resolved to no addresses", hostname)
 	}
 
-	for _, addr := range addrs {
+	for _, addr := range addresses {
 		ip := net.ParseIP(addr)
 		if ip == nil {
-			return "", "", fmt.Errorf("Could not parse resolved address '%s' for hostname '%s'.", addr, hostname)
+			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
-		if !isGlobalIP(effectiveIP(ip)) {
-			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", ip.String())
+		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
 			resolvedIP = ip.String()
 		}
 	}
 	return hostname, resolvedIP, nil
-}
-
-func schemeAllowed(scheme string) bool {
-	for _, s := range AllowedURLSchemes {
-		if s == scheme {
-			return true
-		}
-	}
-	return false
 }
 
 // effectiveIP unwraps IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) so

@@ -164,7 +164,7 @@ function AgentForm({ node }: INextOperatorForm) {
           ) && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
+              label={t('flow.visualInputFile')}
               types={[VariableType.File]}
             ></QueryVariable>
           )}
@@ -207,7 +207,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField

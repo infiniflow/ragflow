@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 )
 
@@ -109,13 +110,19 @@ type TenantListItem struct {
 // TenantLLMService tenant LLM service
 // This service handles operations related to tenant-specific LLM configurations
 type TenantLLMService struct {
-	tenantLLMDAO *dao.TenantLLMDAO
+	tenantLLMDAO     *dao.TenantLLMDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
 }
 
 // NewTenantLLMService creates a new TenantLLMService instance
 func NewTenantLLMService() *TenantLLMService {
 	return &TenantLLMService{
-		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		tenantLLMDAO:     dao.NewTenantLLMDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
 	}
 }
 
@@ -174,6 +181,49 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
 		return strings.Join(arr[0:len(arr)-1], "@"), arr[len(arr)-1]
 	}
 	return arr[0], arr[1]
+}
+
+// GetAPIKeyFromInstance returns the API key for the given composite model name
+// by looking it up in the tenant_model_instance table. compositeModelName is in
+// "model@instance@provider" or "model@provider" format.
+func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName string) (string, error) {
+	parts := strings.Split(compositeModelName, "@")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	var providerName, instanceName string
+	switch len(parts) {
+	case 2:
+		instanceName = "default"
+		providerName = parts[1]
+	case 3:
+		instanceName = parts[1]
+		providerName = parts[2]
+	default:
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return "", fmt.Errorf("provider %q not found: %w", providerName, err)
+	}
+	if provider == nil {
+		return "", fmt.Errorf("provider %q not found", providerName)
+	}
+
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return "", fmt.Errorf("instance %q not found: %w", instanceName, err)
+	}
+	if instance == nil {
+		return "", fmt.Errorf("instance %q not found", instanceName)
+	}
+
+	if instance.APIKey == "" {
+		return "", fmt.Errorf("no API key configured for model %s", compositeModelName)
+	}
+	return instance.APIKey, nil
 }
 
 // EnsureTenantModelIDForParams ensures tenant model IDs are populated for LLM-related parameters
@@ -370,10 +420,6 @@ type ModelItem struct {
 	Enable        bool    `json:"enable"`
 }
 
-type DefaultModelResponse struct {
-	Models []ModelItem `json:"models,omitempty"`
-}
-
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set
@@ -396,15 +442,9 @@ func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.Mo
 	case entity.ModelTypeImage2Text:
 		modelID = tenant.Img2TxtID
 	case entity.ModelTypeTTS:
-		if tenant.TTSID == nil {
-			return "", fmt.Errorf("tenant TTS model not configured")
-		}
-		modelID = *tenant.TTSID
+		modelID = tenant.TTSID
 	case entity.ModelTypeOCR:
-		if tenant.OCRID == nil {
-			return "", fmt.Errorf("tenant OCR model not configured")
-		}
-		modelID = *tenant.OCRID
+		modelID = tenant.OCRID
 	default:
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}
@@ -610,7 +650,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	return nil
 }
 
-func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType string) error {
+func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
 
 	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
 	if err != nil {
@@ -646,6 +686,35 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	}
 	if modelTypeID == "" {
 		return fmt.Errorf("model type %s is invalid", modelType)
+	}
+
+	if modelID != "" {
+		modelEntity, err := s.modelDAO.GetByID(modelID)
+		if err != nil {
+			return fmt.Errorf("model ID %s is invalid", modelID)
+		}
+		instanceEntity, err := s.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+		if err != nil {
+			return fmt.Errorf("instance for model %s not found: %w", modelID, err)
+		}
+		providerEntity, err := s.modelProviderDAO.GetByID(instanceEntity.ProviderID)
+		if err != nil {
+			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
+		}
+
+		if providerEntity.TenantID != ownedTenant.TenantID {
+			return fmt.Errorf("model %s does not belong to your tenant", modelID)
+		}
+
+		if modelProvider == "" {
+			modelProvider = providerEntity.ProviderName
+		}
+		if modelInstance == "" {
+			modelInstance = instanceEntity.InstanceName
+		}
+		if modelName == "" {
+			modelName = modelEntity.ModelName
+		}
 	}
 
 	if modelProvider == "" && modelInstance == "" && modelName == "" {
@@ -767,14 +836,14 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 
 	status := "1"
 	ut := &entity.UserTenant{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	if err := s.userTenantDAO.Create(ut); err != nil {
+	if err = s.userTenantDAO.Create(ut); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
 	}
 

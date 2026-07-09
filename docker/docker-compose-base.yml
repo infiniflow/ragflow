@@ -253,7 +253,7 @@ services:
   nats:
     profiles:
       - ragflow-go
-    image: nats:2.14.1
+    image: nats:2.14.2
     ports:
       - ${NATS_PORT}:4222
       - "8222:8222"

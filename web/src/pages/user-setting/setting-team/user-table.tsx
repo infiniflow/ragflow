@@ -23,7 +23,8 @@ import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
-  [TenantRole.Normal]: 'bg-transparent text-white',
+  [TenantRole.Normal]:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   [TenantRole.Invite]: 'bg-accent-primary-5 bg-accent-primary rounded-sm',
   [TenantRole.Owner]: 'bg-red-100 text-red-800',
 };

@@ -70,9 +70,7 @@ def setup_auth(login_manager):
                     logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
                     return None
 
-                user = UserService.query(
-                    access_token=access_token, status=StatusEnum.VALID.value
-                )
+                user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
                 if user:
                     if not user[0].access_token or not user[0].access_token.strip():
                         logging.warning(f"User {user[0].email} has empty access_token in database")
@@ -126,19 +124,13 @@ def add_tenant_for_admin(user_info: dict, role: str):
         "img2txt_id": settings.IMAGE2TEXT_MDL,
         "rerank_id": settings.RERANK_MDL,
     }
-    usr_tenant = {
-        "tenant_id": user_info["id"],
-        "user_id": user_info["id"],
-        "invited_by": user_info["id"],
-        "role": role
-    }
+    usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
 
     # tenant_llm = get_init_tenant_llm(user_info["id"])
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     # TenantLLMService.insert_many(tenant_llm)
-    logging.info(
-        f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
+    logging.info(f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 
 def check_admin_auth(func):
@@ -212,28 +204,17 @@ def login_verify(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth or 'username' not in auth.parameters or 'password' not in auth.parameters:
-            return jsonify({
-                "code": 401,
-                "message": "Authentication required",
-                "data": None
-            }), 200
+        if not auth or "username" not in auth.parameters or "password" not in auth.parameters:
+            return jsonify({"code": 401, "message": "Authentication required", "data": None}), 200
 
-        username = auth.parameters['username']
-        password = auth.parameters['password']
+        username = auth.parameters["username"]
+        password = auth.parameters["password"]
         try:
             if not check_admin(username, password):
-                return jsonify({
-                    "code": 500,
-                    "message": "Access denied",
-                    "data": None
-                }), 200
+                return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
         except Exception:
             logging.exception("An error occurred during admin login verification.")
-            return jsonify({
-                "code": 500,
-                "message": "An internal server error occurred."
-            }), 200
+            return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
 
         return f(*args, **kwargs)
 

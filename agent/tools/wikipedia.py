@@ -28,7 +28,7 @@ class WikipediaParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "wikipedia_search",
             "description": """A wide range of how-to and information pages are made available in wikipedia. Since 2001, it has grown rapidly to become the world's largest reference website. From Wikipedia, the free encyclopedia.""",
             "parameters": {
@@ -36,9 +36,9 @@ class WikipediaParam(ToolParamBase):
                     "type": "string",
                     "description": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
                     "default": "{sys.query}",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.top_n = 10
@@ -46,26 +46,102 @@ class WikipediaParam(ToolParamBase):
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.language, "Wikipedia languages",
-                               ['af', 'pl', 'ar', 'ast', 'az', 'bg', 'nan', 'bn', 'be', 'ca', 'cs', 'cy', 'da', 'de',
-                                'et', 'el', 'en', 'es', 'eo', 'eu', 'fa', 'fr', 'gl', 'ko', 'hy', 'hi', 'hr', 'id',
-                                'it', 'he', 'ka', 'lld', 'la', 'lv', 'lt', 'hu', 'mk', 'arz', 'ms', 'min', 'my', 'nl',
-                                'ja', 'nb', 'nn', 'ce', 'uz', 'pt', 'kk', 'ro', 'ru', 'ceb', 'sk', 'sl', 'sr', 'sh',
-                                'fi', 'sv', 'ta', 'tt', 'th', 'tg', 'azb', 'tr', 'uk', 'ur', 'vi', 'war', 'zh', 'yue'])
+        self.check_valid_value(
+            self.language,
+            "Wikipedia languages",
+            [
+                "af",
+                "pl",
+                "ar",
+                "ast",
+                "az",
+                "bg",
+                "nan",
+                "bn",
+                "be",
+                "ca",
+                "cs",
+                "cy",
+                "da",
+                "de",
+                "et",
+                "el",
+                "en",
+                "es",
+                "eo",
+                "eu",
+                "fa",
+                "fr",
+                "gl",
+                "ko",
+                "hy",
+                "hi",
+                "hr",
+                "id",
+                "it",
+                "he",
+                "ka",
+                "lld",
+                "la",
+                "lv",
+                "lt",
+                "hu",
+                "mk",
+                "arz",
+                "ms",
+                "min",
+                "my",
+                "nl",
+                "ja",
+                "nb",
+                "nn",
+                "ce",
+                "uz",
+                "pt",
+                "kk",
+                "ro",
+                "ru",
+                "ceb",
+                "sk",
+                "sl",
+                "sr",
+                "sh",
+                "fi",
+                "sv",
+                "ta",
+                "tt",
+                "th",
+                "tg",
+                "azb",
+                "tr",
+                "uk",
+                "ur",
+                "vi",
+                "war",
+                "zh",
+                "yue",
+            ],
+        )
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class Wikipedia(ToolBase, ABC):
+    """Wikipedia search tool that retrieves and processes Wikipedia articles."""
+
     component_name = "Wikipedia"
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        """Search Wikipedia for articles matching the query and return formalized content.
+
+        Args:
+            **kwargs: Must include 'query' key with the search keyword.
+
+        Returns:
+            Formatted Wikipedia content or error message.
+        """
         if self.check_if_canceled("Wikipedia processing"):
             return
 
@@ -74,7 +150,7 @@ class Wikipedia(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("Wikipedia processing"):
                 return
 
@@ -88,12 +164,13 @@ class Wikipedia(ToolBase, ABC):
 
                     try:
                         pages.append(wikipedia.page(p))
-                    except Exception:
-                        pass
-                self._retrieve_chunks(pages,
-                                      get_title=lambda r: r.title,
-                                      get_url=lambda r: r.url,
-                                      get_content=lambda r: r.summary)
+                    except wikipedia.exceptions.DisambiguationError as e:
+                        logging.info(f"Wikipedia disambiguation for '{p}', options: {e.options[:5]}")
+                    except wikipedia.exceptions.PageError:
+                        logging.info(f"Wikipedia page not found: '{p}'")
+                    except Exception as e:
+                        logging.exception(f"Unexpected error fetching Wikipedia page '{p}': {e}")
+                self._retrieve_chunks(pages, get_title=lambda r: r.title, get_url=lambda r: r.url, get_content=lambda r: r.summary)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("Wikipedia processing"):

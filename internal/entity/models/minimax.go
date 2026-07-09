@@ -404,8 +404,14 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	return ParseListModel(modelList), nil
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	models := ParseListModel(modelList)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	return models, nil
 }
 
 func (m *MinimaxModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 )
 
 type IngestionTaskDAO struct{}
@@ -70,7 +71,7 @@ func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask)
 		}
 	} else {
 		// create ingestion task
-		ingestionTask.ID = common.GenerateUUID()
+		ingestionTask.ID = utility.GenerateUUID()
 		if err = tx.Create(ingestionTask).Error; err != nil {
 			tx.Rollback()
 			return nil, err
@@ -387,6 +388,10 @@ func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
 
 func (dao *IngestionTaskLogDAO) Create(ingestionLog *entity.IngestionTaskLog) error {
 	return DB.Create(ingestionLog).Error
+}
+
+func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) error {
+	return DB.Save(ingestionLog).Error
 }
 
 func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
