@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List
 
 import xxhash
 import spacy
@@ -17,7 +17,6 @@ from spacy.language import Language
 
 from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
-from common.token_utils import num_tokens_from_string
 from common import settings
 from rag.nlp import rag_tokenizer, search
 
@@ -63,6 +62,7 @@ def _load_model(language: str) -> Language:
             nlp = spacy.load(model_name)
         except OSError:
             from spacy.cli import download
+
             download(model_name)
             nlp = spacy.load(model_name)
         _nlp_cache[model_name] = nlp
@@ -73,17 +73,11 @@ def _load_model(language: str) -> Language:
 
 
 def _entity_row_id(entity_name: str, kb_id: str) -> str:
-    return xxhash.xxh64(
-        f"lightgraph:entity:{entity_name.upper()}:{kb_id}".encode("utf-8", "surrogatepass")
-    ).hexdigest()
+    return xxhash.xxh64(f"lightgraph:entity:{entity_name.upper()}:{kb_id}".encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def _relation_row_id(from_ent: str, to_ent: str, rel_type: str, kb_id: str) -> str:
-    return xxhash.xxh64(
-        f"lightgraph:relation:{from_ent.upper()}:{to_ent.upper()}:{rel_type}:{kb_id}".encode(
-            "utf-8", "surrogatepass"
-        )
-    ).hexdigest()
+    return xxhash.xxh64(f"lightgraph:relation:{from_ent.upper()}:{to_ent.upper()}:{rel_type}:{kb_id}".encode("utf-8", "surrogatepass")).hexdigest()
 
 
 # ── Entity extraction: MGranRAG + NER ───────────────────────────────
@@ -101,12 +95,14 @@ def _extract_ner(doc) -> List[dict]:
         if key in seen:
             continue
         seen.add(key)
-        entities.append({
-            "text": ent.text.strip(),
-            "type": ent.label_,
-            "start_char": ent.start_char,
-            "end_char": ent.end_char,
-        })
+        entities.append(
+            {
+                "text": ent.text.strip(),
+                "type": ent.label_,
+                "start_char": ent.start_char,
+                "end_char": ent.end_char,
+            }
+        )
     return entities
 
 
@@ -118,6 +114,7 @@ def _mgrank_keywords(doc, is_chinese: bool = False) -> set:
     CJK tokens). Only spaCy NER entities are returned.
     """
     from rag.graphrag.ner.graph_extractor import extract_keywords, get_ner
+
     ner_dict = get_ner(doc)
     if is_chinese:
         return set(ner_dict.keys())
@@ -269,8 +266,7 @@ def _extract_entities_merged(doc, language: str) -> List[dict]:
                     name = "".join(seq)
                     upper = name.upper()
                     if 4 <= len(name) <= 16 and upper not in ner_names and _is_valid_entity(name):
-                        ner_ents.append({"text": upper, "type": "TOPIC",
-                                         "start_char": -1, "end_char": -1})
+                        ner_ents.append({"text": upper, "type": "TOPIC", "start_char": -1, "end_char": -1})
                         ner_names.add(upper)
                 i = j
             else:
@@ -317,13 +313,10 @@ def _extract_relations_merged(text: str, entities: List[dict], doc, language: st
 
     # Build Entity objects for DepRelationExtractor (need positional info)
     ner_entities = [
-        Entity(text=e["text"], label=e["type"],
-               start_char=e.get("start_char", 0) if e.get("start_char", -1) >= 0 else 0,
-               end_char=e.get("end_char", 0) if e.get("end_char", -1) >= 0 else 0)
+        Entity(text=e["text"], label=e["type"], start_char=e.get("start_char", 0) if e.get("start_char", -1) >= 0 else 0, end_char=e.get("end_char", 0) if e.get("end_char", -1) >= 0 else 0)
         for i, e in enumerate(entities)
         if e.get("start_char", -1) >= 0 and e.get("end_char", -1) >= 0
     ]
-    name_set = {e["text"].upper() for e in entities}
 
     relations: List[dict] = []
     seen_pairs: set = set()
@@ -340,13 +333,15 @@ def _extract_relations_merged(text: str, entities: List[dict], doc, language: st
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
-            relations.append({
-                "from_entity": subj,
-                "to_entity": obj,
-                "type": rel_type,
-                "confidence": r.confidence,
-                "weight": 2 if rel_type != "related_to" else 1,
-            })
+            relations.append(
+                {
+                    "from_entity": subj,
+                    "to_entity": obj,
+                    "type": rel_type,
+                    "confidence": r.confidence,
+                    "weight": 2 if rel_type != "related_to" else 1,
+                }
+            )
 
     # 2. Co-occurrence relations (all entity pairs co-occurring in the same sentence)
     # MGranRAG keywords lack character positions, so match by name text.
@@ -368,13 +363,15 @@ def _extract_relations_merged(text: str, entities: List[dict], doc, language: st
                     if pair in seen_pairs:
                         continue
                     seen_pairs.add(pair)
-                    relations.append({
-                        "from_entity": pair[0],
-                        "to_entity": pair[1],
-                        "type": "related_to",
-                        "confidence": 0.4,
-                        "weight": 1,
-                    })
+                    relations.append(
+                        {
+                            "from_entity": pair[0],
+                            "to_entity": pair[1],
+                            "type": "related_to",
+                            "confidence": 0.4,
+                            "weight": 1,
+                        }
+                    )
 
     return relations
 
@@ -401,8 +398,7 @@ def _str_to_ids(s) -> list:
 # ── ES doc builders ─────────────────────────────────────────────────
 
 
-def _entity_to_es_doc(entity: dict, doc_id: str, chunk_id: str,
-                      kb_id: str, vec: list) -> dict:
+def _entity_to_es_doc(entity: dict, doc_id: str, chunk_id: str, kb_id: str, vec: list) -> dict:
     name = entity["text"].upper().strip()
     ent_type = entity.get("type", "OTHER")
     row_id = _entity_row_id(name, kb_id)
@@ -428,8 +424,7 @@ def _entity_to_es_doc(entity: dict, doc_id: str, chunk_id: str,
     }
 
 
-def _relation_to_es_doc(rel: dict, doc_id: str, chunk_id: str,
-                        kb_id: str, vec: list) -> dict:
+def _relation_to_es_doc(rel: dict, doc_id: str, chunk_id: str, kb_id: str, vec: list) -> dict:
     frm = rel["from_entity"].strip().upper()
     to_ = rel["to_entity"].strip().upper()
     rel_type = rel.get("type", "related_to")
@@ -462,8 +457,13 @@ def _relation_to_es_doc(rel: dict, doc_id: str, chunk_id: str,
 
 
 async def _batch_merge(
-    docs: List[dict], kind: str, tenant_id: str, kb_id: str, doc_id: str,
-    progress_cb: Callable, cancel_check: Callable,
+    docs: List[dict],
+    kind: str,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable,
+    cancel_check: Callable,
     _BATCH_SIZE: int = 1024,
 ) -> dict:
     """Batch merge entities or relations.
@@ -488,7 +488,7 @@ async def _batch_merge(
         if cancel_check():
             raise TaskCanceledException(f"LightGraph {kind} merge cancelled")
 
-        batch = docs[offset:offset + BATCH]
+        batch = docs[offset : offset + BATCH]
         id_to_doc = {d["id"]: d for d in batch}
         all_ids = list(id_to_doc.keys())
 
@@ -497,18 +497,17 @@ async def _batch_merge(
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "source_doc_ids", "source_chunk_ids", "weight_int",
-                 "doc_count_int"],
+                ["id", "source_doc_ids", "source_chunk_ids", "weight_int", "doc_count_int"],
                 [],
-                {"compile_kwd": ["lightgraph"],
-                 "id": all_ids,
-                 "knowledge_graph_kwd": [kind],
-                 "kb_id": [kb_id]},
-                [], OrderByExpr(), 0, len(all_ids) + 16,
-                index, [kb_id],
+                {"compile_kwd": ["lightgraph"], "id": all_ids, "knowledge_graph_kwd": [kind], "kb_id": [kb_id]},
+                [],
+                OrderByExpr(),
+                0,
+                len(all_ids) + 16,
+                index,
+                [kb_id],
             )
-            rows = settings.docStoreConn.get_fields(res,
-                ["source_doc_ids", "source_chunk_ids", "weight_int", "doc_count_int"])
+            rows = settings.docStoreConn.get_fields(res, ["source_doc_ids", "source_chunk_ids", "weight_int", "doc_count_int"])
             for rid, row in rows.items():
                 if rid in id_to_doc:
                     existing_map[rid] = row
@@ -516,8 +515,7 @@ async def _batch_merge(
             logging.exception("LightGraph: batch read failed for %s", kind)
             # Fall back to per-doc gets for this batch
             for rid in all_ids:
-                existing = await thread_pool_exec(
-                    settings.docStoreConn.get, rid, index, [kb_id])
+                existing = await thread_pool_exec(settings.docStoreConn.get, rid, index, [kb_id])
                 if existing:
                     existing_map[rid] = existing
 
@@ -550,22 +548,16 @@ async def _batch_merge(
 
         # 3. Delete existing rows (single call) then insert all (single call)
         if delete_ids:
-            await thread_pool_exec(
-                settings.docStoreConn.delete,
-                {"id": delete_ids, "kb_id": [kb_id]},
-                index, kb_id)
+            await thread_pool_exec(settings.docStoreConn.delete, {"id": delete_ids, "kb_id": [kb_id]}, index, kb_id)
             total_up += len(delete_ids)
 
         if all_inserts:
-            await thread_pool_exec(
-                settings.docStoreConn.insert, all_inserts, index, kb_id)
+            await thread_pool_exec(settings.docStoreConn.insert, all_inserts, index, kb_id)
             total_ins += len(all_inserts) - len(delete_ids)
 
         if progress_cb and (offset + BATCH) % (BATCH * 4) == 0:
             pct = min(0.99, (offset + BATCH) / total)
-            progress_cb(prog=pct,
-                msg=f"LightGraph {kind} merge: {total_ins} inserted, {total_up} updated "
-                    f"({min(offset + BATCH, total)}/{total})")
+            progress_cb(prog=pct, msg=f"LightGraph {kind} merge: {total_ins} inserted, {total_up} updated ({min(offset + BATCH, total)}/{total})")
 
     if progress_cb:
         progress_cb(msg=f"LightGraph {kind} merge: {total_ins} inserted, {total_up} updated")
@@ -573,21 +565,25 @@ async def _batch_merge(
 
 
 async def _entity_level_merge(
-    entity_docs: List[dict], tenant_id: str, kb_id: str, doc_id: str,
-    progress_cb: Callable, cancel_check: Callable,
+    entity_docs: List[dict],
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable,
+    cancel_check: Callable,
 ):
-    return await _batch_merge(
-        entity_docs, "entity", tenant_id, kb_id, doc_id,
-        progress_cb, cancel_check)
+    return await _batch_merge(entity_docs, "entity", tenant_id, kb_id, doc_id, progress_cb, cancel_check)
 
 
 async def _relation_level_merge(
-    rel_docs: List[dict], tenant_id: str, kb_id: str, doc_id: str,
-    progress_cb: Callable, cancel_check: Callable,
+    rel_docs: List[dict],
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable,
+    cancel_check: Callable,
 ):
-    return await _batch_merge(
-        rel_docs, "relation", tenant_id, kb_id, doc_id,
-        progress_cb, cancel_check)
+    return await _batch_merge(rel_docs, "relation", tenant_id, kb_id, doc_id, progress_cb, cancel_check)
 
 
 # ── Embedding helper ────────────────────────────────────────────────
@@ -604,7 +600,7 @@ async def _encode_texts(texts: List[str], embd_mdl) -> List[List[float]]:
     sem = asyncio.Semaphore(4)
 
     async def _encode_batch(offset: int):
-        batch = texts[offset:offset + _EMBED_BATCH_SIZE]
+        batch = texts[offset : offset + _EMBED_BATCH_SIZE]
         async with sem:
             embeddings, _ = await thread_pool_exec(embd_mdl.encode, batch)
         for i, emb in enumerate(embeddings):
@@ -616,10 +612,7 @@ async def _encode_texts(texts: List[str], embd_mdl) -> List[List[float]]:
             else:
                 all_vecs[idx] = list(emb)
 
-    tasks = [
-        asyncio.create_task(_encode_batch(off))
-        for off in range(0, total, _EMBED_BATCH_SIZE)
-    ]
+    tasks = [asyncio.create_task(_encode_batch(off)) for off in range(0, total, _EMBED_BATCH_SIZE)]
     await asyncio.gather(*tasks)
     return [v for v in all_vecs if v is not None]
 
@@ -642,7 +635,9 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
     tenant_id, kb_id, doc_id = ctx.tenant_id, ctx.kb_id, ctx.doc_id
     language = ctx.language or "en"
     progress_cb = ctx.progress_cb
-    cancel_check = lambda: ctx.has_canceled_func(ctx.id)
+
+    def cancel_check():
+        return ctx.has_canceled_func(ctx.id)
 
     progress_cb(msg="LightGraph: loading spaCy model ...")
     try:
@@ -661,7 +656,10 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
 
     batch_no = 0
     async for batch in handler._load_chunks_for_doc(
-        tenant_id, kb_id, doc_id, batch_size=4,
+        tenant_id,
+        kb_id,
+        doc_id,
+        batch_size=4,
     ):
         if cancel_check():
             raise TaskCanceledException(f"LightGraph task {ctx.id} cancelled")
@@ -689,7 +687,7 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
             # Relation extraction
             relations = _extract_relations_merged(text, entities, spacy_doc, language)
 
-            all_entity_texts.append("\n".join(e["text"] for e in entities))
+            all_entity_texts.extend(e["text"] for e in entities)
 
             for ent in entities:
                 ent["chunk_id"] = chunk_id
@@ -699,16 +697,14 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
                 all_rel_docs.append(rel)
 
         if batch_no % 10 == 0:
-            progress_cb(msg=f"LightGraph: processed {batch_no} batches, "
-                            f"{len(all_entity_docs)} entities, {len(all_rel_docs)} relations")
+            progress_cb(msg=f"LightGraph: processed {batch_no} batches, {len(all_entity_docs)} entities, {len(all_rel_docs)} relations")
 
     if not all_entity_docs:
         progress_cb(msg="LightGraph: no entities found, skipping merge")
         return
 
     # ── Generate embeddings in bulk ──────────────────────────────────
-    progress_cb(msg=f"LightGraph: generating embeddings for {len(all_entity_docs)} entities "
-                    f"and {len(all_rel_docs)} relations ...")
+    progress_cb(msg=f"LightGraph: generating embeddings for {len(all_entity_docs)} entities and {len(all_rel_docs)} relations ...")
 
     all_texts = all_entity_texts[:]
     for r in all_rel_docs:
@@ -718,27 +714,23 @@ async def run_lightgraph_for_doc(handler, ctx, embedding_model) -> None:
         vecs = await _encode_texts(all_texts, embedding_model)
     except Exception as e:
         logging.error(f"LightGraph: embedding failed: {e}")
-        progress_cb(msg=f"LightGraph: embedding failed, skipping")
+        progress_cb(msg="LightGraph: embedding failed, skipping")
         return
 
     # Build ES docs
     entity_docs = []
-    entity_vecs = vecs[:len(all_entity_docs)]
+    entity_vecs = vecs[: len(all_entity_docs)]
     for ent, vec in zip(all_entity_docs, entity_vecs):
-        entity_docs.append(_entity_to_es_doc(
-            ent, doc_id, ent.pop("chunk_id", ""), kb_id, vec))
+        entity_docs.append(_entity_to_es_doc(ent, doc_id, ent.pop("chunk_id", ""), kb_id, vec))
 
     rel_docs = []
-    rel_vecs = vecs[len(all_entity_docs):]
+    rel_vecs = vecs[len(all_entity_docs) :]
     for rel, vec in zip(all_rel_docs, rel_vecs):
-        rel_docs.append(_relation_to_es_doc(
-            rel, doc_id, rel.pop("chunk_id", ""), kb_id, vec))
+        rel_docs.append(_relation_to_es_doc(rel, doc_id, rel.pop("chunk_id", ""), kb_id, vec))
 
     # ── Entity-level merge ───────────────────────────────────────────
     progress_cb(msg=f"LightGraph: merging {len(entity_docs)} entities, {len(rel_docs)} relations ...")
-    await _entity_level_merge(entity_docs, tenant_id, kb_id, doc_id,
-                              progress_cb, cancel_check)
-    await _relation_level_merge(rel_docs, tenant_id, kb_id, doc_id,
-                                progress_cb, cancel_check)
+    await _entity_level_merge(entity_docs, tenant_id, kb_id, doc_id, progress_cb, cancel_check)
+    await _relation_level_merge(rel_docs, tenant_id, kb_id, doc_id, progress_cb, cancel_check)
 
     progress_cb(msg=f"LightGraph: done for doc {doc_id}")

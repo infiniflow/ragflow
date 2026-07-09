@@ -35,6 +35,7 @@ from typing import Dict, List
 from common.constants import TAG_FLD, LLMType
 from common.metadata_utils import turn2jsonschema, update_metadata_to
 from common import settings
+from common.exceptions import TaskCanceledException
 from rag.nlp import rag_tokenizer
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -937,6 +938,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
 
         try:
             await run_lightgraph_for_doc(handler, ctx, embedding_model)
+        except TaskCanceledException:
+            raise
         except Exception:
             logging.exception("LightGraph: extraction failed for doc %s", ctx.doc_id)
 

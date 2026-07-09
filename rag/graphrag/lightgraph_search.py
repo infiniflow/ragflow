@@ -6,14 +6,13 @@ Extends ``KGSearch`` with:
 
 Returns document chunks that mention the retrieved entities, not entity names.
 """
+
 import asyncio
 from copy import deepcopy
-import json
 import logging
 from typing import Dict, List, Tuple
 
 import networkx as nx
-import pandas as pd
 
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
@@ -29,30 +28,24 @@ class LightGraphSearch(KGSearch):
     names, resolves top entities to actual document chunks.
     """
 
-    async def _get_relevant_ents_by_keywords(
-        self, keywords, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
+    async def _get_relevant_ents_by_keywords(self, keywords, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
         """Async wrapper around sync get_relevant_ents_by_keywords to await get_vector."""
         if not keywords:
             return {}
         filters = deepcopy(filters)
         filters["knowledge_graph_kwd"] = "entity"
         matchDense = await self.get_vector(", ".join(keywords), emb_mdl, 1024, sim_thr)
-        es_res = self.dataStore.search(
-            ["content_with_weight", "entity_kwd", "rank_flt", "n_hop_with_weight"],
-            [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
+        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt", "n_hop_with_weight"], [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
         return self._ent_info_from_(es_res, sim_thr)
 
-    async def _get_relevant_relations_by_txt(
-        self, txt, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
+    async def _get_relevant_relations_by_txt(self, txt, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
         """Async wrapper around sync get_relevant_relations_by_txt to await get_vector."""
         if not txt:
             return {}
         filters = deepcopy(filters)
         filters["knowledge_graph_kwd"] = "relation"
         matchDense = await self.get_vector(txt, emb_mdl, 1024, sim_thr)
-        es_res = self.dataStore.search(
-            ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd", "weight_int"],
-            [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
+        es_res = self.dataStore.search(["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd", "weight_int"], [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
         return self._relation_info_from_(es_res, sim_thr)
 
     def _entity_name_from_row(self, row) -> str:
@@ -63,8 +56,13 @@ class LightGraphSearch(KGSearch):
         return str(name).strip()
 
     async def _resolve_entities_to_chunks(
-        self, entity_names: List[str], idxnms: List[str], kb_ids: List[str],
-        emb_mdl, max_chunks: int = 20, sim_thr: float = 0.0,
+        self,
+        entity_names: List[str],
+        idxnms: List[str],
+        kb_ids: List[str],
+        emb_mdl,
+        max_chunks: int = 20,
+        sim_thr: float = 0.0,
     ) -> List[dict]:
         """Resolve entity names to actual document chunks via keyword+vector search.
 
@@ -87,13 +85,19 @@ class LightGraphSearch(KGSearch):
         # Step 1: Keyword search — find chunks mentioning entity names
         for ent in entity_names[:10]:
             try:
+                matchText, _ = self.qryr.question(ent, min_match=0.1)
                 res = self.dataStore.search(
                     ["id", "content_with_weight", "docnm_kwd", "kb_id"],
-                    [], chunk_filters, [], OrderByExpr(),
-                    0, 5, idxnms_flat, kb_ids,
+                    [],
+                    chunk_filters,
+                    [matchText],
+                    OrderByExpr(),
+                    0,
+                    5,
+                    idxnms_flat,
+                    kb_ids,
                 )
-                rows = self.dataStore.get_fields(
-                    res, ["id", "content_with_weight", "docnm_kwd", "kb_id"])
+                rows = self.dataStore.get_fields(res, ["id", "content_with_weight", "docnm_kwd", "kb_id"])
                 for rid, row in rows.items():
                     if rid not in all_chunks:
                         all_chunks[rid] = {
@@ -113,11 +117,16 @@ class LightGraphSearch(KGSearch):
                 matchDense = await self.get_vector(query_text, emb_mdl, 1024, sim_thr)
                 res = self.dataStore.search(
                     ["id", "content_with_weight", "docnm_kwd", "kb_id"],
-                    [], chunk_filters, [matchDense], OrderByExpr(),
-                    0, max_chunks, idxnms_flat, kb_ids,
+                    [],
+                    chunk_filters,
+                    [matchDense],
+                    OrderByExpr(),
+                    0,
+                    max_chunks,
+                    idxnms_flat,
+                    kb_ids,
                 )
-                rows = self.dataStore.get_fields(
-                    res, ["id", "content_with_weight", "docnm_kwd", "kb_id"])
+                rows = self.dataStore.get_fields(res, ["id", "content_with_weight", "docnm_kwd", "kb_id"])
                 for rid, row in rows.items():
                     if rid not in all_chunks:
                         all_chunks[rid] = {
@@ -163,29 +172,22 @@ class LightGraphSearch(KGSearch):
         # 2. Entity vector retrieval
         ents_from_query: Dict[str, dict] = {}
         if ents:
-            raw = await self._get_relevant_ents_by_keywords(
-                ents, deepcopy(filters), idxnms, kb_ids, emb_mdl,
-                sim_thr=kwargs.get("ent_sim_threshold", 0.3), N=ent_topn * 3)
+            raw = await self._get_relevant_ents_by_keywords(ents, deepcopy(filters), idxnms, kb_ids, emb_mdl, sim_thr=kwargs.get("ent_sim_threshold", 0.3), N=ent_topn * 3)
             ents_from_query.update(raw)
 
         # 3. Entity type retrieval
         ents_from_types: Dict[str, dict] = {}
         if ty_kwds:
-            raw = self.get_relevant_ents_by_types(
-                ty_kwds, deepcopy(filters), idxnms, kb_ids, N=10000)
+            raw = self.get_relevant_ents_by_types(ty_kwds, deepcopy(filters), idxnms, kb_ids, N=10000)
             ents_from_types.update(raw)
 
         # 4. Relation vector retrieval
         rels_from_txt: Dict[Tuple, dict] = {}
-        rels_from_txt.update(
-            await self._get_relevant_relations_by_txt(
-                question, deepcopy(filters), idxnms, kb_ids, emb_mdl,
-                sim_thr=kwargs.get("rel_sim_threshold", 0.3)))
+        rels_from_txt.update(await self._get_relevant_relations_by_txt(question, deepcopy(filters), idxnms, kb_ids, emb_mdl, sim_thr=kwargs.get("rel_sim_threshold", 0.3)))
 
         # 5. Build local subgraph
         seed_ents = list(ents_from_query.keys())[:ent_topn]
-        subgraph = await self._build_local_subgraph(
-            seed_ents, filters, idxnms, kb_ids, n_hop=n_hop_depth)
+        subgraph = await self._build_local_subgraph(seed_ents, filters, idxnms, kb_ids, n_hop=n_hop_depth)
 
         ppr = {}
         if subgraph and subgraph.number_of_nodes() > 0:
@@ -195,9 +197,7 @@ class LightGraphSearch(KGSearch):
                     personalization[n] = ents_from_query.get(n, {}).get("sim", 0.1)
             if personalization:
                 try:
-                    ppr = nx.pagerank(subgraph,
-                                      personalization=personalization,
-                                      alpha=0.85, max_iter=30)
+                    ppr = nx.pagerank(subgraph, personalization=personalization, alpha=0.85, max_iter=30)
                 except Exception:
                     ppr = {}
 
@@ -209,15 +209,11 @@ class LightGraphSearch(KGSearch):
                 ents_from_query[name]["sim"] *= 2
 
         # 7. Rank and select top entities
-        ents_sorted = sorted(ents_from_query.items(),
-                             key=lambda x: x[1].get("sim", 0) * x[1].get("pagerank", 0),
-                             reverse=True)[:ent_topn]
+        ents_sorted = sorted(ents_from_query.items(), key=lambda x: x[1].get("sim", 0) * x[1].get("pagerank", 0), reverse=True)[:ent_topn]
         top_entity_names = [name for name, _ in ents_sorted]
 
         # 8. Resolve entities → document chunks
-        chunks = await self._resolve_entities_to_chunks(
-            top_entity_names, idxnms, kb_ids, emb_mdl,
-            max_chunks=kwargs.get("max_chunks", 30), sim_thr=0.0)
+        chunks = await self._resolve_entities_to_chunks(top_entity_names, idxnms, kb_ids, emb_mdl, max_chunks=kwargs.get("max_chunks", 30), sim_thr=0.0)
 
         # 9. Assemble context from actual chunks
         return self._assemble_chunk_context(chunks, max_token)
@@ -252,7 +248,26 @@ class LightGraphSearch(KGSearch):
                 # Truncate to fit
                 max_chars = int(len(content) * (max_token - token_count) / tokens)
                 content = content[:max_chars]
-                result_chunks.append({
+                result_chunks.append(
+                    {
+                        "chunk_id": ck.get("chunk_id", get_uuid()),
+                        "content_ltks": "",
+                        "content_with_weight": content,
+                        "doc_id": "",
+                        "docnm_kwd": ck.get("docnm_kwd", "Knowledge Graph (LightGraph)"),
+                        "kb_id": ck.get("kb_id", []),
+                        "important_kwd": [],
+                        "image_id": "",
+                        "similarity": ck.get("similarity", 1.0),
+                        "vector_similarity": ck.get("similarity", 1.0),
+                        "term_similarity": 0,
+                        "vector": [],
+                        "positions": [],
+                    }
+                )
+                break
+            result_chunks.append(
+                {
                     "chunk_id": ck.get("chunk_id", get_uuid()),
                     "content_ltks": "",
                     "content_with_weight": content,
@@ -266,30 +281,14 @@ class LightGraphSearch(KGSearch):
                     "term_similarity": 0,
                     "vector": [],
                     "positions": [],
-                })
-                break
-            result_chunks.append({
-                "chunk_id": ck.get("chunk_id", get_uuid()),
-                "content_ltks": "",
-                "content_with_weight": content,
-                "doc_id": "",
-                "docnm_kwd": ck.get("docnm_kwd", "Knowledge Graph (LightGraph)"),
-                "kb_id": ck.get("kb_id", []),
-                "important_kwd": [],
-                "image_id": "",
-                "similarity": ck.get("similarity", 1.0),
-                "vector_similarity": ck.get("similarity", 1.0),
-                "term_similarity": 0,
-                "vector": [],
-                "positions": [],
-            })
+                }
+            )
             token_count += tokens
 
         return {
             "chunk_id": get_uuid(),
             "content_ltks": "",
-            "content_with_weight": "\n\n------\n\n".join(
-                c["content_with_weight"] for c in result_chunks),
+            "content_with_weight": "\n\n------\n\n".join(c["content_with_weight"] for c in result_chunks),
             "doc_id": "",
             "docnm_kwd": "Knowledge Graph (LightGraph)",
             "kb_id": [],
@@ -303,8 +302,12 @@ class LightGraphSearch(KGSearch):
         }
 
     async def _build_local_subgraph(
-        self, seed_ents: List[str], filters: dict,
-        idxnms: List[str], kb_ids: List[str], n_hop: int = 2,
+        self,
+        seed_ents: List[str],
+        filters: dict,
+        idxnms: List[str],
+        kb_ids: List[str],
+        n_hop: int = 2,
     ) -> nx.Graph:
         """Build a local subgraph by expanding seed entities via relation lookups."""
         G = nx.Graph()
@@ -317,30 +320,26 @@ class LightGraphSearch(KGSearch):
             visited.update(current)
             rel_filter = deepcopy(filters)
             rel_filter["knowledge_graph_kwd"] = "relation"
-            or_clause = {"$or": [{"from_entity_kwd": list(current)},
-                                 {"to_entity_kwd": list(current)}]}
+            or_clause = {"$or": [{"from_entity_kwd": list(current)}, {"to_entity_kwd": list(current)}]}
             rel_filter.update(or_clause)
 
             try:
                 res = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: settings.docStoreConn.search(
-                        ["from_entity_kwd", "to_entity_kwd", "weight_int",
-                         "entity_type_kwd"],
-                        [], rel_filter, [], OrderByExpr(),
-                        0, 10000, idxnms, kb_ids))
-                rows = settings.docStoreConn.get_fields(
-                    res, ["from_entity_kwd", "to_entity_kwd", "weight_int", "entity_type_kwd"])
+                    None, lambda: settings.docStoreConn.search(["from_entity_kwd", "to_entity_kwd", "weight_int", "entity_type_kwd"], [], rel_filter, [], OrderByExpr(), 0, 10000, idxnms, kb_ids)
+                )
+                rows = settings.docStoreConn.get_fields(res, ["from_entity_kwd", "to_entity_kwd", "weight_int", "entity_type_kwd"])
             except Exception:
                 logging.exception("LightGraph: local subgraph build failed")
                 break
 
             neighbors = set()
             for rid, row in rows.items():
-                f = (row.get("from_entity_kwd") or "")
-                if isinstance(f, list): f = f[0] if f else ""
-                t = (row.get("to_entity_kwd") or "")
-                if isinstance(t, list): t = t[0] if t else ""
+                f = row.get("from_entity_kwd") or ""
+                if isinstance(f, list):
+                    f = f[0] if f else ""
+                t = row.get("to_entity_kwd") or ""
+                if isinstance(t, list):
+                    t = t[0] if t else ""
                 w = row.get("weight_int", 1)
                 if f and t:
                     G.add_edge(f.upper(), t.upper(), weight=int(w))
