@@ -187,3 +187,24 @@ def test_user_fillup_keeps_values_when_answer_supplied(monkeypatch):
 
     assert component._param.inputs["demo"]["value"] == "new answer"
     assert component._param.outputs["demo"]["value"] == "new answer"
+
+
+@pytest.mark.p2
+def test_user_fillup_reentry_keeps_optional_file_value(monkeypatch):
+    # An optional file input is already treated as satisfied when empty, so
+    # clearing it would not force a re-prompt and would only drop a previously
+    # uploaded file. It must be preserved on re-entry.
+    module = _load_fillup_module(monkeypatch)
+    component = _make_fillup(
+        module,
+        query="",
+        inputs={
+            "text": {"type": "line", "name": "Text", "value": "previous answer"},
+            "doc": {"type": "file", "name": "Doc", "optional": True, "value": ["file-id"]},
+        },
+    )
+
+    component._invoke(inputs={})
+
+    assert component._param.inputs["text"]["value"] is None
+    assert component._param.inputs["doc"]["value"] == ["file-id"]

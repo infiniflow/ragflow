@@ -130,8 +130,16 @@ class UserFillUp(ComponentBase):
 
     def _clear_form_values(self):
         for field in self.get_input_elements().values():
-            if isinstance(field, dict):
-                field["value"] = None
+            if not isinstance(field, dict):
+                continue
+            field_type = str(field.get("type", "")).lower()
+            # An optional file input is already treated as satisfied when empty
+            # (see Canvas._is_input_field_satisfied), so clearing it would not
+            # force a re-prompt and would only drop a previously uploaded file.
+            # Leave it untouched to avoid unexpected data loss.
+            if "file" in field_type and field.get("optional"):
+                continue
+            field["value"] = None
 
     def thoughts(self) -> str:
         return "Waiting for your input..."
