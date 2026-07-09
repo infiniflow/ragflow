@@ -63,7 +63,7 @@ function TruncatedText({
       }}
     >
       <TooltipTrigger asChild>
-        <Tag ref={ref} className={className} data-testid={testId}>
+        <Tag ref={ref} className={className} data-testid={testId} tabIndex={0}>
           {children}
         </Tag>
       </TooltipTrigger>
