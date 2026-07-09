@@ -7,7 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -19,14 +19,14 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("OPENDATALOADER_APISERVER"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiServerURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.OpenDataLoaderAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENDATALOADER_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiKey))
 	}
 
 	bodyReader, contentType, err := openDataLoaderMultipart(filename, data, parser)
@@ -57,7 +57,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 		JSONDoc any    `json:"json_doc"`
 		MDText  string `json:"md_text"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err = json.Unmarshal(raw, &payload); err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader decode: %w", err)}
 	}
 	if payload.JSONDoc != nil {
@@ -79,7 +79,7 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 	if err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader create form file: %w", err)
 	}
-	if _, err := part.Write(data); err != nil {
+	if _, err = part.Write(data); err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader write PDF: %w", err)
 	}
 	if parser.OpenDataLoaderHybrid != "" {
@@ -95,7 +95,7 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 			_ = writer.WriteField("sanitize", "false")
 		}
 	}
-	if err := writer.Close(); err != nil {
+	if err = writer.Close(); err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader finalize form: %w", err)
 	}
 	return strings.NewReader(body.String()), writer.FormDataContentType(), nil

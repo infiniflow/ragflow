@@ -19,7 +19,6 @@ package tokenizer
 import (
 	"context"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"runtime"
 	"sync"
@@ -96,7 +95,7 @@ func Init(cfg *PoolConfig) error {
 
 		// Set default values
 		if cfg.DictPath == "" {
-			if env := os.Getenv("RAGFLOW_DICT_PATH"); env != "" {
+			if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
 				cfg.DictPath = env
 			} else {
 				cfg.DictPath = "/usr/share/infinity/resource"

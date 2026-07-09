@@ -196,18 +196,18 @@ func mustLoadRealIntegrationConfig(t *testing.T) *server.Config {
 
 func prepareTokenizerResourceForIntegration(t *testing.T) {
 	t.Helper()
-	if os.Getenv("RAGFLOW_DICT_PATH") != "" {
+	if common.GetEnv(common.EnvRAGFlowDictPath) != "" {
 		return
 	}
 	const systemDictPath = "/usr/share/infinity/resource"
 	if _, err := os.Stat(filepath.Join(systemDictPath, "rag", "huqie.txt")); err != nil {
 		t.Skipf("system tokenizer resource not found at %s: %v", systemDictPath, err)
 	}
-	if err := os.Setenv("RAGFLOW_DICT_PATH", systemDictPath); err != nil {
+	if err := os.Setenv(common.EnvRAGFlowDictPath, systemDictPath); err != nil {
 		t.Fatalf("set RAGFLOW_DICT_PATH=%s: %v", systemDictPath, err)
 	}
 	t.Cleanup(func() {
-		_ = os.Unsetenv("RAGFLOW_DICT_PATH")
+		_ = os.Unsetenv(common.EnvRAGFlowDictPath)
 	})
 }
 

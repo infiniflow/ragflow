@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"time"
 )
@@ -26,11 +27,11 @@ func LoadConfig() Config {
 	pyVariant := "ocr"
 	td := filepath.Join("testdata")
 	return Config{
-		Count:         envInt("BATCH_COUNT", 0),
-		Single:        os.Getenv("BATCH_SINGLE"),
-		SkipOCR:       os.Getenv("BATCH_SKIP_OCR") == "1",
-		CompareOnly:   os.Getenv("BATCH_COMPARE_ONLY") == "1",
-		CompareFilter: os.Getenv("BATCH_COMPARE_FILTER"),
+		Count:         envInt(common.EnvBatchCount, 0),
+		Single:        common.GetEnv(common.EnvBatchSingle),
+		SkipOCR:       common.GetEnv(common.EnvBatchSkipOCR) == "1",
+		CompareOnly:   common.GetEnv(common.EnvBatchCompareOnly) == "1",
+		CompareFilter: common.GetEnv(common.EnvBatchCompareFilter),
 		CSVOutput:     envStr("BATCH_COMPARE_CSV", filepath.Join(td, "output", fmt.Sprintf("compare_%s.csv", time.Now().Format("20060102_150405")))),
 		GoTextDir:     filepath.Join(td, "output", "go", goVariant, "text"),
 		PyTextDir:     filepath.Join(td, "output", "py", pyVariant, "text"),
@@ -40,7 +41,7 @@ func LoadConfig() Config {
 }
 
 func envInt(key string, def int) int {
-	v := os.Getenv(key)
+	v := common.GetEnv(key)
 	if v == "" {
 		return def
 	}
@@ -52,7 +53,7 @@ func envInt(key string, def int) int {
 }
 
 func envStr(key, def string) string {
-	v := os.Getenv(key)
+	v := common.GetEnv(key)
 	if v == "" {
 		return def
 	}

@@ -66,7 +66,7 @@ func writeGolden(t *testing.T, path string, v any) {
 }
 
 func updateGolden() bool {
-	return os.Getenv("UPDATE_GOLDEN") == "1"
+	return common.GetEnv(common.EnvUpdateGolden) == "1"
 }
 
 // sectionsToGolden converts []pdf.Section to the snapshot format.

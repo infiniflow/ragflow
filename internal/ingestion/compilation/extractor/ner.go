@@ -345,7 +345,7 @@ func (e *Extractor) findModelDir() string {
 	if dirExists(base) {
 		return base
 	}
-	if p := getenv("SPACY_MODEL_DIR"); p != "" {
+	if p := common.GetEnv(common.EnvSpacyModelDir); p != "" {
 		return p
 	}
 	return base
@@ -370,10 +370,6 @@ func tokenizeText(text, lang string) string {
 	}
 	defer C.ThincNER_FreeString(cTokens)
 	return C.GoString(cTokens)
-}
-
-func getenv(key string) string {
-	return os.Getenv(key)
 }
 
 // DetectLanguage detects text language based on Unicode ranges.

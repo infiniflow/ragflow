@@ -492,7 +492,7 @@ func runAdmin(args *serverArgs) error {
 
 func runIngestor(args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
 	if dictPath == "" {
 		dictPath = "/usr/share/infinity/resource"
 	}
@@ -631,7 +631,7 @@ func runAPI(args *serverArgs) error {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
 	if dictPath == "" {
 		dictPath = "/usr/share/infinity/resource"
 	}
