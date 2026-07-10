@@ -197,11 +197,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth := engine.Group("/api/v1")
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
-		searchbotGroup := apiBetaAuth.Group("/searchbots")
-		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
-		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
-		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
+		searchBotGroup := apiBetaAuth.Group("/searchbots")
+		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")

@@ -69,9 +69,9 @@ func SuccessWithMessage(c *gin.Context, message string) {
 }
 
 // ErrorWithCode returns error response with code and message
-func ErrorWithCode(c *gin.Context, code int, message string) {
+func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
 	c.JSON(http.StatusOK, errorResponse{
-		Code:    code,
+		Code:    int(code),
 		Message: message,
 	})
 }

@@ -92,7 +92,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// GetUser is a context value set by the authentication middleware
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -206,7 +206,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	// Get current logged-in user information
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -306,7 +306,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Get current logged-in user information
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -422,7 +422,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -525,7 +525,7 @@ type AddMessageRequest struct {
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -587,7 +587,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -656,7 +656,7 @@ func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -668,7 +668,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -712,7 +712,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -724,7 +724,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeArgumentError), err.Error())
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -761,7 +761,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -812,7 +812,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 
 	res, code, err := h.memoryService.SearchMessage(c.Request.Context(), userID, filterDict, params)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -834,7 +834,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 func (h *MemoryHandler) GetMessages(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -870,7 +870,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 
 	data, code, err := h.memoryService.GetMessages(c.Request.Context(), memoryIDs, userID, agentID, sessionID, limit)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
