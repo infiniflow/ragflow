@@ -30,7 +30,7 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -81,7 +81,7 @@ var (
 // to RuntimeGo (the new default) so a misconfig still lands on the Go path.
 func Default() RuntimeMode {
 	defaultOnce.Do(func() {
-		raw := os.Getenv(defaultEnvKey)
+		raw := common.GetEnv(defaultEnvKey)
 		switch RuntimeMode(raw) {
 		case RuntimeGo, RuntimePython, RuntimeAuto:
 			defaultMode = RuntimeMode(raw)

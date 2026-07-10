@@ -18,7 +18,7 @@ import (
 // instead of real text. This validates that detect+merge+recognize
 // produces readable English from the scan.
 func TestOCR_mergeChars_RealScanned(t *testing.T) {
-	url := os.Getenv("DEEPDOC_URL")
+	url := common.GetEnv(common.EnvDeepDocURL)
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}

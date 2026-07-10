@@ -30,7 +30,6 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -401,7 +400,7 @@ func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) boo
 }
 
 func sandboxArtifactBucket() string {
-	if bucket := os.Getenv("SANDBOX_ARTIFACT_BUCKET"); bucket != "" {
+	if bucket := common.GetEnv(common.EnvSandboxArtifactBucket); bucket != "" {
 		return bucket
 	}
 	return "sandbox-artifacts"

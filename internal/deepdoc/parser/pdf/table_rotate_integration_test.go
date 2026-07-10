@@ -29,7 +29,7 @@ func TestTableRotation_Integration(t *testing.T) {
 		t.Skipf("test PDF not found: %s (run tools/generate_rotated_table_pdf.py first)", pdfPath)
 	}
 
-	baseURL := os.Getenv("DEEPDOC_URL")
+	baseURL := common.GetEnv(common.EnvDeepDocURL)
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
@@ -126,7 +126,7 @@ func TestTableRotation_Integration(t *testing.T) {
 // TestTableRotation_Stability runs rotation detection on a sample real PDF
 // and verifies the pipeline doesn't crash. Set BATCH_COUNT to limit.
 func TestTableRotation_Stability(t *testing.T) {
-	baseURL := os.Getenv("DEEPDOC_URL")
+	baseURL := common.GetEnv(common.EnvDeepDocURL)
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}

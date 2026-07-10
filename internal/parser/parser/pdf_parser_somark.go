@@ -9,7 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -21,14 +21,14 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	}
 	baseURL := strings.TrimSpace(parser.SoMarkBaseURL)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("SOMARK_BASE_URL"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvSOMarkBaseUrl))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark requires somark_base_url or SOMARK_BASE_URL")}
 	}
 	apiKey := parser.SoMarkAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(os.Getenv("SOMARK_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkApiKey))
 	}
 	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {
@@ -57,26 +57,26 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	}
 	_ = writer.WriteField("output_formats", "json")
 	elementFormats, _ := json.Marshal(map[string]any{
-		"image":   envOrDefault("SOMARK_IMAGE_FORMAT", parser.SoMarkImageFormat, "url"),
-		"formula": envOrDefault("SOMARK_FORMULA_FORMAT", parser.SoMarkFormulaFormat, "latex"),
-		"table":   envOrDefault("SOMARK_TABLE_FORMAT", parser.SoMarkTableFormat, "html"),
-		"cs":      envOrDefault("SOMARK_CS_FORMAT", parser.SoMarkCSFormat, "image"),
+		"image":   envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
+		"formula": envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
+		"table":   envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
+		"cs":      envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
 	})
 	featureConfig, _ := json.Marshal(map[string]any{
-		"enable_text_cross_page":         envOrBool("SOMARK_ENABLE_TEXT_CROSS_PAGE", parser.SoMarkEnableTextCrossPage),
-		"enable_table_cross_page":        envOrBool("SOMARK_ENABLE_TABLE_CROSS_PAGE", parser.SoMarkEnableTableCrossPage),
-		"enable_title_level_recognition": envOrBool("SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION", parser.SoMarkEnableTitleLevelRecognition),
-		"enable_inline_image":            envOrBool("SOMARK_ENABLE_INLINE_IMAGE", parser.SoMarkEnableInlineImage),
-		"enable_table_image":             envOrBool("SOMARK_ENABLE_TABLE_IMAGE", parser.SoMarkEnableTableImage),
-		"enable_image_understanding":     envOrBool("SOMARK_ENABLE_IMAGE_UNDERSTANDING", parser.SoMarkEnableImageUnderstanding),
-		"keep_header_footer":             envOrBool("SOMARK_KEEP_HEADER_FOOTER", parser.SoMarkKeepHeaderFooter),
+		"enable_text_cross_page":         envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
+		"enable_table_cross_page":        envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
+		"enable_title_level_recognition": envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
+		"enable_inline_image":            envOrBool(common.EnvSOMarkEnableInlineImage, parser.SoMarkEnableInlineImage),
+		"enable_table_image":             envOrBool(common.EnvSOMarkEnableTableImage, parser.SoMarkEnableTableImage),
+		"enable_image_understanding":     envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
+		"keep_header_footer":             envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
 	})
 	_ = writer.WriteField("element_formats", string(elementFormats))
 	_ = writer.WriteField("feature_config", string(featureConfig))
 	if apiKey != "" {
 		_ = writer.WriteField("api_key", apiKey)
 	}
-	if err := writer.Close(); err != nil {
+	if err = writer.Close(); err != nil {
 		return "", fmt.Errorf("parser: SoMark finalize form: %w", err)
 	}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async", &body)
@@ -100,7 +100,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 			TaskID string `json:"task_id"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err = json.Unmarshal(raw, &payload); err != nil {
 		return "", fmt.Errorf("parser: SoMark decode submit: %w", err)
 	}
 	if payload.Code != 0 {
@@ -136,7 +136,7 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 		Message string         `json:"message"`
 		Data    map[string]any `json:"data"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err = json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
 	}
 	if payload.Code != 0 {
@@ -225,14 +225,14 @@ func envOrDefault(envKey, configured, fallback string) string {
 	if configured != "" {
 		return configured
 	}
-	if raw := strings.TrimSpace(os.Getenv(envKey)); raw != "" {
+	if raw := strings.TrimSpace(common.GetEnv(envKey)); raw != "" {
 		return raw
 	}
 	return fallback
 }
 
 func envOrBool(envKey string, configured bool) bool {
-	if raw := strings.TrimSpace(os.Getenv(envKey)); raw != "" {
+	if raw := strings.TrimSpace(common.GetEnv(envKey)); raw != "" {
 		switch strings.ToLower(raw) {
 		case "1", "true", "yes", "on":
 			return true

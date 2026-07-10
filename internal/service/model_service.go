@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -2443,9 +2442,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		zap.String("modelType", modelType.String()))
 
 	// TEI builtin embedding short-circuit
-	if modelType == entity.ModelTypeEmbedding && strings.Contains(os.Getenv("COMPOSE_PROFILES"), "tei-") {
-		teiModel := os.Getenv("TEI_MODEL")
-		teiBaseURL := os.Getenv("TEI_BASE_URL")
+	if modelType == entity.ModelTypeEmbedding && strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
+		teiModel := common.GetEnv(common.EnvTEIModel)
+		teiBaseURL := common.GetEnv(common.EnvTEIBaseURL)
 
 		// First try exact match: handles bare model IDs like "model@q8_0"
 		// where '@' is part of the model name itself.

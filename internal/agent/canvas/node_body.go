@@ -33,7 +33,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
@@ -146,7 +146,7 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 // the default — invalid input must never widen the timeout silently.
 func componentTimeout() time.Duration {
 	const def = 600 * time.Second
-	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT"); v != "" {
+	if v := common.GetEnv(common.EnvComponentExecTimeout); v != "" {
 		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
 			return time.Duration(secs) * time.Second
 		}

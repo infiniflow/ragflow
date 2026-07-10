@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
+	"ragflow/internal/common"
 	"testing"
 	"time"
 
@@ -48,18 +48,18 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 	switch engineType {
 	case engine.EngineElasticsearch:
 		t.Logf("Setting up Elasticsearch engine...")
-		esHost := os.Getenv("ES_HOST")
+		esHost := common.GetEnv(common.EnvESHost)
 		if esHost == "" {
 			esHost = "localhost:1200"
 		}
 		if !startsWithHTTP(esHost) {
 			esHost = "http://" + esHost
 		}
-		esUser := os.Getenv("ES_USER")
+		esUser := common.GetEnv(common.EnvESUsername)
 		if esUser == "" {
 			esUser = "elastic"
 		}
-		esPassword := os.Getenv("ES_PASSWORD")
+		esPassword := common.GetEnv(common.EnvESPassword)
 		if esPassword == "" {
 			esPassword = "infini_rag_flow"
 		}
@@ -77,7 +77,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 
 	case engine.EngineInfinity:
 		t.Logf("Setting up Infinity engine...")
-		infURI := os.Getenv("INFINITY_URI")
+		infURI := common.GetEnv(common.EnvInfinityURI)
 		if infURI == "" {
 			infURI = "localhost:23817"
 		}
@@ -352,7 +352,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 			// Verify final task status can be updated to success
 			ingestionTaskDAO := dao.NewIngestionTaskDAO()
-			if err := ingestionTaskDAO.UpdateStatus(taskID, "success"); err != nil {
+			if err = ingestionTaskDAO.UpdateStatus(taskID, "success"); err != nil {
 				t.Fatalf("UpdateStatus failed: %v", err)
 			}
 
