@@ -50,6 +50,17 @@ type ChunkerFromUpstream struct {
 	// Name is the source document name. Required.
 	Name string `json:"name"`
 
+	// DocID is the originating document ID. When set, the chunker can
+	// re-resolve the source PDF from storage to crop section images on
+	// demand, instead of carrying the binary across the component
+	// boundary.
+	DocID string `json:"doc_id,omitempty"`
+
+	// Bucket and Path are the explicit storage location of the source
+	// PDF. They take precedence over DocID-driven resolution.
+	Bucket string `json:"bucket,omitempty"`
+	Path   string `json:"path,omitempty"`
+
 	// File is the optional upstream file descriptor.
 	File *ChunkerFileMeta `json:"file,omitempty"`
 

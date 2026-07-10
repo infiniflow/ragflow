@@ -27,6 +27,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -54,7 +55,7 @@ var tokenizerPoolInitErr error
 // initialized.
 func TestMain(m *testing.M) {
 	cfg := &tokenizer.PoolConfig{
-		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),
+		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,

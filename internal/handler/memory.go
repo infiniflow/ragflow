@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -83,7 +82,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// Check if API timing is enabled
 	// If RAGFLOW_API_TIMING environment variable is set, request processing time will be logged
-	timingEnabled := os.Getenv("RAGFLOW_API_TIMING")
+	timingEnabled := common.GetEnv(common.EnvRAGFlowApiTiming)
 	var tStart time.Time
 	if timingEnabled != "" {
 		tStart = time.Now()

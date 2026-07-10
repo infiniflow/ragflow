@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"testing"
@@ -181,18 +182,18 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 }
 
 func TestGiteeListModelsIntegration(t *testing.T) {
-	if os.Getenv("GITEE_LIST_MODELS_INTEGRATION") != "1" {
+	if common.GetEnv(common.EnvGiteeListModelsIntegration) != "1" {
 		t.Skip("set GITEE_LIST_MODELS_INTEGRATION=1 to call the real Gitee models endpoint")
 	}
 
 	initProviderManagerWithGiteeForTest(t)
 
-	baseURL := os.Getenv("GITEE_BASE_URL")
+	baseURL := common.GetEnv(common.EnvGiteeBaseUrl)
 	if baseURL == "" {
 		baseURL = "https://api.moark.ai/v1"
 	}
 	apiConfig := &APIConfig{}
-	if apiKey := os.Getenv("GITEE_API_KEY"); apiKey != "" {
+	if apiKey := common.GetEnv(common.EnvGiteeApiKey); apiKey != "" {
 		apiConfig.ApiKey = &apiKey
 	}
 

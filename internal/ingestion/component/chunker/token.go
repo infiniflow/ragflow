@@ -59,11 +59,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
@@ -190,7 +192,18 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		}
 		return c.invokeTextPayload(ctx, *upstream.HTMLResult, delimPattern, childrenPattern), nil
 	default:
-		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern), nil
+		// Re-acquire the source PDF (if the Parser forwarded storage
+		// refs) so image/table sections are cropped on demand rather
+		// than carried through the wire. Best-effort: a nil engine
+		// simply skips cropping.
+		engine, engErr := newPDFEngineFromUpstream(ctx, upstream)
+		if engErr != nil {
+			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
+		}
+		if engine != nil {
+			defer engine.Close()
+		}
+		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern, engine), nil
 	}
 }
 
@@ -285,7 +298,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 
 // invokeJSONPayload handles structured upstream input. Items fan
 // across goroutines (Parallelism); merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
@@ -350,6 +363,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	if childrenPattern != nil {
 		flat = splitByChildren(flat, childrenPattern)
 	}
+
+	// Crop image/table chunks on demand when a PDF engine is available.
+	flat = cropImageChunks(ctx, engine, flat)
 
 	out := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {

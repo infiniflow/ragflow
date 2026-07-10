@@ -73,11 +73,12 @@ func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
 		case deepdoctype.LayoutTypeFigure:
 			section.DocTypeKwd = "image"
 		default:
-			if section.Image != "" {
-				section.DocTypeKwd = "image"
-			} else {
-				section.DocTypeKwd = "text"
-			}
+			// doc_type_kwd is derived from layout, not from whether a
+			// section image was cropped. Cropping happens lazily at
+			// markdown serialization / chunk time, so it must not
+			// influence classification here (otherwise every positioned
+			// text box would be mislabeled "image").
+			section.DocTypeKwd = "text"
 		}
 	}
 }
