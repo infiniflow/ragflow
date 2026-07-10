@@ -1661,7 +1661,13 @@ type pubMedComponent struct {
 }
 
 func newPubMedComponent(params map[string]any) (Component, error) {
-	inner, err := agenttool.BuildByName("pubmed", params)
+	toolParams := make(map[string]any, 2)
+	for _, key := range []string{"top_n", "email"} {
+		if value, ok := params[key]; ok {
+			toolParams[key] = value
+		}
+	}
+	inner, err := agenttool.BuildByName("pubmed", toolParams)
 	if err != nil {
 		return nil, err
 	}

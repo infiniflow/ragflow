@@ -45,7 +45,12 @@ func (f *fakePubMedInvoker) InvokableRun(_ context.Context, argsJSON string, _ .
 func TestPubMed_RegisteredFactory(t *testing.T) {
 	t.Parallel()
 
-	c, err := New("PubMed", nil)
+	c, err := New("PubMed", map[string]any{
+		"top_n":   8,
+		"email":   "node@example.com",
+		"outputs": map[string]any{"formalized_content": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
 	if err != nil {
 		t.Fatalf("New(PubMed) errored: %v", err)
 	}
