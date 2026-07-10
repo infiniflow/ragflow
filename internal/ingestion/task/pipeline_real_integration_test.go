@@ -35,7 +35,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
+func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
@@ -128,14 +128,13 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	}
 
 	var inserted [][]map[string]any
-	svc := mustNewDataflowService(t, taskCtx, canvasID, 0, 0).
+	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0).
 		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
-		}).
-		WithChunkCounter(&stubChunkCounter{})
+		})
 
-	if err := svc.Execute(context.Background()); err != nil {
+	if _, err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(inserted) != 1 {
@@ -154,7 +153,7 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	}
 }
 
-func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *testing.T) {
+func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *testing.T) {
 	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
@@ -265,10 +264,9 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 		ProgressFunc: func(prog float64, msg string) {},
 	}
 
-	svc := mustNewDataflowService(t, taskCtx, canvasID, 0, 0).
-		WithChunkCounter(&stubChunkCounter{})
+	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0)
 
-	if err := svc.Execute(context.Background()); err != nil {
+	if _, err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -302,7 +300,7 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 	}
 }
 
-func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
+func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
@@ -339,7 +337,7 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 	}
 	templateBytes = disableTokenizerEmbeddingForTaskTemplate(t, templateBytes)
 
-	pipe, err := pipelinepkg.NewPipelineFromDSL(templateBytes, "task-dataflow-real-pipeline")
+	pipe, err := pipelinepkg.NewPipelineFromDSL(templateBytes, "task-real-pipeline")
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
@@ -388,15 +386,14 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 	}
 
 	var inserted [][]map[string]any
-	svc := mustNewDataflowService(t, taskCtx, "flow-real-1", 0, 0).
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-real-1", 0).
 		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
-		}).
-		WithChunkCounter(&stubChunkCounter{})
+		})
 
-	if err := svc.processOutput(context.Background(), pipelineOut); err != nil {
-		t.Fatalf("RunDataflow: %v", err)
+	if _, err := svc.processOutput(context.Background(), pipelineOut); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
 	}
 
 	if len(inserted) != 1 {
@@ -423,7 +420,7 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			t.Fatalf("chunks[%d].content_sm_ltks = %T/%v, want non-empty string", i, ck["content_sm_ltks"], ck["content_sm_ltks"])
 		}
 		if _, hasText := ck["text"]; hasText {
-			t.Fatalf("chunks[%d] should not keep raw text field after RunDataflow: %v", i, ck["text"])
+			t.Fatalf("chunks[%d] should not keep raw text field after RunPipeline: %v", i, ck["text"])
 		}
 	}
 }

@@ -17,7 +17,6 @@
 package task
 
 import (
-	"context"
 	"fmt"
 	"strings"
 )
@@ -25,66 +24,42 @@ import (
 // TaskHandler dispatches document processing tasks by task_type.
 // Mirrors Python task_handler.py:handle().
 type TaskHandler struct {
-	ctx                *TaskContext
-	newDataflowService func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error)
+	ctx                 *TaskContext
+	newPipelineExecutor func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error)
 }
 
 // NewTaskHandler creates a TaskHandler for the given task context.
 func NewTaskHandler(ctx *TaskContext) *TaskHandler {
 	return &TaskHandler{
 		ctx: ctx,
-		newDataflowService: func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-			return NewDataflowService(ctx, dataflowID, 0, 0)
+		newPipelineExecutor: func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+			return NewPipelineExecutor(ctx, canvasID, 0)
 		},
 	}
 }
 
-func (h *TaskHandler) WithDataflowServiceFactory(factory func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error)) *TaskHandler {
-	h.newDataflowService = factory
+func (h *TaskHandler) WithPipelineExecutorFactory(factory func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error)) *TaskHandler {
+	h.newPipelineExecutor = factory
 	return h
 }
 
 // Handle routes the task by type and executes the appropriate handler.
-func (h *TaskHandler) Handle() error {
+func (h *TaskHandler) Handle() (*PipelineResult, error) {
 	if h.ctx == nil {
-		return fmt.Errorf("task handler: nil context")
+		return nil, fmt.Errorf("task handler: nil context")
 	}
 
-	return h.handleDataflow()
+	return h.handlePipeline()
 }
 
 func (h *TaskHandler) handleMemory() error {
 	return nil // stub
 }
 
-func (h *TaskHandler) handleDataflow() error {
-	dataflowID := ""
-	if strings.Trim(h.ctx.PipelineID, " ") != "" {
-		dataflowID = h.ctx.PipelineID
-	}
-	svc, err := h.newDataflowService(h.ctx, dataflowID)
+func (h *TaskHandler) handlePipeline() (*PipelineResult, error) {
+	svc, err := h.newPipelineExecutor(h.ctx, strings.TrimSpace(h.ctx.PipelineID))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	runCtx := h.ctx.Ctx
-	if runCtx == nil {
-		runCtx = context.Background()
-	}
-	return svc.Execute(runCtx)
-}
-
-func (h *TaskHandler) handleRaptor() error {
-	return nil // stub
-}
-
-func (h *TaskHandler) handleGraphRAG() error {
-	return nil // stub
-}
-
-func (h *TaskHandler) handleStub(name string) error {
-	return nil
-}
-
-func (h *TaskHandler) handleStandard() error {
-	return nil // stub
+	return svc.Execute(h.ctx.Ctx)
 }

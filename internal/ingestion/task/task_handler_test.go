@@ -37,22 +37,22 @@ func makeTaskHandlerTestContext(pipelineID string) *TaskContext {
 	}
 }
 
-func newNoopDataflowService(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-	if strings.TrimSpace(dataflowID) == "" {
-		dataflowID = "flow-1"
+func newNoopPipelineExecutor(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+	if strings.TrimSpace(canvasID) == "" {
+		canvasID = "flow-1"
 	}
-	svc, err := NewDataflowService(ctx, dataflowID, 0, 0)
+	svc, err := NewPipelineExecutor(ctx, canvasID, 0)
 	if err != nil {
 		return nil, err
 	}
 	svc = svc.
-		WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
-			return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, canvasID, nil
 		}).
 		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
 			return map[string]any{
 				"chunks": []map[string]any{{
-					"text":    "stub dataflow chunk",
+					"text":    "stub pipeline chunk",
 					"q_2_vec": []float64{0.1, 0.2},
 				}},
 			}, dsl, nil
@@ -62,18 +62,16 @@ func newNoopDataflowService(ctx *TaskContext, dataflowID string) (*PipelineExecu
 		}).
 		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
 			return nil
-		}).
-		WithDocService(&stubDocService{}).
-		WithChunkCounter(&stubChunkCounter{})
+		})
 	return svc, nil
 }
 
 func newNoopTaskHandler(ctx *TaskContext) *TaskHandler {
-	return NewTaskHandler(ctx).WithDataflowServiceFactory(newNoopDataflowService)
+	return NewTaskHandler(ctx).WithPipelineExecutorFactory(newNoopPipelineExecutor)
 }
 
 func TestTaskHandler_HandleRejectsNilContext(t *testing.T) {
-	if err := NewTaskHandler(nil).Handle(); err == nil {
+	if _, err := NewTaskHandler(nil).Handle(); err == nil {
 		t.Fatal("expected error for nil context")
 	}
 }
@@ -81,38 +79,39 @@ func TestTaskHandler_HandleRejectsNilContext(t *testing.T) {
 func TestTaskHandler_HandleRequiresPipelineID(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("")
 	handler := NewTaskHandler(ctx)
-	if err := handler.Handle(); err == nil {
+	if _, err := handler.Handle(); err == nil {
 		t.Fatal("expected error for empty pipeline id")
 	}
 }
 
-func TestTaskHandler_DefaultDataflowServiceInjectsProgress(t *testing.T) {
+func TestTaskHandler_DefaultPipelineExecutorInjectsProgress(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("flow-1")
-	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-		svc, err := NewDataflowService(ctx, dataflowID, 0, 0)
+	ctx.Ctx = context.Background()
+	handler := NewTaskHandler(ctx).WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+		svc, err := NewPipelineExecutor(ctx, canvasID, 0)
 		if err != nil {
-			t.Fatalf("NewDataflowService: %v", err)
+			t.Fatalf("NewPipelineExecutor: %v", err)
 		}
 		if svc.progressFunc == nil {
 			t.Fatal("expected default progress func to be injected")
 		}
-		return newNoopDataflowService(ctx, dataflowID)
+		return newNoopPipelineExecutor(ctx, canvasID)
 	})
-	if err := handler.Handle(); err != nil {
+	if _, err := handler.Handle(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestTaskHandler_Dataflow_UsesTaskContext(t *testing.T) {
+func TestTaskHandler_Pipeline_UsesTaskContext(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("flow-1")
 	type ctxKey string
 	const key ctxKey = "trace"
 	ctx.Ctx = context.WithValue(context.Background(), key, "task-ctx")
 
-	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-		return mustNewDataflowService(t, ctx, dataflowID, 0, 0).
-			WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
-				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
+	handler := NewTaskHandler(ctx).WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+		return mustNewPipelineExecutor(t, ctx, canvasID, 0).
+			WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, canvasID, nil
 			}).
 			WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
 				if got := runCtx.Value(key); got != "task-ctx" {
@@ -123,45 +122,18 @@ func TestTaskHandler_Dataflow_UsesTaskContext(t *testing.T) {
 			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 				return nil, nil
 			}).
-			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
-			WithDocService(&stubDocService{}).
-			WithChunkCounter(&stubChunkCounter{}), nil
+			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }), nil
 	})
-	if err := handler.Handle(); err != nil {
+	if _, err := handler.Handle(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestTaskHandler_Dataflow_UsesBackgroundContextWhenMissing(t *testing.T) {
+func TestTaskHandler_Pipeline_ShowsProgressAndPipelineLog(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("flow-1")
-
-	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-		return mustNewDataflowService(t, ctx, dataflowID, 0, 0).
-			WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
-				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
-			}).
-			WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
-				if runCtx == nil {
-					t.Fatal("runCtx is nil")
-				}
-				return map[string]any{"chunks": []map[string]any{{"text": "stub", "q_2_vec": []float64{0.1, 0.2}}}}, dsl, nil
-			}).
-			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
-				return nil, nil
-			}).
-			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
-			WithDocService(&stubDocService{}).
-			WithChunkCounter(&stubChunkCounter{}), nil
-	})
-	if err := handler.Handle(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
-	ctx := makeTaskHandlerTestContext("flow-1")
+	ctx.Ctx = context.Background()
 	ctx.Doc.PipelineID = testStrPtr("flow-1")
-	ctx.Doc.Name = testStrPtr("verify-dataflow.pdf")
+	ctx.Doc.Name = testStrPtr("verify-pipeline.pdf")
 
 	var pipelineCalled bool
 	var insertCalled bool
@@ -175,16 +147,16 @@ func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 		progressMsgs = append(progressMsgs, msg)
 	}
 
-	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-		svc := mustNewDataflowService(t, ctx, dataflowID, 0, 0).
-			WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
-				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
+	handler := NewTaskHandler(ctx).WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+		svc := mustNewPipelineExecutor(t, ctx, canvasID, 0).
+			WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, canvasID, nil
 			}).
 			WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
 				pipelineCalled = true
 				return map[string]any{
 					"chunks": []map[string]any{{
-						"text":    "stub dataflow chunk",
+						"text":    "stub pipeline chunk",
 						"q_2_vec": []float64{0.1, 0.2},
 					}},
 				}, dsl, nil
@@ -197,13 +169,11 @@ func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
 				logCreateCalls++
 				return nil
-			}).
-			WithDocService(&stubDocService{}).
-			WithChunkCounter(&stubChunkCounter{})
+			})
 		return svc, nil
 	})
 
-	if err := handler.Handle(); err != nil {
+	if _, err := handler.Handle(); err != nil {
 		t.Fatalf("handler.Handle() error: %v", err)
 	}
 

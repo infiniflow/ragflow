@@ -123,9 +123,9 @@ func GetEmbeddingTokenConsumption(output map[string]any) int {
 	}
 }
 
-// ProcessChunksForDataflow mutates chunks into the pre-index structure used by
-// dataflow and returns merged metadata.
-func ProcessChunksForDataflow(
+// ProcessChunksForPipeline mutates chunks into the pre-index structure used by
+// the pipeline and returns merged metadata.
+func ProcessChunksForPipeline(
 	chunks []map[string]any,
 	docID string,
 	kbID string,

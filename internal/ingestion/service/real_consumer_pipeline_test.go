@@ -17,7 +17,7 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
+func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	natsEngine := nats.NewNatsEngine("localhost", 4222)
 	if err := natsEngine.Init(); err != nil {
 		t.Fatalf("NATS Init: %v", err)
@@ -44,7 +44,7 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 		testutil.WithDocID("doc-q-1"),
 		testutil.WithTaskID("ingest-q-1"),
 		testutil.WithPipelineID("flow-queue-1"),
-		testutil.WithDocName("queue-dataflow.pdf"),
+		testutil.WithDocName("queue-pipeline.pdf"),
 	)
 
 	// testutil.SeedTestData already created an IngestionTask with status RUNNING.
@@ -97,7 +97,7 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
-	var routedToDataflow bool
+	var routedToPipeline bool
 	var progressEvents []string
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
@@ -109,16 +109,16 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 		progressEvents = append(progressEvents, msg)
 	}
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		routedToDataflow = true
-		taskCtx.ProgressFunc(0.82, "mock queue dataflow start")
-		taskCtx.ProgressFunc(1.0, "mock queue dataflow done")
+		routedToPipeline = true
+		taskCtx.ProgressFunc(0.82, "mock queue pipeline start")
+		taskCtx.ProgressFunc(1.0, "mock queue pipeline done")
 		return nil
 	}
 
 	ingestor.executeTask(taskCtx)
 
-	if !routedToDataflow {
-		t.Fatal("expected executeTask to route queue-consumed dataflow task to runDocumentTask")
+	if !routedToPipeline {
+		t.Fatal("expected executeTask to route queue-consumed pipeline task to runDocumentTask")
 	}
 	if finalProgress != 1.0 {
 		t.Fatalf("finalProgress = %v, want 1.0", finalProgress)

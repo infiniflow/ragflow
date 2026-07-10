@@ -161,7 +161,7 @@ func isPortOpen(host string, port int) bool {
 // Main E2E Test with Subtests for Elasticsearch and Infinity
 // =============================================================================
 
-func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
+func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 	testCases := []struct {
 		name       string
 		engineType engine.EngineType
@@ -178,7 +178,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Logf("Running Dataflow E2E test with engine: %s", tc.name)
+			t.Logf("Running Pipeline E2E test with engine: %s", tc.name)
 
 			// Setup test database
 			db := testutil.SetupTestDB(t)
@@ -209,6 +209,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
+			taskCtx.Ctx = context.Background()
 
 			// Track what was called
 			var (
@@ -220,13 +221,13 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 			// Create TaskHandler with mocked DataflowService factory
 			handler := NewTaskHandler(taskCtx)
-			handler.WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-				svc := mustNewDataflowService(t, ctx, dataflowID, 0, 0)
+			handler.WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+				svc := mustNewPipelineExecutor(t, ctx, canvasID, 0)
 
 				// Mock loadDSLFunc
-				svc.WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
+				svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
 					loadDSLCalled = true
-					return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, dataflowID, nil
+					return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
 				})
 
 				// Mock runPipelineFunc - returns test chunks (with vectors to skip embedding)
@@ -261,7 +262,6 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 					return ids, err
 				})
 
-				svc.WithChunkCounter(&stubChunkCounter{})
 				return svc, nil
 			})
 
@@ -280,7 +280,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 			// Execute the task handler!
 			t.Logf("Calling TaskHandler.Handle()...")
-			err = handler.Handle()
+			_, err = handler.Handle()
 			if err != nil {
 				t.Fatalf("TaskHandler.Handle failed: %v", err)
 			}
@@ -358,7 +358,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 				t.Errorf("Final task status = %q, want %q", finalTask.Status, common.COMPLETED)
 			}
 
-			t.Logf("SUCCESS: Dataflow E2E test passed with %s engine!", tc.name)
+			t.Logf("SUCCESS: Pipeline E2E test passed with %s engine!", tc.name)
 		})
 	}
 }

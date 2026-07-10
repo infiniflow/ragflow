@@ -156,7 +156,7 @@ func TestRealProducerConsumer(t *testing.T) {
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
 	handler := NewTaskHandler(tc)
-	if err := handler.Handle(); err != nil {
+	if _, err := handler.Handle(); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 	t.Log("Consumer: TaskHandler.Handle() — OK")

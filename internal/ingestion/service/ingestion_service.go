@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/utility"
 	"sync"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -32,6 +33,12 @@ import (
 
 	"google.golang.org/grpc"
 	"gorm.io/gorm"
+)
+
+// Checkpoint keys for IngestionTaskLog.Checkpoint.
+const (
+	checkpointKeyCurrentStep = "current_step"
+	checkpointKeyTotalStep   = "total_step"
 )
 
 type Ingestor struct {
@@ -47,6 +54,7 @@ type Ingestor struct {
 	maxConcurrency    int32
 	supportedDocTypes []string
 	version           string
+	heartbeatInterval time.Duration
 
 	// Runtime state
 	currentTasks map[string]*taskpkg.TaskContext
@@ -63,6 +71,7 @@ type Ingestor struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	ingestionTaskSvc    *servicepkg.IngestionTaskService
+	docState            *docStateUpdater
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -87,6 +96,8 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+		docState:            &docStateUpdater{},
+		heartbeatInterval:   10 * time.Second,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	return ingestor
@@ -168,6 +179,9 @@ func (e *Ingestor) Start() error {
 
 			// Construct TaskContext with parent context
 			taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
+			// Carry the MQ handle so the worker can Ack/Nack when the task
+			// reaches a terminal status instead of leaving it unacked.
+			taskCtx.Handle = taskHandle
 
 			// Push to task channel; if full, reject the task (backpressure)
 			select {
@@ -215,80 +229,119 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
+	// terminal tracks whether the task reached a durably-persisted terminal
+	// status. If so the MQ message is Acked; otherwise it is Nacked so the
+	// broker redelivers and resumes the task (e.g. shutdown mid-task, or a
+	// status-persist failure worth retrying). Without this, consumer-group
+	// queues redeliver unacked messages and re-schedule still-RUNNING tasks,
+	// causing double execution.
+	terminal := false
+	defer func() {
+		if taskCtx.Handle == nil {
+			return // standalone/test path without an MQ handle
+		}
+		if terminal {
+			if err := taskCtx.Handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("ack task %s", task.ID), err)
+			}
+			return
+		}
+		if err := taskCtx.Handle.Nack(); err != nil {
+			common.Error(fmt.Sprintf("nack task %s", task.ID), err)
+		}
+	}()
+
+	// Start a ticker to periodically call InProgress during long processing,
+	// keeping the broker's AckWait timer fresh so the message is not redelivered
+	// mid-task. Stops when executeTask returns (the ack/nack defer runs second).
+	heartbeatDone := make(chan struct{})
+	if taskCtx.Handle != nil && e.heartbeatInterval > 0 {
+		go func() {
+			ticker := time.NewTicker(e.heartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if err := taskCtx.Handle.InProgress(); err != nil {
+						common.Error(fmt.Sprintf("heartbeat task %s", task.ID), err)
+					}
+				case <-heartbeatDone:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	defer close(heartbeatDone) // LIFO: stop heartbeat before ack/nack
+
 	latestLog, err := e.ingestionTaskLogDAO.LatestLogByTaskID(task.ID)
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			common.Error(fmt.Sprintf("Failed to get latest task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-			}
+			terminal = e.markFailed(task.ID)
 			return
 		}
 		latestLog = &entity.IngestionTaskLog{
 			ID:     0,
 			TaskID: task.ID,
 			Checkpoint: entity.JSONMap{
-				"current_step": 1,
-				"total_step":   5,
+				checkpointKeyCurrentStep: 1,
+				checkpointKeyTotalStep:   5,
 			},
 		}
 		err = e.ingestionTaskLogDAO.Create(latestLog)
 		if err != nil {
 			common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-			}
+			terminal = e.markFailed(task.ID)
 			return
 		}
 	}
 
 	var checkpointMap map[string]interface{}
 	checkpointMap = latestLog.Checkpoint
-	currentStep, ok := common.GetInt(checkpointMap["current_step"])
+	currentStep, ok := common.GetInt(checkpointMap[checkpointKeyCurrentStep])
 	if !ok {
 		common.Error(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
-		return
-	}
-	totalStep, ok := common.GetInt(checkpointMap["total_step"])
-	if !ok {
-		common.Error(fmt.Sprintf("Failed to get total step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
+		terminal = e.markFailed(task.ID)
 		return
 	}
 	// Bump checkpoint to signal we started processing
-	checkpointMap["current_step"] = currentStep + 1
+	checkpointMap[checkpointKeyCurrentStep] = currentStep + 1
 	latestLog.Checkpoint = checkpointMap
 	if err := e.ingestionTaskLogDAO.Update(latestLog); err != nil {
 		common.Error(fmt.Sprintf("Failed to persist checkpoint for task %s", task.ID), err)
 	}
-	_ = totalStep // unused in this temporary integration
 
 	select {
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		return
+		return // non-terminal: Nack so the message is redelivered after restart
 	default:
 	}
 	if err := e.runDocumentTask(ctx, task); err != nil {
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
+		terminal = e.markFailed(task.ID)
 		return
 	}
 
-	err = e.ingestionTaskSvc.MarkCompleted(task.ID)
-	if err != nil {
+	if err := e.ingestionTaskSvc.MarkCompleted(task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
-		return
+		return // non-terminal: Nack for retry
 	}
+	terminal = true
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
+}
+
+// markFailed persists FAILED status for the task and reports whether the
+// terminal status was durably written, so the caller can decide Ack vs Nack.
+func (e *Ingestor) markFailed(taskID string) bool {
+	if uErr := e.ingestionTaskSvc.MarkFailed(taskID); uErr != nil {
+		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
+		return false
+	}
+	return true
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -300,7 +353,12 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		return fmt.Errorf("ingestion task %s: no pipeline_id configured for document %s or dataset %s", ingestionTask.ID, docTaskCtx.Doc.ID, docTaskCtx.KB.ID)
 	}
 	docTaskCtx.Ctx = ctx
-	return taskpkg.NewTaskHandler(docTaskCtx).Handle()
+	result, err := taskpkg.NewTaskHandler(docTaskCtx).Handle()
+	if err != nil {
+		return err
+	}
+	e.docState.apply(result)
+	return nil
 }
 
 // Stop gracefully shuts down the ingestor

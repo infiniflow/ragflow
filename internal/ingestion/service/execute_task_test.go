@@ -95,7 +95,7 @@ func TestDefaultRunDocumentTask_RequiresConfiguredPipelineID(t *testing.T) {
 	}
 }
 
-func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
+func TestExecuteTask_PipelineRoutesToTaskHandler(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -106,19 +106,19 @@ func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 	)
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	var routedToDataflow bool
+	var routedToPipeline bool
 	var gotTaskID string
 	var gotProgress []float64
 	var gotMsgs []string
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		routedToDataflow = true
+		routedToPipeline = true
 		gotTaskID = ingestionTask.ID
 		wrapped := func(prog float64, msg string) {
 			gotProgress = append(gotProgress, prog*100)
 			gotMsgs = append(gotMsgs, msg)
 		}
-		wrapped(0.82, "mock dataflow start")
-		wrapped(1.0, "mock dataflow done")
+		wrapped(0.82, "mock pipeline start")
+		wrapped(1.0, "mock pipeline done")
 		return nil
 	}
 
@@ -129,8 +129,8 @@ func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 
 	ingestor.executeTask(taskCtx)
 
-	if !routedToDataflow {
-		t.Fatal("expected executeTask to route dataflow task to runDocumentTask")
+	if !routedToPipeline {
+		t.Fatal("expected executeTask to route pipeline task to runDocumentTask")
 	}
 	if gotTaskID != taskID {
 		t.Fatalf("runDocumentTask got task ID %q, want %q", gotTaskID, taskID)
@@ -145,7 +145,7 @@ func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 	if len(gotProgress) != 2 || gotProgress[0] != 82 || gotProgress[1] != 100 {
 		t.Fatalf("gotProgress = %v, want [82 100]", gotProgress)
 	}
-	if len(gotMsgs) != 2 || gotMsgs[1] != "mock dataflow done" {
-		t.Fatalf("gotMsgs = %v, want final message %q", gotMsgs, "mock dataflow done")
+	if len(gotMsgs) != 2 || gotMsgs[1] != "mock pipeline done" {
+		t.Fatalf("gotMsgs = %v, want final message %q", gotMsgs, "mock pipeline done")
 	}
 }
