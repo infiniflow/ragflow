@@ -1,16 +1,30 @@
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { parseModelValue } from '@/utils/llm-util';
 import { memo } from 'react';
 import { LlmIcon } from '../svg-icon';
 
 interface IProps {
   value?: string;
+  ownerTenantId?: string;
 }
 
-export const LLMLabel = ({ value }: IProps) => {
+export const LLMLabel = ({ value, ownerTenantId }: IProps) => {
+  const { data: models } = useFetchAllAddedModels(undefined, ownerTenantId);
+
   const parsed = value ? parseModelValue(value) : null;
-  const modelName = parsed?.model_name;
-  const instanceName = parsed?.model_instance;
-  const iconName = parsed ? parsed.model_provider : '';
+
+  let modelName = parsed?.model_name;
+  let instanceName = parsed?.model_instance;
+  let iconName = parsed ? parsed.model_provider : '';
+
+  if (!modelName && value) {
+    const model = models.find((m) => m.model_id === value);
+    if (model) {
+      modelName = model.name;
+      instanceName = model.instance_name;
+      iconName = model.provider_name;
+    }
+  }
 
   if (!modelName) return null;
 
