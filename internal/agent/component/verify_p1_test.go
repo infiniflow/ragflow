@@ -10,12 +10,11 @@ import (
 // case-insensitive, and returned in sorted order. The expected count is
 // read from plan §2.11.10 — P0 (8) + P1 (5) + P2 (4) + P3 (2) + P4 (3) = 22
 // at plan completion, plus v1 fixture wrappers/stubs (including Retrieval,
-// TavilySearch, TavilyExtract, ExeSQL, Google, BGPT, YahooFinance, GoogleScholar,
-// Generate, Answer, Iteration, and IterationItem) registered by fixture_stubs.go
-// to keep the dsl-examples and canvas tool surface compiling. The test allows
-// counts between 12 (P0+P1 minus the removed ExitLoop) and 36 (the 22 plan
-// components plus the wrappers/stubs currently registered by fixture_stubs.go)
-// to roll forward as subsequent batches land.
+// TavilySearch, TavilyExtract, ExeSQL, CodeExec, Google, BGPT, YahooFinance,
+// Wikipedia, GoogleScholar, DuckDuckGo, Generate, Answer, Iteration, and IterationItem)
+// registered by fixture_stubs.go to keep the dsl-examples and canvas tool
+// surface compiling. The test allows counts between 12 (P0+P1 minus the
+// removed ExitLoop) and 55 to roll forward as subsequent batches land.
 //
 // Note: ExitLoop is intentionally NOT in the registry anymore. The
 // canvas engine (internal/agent/canvas/canvas.go's legacyNoOpNames)
@@ -45,8 +44,8 @@ func TestVerifyRegistration_P1(t *testing.T) {
 	if len(missing) > 0 {
 		t.Fatalf("missing P0/P1 components: %v (have %d: %v)", missing, len(names), names)
 	}
-	if got := len(names); got < 12 || got > 36 {
-		t.Errorf("expected 12-36 registered (current plan scope + v1 wrappers/stubs), got %d: %v", got, names)
+	if got := len(names); got < 12 || got > 55 {
+		t.Errorf("expected 12-55 registered (current plan scope + v1 wrappers/stubs), got %d: %v", got, names)
 	}
 
 	// ExitLoop must NOT be in the registry (legacy compat lives at
