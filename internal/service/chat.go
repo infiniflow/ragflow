@@ -152,15 +152,23 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	if llmIDValue, ok := req["llm_id"]; ok {
 		llmID := stringFromValue(llmIDValue)
 		llmSetting, _ := mapFromValue(req["llm_setting"])
-		if err = validateCreateLLMID(llmID, userID, llmSetting); err != nil {
+		tenantLLMID, err := resolveCreateLLMID(llmID, userID, llmSetting)
+		if err != nil {
 			return nil, common.CodeDataError, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
 		}
 	}
 
 	if rerankIDValue, ok := req["rerank_id"]; ok {
 		rerankID := stringFromValue(rerankIDValue)
-		if err = validateCreateRerankID(rerankID, userID); err != nil {
+		tenantRerankID, err := resolveCreateRerankID(rerankID, userID)
+		if err != nil {
 			return nil, common.CodeDataError, err
+		}
+		if tenantRerankID != "" {
+			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
 
@@ -181,6 +189,19 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
 		req["llm_id"] = tenant.LLMID
+		if tenant.TenantLLMID != nil {
+			req["tenant_llm_id"] = *tenant.TenantLLMID
+		}
+	}
+	if stringFromValue(req["llm_id"]) != "" && !isTruthy(req["tenant_llm_id"]) {
+		llmSetting, _ := mapFromValue(req["llm_setting"])
+		tenantLLMID, err := resolveCreateLLMID(stringFromValue(req["llm_id"]), userID, llmSetting)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
+		}
 	}
 	if _, ok := req["llm_setting"]; !ok || req["llm_setting"] == nil {
 		req["llm_setting"] = map[string]interface{}{}
@@ -196,6 +217,7 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	}
 	if _, ok := req["rerank_id"]; !ok {
 		req["rerank_id"] = ""
+		req["tenant_rerank_id"] = nil
 	}
 	if _, ok := req["similarity_threshold"]; !ok {
 		req["similarity_threshold"] = 0.1
@@ -295,9 +317,9 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 	return normalizedIDs, nil
 }
 
-func validateCreateLLMID(llmID, tenantID string, llmSetting map[string]interface{}) error {
+func resolveCreateLLMID(llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
 	if llmID == "" {
-		return nil
+		return "", nil
 	}
 	modelType := entity.ModelTypeChat
 	switch confModelType := llmSetting["model_type"].(type) {
@@ -320,24 +342,34 @@ func validateCreateLLMID(llmID, tenantID string, llmSetting map[string]interface
 			}
 		}
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, modelType, llmID); err != nil {
-		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, modelType, llmID); err != nil {
+		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return nil
+	tenantLLMID, err := modelProvider.ResolveModelID(tenantID, modelType, llmID)
+	if err != nil {
+		return "", err
+	}
+	return tenantLLMID, nil
 }
 
-func validateCreateRerankID(rerankID, tenantID string) error {
+func resolveCreateRerankID(rerankID, tenantID string) (string, error) {
 	if rerankID == "" {
-		return nil
+		return "", nil
 	}
 	llmName := strings.Split(rerankID, "@")[0]
 	if _, ok := DefaultRerankModels[llmName]; ok {
-		return nil
+		return "", nil
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
-		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return nil
+	tenantRerankID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
+		return "", err
+	}
+	return tenantRerankID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -398,6 +430,8 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	icon := stringFromValue(req["icon"])
 	llmID := stringFromValue(req["llm_id"])
 	rerankID := stringFromValue(req["rerank_id"])
+	tenantLLMID := stringFromValue(req["tenant_llm_id"])
+	tenantRerankID := stringFromValue(req["tenant_rerank_id"])
 	llmSetting, _ := mapFromValue(req["llm_setting"])
 	promptConfig, _ := mapFromValue(req["prompt_config"])
 	kbIDs, _ := stringListFromValue(req["kb_ids"])
@@ -418,6 +452,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		Description:            &description,
 		Icon:                   &icon,
 		LLMID:                  llmID,
+		TenantLLMID:            stringPtrIfNotEmpty(tenantLLMID),
 		LLMSetting:             entity.JSONMap(llmSetting),
 		PromptType:             stringFromValue(req["prompt_type"]),
 		PromptConfig:           entity.JSONMap(promptConfig),
@@ -427,6 +462,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		TopK:                   int64FromValue(req["top_k"]),
 		DoRefer:                stringFromValue(req["do_refer"]),
 		RerankID:               rerankID,
+		TenantRerankID:         stringPtrIfNotEmpty(tenantRerankID),
 		KBIDs:                  kbIDsJSON,
 		Status:                 &statusValue,
 	}
@@ -447,6 +483,13 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		chat.MetaDataFilter = &metaDataFilterJSON
 	}
 	return chat
+}
+
+func stringPtrIfNotEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (s *ChatService) buildCreateChatResponse(chat *entity.Chat) (map[string]interface{}, error) {
@@ -761,15 +804,23 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 
 	if value, ok := req["llm_id"]; ok {
 		llmID := fmt.Sprint(value)
-		if err := s.validateRESTLLMID(llmID, userID, llmSetting); err != nil {
+		tenantLLMID, err := s.resolveRESTLLMID(llmID, userID, llmSetting)
+		if err != nil {
 			return nil, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
 		}
 	}
 
 	if value, ok := req["rerank_id"]; ok {
 		rerankID := fmt.Sprint(value)
-		if err := s.validateRESTRerankID(rerankID, userID); err != nil {
+		tenantRerankID, err := s.resolveRESTRerankID(rerankID, userID)
+		if err != nil {
 			return nil, err
+		}
+		if tenantRerankID != "" {
+			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
 
@@ -909,9 +960,9 @@ func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (
 	return kbIDs, nil
 }
 
-func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[string]interface{}) error {
+func (s *ChatService) resolveRESTLLMID(llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
 	if llmID == "" {
-		return nil
+		return "", nil
 	}
 	modelType := entity.ModelTypeChat
 	if rawModelType, ok := llmSetting["model_type"]; ok {
@@ -929,24 +980,34 @@ func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[s
 			}
 		}
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, modelType, llmID); err != nil {
-		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, modelType, llmID); err != nil {
+		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return nil
+	tenantLLMID, err := modelProvider.ResolveModelID(tenantID, modelType, llmID)
+	if err != nil {
+		return "", err
+	}
+	return tenantLLMID, nil
 }
 
-func (s *ChatService) validateRESTRerankID(rerankID, tenantID string) error {
+func (s *ChatService) resolveRESTRerankID(rerankID, tenantID string) (string, error) {
 	if rerankID == "" {
-		return nil
+		return "", nil
 	}
 	baseName := s.splitModelNameAndFactory(rerankID)
 	if _, ok := defaultRerankModels[baseName]; ok {
-		return nil
+		return "", nil
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
-		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return nil
+	tenantRerankID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
+		return "", err
+	}
+	return tenantRerankID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {

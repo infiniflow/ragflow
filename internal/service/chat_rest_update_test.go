@@ -21,7 +21,15 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(
+		&entity.Chat{},
+		&entity.Tenant{},
+		&entity.Knowledgebase{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -41,6 +49,34 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-a",
+		TenantID:     "user-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("failed to create model provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-a",
+		ProviderID:   "provider-a",
+		InstanceName: "default",
+		APIKey:       "sk-test",
+		Status:       "active",
+		Extra:        "{}",
+	}).Error; err != nil {
+		t.Fatalf("failed to create model instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "model-a",
+		ProviderID: "provider-a",
+		InstanceID: "instance-a",
+		ModelName:  "gpt-test",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      "{}",
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant model: %v", err)
 	}
 
 	return db
