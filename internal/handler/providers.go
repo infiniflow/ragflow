@@ -1282,8 +1282,9 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	}
 
 	modelType := c.Query("type")
+	ownerTenantID := c.Query("owner_tenant_id")
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(user.ID, modelType)
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(user.ID, ownerTenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, int(code), err.Error())
 		return

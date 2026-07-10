@@ -131,6 +131,7 @@ func NewModelProviderService() *ModelProviderService {
 		modelDAO:             dao.NewTenantModelDAO(),
 		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
 		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
+		tenantDAO:            dao.NewTenantDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
 }
@@ -141,6 +142,7 @@ type ModelProviderService struct {
 	modelDAO             *dao.TenantModelDAO
 	modelGroupDAO        *dao.TenantModelGroupDAO
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
+	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
 }
 
@@ -812,20 +814,19 @@ func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, user
 // to ListTenantDefaultModels (which only enumerates the 6-7 default
 // tenant fields and returned `[]` for any tenant without defaults),
 // breaking the front-end's "View Models" list entirely.
-func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
-	// Resolve tenant. Match the convention used elsewhere in this file
-	// (see ListProviderInstances, DropProviderInstances): take the first
-	// tenant where the user has role=owner.
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+	tenant, code, err := m.resolveModelListTenant(userID, ownerTenantID)
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, code, err
 	}
-	if len(tenants) == 0 {
-		// No tenant for the user → empty list, code=0. Python returns
-		// get_result(data=[]) for the same path.
+	if tenant == nil {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
-	tenantID := tenants[0].TenantID
+	tenantID := tenant.ID
+	tenantName := ""
+	if tenant.Name != nil {
+		tenantName = *tenant.Name
+	}
 
 	if modelTypeFilter != "" {
 		modelTypeFilter = strings.ToLower(strings.TrimSpace(modelTypeFilter))
@@ -870,12 +871,16 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 	}
 	activeByKey := make(map[string]int)
 	inactiveByKey := make(map[string]int)
+	activeModelIDByKey := make(map[string]string)
 	for _, rec := range modelRecords {
 		key := rec.ProviderID + "@" + rec.InstanceID + "@" + rec.ModelName
 		if rec.Status == "inactive" {
 			inactiveByKey[key] |= rec.ModelType
 		} else {
 			activeByKey[key] |= rec.ModelType
+			if activeModelIDByKey[key] == "" {
+				activeModelIDByKey[key] = rec.ID
+			}
 		}
 	}
 
@@ -931,7 +936,10 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 					continue
 				}
 				added = append(added, map[string]interface{}{
-					"model_type":    merged.HumanReadable(),
+					"model_id":      activeModelIDByKey[key],
+					"tenant_id":     tenant.ID,
+					"tenant_name":   tenantName,
+					"model_type":    modelTypesForAPI(merged),
 					"name":          llm.Name,
 					"provider_id":   inst.ProviderID,
 					"provider_name": p.ProviderName,
@@ -943,6 +951,53 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 	}
 
 	return added, common.CodeSuccess, nil
+}
+
+func modelTypesForAPI(modelType entity.ModelType) []string {
+	types := modelType.HumanReadable()
+	for i, t := range types {
+		if t == "image2text" {
+			types[i] = "vision"
+		}
+	}
+	return types
+}
+
+func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID string) (*entity.Tenant, common.ErrorCode, error) {
+	if ownerTenantID == "" {
+		tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if len(tenants) == 0 {
+			return nil, common.CodeSuccess, nil
+		}
+		ownerTenantID = tenants[0].TenantID
+	} else {
+		relations, err := m.userTenantDAO.GetByUserID(userID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		allowed := false
+		for _, rel := range relations {
+			if rel.TenantID == ownerTenantID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, common.CodeAuthenticationError, fmt.Errorf("permission denied")
+		}
+	}
+
+	tenant, err := m.tenantDAO.GetByID(ownerTenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeNotFound, fmt.Errorf("tenant %s not found", ownerTenantID)
+		}
+		return nil, common.CodeServerError, err
+	}
+	return tenant, common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceName, newInstanceName, apiKey string) (common.ErrorCode, error) {
@@ -2088,7 +2143,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, maxTokens, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -2097,7 +2152,7 @@ func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName st
 
 // GetChatModel  returns a ChatModel wrapper for the given tenant
 func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeChat, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -2106,7 +2161,7 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -2124,22 +2179,33 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 		return nil, "", nil, 0, fmt.Errorf("OCR model name is required")
 	}
 
-	tenantSvc := NewTenantService()
-	modelName, err := tenantSvc.GetDefaultModelName(tenantID, modelType)
+	tenant, err := m.tenantDAO.GetByID(tenantID)
 	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("failed to get default model name for tenant: %s type %s: %w", tenantID, modelType, err)
+		return nil, "", nil, 0, fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
+	}
+	modelName, modelID := defaultModelRefs(tenant, modelType)
+	if modelID != "" {
+		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(tenantID, modelType, modelID)
+		if idErr == nil {
+			return driver, resolvedName, apiConfig, maxTokens, nil
+		}
+		common.Warn("GetTenantDefaultModelByType: model_id lookup failed, falling back to model name",
+			zap.String("tenantID", tenantID),
+			zap.String("modelID", modelID),
+			zap.Error(idErr))
 	}
 	if modelName == "" {
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 
-	return m.GetModelConfigFromProviderInstance(tenantID, modelType, modelName)
+	return m.ResolveModelConfig(tenantID, modelType, modelName)
 }
 
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
-func (m *ModelProviderService) GetModelConfigByID(userID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",
 		zap.String("userID", userID),
+		zap.String("modelType", modelType.String()),
 		zap.String("modelID", modelID))
 
 	modelEntity, err := m.modelDAO.GetByID(modelID)
@@ -2151,6 +2217,9 @@ func (m *ModelProviderService) GetModelConfigByID(userID, modelID string) (model
 	}
 	if modelEntity.Status != "active" {
 		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s is disabled", modelID)
+	}
+	if modelType != 0 && !entity.ModelType(modelEntity.ModelType).Has(modelType) {
+		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
 	}
 
 	providerEntity, err := m.modelProviderDAO.GetByID(modelEntity.ProviderID)
@@ -2219,6 +2288,106 @@ func (m *ModelProviderService) GetModelConfigByID(userID, modelID string) (model
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	return modelDriver, modelEntity.ModelName, apiConfig, maxTokens, nil
+}
+
+func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string, string) {
+	if tenant == nil {
+		return "", ""
+	}
+	switch modelType {
+	case entity.ModelTypeChat:
+		return tenant.LLMID, ptrStringValue(tenant.TenantLLMID)
+	case entity.ModelTypeEmbedding:
+		return tenant.EmbdID, ptrStringValue(tenant.TenantEmbdID)
+	case entity.ModelTypeRerank:
+		return tenant.RerankID, ptrStringValue(tenant.TenantRerankID)
+	case entity.ModelTypeSpeech2Text:
+		return tenant.ASRID, ptrStringValue(tenant.TenantASRID)
+	case entity.ModelTypeImage2Text:
+		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
+	case entity.ModelTypeTTS:
+		return tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+	case entity.ModelTypeOCR:
+		return tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+	default:
+		return "", ""
+	}
+}
+
+func (m *ModelProviderService) ResolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return nil, "", nil, 0, fmt.Errorf("model ref is required")
+	}
+	if _, err := m.modelDAO.GetByID(modelRef); err == nil {
+		return m.GetModelConfigByID(tenantID, modelType, modelRef)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", nil, 0, err
+	}
+	return m.GetModelConfigFromProviderInstance(tenantID, modelType, modelRef)
+}
+
+func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.ModelType, modelName string) (string, error) {
+	if modelObj, err := m.modelDAO.GetByID(modelName); err == nil {
+		if modelObj.Status != "active" {
+			return "", fmt.Errorf("tenant model id=%s is disabled", modelName)
+		}
+		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
+			return "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelName, modelType.String())
+		}
+		if _, _, _, _, err := m.GetModelConfigByID(tenantID, modelType, modelName); err != nil {
+			return "", err
+		}
+		return modelObj.ID, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+
+	pureModelName, instanceName, providerName, err := parseModelName(modelName)
+	if err != nil {
+		return "", err
+	}
+
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return "", fmt.Errorf("provider %q lookup failed: %w", providerName, err)
+	}
+	if provider == nil {
+		return "", fmt.Errorf("provider %q not found for model %q", providerName, modelName)
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return "", fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+	}
+	if instance == nil {
+		return "", fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
+	}
+
+	modelObj, err := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(provider.ID, instance.ID, int(modelType), pureModelName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("model %q not found for model type %s", modelName, modelType.String())
+		}
+		return "", err
+	}
+	if modelObj.Status != "active" {
+		return "", fmt.Errorf("model %q is disabled", modelName)
+	}
+	return modelObj.ID, nil
+}
+
+func (m *ModelProviderService) ResolveModelType(tenantID, modelRef string) ([]entity.ModelType, error) {
+	modelObj, err := m.modelDAO.GetByID(modelRef)
+	if err == nil {
+		if modelObj.Status != "active" {
+			return nil, fmt.Errorf("tenant model id=%s is disabled", modelRef)
+		}
+		return []entity.ModelType{entity.ModelType(modelObj.ModelType)}, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return m.GetModelTypeByName(tenantID, modelRef)
 }
 
 // GetModelTypeByName returns the list of model types the given model is enrolled as.
@@ -2763,7 +2932,7 @@ func (m *ModelProviderService) isImage2TextLLM(tenantID, llmID string) bool {
 	if m == nil || llmID == "" {
 		return false
 	}
-	modelTypes, err := m.GetModelTypeByName(tenantID, llmID)
+	modelTypes, err := m.ResolveModelType(tenantID, llmID)
 	if err != nil {
 		return false
 	}
@@ -2787,5 +2956,5 @@ func (m *ModelProviderService) GetChatModelConfig(tenantID string, llmID string)
 	if m.isImage2TextLLM(tenantID, llmID) {
 		modelType = entity.ModelTypeImage2Text
 	}
-	return m.GetModelConfigFromProviderInstance(tenantID, modelType, llmID)
+	return m.ResolveModelConfig(tenantID, modelType, llmID)
 }
