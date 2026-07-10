@@ -41,11 +41,11 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 }
 
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
-	// Every key in registry (28 entries, 24 unique canonical tools).
+	// Every key in registry.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
-		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia",
 		"yahoo_finance",
@@ -116,13 +116,11 @@ func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
 func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	t.Parallel()
 
-	// Every entry the registry advertises. 28 names, 24 unique
-	// canonical tools (execute_sql == exesql, retrieval ==
-	// search_my_dataset == search_my_dateset, crawler == web_crawler).
+	// Every entry the registry advertises.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia",
 		"yahoo_finance",
@@ -181,13 +179,15 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	// search_my_dateset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
-		"execute_sql":       "execute_sql",
-		"exesql":            "execute_sql",
-		"retrieval":         "search_my_dateset",
-		"search_my_dataset": "search_my_dateset",
-		"search_my_dateset": "search_my_dateset",
-		"crawler":           "web_crawler",
-		"web_crawler":       "web_crawler",
+		"execute_sql":           "execute_sql",
+		"exesql":                "execute_sql",
+		"google_scholar":        "google_scholar",
+		"google_scholar_search": "google_scholar",
+		"retrieval":             "search_my_dateset",
+		"search_my_dataset":     "search_my_dateset",
+		"search_my_dateset":     "search_my_dateset",
+		"crawler":               "web_crawler",
+		"web_crawler":           "web_crawler",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

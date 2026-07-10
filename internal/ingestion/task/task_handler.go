@@ -49,37 +49,8 @@ func (h *TaskHandler) Handle() error {
 	if h.ctx == nil {
 		return fmt.Errorf("task handler: nil context")
 	}
-	taskType := h.ctx.TaskType
-	if taskType == "" {
-		// Determine task type - use PipelineID presence as indicator for dataflow
-		taskType = "dataflow" // Default to dataflow for now
-		if h.ctx.PipelineID == "" {
-			taskType = "standard"
-		}
-	}
 
-	switch {
-	case taskType == "memory":
-		return h.handleMemory()
-	case taskType == "dataflow" && h.ctx.Doc.ID == CANVAS_DEBUG_DOC_ID:
-		return h.handleDataflow()
-	case strings.HasPrefix(taskType, "dataflow"):
-		return h.handleDataflow()
-	case taskType == "raptor":
-		return h.handleRaptor()
-	case taskType == "graphrag":
-		return h.handleGraphRAG()
-	case taskType == "mindmap":
-		return h.handleStub("mindmap")
-	case taskType == "evaluation":
-		return h.handleStub("evaluation")
-	case taskType == "reembedding":
-		return h.handleStub("reembedding")
-	case taskType == "clone":
-		return h.handleStub("clone")
-	default:
-		return h.handleStandard()
-	}
+	return h.handleDataflow()
 }
 
 func (h *TaskHandler) handleMemory() error {
@@ -99,7 +70,7 @@ func (h *TaskHandler) handleDataflow() error {
 	if runCtx == nil {
 		runCtx = context.Background()
 	}
-	return svc.Run(runCtx)
+	return svc.Execute(runCtx)
 }
 
 func (h *TaskHandler) handleRaptor() error {
