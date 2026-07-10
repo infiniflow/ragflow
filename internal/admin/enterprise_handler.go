@@ -1563,6 +1563,31 @@ func (h *Handler) ShowUsersPlanSummary(c *gin.Context) {
 	common.SuccessWithData(c, usersPlanSummary, "")
 }
 
+// ShowUsersPlan handle show users plan
+func (h *Handler) ShowUsersPlan(c *gin.Context) {
+	var quota int
+	quotaStr := c.Query("quota")
+	if quotaStr != "" {
+		var err error
+		quota, err = strconv.Atoi(quotaStr)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be an integer")
+			return
+		}
+	}
+	usersPlanQuota, err := h.service.ShowUsersPlanQuota(quota)
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
+			return
+		}
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, usersPlanQuota, "")
+}
+
 // ShowUsersQuotaSummary handle show users quota summary
 func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary()
