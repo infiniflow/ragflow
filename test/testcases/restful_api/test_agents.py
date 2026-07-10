@@ -277,7 +277,7 @@ def test_agent_openai_compatible_mode(rest_client, create_agent_resource):
     assert nonstream.status_code == 200
     nonstream_payload = nonstream.json()
     assert isinstance(nonstream_payload, dict), nonstream_payload
-    if "choices" not in nonstream_payload and nonstream_payload.get("code") == 0 and "choices" in nonstream_payload.get("data", {}):
+    if "choices" not in nonstream_payload and nonstream_payload.get("code") == 0 and "choices" in (nonstream_payload.get("data") or {}):
         pytest.skip("Go agent OpenAI-compatible response is incorrectly wrapped in the REST envelope")
     assert "choices" in nonstream_payload, nonstream_payload
 

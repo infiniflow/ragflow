@@ -290,14 +290,20 @@ def set_tenant_info(auth):
         print(f"WARNING: failed to set default chat LLM via {url}: {llm_res.get('message')!r}. Continuing.")
     # set embedding model
     set_default_embedding_response = requests.patch(
-        url=url, headers=authorization, json={"model_provider": "Builtin", "model_instance": "Local", "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"}
+        url=url,
+        headers=authorization,
+        json={"model_provider": "Builtin", "model_instance": "Local", "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"},
+        timeout=60,
     )
     embd_res = _response_json_or_warning(set_default_embedding_response, "set default embedding LLM")
     if embd_res.get("code") != 0:
         print(f"WARNING: failed to set default embedding LLM via {url}: {embd_res.get('message')!r}. Continuing.")
     # set rerank model
     set_default_rerank_response = requests.patch(
-        url=url, headers=authorization, json={"model_provider": "SILICONFLOW", "model_instance": "CI", "model_type": "rerank", "model_name": "BAAI/bge-reranker-v2-m3"}
+        url=url,
+        headers=authorization,
+        json={"model_provider": "SILICONFLOW", "model_instance": "CI", "model_type": "rerank", "model_name": "BAAI/bge-reranker-v2-m3"},
+        timeout=60,
     )
     rerank_res = _response_json_or_warning(set_default_rerank_response, "set default rerank LLM")
     if rerank_res.get("code") != 0:

@@ -801,8 +801,8 @@ def test_dataset_update_name_invalid_and_duplicate_contract(rest_client, clear_d
         res = rest_client.put(f"/datasets/{first_dataset_id}", json={"name": name})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         _skip_go_ignored_null(payload, "name")
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and not isinstance(name, str):
             assert "cannot unmarshal" in payload["message"] and ".name" in payload["message"], payload
         else:

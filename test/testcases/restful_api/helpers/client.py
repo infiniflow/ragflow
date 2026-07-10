@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 import requests
-from configs import HOST_ADDRESS, IS_GO_PROXY, VERSION
+from test.testcases.configs import HOST_ADDRESS, IS_GO_PROXY, VERSION
 
 
 @dataclass
@@ -79,7 +79,7 @@ class RestClient:
             message = payload.get("message", "")
             if payload.get("code") == 500 and "Unknown column 'meta_fields'" in message:
                 pytest.skip("Go deployment database schema is missing document.meta_fields")
-            if payload.get("code") == 500 and 'http://localhost:6380/embed' in message and "connect: connection refused" in message:
+            if payload.get("code") == 500 and "http://localhost:6380/embed" in message and "connect: connection refused" in message:
                 pytest.skip("Go memory embedding service is unavailable on localhost:6380")
         return response
 

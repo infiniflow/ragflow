@@ -188,8 +188,6 @@ def create_document(rest_client, create_dataset, tmp_path):
             res = rest_client.post(f"/datasets/{dataset_id}/documents", files=files)
         assert res.status_code == 200
         payload = res.json()
-        if IS_GO_PROXY and payload.get("code") == 500 and "Unknown column 'meta_fields'" in payload.get("message", ""):
-            pytest.skip("Go deployment database schema is missing document.meta_fields")
         assert payload["code"] == 0, payload
         document_id = payload["data"][0]["id"]
         created_docs.append((dataset_id, document_id))

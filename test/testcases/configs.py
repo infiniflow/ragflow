@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def _default_host_address() -> str:
 
 
 HOST_ADDRESS = os.getenv("HOST_ADDRESS") or _default_host_address()
+logging.info("Resolved API proxy configuration: scheme=%s, is_go_proxy=%s, host_address=%s", API_PROXY_SCHEME, IS_GO_PROXY, HOST_ADDRESS)
 VERSION = "v1"
 ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
 if ZHIPU_AI_API_KEY is None:

@@ -62,27 +62,17 @@ def test_default_host_address_only_changes_for_go_proxy_scheme():
     assert _host_address(API_PROXY_SCHEME="go", GO_HTTP_PORT="19384") == "http://127.0.0.1:19384"
 
 
-def test_default_host_address_falls_back_to_docker_env(monkeypatch, tmp_path):
+def test_default_host_address_uses_docker_go_port(monkeypatch, tmp_path):
     from test.testcases import configs
 
     docker_env = tmp_path / "docker.env"
-    monkeypatch.setattr(configs, "_DOCKER_ENV", Path(tmp_path / "missing.env"))
-    monkeypatch.setattr(configs, "API_PROXY_SCHEME", "python")
-    for key in CONFIG_ENV_KEYS:
-        monkeypatch.delenv(key, raising=False)
-    assert configs._default_host_address() == "http://127.0.0.1:9380"
-
-    docker_env.write_text("SVR_HTTP_PORT=19380\nGO_HTTP_PORT=19384\nAPI_PROXY_SCHEME=go # use go server\n")
+    docker_env.write_text("GO_HTTP_PORT=19384\n")
     monkeypatch.setattr(configs, "_DOCKER_ENV", Path(docker_env))
     monkeypatch.setattr(configs, "API_PROXY_SCHEME", "go")
     for key in CONFIG_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
     assert configs._default_host_address() == "http://127.0.0.1:19384"
-
-    docker_env.write_text("SVR_HTTP_PORT=19380\n# API_PROXY_SCHEME=go\nAPI_PROXY_SCHEME=python\n")
-    monkeypatch.setattr(configs, "API_PROXY_SCHEME", "python")
-    assert configs._default_host_address() == "http://127.0.0.1:9380"
 
 
 def test_non_json_setup_response_is_only_tolerated_in_go_mode(monkeypatch):

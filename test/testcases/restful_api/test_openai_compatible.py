@@ -25,6 +25,11 @@ def _sse_events(response_text: str) -> list[str]:
     return [line[5:] for line in response_text.splitlines() if line.startswith("data:")]
 
 
+def skip_if_go_proxy_upstream_error(choice_message: dict) -> None:
+    if IS_GO_PROXY and choice_message.get("reference") is None and choice_message.get("content", "").startswith("**ERROR**"):
+        pytest.skip("Go OpenAI-compatible completion could not reach the configured chat model")
+
+
 @pytest.mark.p2
 @pytest.mark.parametrize(
     "payload, expected_message",
@@ -182,8 +187,7 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
     assert res.status_code == 200
     payload = res.json()
     choice_msg = payload["choices"][0]["message"]
-    if IS_GO_PROXY and choice_msg.get("reference") is None and choice_msg.get("content", "").startswith("**ERROR**"):
-        pytest.skip("Go OpenAI-compatible completion could not reach the configured chat model")
+    skip_if_go_proxy_upstream_error(choice_msg)
     assert "reference" in choice_msg, payload
     assert isinstance(choice_msg["reference"], list), payload
 
@@ -235,7 +239,6 @@ def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_c
     payload = res.json()
     assert payload.get("choices"), payload
     choice_msg = payload["choices"][0]["message"]
-    if IS_GO_PROXY and choice_msg.get("reference") is None and choice_msg.get("content", "").startswith("**ERROR**"):
-        pytest.skip("Go OpenAI-compatible completion could not reach the configured chat model")
+    skip_if_go_proxy_upstream_error(choice_msg)
     assert "reference" in choice_msg, payload
     assert isinstance(choice_msg["reference"], list), payload
