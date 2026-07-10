@@ -43,7 +43,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"sync"
 	"time"
 
@@ -93,8 +93,8 @@ func newE2BProviderFromEnv() *E2BProvider {
 // part of the JSON config map.
 func e2bConfigFromEnv() map[string]any {
 	return map[string]any{
-		"TEMPLATE": os.Getenv("E2B_TEMPLATE"),
-		"TIMEOUT":  os.Getenv("E2B_TIMEOUT"),
+		"TEMPLATE": common.GetEnv(common.EnvE2BTemplate),
+		"TIMEOUT":  common.GetEnv(common.EnvE2BTimeout),
 	}
 }
 
@@ -125,8 +125,8 @@ func (p *E2BProvider) ProviderType() ProviderType { return ProviderE2B }
 // resolves from the same env vars. We return an error if neither
 // is set so the manager does not register a broken provider.
 func (p *E2BProvider) Initialize(ctx context.Context) error {
-	apiKey := os.Getenv("E2B_API_KEY")
-	accessToken := os.Getenv("E2B_ACCESS_TOKEN")
+	apiKey := common.GetEnv(common.EnvE2BApiKey)
+	accessToken := common.GetEnv(common.EnvE2BAccessToken)
 	if apiKey == "" && accessToken == "" {
 		return errors.New(
 			"e2b: E2B_API_KEY or E2B_ACCESS_TOKEN env var is required " +
@@ -136,8 +136,8 @@ func (p *E2BProvider) Initialize(ctx context.Context) error {
 	cfg := e2bsdk.Config{
 		APIKey:      apiKey,
 		AccessToken: accessToken,
-		Domain:      os.Getenv("E2B_DOMAIN"),
-		APIURL:      os.Getenv("E2B_API_URL"),
+		Domain:      common.GetEnv(common.EnvE2BDomain),
+		APIURL:      common.GetEnv(common.EnvE2BAPIURL),
 	}
 	c, err := e2bsdk.NewClient(cfg)
 	if err != nil {

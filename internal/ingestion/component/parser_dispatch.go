@@ -121,31 +121,6 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 	)
 }
 
-// resolveLibType returns the lib_type argument for parser.GetParser.
-// The Python side does not pass an explicit lib_type for the
-// Markdown / HTML / Office families — the parser constructor picks
-// the only available backend. Mirroring that, when setups[…].lib_type
-// is unset we leave the field empty and let parser.GetParser
-// surface a structured error if no backend is wired.
-//
-// `parse_method` is preserved on the dispatch result so callers can
-// tell the difference between "explicit OCR" and "default DeepDOC"
-// without re-reading setups.
-func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSetup) (libType, parseMethod string) {
-	family := resolveParserFamily(fileType)
-	setup, ok := setups[family]
-	if !ok {
-		return "", ""
-	}
-	if s, ok := setup["lib_type"].(string); ok {
-		libType = s
-	}
-	if s, ok := setup["parse_method"].(string); ok {
-		parseMethod = s
-	}
-	return libType, parseMethod
-}
-
 // dispatchParse resolves the parser for the given fileType and invokes
 // its structured ParseWithResult contract.
 //
@@ -156,21 +131,28 @@ func resolveLibType(fileType utility.FileType, setups map[string]schema.ParserSe
 // fileType may be utility.FileTypeOTHER when the upstream did not
 // supply a filename; the dispatch then takes text-page mode
 // without consulting parser.GetParser.
+//
+// `parse_method` is captured from setups so callers can tell the
+// difference between "explicit OCR" and "default DeepDOC" without
+// re-reading setups. lib_type is no longer threaded through: the
+// Python dispatcher picks a single backend per family and the Go
+// constructors mirror that.
 func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
-		// as text pages; the existing logic
-		// (splitIntoPages + fan-out) handles it. We return no
+		// as text pages; splitIntoPages handles it. We return no
 		// result here so the caller routes to that path.
 		return parserDispatchResult{}
 	}
 
-	libType, parseMethod := resolveLibType(fileType, setups)
+	var parseMethod string
+	if setup, ok := setups[resolveParserFamily(fileType)]; ok {
+		if s, ok := setup["parse_method"].(string); ok {
+			parseMethod = s
+		}
+	}
 
-	// Resolve a parser via the GetParser entry point. Any error here
-	// is the caller's fault (libType unsupported for this family);
-	// surface it as Err so Invoke can set _ERROR.
-	p, err := parser.GetParser(fileType, map[string]string{"lib_type": libType})
+	p, err := parser.GetParser(fileType)
 	if err != nil {
 		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
 	}
@@ -335,9 +317,9 @@ func jsonItemsToPages(items []map[string]any) []schema.Page {
 }
 
 // pagesFromDispatch extracts the per-page bytes from a parsed
-// schema.Page slice so the existing fan-out / merge path can run
-// unchanged. Pages without a `text` field emit an empty buffer
-// (the merge step treats them as zero-length pages).
+// schema.Page slice so the page builder can reshape them into the
+// schema.Page layout the chunker consumes. Pages without a `text`
+// field emit an empty buffer (treated as a zero-length page).
 func pagesFromDispatch(pages []schema.Page) [][]byte {
 	out := make([][]byte, 0, len(pages))
 	for _, p := range pages {

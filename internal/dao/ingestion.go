@@ -41,7 +41,6 @@ func NewIngestionTaskDAO() *IngestionTaskDAO {
 // failed → created : Retry (back to start)
 // canceled → created : Retry/re-execute (back to start)
 func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask) (*entity.IngestionTask, error) {
-
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -89,6 +88,12 @@ func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask)
 // UpdateStatus Update ingestion task status
 func (dao *IngestionTaskDAO) UpdateStatus(taskID, status string) error {
 	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", status).Error
+}
+
+// UpdateComponentTotal records the number of components in the task's DSL
+// graph. It is the authoritative denominator for progress percentage.
+func (dao *IngestionTaskDAO) UpdateComponentTotal(taskID string, total int) error {
+	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
 }
 
 // CheckAnd called by ingestor
@@ -216,8 +221,7 @@ type TaskInfo struct {
 	FilesToDelete []string `json:"files_to_delete"`
 }
 
-func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userID *string) (*TaskInfo, error) {
-
+func (dao *IngestionTaskDAO) Delete(taskID string, userID *string) (*TaskInfo, error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -258,26 +262,10 @@ func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userI
 	taskStatus := tasks[0].Status
 	switch taskStatus {
 	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
-		// get all ingestion task log
-		var taskLogs []*entity.IngestionTaskLog
-		err = tx.Where("task_id = ?", taskID).Find(&taskLogs).Error
-		if err != nil {
-			return nil, err
-		}
-
-		fileMap := make(map[string]bool)
-		for _, taskLog := range taskLogs {
-			files, ok := taskLog.Checkpoint["files"].([]string)
-			if ok {
-				for _, file := range files {
-					fileMap[file] = true
-				}
-			}
-		}
+		// ingestion_task_log no longer carries file references (the old
+		// checkpoint JSON column was dropped in favor of typed columns), so
+		// there are no task-level files to delete here.
 		var filesToDelete []string
-		for file := range fileMap {
-			filesToDelete = append(filesToDelete, file)
-		}
 
 		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
 		if err != nil {
@@ -337,9 +325,15 @@ func (dao *IngestionTaskDAO) GetByID(id string) (*entity.IngestionTask, error) {
 }
 
 func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.IngestionTask, error) {
-	var task *entity.IngestionTask
-	err := DB.Where("document_id = ?", documentId).First(&task).Error
-	return task, err
+	var tasks []*entity.IngestionTask
+	err := DB.Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	return tasks[0], nil
 }
 
 type IngestionTaskLogDAO struct{}
@@ -356,10 +350,74 @@ func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) er
 	return DB.Save(ingestionLog).Error
 }
 
+// ListLogsByTaskID returns the task's logs in chronological (write) order.
+// Ordering is by auto-increment `id ASC` (NOT `create_time`) because
+// create_time has only second-level resolution and would tie-break
+// arbitrarily; `id` is monotonic and always reflects write order. This
+// feeds the frontend log stream (GET .../logs), which renders each row by
+// phase (0 started / 1 done / -1 failed).
 func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").Find(&tasks).Error
+	err := DB.Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
+}
+
+// TaskProgress is the server-side aggregate of a task's component progress,
+// served by GET /api/v1/ingestion_task/{task_id}/progress so the frontend
+// can render a progress bar without pulling the full log stream.
+type TaskProgress struct {
+	Total   int     `json:"total"`
+	Done    int     `json:"done"`
+	Failed  int     `json:"failed"`
+	Running int     `json:"running"`
+	Percent float64 `json:"percent"`
+}
+
+// AggregateProgress computes {total, done, failed, running, percent} for a
+// task purely in SQL. It takes each component's latest row (max id per
+// component) and classifies by its phase:
+//
+//	done    = latest phase is exit/success   (1)
+//	failed  = latest phase is error/failure  (-1 legacy, or 2 after 1c)
+//	running = anything else (started, 0)
+//
+// `total` is the authoritative denominator from ingestion_task.component_total.
+// The classification is forward-compatible with the §5.1 ProgressPhase
+// renumbering (exit=1 stays; error moves -1 -> 2).
+func (dao *IngestionTaskLogDAO) AggregateProgress(taskID string, total int) (*TaskProgress, error) {
+	// Latest row id per component for this task.
+	latestIDs := DB.Model(&entity.IngestionTaskLog{}).
+		Select("MAX(id)").
+		Where("task_id = ?", taskID).
+		Group("component")
+
+	type phaseRow struct {
+		Phase int
+	}
+	var rows []phaseRow
+	err := DB.Model(&entity.IngestionTaskLog{}).
+		Select("phase").
+		Where("id IN (?)", latestIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	progress := &TaskProgress{Total: total}
+	for _, r := range rows {
+		switch {
+		case r.Phase == 1:
+			progress.Done++
+		case r.Phase < 0 || r.Phase == 2:
+			progress.Failed++
+		default:
+			progress.Running++
+		}
+	}
+	if total > 0 {
+		progress.Percent = float64(progress.Done) / float64(total) * 100
+	}
+	return progress, nil
 }
 
 func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.IngestionTaskLog, error) {

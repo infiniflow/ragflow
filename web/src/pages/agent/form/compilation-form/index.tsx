@@ -7,6 +7,7 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { initialCompilationValues } from '../../constant/pipeline';
+import { useOwnerTenantId } from '../../context';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -25,6 +26,7 @@ const outputList = buildOutputList(initialCompilationValues.outputs);
 
 const CompilationForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
+  const ownerTenantId = useOwnerTenantId();
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -36,7 +38,7 @@ const CompilationForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <LargeModelFormField></LargeModelFormField>
+        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
         <CompilationTemplateFormField name="compilation_template_group_ids"></CompilationTemplateFormField>
         <Output list={outputList}></Output>
       </FormWrapper>

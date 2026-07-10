@@ -102,10 +102,10 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		task,
-		taskHandle,
 	)
+	var finalProgress float64
 	taskCtx.ProgressFunc = func(prog float64, msg string) {
-		taskCtx.Progress = int32(prog * 100)
+		finalProgress = prog
 		progressEvents = append(progressEvents, msg)
 	}
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -120,8 +120,8 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 	if !routedToDataflow {
 		t.Fatal("expected executeTask to route queue-consumed dataflow task to runDocumentTask")
 	}
-	if taskCtx.Progress != 100 {
-		t.Fatalf("taskCtx.Progress = %d, want 100", taskCtx.Progress)
+	if finalProgress != 1.0 {
+		t.Fatalf("finalProgress = %v, want 1.0", finalProgress)
 	}
 	if len(progressEvents) != 2 {
 		t.Fatalf("progressEvents = %v, want 2 events", progressEvents)

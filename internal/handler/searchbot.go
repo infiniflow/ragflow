@@ -133,7 +133,7 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 func (h *SearchBotHandler) Handle(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 func (h *SearchBotHandler) Ask(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -316,7 +316,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
