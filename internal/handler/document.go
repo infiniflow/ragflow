@@ -1476,7 +1476,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Tasks == nil || len(req.Tasks) == 0 {
-		common.ErrorWithCode(c, 1, "task_ids is required")
+		common.ErrorWithCode(c, common.CodeLackResources, "task_ids is required")
 		return
 	}
 
