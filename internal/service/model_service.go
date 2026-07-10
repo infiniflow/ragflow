@@ -470,6 +470,49 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 	return common.CodeSuccess, nil
 }
 
+// CreateNameOnlyProviderInstance creates a provider instance with only a name,
+// skipping API key validation and model creation. Mirrors Python's
+// create_name_only_provider_instance in provider_api_service.py:536.
+func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
+
+	if instanceName == "default" {
+		return common.CodeBadRequest, errors.New("instance name cannot be 'default'")
+	}
+
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+	tenantID := tenants[0].TenantID
+
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
+	}
+
+	instanceID := utility.GenerateToken()
+
+	tenantModelInstance := &entity.TenantModelInstance{
+		ID:           instanceID,
+		InstanceName: instanceName,
+		ProviderID:   provider.ID,
+		APIKey:       "",
+		Status:       "active",
+		Extra:        "{}",
+	}
+	err = m.modelInstanceDAO.Create(tenantModelInstance)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+	}
+
+	return common.CodeSuccess, nil
+}
+
 // verifyProviderAPIKey verifies the API key against the provider by calling
 // the driver's CheckConnection. It returns a map from model name to verify
 // status (success/fail/unknown). Mirrors Python's verify_api_key in
@@ -1140,7 +1183,173 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 	return added, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceName, newInstanceName, apiKey string) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
+
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+	tenantID := tenants[0].TenantID
+
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
+	}
+
+	// Find the instance — try by ID first, then by name.
+	instance, err := m.modelInstanceDAO.GetByID(instanceIDOrName)
+	if err != nil || instance.ProviderID != provider.ID {
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+	}
+	if err != nil {
+		return common.CodeNotFound, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
+	}
+
+	// Normalize api_key: VLLM with empty api_key defaults to "x".
+	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
+		apiKey = "x"
+	}
+
+	// Verify API key if requested.
+	modelVerifyResult := make(map[string]string)
+	if verify {
+		modelVerifyResult = m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
+	}
+
+	// Update instance record.
+	instanceUpdates := map[string]interface{}{
+		"api_key": apiKey,
+	}
+	if newInstanceName != "" && newInstanceName != instance.InstanceName {
+		instanceUpdates["instance_name"] = newInstanceName
+	}
+
+	extraFields := make(map[string]interface{})
+	if baseURL != "" {
+		extraFields["base_url"] = baseURL
+	}
+	if region != "" {
+		extraFields["region"] = region
+	}
+	// Preserve existing extra fields not overwritten.
+	existingExtra := make(map[string]interface{})
+	if instance.Extra != "" {
+		if err := json.Unmarshal([]byte(instance.Extra), &existingExtra); err != nil {
+			return common.CodeServerError, err
+		}
+	}
+	for k, v := range extraFields {
+		existingExtra[k] = v
+	}
+	extraBytes, err := json.Marshal(existingExtra)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	instanceUpdates["extra"] = string(extraBytes)
+	if err := m.modelInstanceDAO.UpdateByID(instance.ID, instanceUpdates); err != nil {
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+	}
+
+	// Use the (possibly updated) instance_name for model operations.
+	effectiveInstanceName := instance.InstanceName
+	if newInstanceName != "" {
+		effectiveInstanceName = newInstanceName
+	}
+
+	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
+	existingModels, err := m.modelDAO.GetModelsByInstanceID(instance.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	existingModelMap := make(map[string]*entity.TenantModel)
+	for _, mdl := range existingModels {
+		existingModelMap[mdl.ModelName] = mdl
+	}
+
+	// Delete models that are no longer in the submitted model_info.
+	submittedModelNames := make(map[string]bool)
+	if modelInfo != nil {
+		for _, mdl := range modelInfo {
+			if mdl.ModelName != "" {
+				submittedModelNames[mdl.ModelName] = true
+			}
+		}
+	}
+	var idsToRemove []string
+	for name, mdl := range existingModelMap {
+		if !submittedModelNames[name] {
+			idsToRemove = append(idsToRemove, mdl.ID)
+		}
+	}
+	if len(idsToRemove) > 0 {
+		if _, err := m.modelDAO.DeleteByIDs(idsToRemove); err != nil {
+			return common.CodeServerError, err
+		}
+	}
+
+	// Add or update models from model_info.
+	if modelInfo != nil {
+		for _, mdl := range modelInfo {
+			if mdl.ModelName == "" {
+				continue
+			}
+			// Attach verify status.
+			if verify {
+				verifyStatus := modelVerifyResult[mdl.ModelName]
+				if verifyStatus == "" {
+					verifyStatus = entity.ModelVerifyUnknown
+				}
+				if mdl.Extra == nil {
+					mdl.Extra = make(map[string]interface{})
+				}
+				mdl.Extra["verify"] = verifyStatus
+			}
+
+			if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {
+				// Update existing model.
+				updates := make(map[string]interface{})
+				if len(mdl.ModelTypes) > 0 {
+					combinedType := entity.ModelType(0)
+					for _, t := range mdl.ModelTypes {
+						combinedType |= entity.ModelTypeFromString(t)
+					}
+					if int(combinedType) != existingMdl.ModelType {
+						updates["model_type"] = int(combinedType)
+					}
+				}
+				mergedExtra := make(map[string]interface{})
+				if existingMdl.Extra != "" {
+					json.Unmarshal([]byte(existingMdl.Extra), &mergedExtra)
+				}
+				if mdl.Extra != nil {
+					for k, v := range mdl.Extra {
+						mergedExtra[k] = v
+					}
+				}
+				if mdl.MaxTokens > 0 {
+					mergedExtra["max_tokens"] = mdl.MaxTokens
+				}
+				extraBytes, _ := json.Marshal(mergedExtra)
+				updates["extra"] = string(extraBytes)
+				if len(updates) > 0 {
+					if err := m.modelDAO.UpdateByID(existingMdl.ID, updates); err != nil {
+						return common.CodeServerError, err
+					}
+				}
+			} else {
+				// Add new model.
+				if err := m.addModelToInstance(tenantID, providerName, effectiveInstanceName, mdl); err != nil {
+					return common.CodeServerError, err
+				}
+			}
+		}
+	}
+
 	return common.CodeSuccess, nil
 }
 

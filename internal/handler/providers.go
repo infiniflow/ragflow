@@ -197,9 +197,22 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
+	// If the request body only contains "instance_name", create a name-only
+	// instance without API key validation or model creation.
+	// Mirrors Python's provider_api.py:349 — set(data.keys()) == {"instance_name"}.
+	if req.APIKey == "" && req.BaseURL == "" && req.Region == "" && len(req.ModelInfo) == 0 {
+		code, err := h.modelProviderService.CreateNameOnlyProviderInstance(providerName, req.InstanceName, userID)
+		if err != nil {
+			common.ErrorWithCode(c, int(code), err.Error())
+			return
+		}
+		common.SuccessWithMessage(c, "success")
+		return
+	}
+
+	code, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
+		common.ErrorWithCode(c, int(code), err.Error())
 		return
 	}
 
@@ -389,8 +402,12 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	InstanceName string `json:"instance_name"`
-	APIKey       string `json:"api_key"`
+	InstanceName string                            `json:"instance_name"`
+	APIKey       string                            `json:"api_key"`
+	BaseURL      string                            `json:"base_url"`
+	Region       string                            `json:"region"`
+	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
+	Verify       *bool                             `json:"verify"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -418,7 +435,12 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
+	verify := true
+	if req.Verify != nil {
+		verify = *req.Verify
+	}
+
+	code, err := h.modelProviderService.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, req.ModelInfo, verify)
 	if err != nil {
 		common.ErrorWithCode(c, int(code), err.Error())
 		return

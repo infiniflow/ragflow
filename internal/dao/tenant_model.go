@@ -123,6 +123,22 @@ func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.T
 	return models, nil
 }
 
+// DeleteByIDs deletes all models whose id is in the given list.
+// Mirrors Python's TenantModelService.delete_by_ids.
+func (dao *TenantModelDAO) DeleteByIDs(ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("id IN ?", ids).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+// UpdateByID updates a tenant model's model_type and extra by primary key.
+// Mirrors Python's TenantModelService.update_model.
+func (dao *TenantModelDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.TenantModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // DeleteByInstanceIDs deletes all models whose instance_id is in the given list.
 func (dao *TenantModelDAO) DeleteByInstanceIDs(instanceIDs []string) (int64, error) {
 	if len(instanceIDs) == 0 {

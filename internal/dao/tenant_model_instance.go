@@ -111,6 +111,12 @@ func (dao *TenantModelInstanceDAO) DeleteByProviderIDAndInstanceName(providerID,
 	return result.RowsAffected, result.Error
 }
 
+// UpdateByID updates a tenant model instance by primary key.
+// Mirrors Python's TenantModelInstanceService.update_by_id.
+func (dao *TenantModelInstanceDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.TenantModelInstance{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // DeleteByProviderID deletes all instances for the given provider.
 func (dao *TenantModelInstanceDAO) DeleteByProviderID(providerID string) (int64, error) {
 	result := DB.Unscoped().Where("provider_id = ?", providerID).Delete(&entity.TenantModelInstance{})
