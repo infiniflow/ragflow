@@ -99,6 +99,7 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -273,15 +274,27 @@ func (c *TokenizerComponent) Parallelism() int { return 1 }
 //     continue`), but the chunk still carries tokenized fields if
 //     `full_text` is in `search_method`.
 func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	kbID := getStringOr(inputs, "kb_id", "")
-	modelID := getStringOr(inputs, "model_id", "")
-	upstream, err := decodeTokenizerFromUpstream(inputs)
+	// Run-level metadata lives in the workflow-wide CanvasState.Globals
+	// bag (seeded at pipeline start, published by the File component),
+	// not in the upstream output map — see GlobalOrInput.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
+	kbID := globals.GlobalOrInput(ctx, inputs, "kb_id", "")
+	modelID := globals.GlobalOrInput(ctx, inputs, "model_id", "")
+
+	// decodeTokenizerFromUpstream validates `name`; carry the resolved
+	// name into the decode input so both a Globals-backed run and a
+	// headless run (no Globals attached) satisfy it.
+	decInputs := inputs
+	if name != "" {
+		decInputs = cloneInputs(inputs)
+		decInputs["name"] = name
+	}
+	upstream, err := decodeTokenizerFromUpstream(decInputs)
 	if err != nil {
 		return nil, err
 	}
 	chunks := chunksFromTokenizerUpstream(upstream)
-	name := upstream.Name
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
 	return runtime.TrackElapsed("Tokenizer", func() (map[string]any, error) {
@@ -703,28 +716,24 @@ func hasEmbeddingVector(ck schema.ChunkDoc) bool {
 }
 
 func getStringOr(m map[string]any, key, def string) string {
-	if v, ok := getStringLocal(m, key); ok && v != "" {
+	if v, ok := m[key].(string); ok && v != "" {
 		return v
 	}
 	return def
 }
 
-// getStringLocal mirrors file.go's getString; we keep a local copy
-// so the tokenizer package does not depend on the file package's
-// helper signature. Reads either a string or a byte slice (JSON
-// decoding yields string for string fields by default).
-func getStringLocal(m map[string]any, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return "", false
+// cloneInputs returns a shallow copy of m with room for one extra key.
+// Used to inject the Globals-resolved `name` into the decode input without
+// mutating the caller's input snapshot.
+func cloneInputs(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
 	}
-	switch s := v.(type) {
-	case string:
-		return s, true
-	case []byte:
-		return string(s), true
+	cp := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		cp[k] = v
 	}
-	return "", false
+	return cp
 }
 
 func contains(s []string, v string) bool {
