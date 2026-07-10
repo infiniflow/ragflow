@@ -275,9 +275,11 @@ def set_tenant_default_models(tenant_id: str, model_provider: str, model_instanc
         if not success:
             return False, msg
         default_model = f"{model_name}@{model_instance}@{model_provider}"
-        tenant_model_id = resolve_model_id(tenant_id, model_type, default_model)
-        if not tenant_model_id:
-            return False, f"Model '{default_model}' not found"
+        normalized_model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
+        try:
+            tenant_model_id = resolve_model_id(tenant_id, normalized_model_type, default_model)
+        except LookupError as exc:
+            return False, str(exc)
     else:
         # Clear the default model
         default_model = ""

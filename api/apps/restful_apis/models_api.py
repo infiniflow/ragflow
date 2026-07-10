@@ -141,6 +141,8 @@ def get_default_models(tenant_id: str):
                         type: string
                       model_name:
                         type: string
+                      model_id:
+                        type: string
                       model_type:
                         type: string
                       enable:
