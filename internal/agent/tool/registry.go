@@ -40,7 +40,7 @@ var registry = map[string]Factory{
 	"execute_sql":       buildExeSQLTool,
 	"exesql":            buildExeSQLTool,
 	"github":            noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
-	"google":            noConfig("google", func() einotool.BaseTool { return NewGoogleTool() }),
+	"google":            buildGoogleTool,
 	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":          buildKeenableTool,
@@ -132,6 +132,39 @@ func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
+}
+
+func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
+	if len(params) == 0 {
+		return NewGoogleTool(), nil
+	}
+	for key := range params {
+		switch key {
+		case "api_key", "country", "language", "q", "start", "num":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google", key)
+		}
+	}
+	defaults := googleParams{}
+	if v, ok := stringParam(params, "api_key"); ok {
+		defaults.APIKey = v
+	}
+	if v, ok := stringParam(params, "country"); ok {
+		defaults.Country = v
+	}
+	if v, ok := stringParam(params, "language"); ok {
+		defaults.Language = v
+	}
+	if v, ok := stringParam(params, "q"); ok {
+		defaults.Q = v
+	}
+	if v, ok := intParam(params, "start"); ok {
+		defaults.Start = v
+	}
+	if v, ok := intParam(params, "num"); ok {
+		defaults.Num = v
+	}
+	return NewGoogleToolWithDefaults(nil, defaults), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {

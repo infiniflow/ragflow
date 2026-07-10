@@ -9,11 +9,12 @@ import (
 // TestVerifyRegistration_P1 verifies all components are registered,
 // case-insensitive, and returned in sorted order. The expected count is
 // read from plan §2.11.10 — P0 (8) + P1 (5) + P2 (4) + P3 (2) + P4 (3) = 22
-// at plan completion, plus 7 v1 fixture stubs (Retrieval, TavilySearch,
-// ExeSQL, Generate, Answer, Iteration, IterationItem) registered by
-// v1_stubs.go to keep the dsl-examples e2e suite compiling. The test
-// allows counts between 12 (P0+P1 minus the removed ExitLoop) and 30
-// (the 22 plan components + the 7 v1 stubs + Parallel) to roll
+// at plan completion, plus v1 fixture wrappers/stubs (including Retrieval,
+// TavilySearch, TavilyExtract, ExeSQL, Google, BGPT, YahooFinance, Generate,
+// Answer, Iteration, and IterationItem) registered by fixture_stubs.go to keep
+// the dsl-examples and canvas tool surface compiling. The test allows counts
+// between 12 (P0+P1 minus the removed ExitLoop) and 34 (the 22 plan components
+// plus the wrappers/stubs currently registered by fixture_stubs.go) to roll
 // forward as subsequent batches land.
 //
 // Note: ExitLoop is intentionally NOT in the registry anymore. The
