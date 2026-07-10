@@ -30,7 +30,7 @@ sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
 ```shell
 wget https://go.dev/dl/go1.25.4.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.4.linux-amd64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 source ~/.bashrc
 go version
@@ -126,11 +126,11 @@ After updating or implementing an API, update the frontend development environme
 
 ### 4.1 Proxy Schemes
 
-| Scheme | Description |
-|--------|-------------|
-| `python` | All API requests from the frontend are routed to the Python server |
+| Scheme   | Description                                                                           |
+|----------|---------------------------------------------------------------------------------------|
+| `python` | All API requests from the frontend are routed to the Python server                    |
 | `hybrid` | API requests are partially routed to the Go server and partially to the Python server |
-| `go` | All API requests from the frontend are routed to the Go server |
+| `go`     | All API requests from the frontend are routed to the Go server                        |
 
 
 ## 5. RAGFlow commands

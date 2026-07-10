@@ -109,7 +109,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *se
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -144,7 +144,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -173,7 +173,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -258,7 +258,7 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 		case errors.Is(err, service.ErrArtifactInvalidFilename),
 			errors.Is(err, service.ErrArtifactInvalidFileType),
 			errors.Is(err, service.ErrArtifactNotFound):
-			common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 
 		default:
 			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
@@ -286,7 +286,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 
 	preview, err := h.documentService.GetDocumentPreview(docID)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "Document not found!")
+		common.ErrorWithCode(c, common.CodeDataError, "Document not found!")
 		return
 	}
 
@@ -314,7 +314,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -366,7 +366,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -404,7 +404,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -832,7 +832,7 @@ func normalizeRunStatusFilter(statuses []string) []string {
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	tenantID := user.ID
@@ -951,7 +951,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 	}
 	data, code, err := h.documentService.UploadEmptyDocument(kb, tenantID, name)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
@@ -978,7 +978,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 	}
 	data, code, err := h.documentService.UploadWebDocument(kb, tenantID, name, rawURL)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
@@ -1018,18 +1018,18 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	docID := c.Param("document_id")
 
 	if docID == "" {
-		common.ErrorWithCode(c, int(common.CodeDataError), "Specify document_id please.")
+		common.ErrorWithCode(c, common.CodeDataError, "Specify document_id please.")
 		return
 	}
 	if datasetID == "" {
-		common.ErrorWithCode(c, int(common.CodeDataError), fmt.Sprintf("The dataset not own the document %s.", docID))
+		common.ErrorWithCode(c, common.CodeDataError, fmt.Sprintf("The dataset not own the document %s.", docID))
 		return
 	}
 
 	res, err := h.documentService.DownloadDocument(datasetID, docID)
 
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -1140,7 +1140,7 @@ func stringValue(value *string) string {
 func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1188,7 +1188,7 @@ type SetMetaRequest struct {
 func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1273,7 +1273,7 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 func (h *DocumentHandler) Ingest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1285,12 +1285,12 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 
 	var req service.IngestDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	if code, err := h.documentService.Ingest(userID, &req); err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -1317,7 +1317,7 @@ type DeleteMetaRequest struct {
 func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1391,7 +1391,7 @@ type ListIngestionsRequest struct {
 func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var req ListIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1423,7 +1423,7 @@ type StartParseDocumentsRequest struct {
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	var req StartParseDocumentsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1450,7 +1450,7 @@ type StopIngestionsRequest struct {
 func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	var req StopIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1471,7 +1471,7 @@ type RemoveIngestionsRequest struct {
 func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 	var req RemoveIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1499,7 +1499,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	var req ParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1527,12 +1527,12 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	var req StopParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), "`document_ids` is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "`document_ids` is required")
 		return
 	}
 
@@ -1554,17 +1554,17 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		common.ErrorWithCode(c, int(common.CodeServerError), "dataset_id is required")
+		common.ErrorWithCode(c, common.CodeServerError, "dataset_id is required")
 		return
 	}
 	if !h.datasetService.Accessible(datasetID, user.ID) {
-		common.ErrorWithCode(c, int(common.CodeServerError), "You don't own the dataset "+datasetID)
+		common.ErrorWithCode(c, common.CodeServerError, "You don't own the dataset "+datasetID)
 		return
 	}
 
@@ -1585,7 +1585,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1622,7 +1622,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 
 	data, code, err := h.documentService.UpdateDatasetDocument(user.ID, datasetID, documentID, &req, present)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -1632,7 +1632,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1660,7 +1660,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	if rawURL != "" {
 		data, code, err := h.documentService.UploadDocumentInfoByURL(user.ID, rawURL)
 		if err != nil {
-			common.ErrorWithCode(c, int(code), err.Error())
+			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
 		common.SuccessWithData(c, data, "success")
@@ -1669,7 +1669,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 
 	data, code, err := h.documentService.UploadDocumentInfos(user.ID, fileHeaders)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -1699,7 +1699,7 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1730,7 +1730,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 
 	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(datasetID, req.Selector, req.Updates, req.Deletes)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, resp, "success")

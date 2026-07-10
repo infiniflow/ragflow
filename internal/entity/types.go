@@ -119,6 +119,8 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeSpeech2Text
 	case "image2text":
 		return ModelTypeImage2Text
+	case "vision":
+		return ModelTypeImage2Text
 	case "rerank":
 		return ModelTypeRerank
 	case "tts":

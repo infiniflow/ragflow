@@ -33,7 +33,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
@@ -74,7 +74,75 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
+// ctxKeySetupOverrides carries the run-level setups override map into
+// BuildWorkflow so a component's `params["setups"]` can be merged with it
+// at compile time. The map is keyed by cpnID; each component only sees the
+// entry for its own id (an arbitrary string-keyed map). It mirrors the ctx
+// plumbing used for the per-run component factory
+// (componentFactoryFromContext): the override is threaded through
+// canvas.Compile → BuildWorkflow → buildNodeBody without the canvas
+// package ever importing the ingestion layer.
+const ctxKeySetupOverrides ctxKey = "canvas_setup_overrides"
+
+// withSetupOverrides attaches a run-level setups override map to ctx. It is
+// a no-op when m is nil so callers can pass a possibly-nil run parameter
+// straight through.
+func withSetupOverrides(ctx context.Context, m map[string]any) context.Context {
+	if m == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxKeySetupOverrides, m)
+}
+
+func setupOverridesFromContext(ctx context.Context) map[string]any {
+	m, _ := ctx.Value(ctxKeySetupOverrides).(map[string]any)
+	return m
+}
+
+// applySetupOverrides returns a clone of params with the per-component
+// setups override (already resolved for this cpnID by the caller) merged
+// into params["setups"]. The override wins on top-level key collisions. The
+// original params map is never mutated — the merge result is a fresh map —
+// because the params come from the shared *Canvas and a per-run override
+// must not leak into the next Run on the same Pipeline.
+func applySetupOverrides(params, cpnOverride map[string]any) map[string]any {
+	if len(cpnOverride) == 0 {
+		return params
+	}
+	out := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		out[k] = v
+	}
+	base, _ := out["setups"].(map[string]any)
+	out["setups"] = mergeSetups(base, cpnOverride)
+	return out
+}
+
+// mergeSetups merges a component-level setups map (base) with a run-level
+// override map. The maps are arbitrary string-keyed maps; when the same
+// top-level key exists in both, the override value wins (a full replacement
+// of that entry). The merge is shallow: only the top-level key-value pairs
+// are considered. (The Parser component happens to use file-type keys such
+// as "pdf"/"docx" as one example, but that is not required by this merge.)
+func mergeSetups(base, override map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, ov := range override {
+		merged[k] = ov
+	}
+	return merged
+}
+
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+	if overrides := setupOverridesFromContext(ctx); len(overrides) > 0 {
+		// overrides is keyed by cpnID; a component only sees its own
+		// entry. Components absent from the map are left untouched.
+		if cpnOverride, ok := overrides[cpnID].(map[string]any); ok && len(cpnOverride) > 0 {
+			params = applySetupOverrides(params, cpnOverride)
+		}
+	}
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
 	}
@@ -146,7 +214,7 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 // the default — invalid input must never widen the timeout silently.
 func componentTimeout() time.Duration {
 	const def = 600 * time.Second
-	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT"); v != "" {
+	if v := common.GetEnv(common.EnvComponentExecTimeout); v != "" {
 		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
 			return time.Duration(secs) * time.Second
 		}
@@ -158,12 +226,24 @@ func componentTimeout() time.Duration {
 // runtime.Component. The component is constructed once at build time
 // (in buildNodeBody) and re-invoked per iteration.
 //
-// Each invocation is wrapped in a context.WithTimeout derived from
-// resolveTimeout(comp.Name()) — the per-class resolver in timeout.go
-// (4-level: per-class env → per-class defaults table → uniform env
-// → 600s fallback). The lookup is per-invocation (not per-body) so
-// operators can tune COMPONENT_EXEC_TIMEOUT[_<CLASS>] at runtime
-// without rebuilding graphs.
+// This is the SINGLE chokepoint through which every component Invoke
+// passes — both the agent canvas and the ingestion pipeline
+// (internal/ingestion/pipeline compiles a canvas and runs its workflow)
+// reach components here. Cross-cutting concerns therefore belong here,
+// not inside each component's Invoke:
+//
+//   - per-class timeout: context.WithTimeout from resolveTimeout
+//     (4-level: per-class env → per-class defaults table → uniform env
+//     → 600s fallback). The lookup is per-invocation (not per-body) so
+//     operators can tune COMPONENT_EXEC_TIMEOUT[_<CLASS>] at runtime
+//     without rebuilding graphs.
+//   - progress: runtime.TrackProgress, with the callback pulled from
+//     ctx (nil ⇒ no observer). This makes progress a framework-level
+//     concern — components no longer wrap themselves.
+//   - elapsed-time accounting: runtime.TrackElapsed stamps
+//     _created_time / _elapsed_time into the output map so the
+//     dataflow-result UI can show per-node timing without each
+//     component repeating the bookkeeping.
 //
 // Timeout errors are surfaced as `timeout after Xs: <wrapped>`;
 // parent-context cancellation as `cancelled: <wrapped>`; all other
@@ -178,16 +258,24 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		timeout := resolveTimeoutFromContext(ctx, componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		out, err := comp.Invoke(cctx, in)
-		if err != nil {
+
+		var out map[string]any
+		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
+			var e error
+			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
+				return comp.Invoke(cctx, in)
+			})
+			return e
+		})
+		if invokeErr != nil {
 			switch {
-			case errors.Is(err, context.DeadlineExceeded):
+			case errors.Is(invokeErr, context.DeadlineExceeded):
 				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
-					cpnID, timeout, err)
-			case errors.Is(err, context.Canceled):
-				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, err)
+					cpnID, timeout, invokeErr)
+			case errors.Is(invokeErr, context.Canceled):
+				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
 			}
-			return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, err)
+			return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
 		}
 		if out == nil {
 			out = make(map[string]any, 1)

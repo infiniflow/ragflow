@@ -148,12 +148,9 @@ func TestRealProducerConsumer(t *testing.T) {
 	}
 
 	// ── 5. executeTask (our modified version) ──
-	// executeTask needs DB data for TaskHandler
-	db.Create(&entity.Task{ID: task.ID, DocID: "doc-real", FromPage: 0, ToPage: 100000})
-
-	tc, err := LoadTaskContext(task.ID)
+	tc, err := LoadFromIngestionTask(task)
 	if err != nil {
-		t.Fatalf("LoadTaskContext: %v", err)
+		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)

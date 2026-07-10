@@ -66,7 +66,7 @@ const NextInnerLLMSelect = forwardRef<
               data-testid={triggerTestId}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
-                <LLMLabel value={value} />
+                <LLMLabel value={value} ownerTenantId={ownerTenantId} />
               </SelectValue>
             </SelectTrigger>
           </PopoverTrigger>

@@ -241,26 +241,19 @@ def pip_install_torch():
     subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
 
 
-@once
-def _thread_pool_executor():
-    max_workers_env = os.getenv("THREAD_POOL_MAX_WORKERS", "128")
-    try:
-        max_workers = int(max_workers_env)
-    except ValueError:
-        max_workers = 128
-    if max_workers < 1:
-        max_workers = 1
-    return ThreadPoolExecutor(max_workers=max_workers)
-
-
 async def thread_pool_exec(func, *args, **kwargs):
     # loop.run_in_executor() submits the callable without propagating the caller's
     # contextvars (unlike asyncio.to_thread, which copies the context). Copy the
     # current context and run the callable inside it so ContextVars set by the
     # caller (e.g. tracing / per-request state) are visible in the worker thread.
+    #
+    # Use a short-lived executor per call instead of a shared singleton. Python
+    # 3.13's executor reuse can deadlock in this environment when the same helper
+    # is awaited repeatedly inside one event loop.
     loop = asyncio.get_running_loop()
     ctx = contextvars.copy_context()
-    if kwargs:
-        inner = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_thread_pool_executor(), ctx.run, inner)
-    return await loop.run_in_executor(_thread_pool_executor(), ctx.run, func, *args)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        if kwargs:
+            inner = functools.partial(func, *args, **kwargs)
+            return await loop.run_in_executor(executor, ctx.run, inner)
+        return await loop.run_in_executor(executor, ctx.run, func, *args)
