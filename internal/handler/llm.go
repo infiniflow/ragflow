@@ -60,7 +60,7 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -90,7 +90,7 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 func (h *LLMHandler) ListApp(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

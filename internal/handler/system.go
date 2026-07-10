@@ -105,7 +105,7 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -168,12 +168,12 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "pkg_name and level are required")
+		common.ErrorWithCode(c, common.CodeDataError, "pkg_name and level are required")
 		return
 	}
 
 	if err := common.SetLevel(req.Level); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "Invalid log level: "+req.Level)
+		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
 		return
 	}
 

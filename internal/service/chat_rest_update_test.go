@@ -174,7 +174,7 @@ func TestChatServiceCreateRejectsInvalidMetaDataFilter(t *testing.T) {
 		"name":             "created chat",
 		"meta_data_filter": []interface{}{"invalid"},
 	})
-	if err == nil || err.Error() != "`meta_data_filter` should be an object." {
+	if err == nil || err.Error() != "`meta_data_filter` should be an object" {
 		t.Fatalf("expected meta_data_filter error, got %v", err)
 	}
 	if code != common.CodeDataError {
@@ -227,7 +227,7 @@ func TestChatServiceUpdateChatRejectsTenantID(t *testing.T) {
 	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
 		"tenant_id": "tenant-2",
 	})
-	if err == nil || err.Error() != "`tenant_id` must not be provided." {
+	if err == nil || err.Error() != "`tenant_id` must not be provided" {
 		t.Fatalf("expected tenant_id error, got %v", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestChatServiceUpdateChatRejectsInvalidLLMSetting(t *testing.T) {
 	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
 		"llm_setting": "invalid",
 	})
-	if err == nil || err.Error() != "`llm_setting` should be an object." {
+	if err == nil || err.Error() != "`llm_setting` should be an object" {
 		t.Fatalf("expected llm_setting error, got %v", err)
 	}
 

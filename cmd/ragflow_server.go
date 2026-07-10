@@ -735,11 +735,11 @@ func startServer(config *server.Config) {
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
 		},
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderBy, desc)
 		},
 		func(userID string, req mcp.RetrievalRequest) (string, error) {
 			return handler.MCPRetrieval(datasetsService, userID, req)
@@ -765,7 +765,7 @@ func startServer(config *server.Config) {
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
-	// BotService delegates the agentbot completion to agentService so
+	// BotService delegates the agentBot completion to agentService so
 	// both paths share the same canvas runner. Reuse the llmService
 	// already constructed above (line 222) — do NOT redeclare with
 	// `:=` since the variable is in scope.
