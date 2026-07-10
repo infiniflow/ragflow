@@ -437,12 +437,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		dslMap, ok := dsl.(map[string]interface{})
 		if !ok {
 			if typed, ok := dsl.(entity.JSONMap); ok {
-				dslMap = map[string]interface{}(typed)
+				dslMap = typed
 			} else {
 				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
 			}
 		}
-		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(entity.JSONMap(dslMap)))
+		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
 	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
@@ -488,7 +488,7 @@ func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) 
 	if err != nil {
 		return nil, err
 	}
-	reset := dslpkg.ResetForCanvas(map[string]any(row.DSL))
+	reset := dslpkg.ResetForCanvas(row.DSL)
 	// Re-normalize through the same entry point UpdateAgent uses so
 	// any front-end that reads `graph.nodes` / `components[*].obj`
 	// right after the response sees a renderable shape, not a partial
@@ -783,7 +783,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			// `get_agent_dsl_with_release(...release_mode=False)`
 			// fallback in completion().
 			if len(canvasRow.DSL) > 0 {
-				dsl = dslpkg.NormalizeForRun(map[string]any(canvasRow.DSL))
+				dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
 			}
 		default:
 			// Wrap DB-side errors with ErrAgentStorageError
@@ -1340,7 +1340,7 @@ func normalisedDSLForRun(v *entity.UserCanvasVersion) map[string]any {
 	if v == nil || len(v.DSL) == 0 {
 		return nil
 	}
-	return dslpkg.NormalizeForRun(map[string]any(v.DSL))
+	return dslpkg.NormalizeForRun(v.DSL)
 }
 
 // CancelAgent signals the in-flight run (if any) for the given canvas to
