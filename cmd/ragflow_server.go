@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
 	ingestion "ragflow/internal/ingestion/service"
@@ -806,23 +805,6 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-	// Per-tenant canvas-runtime override selector, backed by the
-	// existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at
-	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
-	// endpoint stays registered and returns the explicit
-	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
-	// Skipping handler construction when rdb == nil silently removed
-	// the route until the next process restart, so a transient
-	// Redis blip at boot stranded canary operators with a 404 they
-	// could not diagnose from the client side. Keep the route hot.
-	var adminRuntimeSelector *runtime.Selector
-	if redisClient := redis.Get(); redisClient != nil {
-		if rdb := redisClient.GetClient(); rdb != nil {
-			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
-		}
-	}
-	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 
@@ -853,7 +835,6 @@ func startServer(config *server.Config) {
 		pluginHandler,
 		modelHandler,
 		fileCommitHandler,
-		adminRuntimeHandler,
 		openaiChatHandler,
 		botHandler,
 		componentsHandler)
