@@ -90,7 +90,7 @@ func variantFromEnv() string {
 }
 
 type outputDirs struct {
-	text, tables, dla, tsrRaw string
+	text, tables, dla string
 }
 
 func mkOutputDirs(variant string) outputDirs {
@@ -98,12 +98,10 @@ func mkOutputDirs(variant string) outputDirs {
 		text:   filepath.Join("testdata", "output", "go", variant, "text"),
 		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
 		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
-		tsrRaw: filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
 	os.MkdirAll(d.dla, 0755)
-	os.MkdirAll(d.tsrRaw, 0755)
 	return d
 }
 
@@ -344,15 +342,10 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 		os.WriteFile(filepath.Join(dirs.tables, name+".json"), b, 0644)
 	}
 
-	// ── DLA + TSR debug intermediates ──
-	if parsed.DLADebug != nil {
-		if b, _ := json.MarshalIndent(parsed.DLADebug, "", "  "); b != nil {
+	// ── DLA layout intermediates ──
+	if parsed.DLARegions != nil {
+		if b, _ := json.MarshalIndent(parsed.DLARegions, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
-		}
-	}
-	if parsed.TSRDebug != nil {
-		if b, _ := json.MarshalIndent(parsed.TSRDebug, "", "  "); b != nil {
-			os.WriteFile(filepath.Join(dirs.tsrRaw, name+".json"), b, 0644)
 		}
 	}
 }

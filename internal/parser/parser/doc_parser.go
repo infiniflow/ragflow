@@ -24,19 +24,10 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-type DOCParser struct {
-	libType string
-}
+type DOCParser struct{}
 
-func NewDOCParser(libType string) (*DOCParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &DOCParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported DOC library type: %s", libType)
-	}
+func NewDOCParser() *DOCParser {
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {

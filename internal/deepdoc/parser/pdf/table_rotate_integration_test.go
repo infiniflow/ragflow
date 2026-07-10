@@ -57,7 +57,6 @@ func TestTableRotation_Integration(t *testing.T) {
 	t.Logf("PDF: %d pages", pageCount)
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
 	_ = NewParser(cfg) // verify construction does not panic
