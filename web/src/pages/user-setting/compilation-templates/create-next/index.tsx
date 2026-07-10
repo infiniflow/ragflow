@@ -1,5 +1,4 @@
 import BackButton from '@/components/back-button';
-import { CustomTimeline } from '@/components/originui/timeline';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import {
@@ -9,7 +8,7 @@ import {
 } from '@/components/ui/resizable';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { Routes } from '@/routes';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useFieldArray, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -17,6 +16,7 @@ import { BasicInfoStep } from './components/basic-info-step';
 import { BlueprintsStep } from './components/blueprints-step';
 import { TemplateConfiguration } from './components/template-configuration';
 import { TemplateSidebar } from './components/template-sidebar';
+import { TemplateStepper } from './components/template-stepper';
 import { useCreateNextCompilationTemplateGroup } from './hooks/use-create-next-compilation-template-group';
 
 export default function CreateNextCompilationTemplate() {
@@ -39,29 +39,14 @@ export default function CreateNextCompilationTemplate() {
 
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
 
-  const timelineNodes = useMemo(
-    () => [
-      {
-        id: 'basic-info',
-        title: t('setting.basicInfo'),
-        content: t('setting.basicInfoDescription'),
-      },
-      {
-        id: 'configuration',
-        title: t('setting.templateWizardConfiguration'),
-        content: t('setting.templateWizardConfigurationDescription'),
-      },
-      ...(isArtifacts
-        ? [
-            {
-              id: 'blueprints',
-              title: t('setting.blueprints'),
-              content: t('setting.blueprintsDescription'),
-            },
-          ]
-        : []),
-    ],
-    [isArtifacts, t],
+  const handleStepChange = useCallback(
+    (step: number) => {
+      // Allow clicking back to completed steps only.
+      if (step < activeStep) {
+        setActiveStep(step);
+      }
+    },
+    [activeStep],
   );
 
   const handleNext = useCallback(async () => {
@@ -85,7 +70,7 @@ export default function CreateNextCompilationTemplate() {
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
-      <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3">
+      <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
         <BackButton
           to={`${Routes.UserSetting}${Routes.CompilationTemplates}`}
         />
@@ -97,16 +82,10 @@ export default function CreateNextCompilationTemplate() {
       </header>
 
       <div className="shrink-0 px-5 py-4 border-b border-border-button">
-        <CustomTimeline
-          nodes={timelineNodes}
+        <TemplateStepper
           activeStep={activeStep}
-          onStepChange={(step) => {
-            // Allow clicking back to completed steps only.
-            if (step < activeStep) {
-              setActiveStep(step);
-            }
-          }}
-          orientation="horizontal"
+          isArtifacts={isArtifacts}
+          onStepChange={handleStepChange}
         />
       </div>
 

@@ -31,7 +31,7 @@ func TestPipelineParity(t *testing.T) {
 		t.Skipf("charspy/ not found: %v", err)
 	}
 
-	filter := os.Getenv("BATCH_PARITY_FILTER")
+	filter := common.GetEnv(common.EnvBatchParityFilter)
 
 	total, passed := 0, 0
 	for _, e := range entries {

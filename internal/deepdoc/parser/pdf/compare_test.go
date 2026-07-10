@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"testing"
 
 	"ragflow/internal/deepdoc/parser/pdf/tool"
@@ -17,19 +18,19 @@ import (
 // compare the noocr variant; PY_OCR_SUFFIX to override the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
 	level := slog.LevelInfo
-	if os.Getenv("BATCH_LOG_LEVEL") == "debug" {
+	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
 		level = slog.LevelDebug
 	}
-	if os.Getenv("BATCH_LOG_LEVEL") == "warn" {
+	if common.GetEnv(common.EnvBatchLogLevel) == "warn" {
 		level = slog.LevelWarn
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	goVariant := "ocr"
-	if os.Getenv("BATCH_SKIP_OCR") == "1" {
+	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
 		goVariant = "noocr"
 	}
-	pyVariant := os.Getenv("PY_OCR_SUFFIX")
+	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
 	if pyVariant == "" {
 		pyVariant = goVariant
 	}

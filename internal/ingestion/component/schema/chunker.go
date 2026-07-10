@@ -136,6 +136,15 @@ func (c *ChunkerFromUpstream) Validate() error {
 //
 //	self.set_output("output_format", "chunks")
 //	self.set_output("chunks", chunks)
+//
+// Unlike the Python runtime (which auto-merges every input kwarg into the
+// output via ProcessBase.invoke), the Go runtime only forwards the explicit
+// component output to the next node. The run-level metadata that downstream
+// consumers still need (e.g. Tokenizer reads `name` for title embedding, and
+// tenant_id/kb_id for embedding-model resolution) therefore lives in the
+// workflow-wide CanvasState.Globals bag — seeded at pipeline start and
+// published by the File component — and is read directly from ctx, not
+// re-emitted by each chunker. The fields below are the chunker-owned outputs.
 type ChunkerOutputs struct {
 	// OutputFormat is always "chunks" on success.
 	OutputFormat PayloadFormat `json:"output_format,omitempty"`

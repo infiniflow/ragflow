@@ -85,7 +85,7 @@ func getSearchOwnerIDs(c *gin.Context) []string {
 func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -156,7 +156,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -169,7 +169,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -218,7 +218,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 			return
 		}
 		// Not found error
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -276,7 +276,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 			return
 		}
 		// Delete failed error
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -298,7 +298,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -319,7 +319,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 
 	// Validate name (same as Python validation)
 	if err := common.ValidateName(req.Name); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -367,7 +367,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 func (h *SearchHandler) Completion(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -393,7 +393,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 			jsonInternalError(c, err)
 			return
 		}
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	if plan == nil {
