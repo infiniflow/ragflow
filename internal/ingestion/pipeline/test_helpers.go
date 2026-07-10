@@ -17,8 +17,8 @@ package pipeline
 import (
 	"encoding/json"
 	"math"
-	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -43,7 +43,7 @@ func RequireTokenizerPool(t *testing.T) {
 		return
 	}
 	cfg := &tokenizer.PoolConfig{
-		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),
+		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,

@@ -467,7 +467,8 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //	output_format (string)          — always "chunks".
 //	_ERROR        (string, reserved) — populated when the component
 //	                                  short-circuits with an error.
-//	_created_time, _elapsed_time    — TrackElapsed bookkeeping.
+//	_created_time, _elapsed_time    — stamped by the canvas framework
+//	                                 (realComponentBody), not here.
 func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
@@ -479,44 +480,38 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
 	}
 
-	tracked, err := runtime.TrackElapsed("Extractor", func() (map[string]any, error) {
-		cb := runtime.ProgressCallback(nil)
-		progressErr := runtime.TrackProgress("Extractor", cb, func() error {
-			return runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
-				if len(in.chunks) == 0 {
-					// Fast path (python _invoke line 108): one
-					// call with the resolved args directly.
-					ans, callErr := c.call(timeoutCtx, in, "")
-					if callErr != nil {
-						return callErr
-					}
-					in.chunks = []map[string]any{{in.fieldName: ans}}
-					return nil
-				}
-				for i, ck := range in.chunks {
-					text, _ := ck["text"].(string)
-					ans, callErr := c.call(timeoutCtx, in, text)
-					if callErr != nil {
-						return fmt.Errorf("chunk %d: %w", i, callErr)
-					}
-					ck[in.fieldName] = ans
-					in.chunks[i] = ck
-				}
-				return nil
-			})
-		})
-		if progressErr != nil {
-			return nil, progressErr
+	// Progress (_created_time / _elapsed_time stamping, start/done
+	// callbacks) is owned by the canvas framework (realComponentBody),
+	// not by this component. The per-chunk LLM timeout below is a
+	// business concern that stays here.
+	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
+		if len(in.chunks) == 0 {
+			// Fast path (python _invoke line 108): one
+			// call with the resolved args directly.
+			ans, callErr := c.call(timeoutCtx, in, "")
+			if callErr != nil {
+				return callErr
+			}
+			in.chunks = []map[string]any{{in.fieldName: ans}}
+			return nil
 		}
-		return map[string]any{
-			"chunks":        in.chunks,
-			"output_format": "chunks",
-		}, nil
-	})
-	if err != nil {
+		for i, ck := range in.chunks {
+			text, _ := ck["text"].(string)
+			ans, callErr := c.call(timeoutCtx, in, text)
+			if callErr != nil {
+				return fmt.Errorf("chunk %d: %w", i, callErr)
+			}
+			ck[in.fieldName] = ans
+			in.chunks[i] = ck
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
-	return tracked, nil
+	return map[string]any{
+		"chunks":        in.chunks,
+		"output_format": "chunks",
+	}, nil
 }
 
 // call dispatches one LLM chat call for the supplied chunk text
