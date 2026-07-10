@@ -677,9 +677,9 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseUrl)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
 	}

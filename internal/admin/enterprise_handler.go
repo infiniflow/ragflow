@@ -332,7 +332,7 @@ func (h *Handler) ShowProvider(c *gin.Context) {
 
 	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
+		common.ErrorWithCode(c, common.CodeNotFound, err.Error())
 		return
 	}
 	common.SuccessWithData(c, provider, "success")
@@ -368,7 +368,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 	}
 	models, err := dao.GetModelProviderManager().ListModels(providerName)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
+		common.ErrorWithCode(c, common.CodeNotFound, err.Error())
 		return
 	}
 
@@ -388,7 +388,7 @@ func (h *Handler) ShowProviderModel(c *gin.Context) {
 	}
 	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeNotFound), err.Error())
+		common.ErrorWithCode(c, common.CodeNotFound, err.Error())
 		return
 	}
 	common.SuccessWithData(c, model, "success")
@@ -528,13 +528,13 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 
 	var req AlterProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	userID := c.GetString("user_id")
 	if userID == "" {
-		common.ErrorWithCode(c, int(common.CodeUnauthorized), "Unauthorized")
+		common.ErrorWithCode(c, common.CodeUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -588,7 +588,7 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 
 	var req DropModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -648,7 +648,7 @@ func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	var req EnableOrDisableModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -724,7 +724,7 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 
 	var req DropModelsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -759,7 +759,7 @@ func (h *Handler) SetSystemLicense(c *gin.Context) {
 	var req SetSystemLicenseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -800,7 +800,7 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 	var req SetSystemLicenseConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	result, err := h.service.UpdateSystemLicenseConfig(req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
@@ -821,7 +821,7 @@ func (h *Handler) ShowUserActivity(c *gin.Context) {
 	var req ShowUserActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	userActivity, err := h.service.ShowUserActivity(req.Email, req.Days)
@@ -846,7 +846,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	var req ShowUserDatasetSummaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1296,7 +1296,7 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 	var req ShowUsersActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
@@ -1323,7 +1323,7 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 	var req ListUsersReportsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1503,7 +1503,7 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 	var request ListUsersQuotaRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1662,7 +1662,7 @@ func (h *Handler) PurgeOrphanData(c *gin.Context) {
 	var request PurgeOrphanDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	result, err := h.service.PurgeOrphanData(request.Preview)
@@ -1687,7 +1687,7 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 	var request PurgeUserDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	encodedUsername := c.Param("username")
@@ -1726,7 +1726,7 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	var request PurgeUsersDataRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 

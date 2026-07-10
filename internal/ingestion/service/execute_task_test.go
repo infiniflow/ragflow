@@ -48,7 +48,6 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
-		nil,
 	)
 
 	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
@@ -66,6 +65,33 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	}
 	if finalTask.Status != common.FAILED {
 		t.Fatalf("final status = %s, want %s", finalTask.Status, common.FAILED)
+	}
+}
+
+func TestDefaultRunDocumentTask_RequiresConfiguredPipelineID(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db,
+		testutil.WithTenantID("tenant-1"),
+		testutil.WithKBID("kb-1"),
+		testutil.WithDocID("doc-1"),
+		testutil.WithTaskID("task-1"),
+	)
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
+		ID:         taskID,
+		DocumentID: docID,
+		DatasetID:  kbID,
+		Status:     common.RUNNING,
+	})
+	if err == nil {
+		t.Fatal("expected error when no pipeline is configured")
+	}
+	if err.Error() != "ingestion task task-1: no pipeline_id configured for document doc-1 or dataset kb-1" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -99,7 +125,6 @@ func TestExecuteTask_DataflowRoutesToTaskHandler(t *testing.T) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
-		nil,
 	)
 
 	ingestor.executeTask(taskCtx)
