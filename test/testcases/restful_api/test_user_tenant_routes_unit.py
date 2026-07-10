@@ -1532,7 +1532,7 @@ def _load_chat_routes_unit_module(monkeypatch):
         "TenantService",
         (),
         {
-            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4"))),
+            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id"))),
             "get_joined_tenants_by_user_id": staticmethod(lambda _user_id: [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]),
         },
     )
@@ -1599,7 +1599,7 @@ def test_create_chat_uses_tenant_default_llm_when_llm_id_is_null_unit(monkeypatc
 
     res = _run(module.create.__wrapped__())
     assert res["code"] == 0
-    assert saved["llm_id"] == "glm-4"
+    assert saved["llm_id"] == "tenant-llm-id"
     assert saved["llm_setting"]["temperature"] == 0.8
 
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"sort"
 	"strconv"
 	"strings"
@@ -191,7 +192,7 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 	}
 
 	// Also write CSV if BATCH_CSV env is set (backward compat).
-	if csvPath := os.Getenv("BATCH_CSV"); csvPath != "" {
+	if csvPath := common.GetEnv(common.EnvBatchCSV); csvPath != "" {
 		if err := WriteCSV(csvPath, diffs); err != nil {
 			log.Logf("CSV write error: %v", err)
 		} else {

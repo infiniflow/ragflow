@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
@@ -894,11 +893,11 @@ type feedbackDelta struct {
 }
 
 func chunkFeedbackEnabled() bool {
-	return strings.ToLower(os.Getenv("CHUNK_FEEDBACK_ENABLED")) == "true"
+	return common.GetEnv(common.EnvChunkFeedbackEnabled) == "true"
 }
 
 func chunkFeedbackWeighting() string {
-	weighting := strings.ToLower(strings.TrimSpace(os.Getenv("CHUNK_FEEDBACK_WEIGHTING")))
+	weighting := strings.TrimSpace(common.GetEnvSmall(common.EnvChunkFeedbackWeighting))
 	if weighting == "uniform" || weighting == "relevance" {
 		return weighting
 	}

@@ -1,4 +1,3 @@
-
 package table
 
 import (
@@ -17,7 +16,7 @@ func TestGroupBoxesByRC_RDiffSplitsRows(t *testing.T) {
 		{X0: 210, X1: 290, Top: 0, Bottom: 30, Text: "C", R: 2, C: 2},
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "D", R: 3, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", R: 4, C: 1},
-	{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
+		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
 	}
 	rows := GroupBoxesByRC(boxes)
 	// R=0,1,2,3,4,5 → 6 rows (Python: R differs → new row).

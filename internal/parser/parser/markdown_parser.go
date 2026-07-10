@@ -18,30 +18,16 @@ package parser
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
 )
 
-const (
-	GoMarkdown = "go_markdown"
-)
+type MarkdownParser struct{}
 
-type MarkdownParser struct {
-	libType string
-}
-
-func NewMarkdownParser(libType string) (*MarkdownParser, error) {
-	switch libType {
-	case GoMarkdown:
-		return &MarkdownParser{
-			libType: GoMarkdown,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported Markdown library type: %s", libType)
-	}
+func NewMarkdownParser() *MarkdownParser {
+	return &MarkdownParser{}
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
@@ -50,9 +36,6 @@ func NewMarkdownParser(libType string) (*MarkdownParser, error) {
 // emits one item with `text` + `doc_type_kwd: "text"`. The legacy
 // debug-print path has been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(filename string, data []byte) ParseResult {
-	if p.libType != GoMarkdown {
-		return ParseResult{Err: fmt.Errorf("unsupported Markdown library type: %s", p.libType)}
-	}
 	doc := markdownNew().Parse(data)
 
 	var items []map[string]any

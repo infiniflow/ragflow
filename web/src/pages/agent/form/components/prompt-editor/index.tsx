@@ -153,7 +153,7 @@ function PromptContent({
           <div className="absolute inset-y-0 right-2 z-10 flex items-center">
             <Tooltip>
               <TooltipTrigger asChild>
-                <label className="flex cursor-pointer items-center rounded-sm border border-border bg-bg-base/95 px-1 py-0.5 shadow-sm backdrop-blur-sm">
+                <label className="flex cursor-pointer items-center rounded-sm px-1 py-0.5 shadow-sm backdrop-blur-sm">
                   <span className="sr-only">{t('flow.mergePath')}</span>
                   <div className="origin-right scale-75">
                     <Switch
