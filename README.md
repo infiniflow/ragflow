@@ -320,7 +320,7 @@ docker build --platform linux/amd64 \
 ## 🔨 Launch service from source for development
 
 > [!IMPORTANT]
-> After cloning the repository for the first time, run `lefthook install` once from the repo root to enable local Git hooks.
+> After cloning the repository for the first time, run `git config --local --unset core.hooksPath`, `uv tool install lefthook` and `lefthook install` once from the repo root to enable local Git hooks.
 
 1. Install `uv`, or skip this step if it is already installed:
 
@@ -334,6 +334,8 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
+   git config --local --unset core.hooksPath
+   uv tool install lefthook
    lefthook install
    ```
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
