@@ -184,7 +184,7 @@ export function BlueprintsStep({
             <BlueprintsEmptyState />
           )}
 
-          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-between">
+          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
             <Button type="button" variant="outline" onClick={onBack}>
               {t('common.back')}
             </Button>
