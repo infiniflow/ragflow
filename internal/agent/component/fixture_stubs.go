@@ -521,5 +521,6 @@ func init() {
 	Register("DuckDuckGo", newDuckDuckGoComponent)
 	Register("Google", newGoogleComponent)
 	Register("GoogleScholar", newGoogleScholarComponent)
+	Register("PubMed", newPubMedComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }
