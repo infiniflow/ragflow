@@ -550,6 +550,7 @@ async def upsert_dataset_nav_doc(
         await lock.spin_acquire()
     except Exception:
         logging.exception("dataset_nav: lock acquire failed for kb=%s", kb_id)
+        return
 
     try:
         # 4. Layered KNN search for nearest cluster
@@ -704,6 +705,7 @@ async def remove_dataset_nav_doc(
         await lock.spin_acquire()
     except Exception:
         logging.exception("dataset_nav: lock acquire failed for kb=%s", kb_id)
+        return
 
     try:
         # 1. Find and delete the nav_doc row
@@ -843,11 +845,15 @@ async def _maybe_split_cluster(
     )
     embeddings = []
     names = []
+    name_to_type: dict[str, str] = {}
     for c in child_details:
         stored = c.get(vf)
         if stored:
             embeddings.append(stored)
             names.append(c.get("name", ""))
+        cn = c.get("name", "")
+        if cn:
+            name_to_type[cn] = c.get("type_kwd", "nav_cluster")
 
     if len(embeddings) < 4:
         return
@@ -885,7 +891,8 @@ async def _maybe_split_cluster(
         doc_ids: list[str] = []
         descs: list[str] = []
         for kn in kid_names:
-            cid = _nav_cluster_id(kb_id, kn) if "navc_" in kn else _nav_doc_id(kn)
+            is_doc = name_to_type.get(kn) == "nav_doc"
+            cid = _nav_doc_id(kn) if is_doc else _nav_cluster_id(kb_id, kn)
             row = await _store_get(tenant_id, kb_id, cid)
             if row:
                 payload = json.loads(row.get("content_with_weight") or "{}")
@@ -910,7 +917,8 @@ async def _maybe_split_cluster(
 
         # Reparent children to new split cluster
         for kn in kid_names:
-            cid = _nav_cluster_id(kb_id, kn) if "navc_" in kn else _nav_doc_id(kn)
+            is_doc = name_to_type.get(kn) == "nav_doc"
+            cid = _nav_doc_id(kn) if is_doc else _nav_cluster_id(kb_id, kn)
             row = await _store_get(tenant_id, kb_id, cid)
             if row:
                 row["parent_kwd"] = group_name
