@@ -32,7 +32,7 @@ func LoadConfig() Config {
 		SkipOCR:       common.GetEnv(common.EnvBatchSkipOCR) == "1",
 		CompareOnly:   common.GetEnv(common.EnvBatchCompareOnly) == "1",
 		CompareFilter: common.GetEnv(common.EnvBatchCompareFilter),
-		CSVOutput:     envStr("BATCH_COMPARE_CSV", filepath.Join(td, "output", fmt.Sprintf("compare_%s.csv", time.Now().Format("20060102_150405")))),
+		CSVOutput:     envStr(common.EnvBatchCompareCSV, filepath.Join(td, "output", fmt.Sprintf("compare_%s.csv", time.Now().Format("20060102_150405")))),
 		GoTextDir:     filepath.Join(td, "output", "go", goVariant, "text"),
 		PyTextDir:     filepath.Join(td, "output", "py", pyVariant, "text"),
 		TablesDir:     filepath.Join(td, "output", "go", goVariant, "tables"),
