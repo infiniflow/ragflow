@@ -304,6 +304,35 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	b[bucket] = payload
 }
 
+// GetGlobal returns a value from the workflow-wide Globals bag. Globals is a
+// generic, cross-component scratch space owned by CanvasState; the set of
+// keys an ingestion pipeline elects to store there is ingestion-specific and
+// therefore lives in the ingestion component package, not here.
+func (s *CanvasState) GetGlobal(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.Globals[key]
+	return v, ok
+}
+
+// SetGlobal writes a value into the workflow-wide Globals bag. It is the
+// single, lock-safe mutation point for Globals so callers never touch the map
+// field directly.
+func (s *CanvasState) SetGlobal(key string, val any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
+	s.Globals[key] = val
+}
+
 // GetRetrievalChunks returns a snapshot of the chunks recorded in
 // state.Retrieval["chunks"]. The Retrieval map is the canvas-level
 // aggregate that the Retrieval tool populates during the ReAct loop;

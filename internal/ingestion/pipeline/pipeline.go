@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/dao"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/globals"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -188,12 +189,22 @@ var defaultCheckpointTTL = 24 * time.Hour
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
 	if p.canvas == nil {
 		return nil, fmt.Errorf("pipeline: canvas is nil")
+	}
+	// runSetups, when non-nil, overrides components' DSL-baked
+	// `params["setups"]` at compile time. It is keyed by cpnID; each
+	// component is merged only with its own entry, and within that entry a
+	// top-level key fully replaces the base entry for that key (see
+	// canvas.mergeSetups). It is variadic so existing callers that pass
+	// only (ctx, inputs) keep working.
+	var runSetups map[string]any
+	if len(setups) > 0 {
+		runSetups = setups[0]
 	}
 	if runtime.DefaultFactory() == nil {
 		runtime.InstallDefaultRegistryFactory()
@@ -234,6 +245,9 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 			canvas.WithInterruptAfterNonTerminalCpn(),
 		)
 	}
+	// Run-level setups (keyed by cpnID) override the DSL-baked component
+	// setups at compile time (higher priority; see canvas.WithSetupOverrides).
+	compileOpts = append(compileOpts, canvas.WithSetupOverrides(runSetups))
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
@@ -262,6 +276,14 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any) (map[string]a
 	runCtx = runtime.WithProgressCallback(runCtx, p.taskLogProgressCallback())
 
 	current := cloneMapOrEmpty(inputs)
+
+	// Seed the workflow-wide Globals bag with the run-level metadata
+	// (name, tenant_id, kb_id, model_id, doc_id, ...) once, from the
+	// pipeline run inputs. Downstream components read these from ctx
+	// instead of relying on every node re-emitting them. The File
+	// component re-publishes `name` (and storage refs) as it derives
+	// them mid-run.
+	globals.SeedIngestionGlobals(runCtx, current)
 
 	if !resumable {
 		return p.runPlain(runCtx, current, compiled, tracker, runState)

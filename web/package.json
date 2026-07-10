@@ -11,7 +11,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
-    "prepare": "cd .. && git rev-parse --git-dir >/dev/null 2>&1 && lefthook install || true",
+    "prepare": "node scripts/prepare.js",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "test": "jest --no-cache --coverage",

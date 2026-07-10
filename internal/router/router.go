@@ -51,7 +51,6 @@ type Router struct {
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
-	adminRuntimeHandler  *handler.AdminRuntimeHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
 }
@@ -84,7 +83,6 @@ func NewRouter(
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
 	fileCommitHandler *handler.FileCommitHandler,
-	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
@@ -117,7 +115,6 @@ func NewRouter(
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
-		adminRuntimeHandler:  adminRuntimeHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
 	}
@@ -569,12 +566,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			if r.componentsHandler != nil {
 				v1.GET("/components", r.componentsHandler.Get)
 			}
-
-			// Admin routes — Phase 6 per-tenant canvas runtime override.
-			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
-			// handler is tolerated and yields a no-op registration.
-			admin := v1.Group("/admin")
-			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
 
 			connectors := v1.Group("/connectors")
 			{
