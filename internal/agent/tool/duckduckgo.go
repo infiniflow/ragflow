@@ -103,11 +103,6 @@ func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "Search channel: general or news. Defaults to general.",
 				Required: false,
 			},
-			"top_n": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 10.",
-				Required: false,
-			},
 		}),
 	}, nil
 }

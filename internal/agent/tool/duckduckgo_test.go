@@ -247,8 +247,8 @@ func TestDuckDuckGo_Info(t *testing.T) {
 	if !strings.Contains(params, `"channel"`) {
 		t.Fatalf("schema missing channel param: %s", params)
 	}
-	if !strings.Contains(params, `"top_n"`) {
-		t.Fatalf("schema missing top_n param: %s", params)
+	if strings.Contains(params, `"top_n"`) {
+		t.Fatalf("schema should not expose top_n param: %s", params)
 	}
 }
 
