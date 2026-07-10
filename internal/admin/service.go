@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
+	servicepkg "ragflow/internal/service"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
@@ -61,6 +62,7 @@ type Service struct {
 	llmDAO              *dao.LLMDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
+	ingestionTaskSvc    *servicepkg.IngestionTaskService
 }
 
 // NewService create admin service
@@ -85,6 +87,7 @@ func NewService() *Service {
 		llmDAO:              dao.NewLLMDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
 	}
 }
 
@@ -100,92 +103,15 @@ func (s *Service) Logout(user interface{}) error {
 
 // ListTasks
 func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-
-	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	showTasks := []map[string]interface{}{}
-	for _, task := range ingestionTasks {
-		var user *entity.User
-		user, err = s.userDAO.GetByTenantID(task.UserID)
-		if err != nil {
-			return nil, err
-		}
-		//var document *entity.Document
-		//document, err = s.documentDAO.GetByID(task.DocumentID)
-		//if err != nil {
-		//	return nil, err
-		//}
-
-		var showTask map[string]interface{}
-		var latestLog *entity.IngestionTaskLog
-		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
-		showTask = map[string]interface{}{
-			"id":          task.ID,
-			"user_id":     task.UserID,
-			"user":        user.Email,
-			"document_id": task.DocumentID,
-			"status":      task.Status,
-		}
-		if err == nil && latestLog != nil && latestLog.Checkpoint != nil {
-			step, ok := latestLog.Checkpoint["current_step"].(float64)
-			if !ok {
-				showTasks = append(showTasks, showTask)
-				continue
-			}
-			showTask = map[string]interface{}{
-				"id":          task.ID,
-				"user_id":     task.UserID,
-				"user":        user.Email,
-				"document_id": task.DocumentID,
-				"status":      task.Status,
-				"step":        int(step),
-			}
-		}
-
-		showTasks = append(showTasks, showTask)
-	}
-	return showTasks, nil
+	return s.ingestionTaskSvc.ListAllForAdmin()
 }
 
 func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	var deletedTasks []map[string]string
-	for _, taskID := range tasks {
-		taskRecord := map[string]string{
-			"task_id": taskID,
-		}
-		_, err := s.ingestionTaskDAO.Delete(taskID, nil)
-		if err != nil {
-			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
-		} else {
-			taskRecord["remove"] = "success"
-		}
-		deletedTasks = append(deletedTasks, taskRecord)
-	}
-	return deletedTasks, nil
+	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
 }
 
 func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	var taskResponses []*entity.IngestionTask
-	for _, taskID := range tasks {
-		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
-		if err != nil {
-			return nil, err
-		}
-
-		if task.Status == common.STOPPING {
-			msgQueueEngine := engine.GetMessageQueueEngine()
-			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		taskResponses = append(taskResponses, task)
-	}
-	return taskResponses, nil
+	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
 }
 
 // GetUserByToken get user by access token

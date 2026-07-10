@@ -37,7 +37,7 @@ import (
 
 // TestRealProducerConsumer exercises the project's real producer and consumer code paths:
 //
-//	Producer: document.go pattern — CheckAndCreate(IngestionTask) → PublishTask(NATS)
+//	Producer: document.go pattern — Create(IngestionTask) → PublishTask(NATS)
 //	Consumer: Ingestor.Start() core logic — calls each actual function in sequence
 func TestRealProducerConsumer(t *testing.T) {
 	// ── 1. NATS ──
@@ -89,9 +89,9 @@ func TestRealProducerConsumer(t *testing.T) {
 		DatasetID:  "kb1",
 		Status:     common.CREATED,
 	}
-	created, err := dao.NewIngestionTaskDAO().CheckAndCreate(ingestionTask)
+	created, err := dao.NewIngestionTaskDAO().Create(ingestionTask)
 	if err != nil {
-		t.Fatalf("CheckAndCreate: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
 	t.Logf("Producer: IngestionTask created id=%s status=%s", created.ID, created.Status)
 
