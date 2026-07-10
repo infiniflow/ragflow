@@ -422,12 +422,12 @@ func newWikipediaComponent(params map[string]any) (Component, error) {
 	if v, ok := params["top_n"]; ok {
 		topN = toIntParam(v)
 	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: Wikipedia: top_n must be a positive integer")
+	}
 	language := "en"
 	if v, ok := params["language"].(string); ok && strings.TrimSpace(v) != "" {
 		language = strings.TrimSpace(v)
-	}
-	if topN <= 0 {
-		return nil, fmt.Errorf("canvas: Wikipedia: top_n must be a positive integer")
 	}
 	if !agenttool.WikipediaLanguageSupported(language) {
 		return nil, fmt.Errorf("canvas: Wikipedia: unsupported language %q", language)

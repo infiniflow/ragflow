@@ -33,6 +33,8 @@ const wikipediaToolName = "wikipedia_search"
 
 const wikipediaToolDescription = "A wide range of how-to and information pages are made available in wikipedia. Since 2001, it has grown rapidly to become the world's largest reference website. From Wikipedia, the free encyclopedia."
 
+const wikipediaUserAgent = "Mozilla/5.0 (compatible; ragflow/1.0; +https://github.com/infiniflow/ragflow)"
+
 const (
 	defaultWikipediaTopN     = 10
 	defaultWikipediaLanguage = "en"
@@ -182,8 +184,14 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 	if maxResults <= 0 {
 		maxResults = w.topN
 	}
+	if !WikipediaLanguageSupported(lang) {
+		return wikipediaErrJSON(fmt.Errorf("wikipedia: unsupported language %q", lang)),
+			fmt.Errorf("wikipedia: unsupported language %q", lang)
+	}
 	endpoint := buildWikipediaURL(lang, p.Query, maxResults)
-	resp, err := w.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
+	resp, err := w.helper.Do(ctx, http.MethodGet, endpoint, "", "", map[string]string{
+		"User-Agent": wikipediaUserAgent,
+	})
 	if err != nil {
 		return wikipediaErrJSON(err), err
 	}
@@ -213,8 +221,8 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 			Extract string
 			FullURL string
 		}{
-			Index: p.Index,
-			Title: p.Title,
+			Index:   p.Index,
+			Title:   p.Title,
 			Extract: p.Extract,
 			FullURL: p.FullURL,
 		})
@@ -232,7 +240,7 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 		}
 		fullURL := p.FullURL
 		if fullURL == "" {
-			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", w.lang, url.PathEscape(p.Title))
+			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", lang, url.PathEscape(p.Title))
 		}
 		results = append(results, wikipediaResult{
 			Title:   p.Title,

@@ -96,7 +96,9 @@ func TestWikipedia_BuildURL(t *testing.T) {
 func TestWikipedia_ParseResults(t *testing.T) {
 	t.Parallel()
 
+	var gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"query": {
@@ -118,6 +120,9 @@ func TestWikipedia_ParseResults(t *testing.T) {
 	out, err := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
+	}
+	if !strings.Contains(gotUA, "ragflow") {
+		t.Errorf("User-Agent = %q, want to contain ragflow", gotUA)
 	}
 
 	var env wikipediaEnvelope
