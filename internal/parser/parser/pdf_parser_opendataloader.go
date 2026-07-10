@@ -19,7 +19,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiServerURL))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiServer))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}

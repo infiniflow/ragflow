@@ -18,7 +18,7 @@ func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseRe
 	}
 	apiServer := strings.TrimSpace(parser.MinerUAPIServer)
 	if apiServer == "" {
-		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruApiServerURL))
+		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruApiServer))
 	}
 	if apiServer == "" {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU requires mineru_apiserver or MINERU_APISERVER")}

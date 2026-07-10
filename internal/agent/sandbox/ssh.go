@@ -121,7 +121,7 @@ func sshConfigFromEnv() map[string]any {
 		"HOST":               common.GetEnv(common.EnvSSHHost),
 		"PORT":               common.GetEnv(common.EnvSSHPort),
 		"USERNAME":           common.GetEnv(common.EnvSSHUsername),
-		"PASSWORD":           common.GetEnv(common.EnvSSPassword),
+		"PASSWORD":           common.GetEnv(common.EnvSSHPassword),
 		"PRIVATE_KEY":        common.GetEnv(common.EnvSSHPrivateKey),
 		"PRIVATE_KEY_PATH":   common.GetEnv(common.EnvSSHPrivateKeyPath),
 		"PASSPHRASE":         common.GetEnv(common.EnvSSHPassphrase),
