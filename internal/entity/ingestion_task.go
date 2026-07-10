@@ -42,28 +42,3 @@ type IngestionTaskLog struct {
 func (IngestionTaskLog) TableName() string {
 	return "ingestion_task_log"
 }
-
-type IngestionTasklet struct {
-	ID     string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TaskID string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Schema JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
-	Status string  `gorm:"column:status;size:32;not null;" json:"status"`
-	BaseModel
-}
-
-// TableName specify table name
-func (IngestionTasklet) TableName() string {
-	return "ingestion_tasklet"
-}
-
-type IngestionTaskletLog struct {
-	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskletID  string  `gorm:"column:tasklet_id;size:32;not null;index" json:"tasklet_id"`
-	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
-	BaseModel
-}
-
-// TableName specify table name
-func (IngestionTaskletLog) TableName() string {
-	return "ingestion_tasklet_log"
-}

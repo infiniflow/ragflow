@@ -119,38 +119,6 @@ func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, e
 	}, nil
 }
 
-// Load loads the full task context following the FK chain: document → knowledgebase → tenant.
-// Kept for backward compatibility.
-func Load(docID string) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", docID, err)
-	}
-
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
-	if err != nil || kb == nil {
-		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
-	}
-
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
-	if err != nil || tenant == nil {
-		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
-	}
-
-	pipelineID := ""
-	if doc.PipelineID != nil {
-		pipelineID = *doc.PipelineID
-	}
-
-	return &TaskContext{
-		TaskType:   "dataflow",
-		PipelineID: pipelineID,
-		Doc:        *doc,
-		KB:         *kb,
-		Tenant:     *tenant,
-	}, nil
-}
-
 // LoadTaskContext loads the full task context following the FK chain: task → document → knowledgebase → tenant.
 // Kept for backward compatibility.
 func LoadTaskContext(taskID string) (*TaskContext, error) {

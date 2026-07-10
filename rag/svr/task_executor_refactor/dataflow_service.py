@@ -38,7 +38,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_config_by_id
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_model_config_by_id
 from common.connection_utils import timeout
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
@@ -244,15 +244,11 @@ class DataflowService:
             embedding_id = kb.embd_id
             if kb.tenant_embd_id:
                 try:
-                    embd_model_config = get_model_config_by_id(ctx.tenant_id, kb.tenant_embd_id)
+                    embd_model_config = get_model_config_by_id(ctx.tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = get_model_config_from_provider_instance(
-                        ctx.tenant_id, LLMType.EMBEDDING, embedding_id
-                    )
+                    embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             else:
-                embd_model_config = get_model_config_from_provider_instance(
-                    ctx.tenant_id, LLMType.EMBEDDING, embedding_id
-                )
+                embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             from api.db.services.llm_service import LLMBundle
 
             with LLMBundle(ctx.tenant_id, embd_model_config) as embedding_model:

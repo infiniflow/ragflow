@@ -27,7 +27,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key
+from api.db.joint_services.tenant_model_service import get_api_key, get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
@@ -277,10 +277,10 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
         model_type = "chat"
     try:
         await thread_pool_exec(
-            get_model_config_from_provider_instance,
+            resolve_model_config,
             tenant_id=tenant_id,
-            model_name=llm_id,
             model_type=model_type,
+            model_ref=llm_id,
         )
     except Exception as e:
         logging.error(f"Fail to get model config for {llm_id}: {e}")
@@ -298,7 +298,7 @@ async def _validate_rerank_id(rerank_id, tenant_id):
         return None
     try:
         await thread_pool_exec(
-            get_model_config_from_provider_instance,
+            resolve_model_config,
             tenant_id=tenant_id,
             model_name=rerank_id,
             model_type="rerank",
@@ -1127,7 +1127,7 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_from_provider_instance(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = resolve_model_config(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
