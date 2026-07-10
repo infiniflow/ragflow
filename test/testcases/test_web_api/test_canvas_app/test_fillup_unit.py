@@ -90,8 +90,8 @@ def _load_fillup_module(monkeypatch):
     return module
 
 
-def _make_fillup(module, *, query, inputs):
-    component = module.UserFillUp.__new__(module.UserFillUp)
+def _make_component(cls, *, query, inputs):
+    component = cls.__new__(cls)
     component._canvas = SimpleNamespace(
         globals={
             "sys.query": query,
@@ -108,10 +108,21 @@ def _make_fillup(module, *, query, inputs):
     return component
 
 
+def _make_fillup(module, *, query, inputs):
+    return _make_component(module.UserFillUp, query=query, inputs=inputs)
+
+
+def _make_begin(module, *, query, inputs):
+    class _Begin(module.UserFillUp):
+        component_name = "Begin"
+
+    return _make_component(_Begin, query=query, inputs=inputs)
+
+
 @pytest.mark.p2
-def test_user_fillup_auto_consumes_initial_query_for_single_field(monkeypatch):
+def test_begin_auto_consumes_initial_query_for_single_field(monkeypatch):
     module = _load_fillup_module(monkeypatch)
-    component = _make_fillup(
+    component = _make_begin(
         module,
         query="code",
         inputs={"demo": {"type": "options", "name": "Demo"}},
@@ -125,9 +136,9 @@ def test_user_fillup_auto_consumes_initial_query_for_single_field(monkeypatch):
 
 
 @pytest.mark.p2
-def test_user_fillup_only_auto_consumes_initial_query_once(monkeypatch):
+def test_begin_only_auto_consumes_initial_query_once(monkeypatch):
     module = _load_fillup_module(monkeypatch)
-    component = _make_fillup(
+    component = _make_begin(
         module,
         query="code",
         inputs={"demo": {"type": "options", "name": "Demo"}},
@@ -141,9 +152,27 @@ def test_user_fillup_only_auto_consumes_initial_query_once(monkeypatch):
 
 
 @pytest.mark.p2
-def test_user_fillup_does_not_consume_unmatched_structured_query(monkeypatch):
+def test_user_fillup_does_not_consume_initial_query_for_single_field(monkeypatch):
+    # A mid-flow Await Response (UserFillUp) must wait for a fresh user
+    # response instead of auto-filling its single field from the opening
+    # message. This mirrors the already-correct multi-field behavior.
     module = _load_fillup_module(monkeypatch)
     component = _make_fillup(
+        module,
+        query="code",
+        inputs={"demo": {"type": "options", "name": "Demo"}},
+    )
+
+    component._invoke(inputs={})
+
+    assert component._param.outputs == {}
+    assert component._canvas.globals["sys.__initial_user_input_consumed__"] is False
+
+
+@pytest.mark.p2
+def test_begin_does_not_consume_unmatched_structured_query(monkeypatch):
+    module = _load_fillup_module(monkeypatch)
+    component = _make_begin(
         module,
         query={"x": 8},
         inputs={"demo": {"type": "options", "name": "Demo"}},

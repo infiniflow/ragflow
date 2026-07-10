@@ -14,12 +14,14 @@
 #  limitations under the License.
 #
 import json
+import logging
 import re
 from functools import partial
 
 from agent.component.base import ComponentParamBase, ComponentBase
 from api.db.services.file_service import FileService
 
+_logger = logging.getLogger(__name__)
 
 _INITIAL_USER_INPUT_CONSUMED_KEY = "sys.__initial_user_input_consumed__"
 
@@ -41,6 +43,15 @@ class UserFillUp(ComponentBase):
     def _merge_runtime_inputs(self, runtime_inputs):
         if runtime_inputs:
             return runtime_inputs
+
+        # Only the entry `Begin` node may consume the initial user query as its
+        # form answer. A mid-flow `Await Response` (UserFillUp) must always pause
+        # for a fresh user response; otherwise a single-field form would silently
+        # continue using the opening message instead of waiting (multi-field forms
+        # already wait, so this restores consistent behavior).
+        if self.component_name.lower() != "begin":
+            _logger.debug("[UserFillUp] '%s' is not Begin; skipping initial query consumption and waiting for user input", self.component_name)
+            return {}
 
         fields = self.get_input_elements()
         if not fields:
