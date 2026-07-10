@@ -154,8 +154,6 @@ func InitDB(migrateDB bool) error {
 		&entity.TenantModelGroup{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-		&entity.IngestionTasklet{},
-		&entity.IngestionTaskletLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 	}
