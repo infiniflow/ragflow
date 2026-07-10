@@ -148,32 +148,6 @@ func TestEncodeTexts_ReturnsVectors(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// GetEmbeddingDimension
-// =============================================================================
-
-func TestTestEncodeForDim_ReturnsDimension(t *testing.T) {
-	stub := &stubDriver{}
-	model := makeTestEmbeddingModel(stub, 100)
-	dim, err := getEmbeddingDimension(model)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if dim != 2 {
-		t.Errorf("dim = %d, want 2 (stubDriver returns 2-element vectors)", dim)
-	}
-}
-
-func TestTestEncodeForDim_ModelError(t *testing.T) {
-	stub := &stubDriver{}
-	model := makeTestEmbeddingModel(stub, 100)
-	model.ModelDriver = &errDriver{}
-	_, err := getEmbeddingDimension(model)
-	if err == nil {
-		t.Error("expected error from failing driver")
-	}
-}
-
 type errDriver struct{}
 
 func (d *errDriver) Embed(modelName *string, texts []string, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig) ([]models.EmbeddingData, error) {

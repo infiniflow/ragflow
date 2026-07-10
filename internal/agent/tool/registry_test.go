@@ -41,13 +41,13 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 }
 
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
-	// Every key in registry.
+	// Every key in registry (29 entries, 24 unique canonical tools).
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
@@ -116,13 +116,15 @@ func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
 func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	t.Parallel()
 
-	// Every entry the registry advertises.
+	// Every entry the registry advertises. 29 names, 24 unique
+	// canonical tools (execute_sql == exesql, retrieval ==
+	// search_my_dataset == search_my_dateset, crawler == web_crawler).
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{

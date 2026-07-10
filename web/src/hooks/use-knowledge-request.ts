@@ -1,28 +1,48 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
-import { ResponsePostType } from '@/interfaces/database/base';
+import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
+  IArtifact,
+  IArtifactGraph,
+  IArtifactPage,
+  IArtifactTopic,
   IDataset,
   IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
   ITestingResult,
+  IWikiCommit,
+  IWikiCommitDetail,
+  IWikiCommitListResponse,
 } from '@/interfaces/database/dataset';
-import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
+import {
+  IFetchArtifactGraphRequestParams,
+  ITestRetrievalRequestBody,
+  IUpdateArtifactPageRequestParams,
+} from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  clearWiki,
   deleteKnowledgeGraph,
+  getArtifactGraph,
+  getArtifactPage,
   getKbDetail,
   getKnowledgeGraph,
+  getWikiCommit,
+  listArtifactTopics,
+  listArtifacts,
   listDataset,
   listTag,
+  listWikiCommits,
   removeTag,
   renameTag,
+  updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
 import {
+  useInfiniteQuery,
   useIsMutating,
   useMutation,
   useMutationState,
@@ -47,10 +67,18 @@ export const enum KnowledgeApiAction {
   SaveKnowledge = 'saveKnowledge',
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
+  FetchArtifactList = 'fetchArtifactList',
+  FetchArtifactTopicList = 'fetchArtifactTopicList',
+  FetchArtifactPage = 'fetchArtifactPage',
+  FetchArtifactGraph = 'fetchArtifactGraph',
+  UpdateArtifactPage = 'updateArtifactPage',
+  FetchWikiCommits = 'fetchWikiCommits',
+  FetchWikiCommit = 'fetchWikiCommit',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
+  ClearWiki = 'clearWiki',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -324,6 +352,301 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   return { data, loading };
 };
 
+export const ArtifactKeys = {
+  list: (
+    datasetId: string,
+    keywords: string,
+    topic?: string,
+    pageType?: string,
+  ) =>
+    [
+      KnowledgeApiAction.FetchArtifactList,
+      datasetId,
+      keywords,
+      topic,
+      pageType,
+    ] as const,
+  listByDataset: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactList, datasetId] as const,
+  detail: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchArtifactPage, datasetId, pageType, slug] as const,
+};
+
+export const ArtifactTopicKeys = {
+  list: (datasetId: string, keywords: string) =>
+    [KnowledgeApiAction.FetchArtifactTopicList, datasetId, keywords] as const,
+  listByDataset: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
+};
+
+const wikiCommitKeys = {
+  list: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchWikiCommits, datasetId, pageType, slug] as const,
+  detail: (datasetId: string, commitId: string) =>
+    [KnowledgeApiAction.FetchWikiCommit, datasetId, commitId] as const,
+};
+
+export const useFetchWikiCommits = (
+  artifact: IArtifact | null,
+  enabled = true,
+) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } =
+    useQuery<IWikiCommitListResponse | null>({
+      queryKey: wikiCommitKeys.list(knowledgeBaseId, pageType, slug),
+      enabled:
+        !!knowledgeBaseId && !!artifact && !!pageType && !!slug && enabled,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } = await listWikiCommits(knowledgeBaseId, pageType, slug);
+        // The merged file-commit endpoint returns {total, page, page_size, commits},
+        // while the existing components expect {total, items}. Normalize here.
+        const raw = (data?.data ?? {}) as {
+          total?: number;
+          items?: IWikiCommit[];
+          commits?: IWikiCommit[];
+        };
+        return {
+          total: raw.total ?? 0,
+          items: raw.items ?? raw.commits ?? [],
+        };
+      },
+    });
+
+  return {
+    commits: data?.items ?? [],
+    total: data?.total ?? 0,
+    loading,
+  };
+};
+
+export function useFetchWikiCommit(commitId: string | null) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IWikiCommitDetail | null>({
+    queryKey: wikiCommitKeys.detail(knowledgeBaseId, commitId ?? ''),
+    enabled: !!knowledgeBaseId && !!commitId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getWikiCommit(knowledgeBaseId, commitId!);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
+type UseFetchArtifactListOptions = {
+  keywords?: string;
+  topic?: string;
+  pageType?: string;
+  enabled?: boolean;
+};
+
+export const useFetchArtifactList = (
+  options: UseFetchArtifactListOptions = {},
+) => {
+  const { keywords = '', topic, pageType, enabled = true } = options;
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{
+      artifacts: IArtifact[];
+      total: number;
+    }>({
+      queryKey: ArtifactKeys.list(knowledgeBaseId, keywords, topic, pageType),
+      enabled: !!knowledgeBaseId && enabled && !!topic,
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listArtifacts(knowledgeBaseId, {
+          page,
+          page_size: 30,
+          keywords,
+          topic,
+          page_type: pageType,
+        });
+
+        const responseData = data?.data;
+
+        return {
+          artifacts: responseData?.items ?? [],
+          total: responseData?.total ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loadedCount = allPages.reduce(
+          (sum, page) => sum + page.artifacts.length,
+          0,
+        );
+        return loadedCount < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const artifacts = useMemo(
+    () => data?.pages.flatMap((page) => page.artifacts) ?? [],
+    [data],
+  );
+
+  const loading = isFetching || isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    artifacts,
+    loading,
+    handleScroll,
+    hasMore: !!hasNextPage,
+  };
+};
+
+type UseFetchArtifactTopicListOptions = {
+  keywords?: string;
+  enabled?: boolean;
+};
+
+export const useFetchArtifactTopicList = (
+  options: UseFetchArtifactTopicListOptions = {},
+) => {
+  const { keywords = '', enabled = true } = options;
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{
+      topics: IArtifactTopic[];
+      total: number;
+    }>({
+      queryKey: ArtifactTopicKeys.list(knowledgeBaseId, keywords),
+      enabled: !!knowledgeBaseId && enabled,
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listArtifactTopics(knowledgeBaseId, {
+          page,
+          page_size: 30,
+          keywords,
+        });
+
+        const responseData = data?.data;
+
+        return {
+          topics: responseData?.items ?? [],
+          total: responseData?.total ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loadedCount = allPages.reduce(
+          (sum, page) => sum + page.topics.length,
+          0,
+        );
+        return loadedCount < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const topics = useMemo(
+    () => data?.pages.flatMap((page) => page.topics) ?? [],
+    [data],
+  );
+
+  const loading = isFetching || isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    topics,
+    loading,
+    handleScroll,
+    hasMore: !!hasNextPage,
+  };
+};
+
+export function useFetchArtifactPage(artifact: IArtifact | null) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } = useQuery<IArtifactPage | null>({
+    queryKey: ArtifactKeys.detail(knowledgeBaseId, pageType, slug),
+    enabled: !!knowledgeBaseId && !!artifact && !!pageType && !!slug,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactPage(knowledgeBaseId, pageType, slug);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
+export const useUpdateArtifactPage = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<
+    ResponseType<IArtifactPage>,
+    Error,
+    IUpdateArtifactPageRequestParams
+  >({
+    mutationKey: [KnowledgeApiAction.UpdateArtifactPage],
+    mutationFn: async (params) => {
+      const { data = {} } = await updateArtifactPage(
+        knowledgeBaseId,
+        params.pageType,
+        params.slug,
+        params.body,
+      );
+      if (data.code === 0) {
+        message.success(i18n.t(`message.updated`));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.detail(
+            knowledgeBaseId,
+            params.pageType,
+            params.slug,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, updateArtifactPage: mutateAsync };
+};
+
 export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();
 
@@ -335,6 +658,31 @@ export function useFetchKnowledgeGraph() {
     queryFn: async () => {
       const { data } = await getKnowledgeGraph(knowledgeBaseId);
       return data?.data;
+    },
+  });
+
+  return { data, loading };
+}
+
+export const artifactGraphKeys = {
+  graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
+    [KnowledgeApiAction.FetchArtifactGraph, datasetId, params?.node] as const,
+};
+
+export function useFetchArtifactGraph(
+  params?: IFetchArtifactGraphRequestParams,
+  options?: { enabled?: boolean },
+) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactGraph>({
+    queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
+    initialData: { entities: [], relations: [] } as IArtifactGraph,
+    enabled: !!knowledgeBaseId && (options?.enabled ?? true),
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactGraph(knowledgeBaseId, params);
+      return data?.data ?? { entities: [], relations: [] };
     },
   });
 
@@ -401,6 +749,37 @@ export const useRemoveKnowledgeGraph = () => {
   });
 
   return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
+
+export const useClearWiki = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.ClearWiki],
+    mutationFn: async () => {
+      const { data } = await clearWiki(knowledgeBaseId);
+      if (data?.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: artifactGraphKeys.graph(knowledgeBaseId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, clearWiki: mutateAsync };
 };
 
 export const useFetchKnowledgeList = (

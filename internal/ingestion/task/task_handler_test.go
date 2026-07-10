@@ -136,6 +136,35 @@ func TestTaskHandler_DefaultDataflowServiceInjectsProgress(t *testing.T) {
 	}
 }
 
+func TestTaskHandler_Dataflow_UsesTaskContext(t *testing.T) {
+	ctx := makeTaskHandlerTestContext("dataflow")
+	type ctxKey string
+	const key ctxKey = "trace"
+	ctx.Ctx = context.WithValue(context.Background(), key, "task-ctx")
+
+	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
+		return mustNewDataflowService(t, ctx, dataflowID, 0, 0).
+			WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
+				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
+			}).
+			WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+				if got := runCtx.Value(key); got != "task-ctx" {
+					t.Fatalf("runCtx value = %v, want task-ctx", got)
+				}
+				return map[string]any{"chunks": []map[string]any{{"text": "stub", "q_2_vec": []float64{0.1, 0.2}}}}, dsl, nil
+			}).
+			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+				return nil, nil
+			}).
+			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
+			WithDocService(&stubDocService{}).
+			WithChunkCounter(&stubChunkCounter{}), nil
+	})
+	if err := handler.Handle(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("dataflow")
 	ctx.Doc.PipelineID = testStrPtr("flow-1")
