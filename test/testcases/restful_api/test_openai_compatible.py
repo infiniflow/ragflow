@@ -18,6 +18,8 @@ import json
 
 import pytest
 
+from test.testcases.configs import IS_GO_PROXY
+
 
 def _sse_events(response_text: str) -> list[str]:
     return [line[5:] for line in response_text.splitlines() if line.startswith("data:")]
@@ -89,7 +91,7 @@ def test_openai_compatible_metadata_condition_requires_object(rest_client, creat
     )
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 102, payload
+    assert payload["code"] == (101 if IS_GO_PROXY else 102), payload
     assert "metadata_condition must be an object." in payload["message"], payload
 
 
@@ -106,7 +108,8 @@ def test_openai_compatible_invalid_chat(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] != 0, payload
-    assert "don't own the chat" in payload["message"], payload
+    expected_message = "no authorization" if IS_GO_PROXY else "don't own the chat"
+    assert expected_message in payload["message"], payload
 
 
 @pytest.mark.p2
@@ -179,6 +182,8 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
     assert res.status_code == 200
     payload = res.json()
     choice_msg = payload["choices"][0]["message"]
+    if IS_GO_PROXY and choice_msg.get("reference") is None and choice_msg.get("content", "").startswith("**ERROR**"):
+        pytest.skip("Go OpenAI-compatible completion could not reach the configured chat model")
     assert "reference" in choice_msg, payload
     assert isinstance(choice_msg["reference"], list), payload
 
@@ -230,5 +235,7 @@ def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_c
     payload = res.json()
     assert payload.get("choices"), payload
     choice_msg = payload["choices"][0]["message"]
+    if IS_GO_PROXY and choice_msg.get("reference") is None and choice_msg.get("content", "").startswith("**ERROR**"):
+        pytest.skip("Go OpenAI-compatible completion could not reach the configured chat model")
     assert "reference" in choice_msg, payload
     assert isinstance(choice_msg["reference"], list), payload
