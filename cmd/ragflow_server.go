@@ -381,17 +381,17 @@ func main() {
 		}
 	case "admin":
 		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start admin server: %v\n", err)
+			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(arguments); err != nil {
-			fmt.Printf("Failed to start syncer: %v\n", err)
+			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -401,6 +401,17 @@ func main() {
 }
 
 func runAdmin(args *serverArgs) error {
+
+	// Create HTTP server
+	config := server.GetConfig()
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
@@ -424,8 +435,6 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
-	config := server.GetConfig()
 	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
