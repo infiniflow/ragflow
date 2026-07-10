@@ -1928,7 +1928,7 @@ class LiteLLMBase(ABC):
             history = deepcopy(hist)
             try:
                 for _ in range(self.max_rounds + 1):
-                    logging.info(f"{self.tools=}")
+                    logging.info(f"HAS TOOL:{len(self.tools)}\n{history=}")
 
                     completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(

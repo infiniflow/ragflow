@@ -51,13 +51,13 @@ from rag.utils.redis_conn import RedisDistributedLock
 # Hard cap on the number of docs we record in the nav markdown.
 # Beyond this we no-op on adds; the next doc to drop out of the KB
 # frees a slot via ``remove_dataset_nav_doc``.
-MAX_DATASET_NAV_DOCS = 128
+MAX_DATASET_NAV_DOCS = 4096
 
 # Hard cap on the per-doc summary length, in tokens. Long summaries
 # bloat the markdown and slow downstream LLM passes that ingest the
 # whole nav blob; 128 tokens is enough for 1-2 sentences in either
 # Chinese or English text.
-MAX_DOC_SUMMARY_TOKENS = 128
+MAX_DOC_SUMMARY_TOKENS = 4096
 
 _COMPILE_KWD = "dataset_nav"
 

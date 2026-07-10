@@ -320,7 +320,7 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
     if model_obj.status != ActiveStatusEnum.ACTIVE.value:
         raise LookupError(f"TenantModel id={model_id} is disabled.")
 
-    provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    _, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not provider_obj:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
 
@@ -331,7 +331,7 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
         if provider_obj.tenant_id not in joined_tenant_ids:
             raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
 
-    instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    _, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
     if not instance_obj:
         raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
 
@@ -344,7 +344,7 @@ def get_model_config_by_id(tenant_id: str, model_id: str):
         "api_key": api_key,
         "llm_name": model_obj.model_name,
         "api_base": extra_fields.get("base_url", ""),
-        "model_type": model_obj.model_type,
+        "model_type": get_model_type_human(model_obj.model_type),
         "is_tools": model_extra.get("is_tools", is_tool),
         "max_tokens": model_extra.get("max_tokens") or 8192,
     }
