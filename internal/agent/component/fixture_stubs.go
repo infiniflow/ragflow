@@ -42,6 +42,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -579,5 +580,23 @@ func (d *simpleToolDelegate) Stream(_ context.Context, _ map[string]any) (<-chan
 	return nil, nil
 }
 
-func (d *simpleToolDelegate) Inputs() map[string]string  { return nil }
-func (d *simpleToolDelegate) Outputs() map[string]string { return nil }
+func (d *simpleToolDelegate) Inputs() map[string]string { return nil }
+func (d *simpleToolDelegate) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Formatted content for downstream prompts.",
+		"json":               "Raw JSON result list.",
+	}
+}
+func (d *simpleToolDelegate) Parallelism() int { return 1 }
+func (d *simpleToolDelegate) GetInputForm() map[string]any {
+	form := map[string]any{"query": map[string]any{"type": "line", "name": "Query"}}
+	// DuckDuckGo has a channel selector.
+	if d.name == "DuckDuckGo" {
+		form["channel"] = map[string]any{"type": "str", "name": "Channel", "value": "general"}
+	}
+	// TavilyExtract has a urls field.
+	if strings.Contains(d.name, "TavilyExtract") {
+		form["urls"] = map[string]any{"type": "line", "name": "URLs"}
+	}
+	return form
+}

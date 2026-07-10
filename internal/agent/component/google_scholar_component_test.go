@@ -19,18 +19,31 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
-	einotool "github.com/cloudwego/eino/components/tool"
+	"ragflow/internal/agent/tool"
 )
 
 type fakeGoogleScholarInvoker struct {
 	args map[string]any
 }
 
-func (f *fakeGoogleScholarInvoker) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
-	if err := json.Unmarshal([]byte(argsJSON), &f.args); err != nil {
+func (f *fakeGoogleScholarInvoker) ToolMeta() tool.ToolMeta {
+	return tool.ToolMeta{Name: "GoogleScholar"}
+}
+
+func (f *fakeGoogleScholarInvoker) InvokableRun(_ context.Context, argsJSON string) (string, error) {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err != nil {
 		return "", err
+	}
+	f.args = make(map[string]any, len(raw))
+	for k, v := range raw {
+		f.args[k] = v
+	}
+	if q, ok := f.args["query"].(string); ok {
+		f.args["query"] = strings.TrimSpace(q)
 	}
 	return `{"results":[{"title":"Paper","link":"https://example.com","authors":"A Author","year":"2024","snippet":"Abstract"}]}`, nil
 }

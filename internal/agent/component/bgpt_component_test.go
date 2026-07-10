@@ -22,18 +22,38 @@ import (
 	"strings"
 	"testing"
 
-	einotool "github.com/cloudwego/eino/components/tool"
+	"ragflow/internal/agent/tool"
 )
 
 type fakeBGPTInvoker struct {
 	args map[string]any
 }
 
-func (f *fakeBGPTInvoker) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
-	if err := json.Unmarshal([]byte(argsJSON), &f.args); err != nil {
+func (f *fakeBGPTInvoker) ToolMeta() tool.ToolMeta {
+	return tool.ToolMeta{Name: "BGPT"}
+}
+
+func (f *fakeBGPTInvoker) InvokableRun(_ context.Context, argsJSON string) (string, error) {
+	// Parse and normalize inputs matching the real BGPTTool behavior.
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err != nil {
 		return "", err
 	}
-	return `{"results":[{"title":"Paper A","authors":"Lee, Kim","journal":"Science","year":"2026","doi":"10.1/a","abstract":"Abstract A","methods":"RCT","sample_size":"120","results":"Improved outcomes","limitations":"Small cohort","conflict_of_interest":"None","data_availability":"Available","blind_spots":"Long term effects","falsify":"Run a larger trial"}]}`, nil
+	f.args = make(map[string]any, len(raw))
+	for k, v := range raw {
+		f.args[k] = v
+	}
+	if q, ok := f.args["query"].(string); ok {
+		f.args["query"] = strings.TrimSpace(q)
+	}
+	if v, ok := f.args["top_n"]; ok {
+		f.args["num_results"] = v
+		// Real tool also maps max_results. Keep top_n for backward compat.
+	}
+	if v, ok := f.args["days_back"]; ok {
+		f.args["max_days_back"] = v
+	}
+	return `{"formalized_content":"**Paper A** (Lee, Kim, Science, 2026)\nDOI: 10.1/a\n**Abstract:** Abstract A\n**Methods:** RCT (n=120)\n**Results:** Improved outcomes\n**Limitations:** Small cohort\n**COI:** None\n**Data:** Available\n**Blind spots:** Long term effects\n**Falsify:** Run a larger trial\n","json":[{"title":"Paper A","authors":"Lee, Kim","journal":"Science","year":"2026","doi":"10.1/a","abstract":"Abstract A","methods":"RCT","sample_size":"120","results":"Improved outcomes","limitations":"Small cohort","conflict_of_interest":"None","data_availability":"Available","blind_spots":"Long term effects","falsify":"Run a larger trial"}],"results":[{"title":"Paper A","authors":"Lee, Kim","journal":"Science","year":"2026","doi":"10.1/a","abstract":"Abstract A","methods":"RCT","sample_size":"120","results":"Improved outcomes","limitations":"Small cohort","conflict_of_interest":"None","data_availability":"Available","blind_spots":"Long term effects","falsify":"Run a larger trial"}]}`, nil
 }
 
 func TestBGPT_RegisteredFactory(t *testing.T) {

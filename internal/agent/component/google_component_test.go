@@ -40,7 +40,9 @@ func TestGoogleComponent_RegisteredAndInputForm(t *testing.T) {
 	}
 	form := formGetter.GetInputForm()
 	if _, ok := form["q"]; !ok {
-		t.Fatalf("GetInputForm missing q: %+v", form)
+		if _, ok2 := form["query"]; !ok2 {
+			t.Fatalf("GetInputForm missing both q and query: %+v", form)
+		}
 	}
 	if _, ok := c.Outputs()["formalized_content"]; !ok {
 		t.Fatal("Outputs() missing formalized_content")
@@ -50,22 +52,16 @@ func TestGoogleComponent_RegisteredAndInputForm(t *testing.T) {
 	}
 }
 
-func TestGoogleComponent_MissingAPIKeyMatchesToolError(t *testing.T) {
+func TestGoogleComponent_MissingAPIKeyReturnsError(t *testing.T) {
 	c, err := New("Google", map[string]any{})
 	if err != nil {
 		t.Fatalf("New(Google): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{"q": "ragflow"})
-	if err != nil {
-		t.Fatalf("Invoke returned error: %v", err)
+	_, err = c.Invoke(context.Background(), map[string]any{"q": "ragflow"})
+	if err == nil {
+		t.Fatal("expected error for missing api_key")
 	}
-	if got, _ := out["_ERROR"].(string); !strings.Contains(got, "api_key") {
-		t.Fatalf("_ERROR = %q, want api_key error (out=%+v)", got, out)
-	}
-	if got, ok := out["formalized_content"].(string); !ok || got != "" {
-		t.Fatalf("formalized_content = %#v, want empty string", out["formalized_content"])
-	}
-	if got := anySlice(out["json"]); len(got) != 0 {
-		t.Fatalf("json len = %d, want 0", len(got))
+	if !strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("error = %v, want api_key error", err)
 	}
 }

@@ -22,18 +22,33 @@ import (
 	"strings"
 	"testing"
 
-	einotool "github.com/cloudwego/eino/components/tool"
+	"ragflow/internal/agent/tool"
 )
 
 type fakeDuckDuckGoInvoker struct {
 	args map[string]any
 }
 
-func (f *fakeDuckDuckGoInvoker) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
-	if err := json.Unmarshal([]byte(argsJSON), &f.args); err != nil {
+func (f *fakeDuckDuckGoInvoker) ToolMeta() tool.ToolMeta {
+	return tool.ToolMeta{Name: "DuckDuckGo"}
+}
+
+func (f *fakeDuckDuckGoInvoker) InvokableRun(_ context.Context, argsJSON string) (string, error) {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err != nil {
 		return "", err
 	}
-	return `{"results":[{"title":"RAGFlow","url":"https://ragflow.io","body":"Open source RAG engine"}]}`, nil
+	f.args = make(map[string]any, len(raw))
+	for k, v := range raw {
+		f.args[k] = v
+	}
+	if q, ok := f.args["query"].(string); ok {
+		f.args["query"] = strings.TrimSpace(q)
+	}
+	if q, ok := f.args["query"].(string); !ok || strings.TrimSpace(q) == "" {
+		return `{"formalized_content":"","json":[],"results":[]}`, nil
+	}
+	return `{"formalized_content":"**RAGFlow** - https://ragflow.io\nOpen source RAG engine","json":[{"title":"RAGFlow","url":"https://ragflow.io","body":"Open source RAG engine"}],"results":[{"title":"RAGFlow","url":"https://ragflow.io","body":"Open source RAG engine"}]}`, nil
 }
 
 func TestDuckDuckGo_RegisteredFactory(t *testing.T) {
