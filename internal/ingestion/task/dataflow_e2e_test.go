@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
+	"ragflow/internal/common"
 	"testing"
 	"time"
 
@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/server"
 )
@@ -48,18 +47,18 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 	switch engineType {
 	case engine.EngineElasticsearch:
 		t.Logf("Setting up Elasticsearch engine...")
-		esHost := os.Getenv("ES_HOST")
+		esHost := common.GetEnv(common.EnvESHost)
 		if esHost == "" {
 			esHost = "localhost:1200"
 		}
 		if !startsWithHTTP(esHost) {
 			esHost = "http://" + esHost
 		}
-		esUser := os.Getenv("ES_USER")
+		esUser := common.GetEnv(common.EnvESUsername)
 		if esUser == "" {
 			esUser = "elastic"
 		}
-		esPassword := os.Getenv("ES_PASSWORD")
+		esPassword := common.GetEnv(common.EnvESPassword)
 		if esPassword == "" {
 			esPassword = "infini_rag_flow"
 		}
@@ -77,7 +76,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 
 	case engine.EngineInfinity:
 		t.Logf("Setting up Infinity engine...")
-		infURI := os.Getenv("INFINITY_URI")
+		infURI := common.GetEnv(common.EnvInfinityURI)
 		if infURI == "" {
 			infURI = "localhost:23817"
 		}
@@ -200,20 +199,14 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 			docEngine, cleanupEngine := setupTestDocEngine(t, tc.engineType, tenantID, kbID)
 			defer cleanupEngine()
 
-			// Update task to have dataflow task type
-			var task entity.Task
-			if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
-				t.Fatalf("Failed to get task: %v", err)
-			}
-			task.TaskType = "dataflow"
-			if err := db.Save(&task).Error; err != nil {
-				t.Fatalf("Failed to update task: %v", err)
-			}
-
 			// Load task context
-			taskCtx, err := LoadTaskContext(taskID)
+			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 			if err != nil {
-				t.Fatalf("LoadTaskContext failed: %v", err)
+				t.Fatalf("GetByID failed: %v", err)
+			}
+			taskCtx, err := LoadFromIngestionTask(ingestionTask)
+			if err != nil {
+				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
 
 			// Track what was called
@@ -352,7 +345,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 			// Verify final task status can be updated to success
 			ingestionTaskDAO := dao.NewIngestionTaskDAO()
-			if err := ingestionTaskDAO.UpdateStatus(taskID, "success"); err != nil {
+			if err = ingestionTaskDAO.UpdateStatus(taskID, "success"); err != nil {
 				t.Fatalf("UpdateStatus failed: %v", err)
 			}
 

@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -157,7 +156,7 @@ func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, err
 		taskRecord := map[string]string{
 			"task_id": taskID,
 		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		_, err := s.ingestionTaskDAO.Delete(taskID, nil)
 		if err != nil {
 			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {
@@ -1191,7 +1190,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 // getESClusterStats gets Elasticsearch cluster stats
 func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
 	// Check if Elasticsearch is the doc engine
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1564,7 +1563,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1574,17 +1573,17 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"env":   common.EnvDefaultSuperuserEmail,
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := os.Getenv("DB_TYPE")
+	dbType := common.GetEnv(common.EnvDBType)
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -1594,7 +1593,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := os.Getenv("DEVICE")
+	device := common.GetEnv(common.EnvDevice)
 	if device == "" {
 		device = "cpu"
 	}
@@ -1604,12 +1603,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := os.Getenv("STORAGE_IMPL")
+	storageImpl := common.GetEnv(common.EnvStorageImpl)
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE_IMPL",
+		"env":   common.EnvStorageImpl,
 		"value": storageImpl,
 	})
 
