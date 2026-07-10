@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/httputil"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -1053,7 +1054,7 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 
@@ -1061,7 +1062,7 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	} else {
 		tasks, err := h.service.RemoveIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 		common.SuccessWithData(c, tasks, "Remove tasks successfully")
@@ -1084,7 +1085,7 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.StopIngestionTasks(req.Tasks)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 		var result []map[string]string
