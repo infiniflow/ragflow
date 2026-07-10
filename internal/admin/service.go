@@ -156,7 +156,7 @@ func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, err
 		taskRecord := map[string]string{
 			"task_id": taskID,
 		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		_, err := s.ingestionTaskDAO.Delete(taskID, nil)
 		if err != nil {
 			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {

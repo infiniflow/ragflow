@@ -70,6 +70,7 @@ type DocumentService struct {
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConvDAO         *dao.API4ConversationDAO
+	publishTask         func(subject string, payload []byte) error
 }
 
 // NewDocumentService create document service
@@ -88,6 +89,13 @@ func NewDocumentService() *DocumentService {
 		fileDAO:             dao.NewFileDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		publishTask: func(subject string, payload []byte) error {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			if msgQueueEngine == nil {
+				return fmt.Errorf("message queue engine is not initialized")
+			}
+			return msgQueueEngine.PublishTask(subject, payload)
+		},
 	}
 }
 
@@ -687,7 +695,7 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 	deleted := 0
 	for _, docID := range ids {
 		if err := s.deleteDocumentFull(docID); err != nil {
-			common.Logger.Warn(fmt.Sprintf("DeleteDocuments: failed to delete %s: %v", docID, err))
+			common.Warn(fmt.Sprintf("DeleteDocuments: failed to delete %s: %v", docID, err))
 			continue
 		}
 		deleted++
@@ -706,9 +714,20 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 	}
 
 	// Delete tasks from DB
-	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("failed to delete tasks for %s: %v", docID, delErr))
+	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(docID)
+	if err != nil {
+		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", docID), err)
+		return err
 	}
+	if ingestionTask != nil {
+		taskInfo, err := s.ingestionTaskDAO.Delete(ingestionTask.ID, &ingestionTask.UserID)
+		if err != nil {
+			return err
+		}
+		// FIXME: need to add logic to delete files in taskInfo
+		common.Warn(fmt.Sprintf("need to delete files from taskInfo: %v", taskInfo))
+	}
+
 	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
 	if err := s.deleteDocRecordWithCounters(doc, kb.ID); err != nil {
 		return err
@@ -1264,7 +1283,7 @@ func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([
 		taskRecord := map[string]string{
 			"task_id": taskID,
 		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, &userID)
+		_, err := s.ingestionTaskDAO.Delete(taskID, &userID)
 		if err != nil {
 			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {
@@ -1392,7 +1411,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 				}
 			}
 			if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
-				if err := s.queueDocumentDataflowTask(kb, doc, strings.TrimSpace(*doc.PipelineID), 0); err != nil {
+				if err := s.queueDocumentDataflowTask(kb, doc, userID); err != nil {
 					return common.CodeExceptionError, err
 				}
 				continue
@@ -1423,12 +1442,10 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 				return common.CodeExceptionError, err
 			}
 
-			common.Info("go side, before insert document")
 			if _, err := s.IngestDocuments(doc.KbID, userID, []string{doc.ID}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, IngestDocuments", docID), err)
 				return common.CodeExceptionError, err
 			}
-			common.Info("go side, after insert document")
 
 			if err := s.beginDocumentParse(doc.ID); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, beginDocumentParse", docID), err)
@@ -1542,28 +1559,30 @@ func (s *DocumentService) countDoneDocuments(datasetID string) (int64, error) {
 	return count, err
 }
 
-func (s *DocumentService) queueDocumentDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, flowID string, priority int64) error {
-	if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
-		return err
-	}
+func (s *DocumentService) queueDocumentDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, userID string) error {
 	if err := s.beginDocumentParse(doc.ID); err != nil {
 		return err
 	}
-	task := s.newDocumentParseTask(doc, 0, maximumTaskPageNumber, priority)
-	task.TaskType = "dataflow"
-	if err := s.taskDAO.CreateMany([]*entity.Task{task}); err != nil {
+	task := &entity.IngestionTask{
+		DocumentID: doc.ID,
+		UserID:     userID,
+		DatasetID:  kb.ID,
+		Schema:     nil,
+		Status:     common.CREATED,
+	}
+	task, err := s.ingestionTaskDAO.CheckAndCreate(task)
+	if err != nil {
 		return err
 	}
-	message := documentTaskMessage(task)
-	message["task_type"] = task.TaskType
-	message["kb_id"] = doc.KbID
-	message["tenant_id"] = kb.TenantID
-	message["dataflow_id"] = flowID
-	message["file"] = nil
-	if redisClient := redis.Get(); redisClient == nil || !redisClient.QueueProduct(documentParseQueueName(doc, priority), message) {
-		return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
+	taskMessage := common.TaskMessage{
+		TaskID:   task.ID,
+		TaskType: common.TaskTypeIngestionTask,
 	}
-	return nil
+	payload, err := json.Marshal(taskMessage)
+	if err != nil {
+		return err
+	}
+	return s.publishTask("tasks.RAGFLOW", payload)
 }
 
 func (s *DocumentService) newDocumentParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
@@ -1886,35 +1905,6 @@ func (s *DocumentService) beginDocumentParse(docID string) error {
 		"chunk_num":        0,
 		"token_num":        0,
 	}).Error
-}
-
-func documentParseQueueName(doc *entity.Document, priority int64) string {
-	suffix := "common"
-	if doc.ParserID == string(entity.ParserTypeResume) {
-		suffix = "resume"
-	}
-	return fmt.Sprintf("te.%d.%s", priority, suffix)
-}
-
-func documentTaskMessage(task *entity.Task) map[string]interface{} {
-	beginAt := ""
-	if task.BeginAt != nil {
-		beginAt = task.BeginAt.Format("2006-01-02 15:04:05")
-	}
-	digest := ""
-	if task.Digest != nil {
-		digest = *task.Digest
-	}
-	return map[string]interface{}{
-		"id":        task.ID,
-		"doc_id":    task.DocID,
-		"from_page": task.FromPage,
-		"to_page":   task.ToPage,
-		"progress":  task.Progress,
-		"priority":  task.Priority,
-		"begin_at":  beginAt,
-		"digest":    digest,
-	}
 }
 
 func documentParseTaskDigest(doc *entity.Document, fromPage, toPage int64) string {
