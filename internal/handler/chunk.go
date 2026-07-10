@@ -589,10 +589,6 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 			switch coded.Code() {
 			case common.CodeArgumentError, common.CodeBadRequest, common.CodeDataError:
 				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    coded.Code(),
-					"message": err.Error(),
-				})
 				return
 			}
 		}

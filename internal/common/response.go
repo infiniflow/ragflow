@@ -24,8 +24,8 @@ import (
 
 type response struct {
 	Code    int         `json:"code"`
-	Message interface{} `json:"message"`
 	Data    interface{} `json:"data"`
+	Message interface{} `json:"message"`
 }
 
 // errorResponse error response
