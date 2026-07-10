@@ -75,6 +75,15 @@ type CompileOptions struct {
 	// graph does not pause on completion and force an extra, needless
 	// ResumeWithData round.
 	InterruptAfterNonTerminal bool
+	// SetupOverrides is a run-level override map keyed by cpnID. Each
+	// component's `params["setups"]` is merged only with its own entry
+	// (an arbitrary string-keyed map); the override wins on top-level key
+	// collision (see node_body.go mergeSetups). Components absent from the
+	// map are left untouched. Used by the ingestion pipeline so a single
+	// Pipeline.Run can override the DSL-baked component setups without
+	// mutating the shared *Canvas (see node_body.go applySetupOverrides /
+	// mergeSetups).
+	SetupOverrides map[string]any
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
@@ -119,6 +128,14 @@ func WithCheckPointID(id string) CompileOption {
 // selection rules.
 func WithInterruptAfterNonTerminalCpn() CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
+}
+
+// WithSetupOverrides attaches a run-level setups override map (keyed by
+// cpnID) to the compile. Each component's `params["setups"]` is merged with
+// its own entry at compile time (run-level wins on key collision, see
+// node_body.go mergeSetups). Passing nil is a no-op.
+func WithSetupOverrides(m map[string]any) CompileOption {
+	return func(o *CompileOptions) { o.SetupOverrides = m }
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
@@ -194,6 +211,14 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		if len(bad) > 0 {
 			return nil, fmt.Errorf("canvas: Compile: WithInterruptAfterNonTerminalCpn forbids UserFillUp/legacy-no-op nodes %v (plan §4.2.b): ingestion has no user to fill up and no-op nodes do not report progress, breaking the resume/percent invariant", bad)
 		}
+	}
+
+	// Thread the run-level setups override (if any) into ctx so each
+	// component's `params["setups"]` is merged with its own entry inside
+	// buildNodeBody. The override is keyed by cpnID; the canvas package
+	// never imports ingestion.
+	if cfg.SetupOverrides != nil {
+		ctx = withSetupOverrides(ctx, cfg.SetupOverrides)
 	}
 
 	wf, err := BuildWorkflow(ctx, c)

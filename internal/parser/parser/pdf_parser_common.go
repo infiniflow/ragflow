@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
-	"os"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -294,7 +294,7 @@ func emptyPDFResult(filename string) ParseResult {
 }
 
 func deepDocAnalyzerFromEnv() deepdoctype.DocAnalyzer {
-	baseURL := strings.TrimSpace(os.Getenv("DEEPDOC_URL"))
+	baseURL := strings.TrimSpace(common.GetEnv(common.EnvDeepDocURL))
 	if baseURL == "" {
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
 	}

@@ -508,6 +508,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
+	// Run-level metadata (name, tenant_id, kb_id, ...) is read by
+	// downstream components from the workflow-wide CanvasState.Globals
+	// bag (seeded at pipeline start), so it is not re-emitted here.
 	return map[string]any{
 		"chunks":        in.chunks,
 		"output_format": "chunks",
