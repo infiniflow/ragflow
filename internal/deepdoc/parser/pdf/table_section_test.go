@@ -80,10 +80,10 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 	// not from pre-filled TSR cell text (EE feature).
 }
 
-// TestEnrichWithDeepDoc_ImageOnlyPage verifies that enrichWithDeepDoc
+// TestEnrichOnePageWithDeepDoc_ImageOnlyPage verifies that enrichOnePageWithDeepDoc
 // runs DLA on pages that have images but zero embedded chars (boxes).
 // Regression test for test.pdf (Go 0 tables, Py 1 table).
-func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
+func TestEnrichOnePageWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		DLARegions: []pdf.DLARegion{
@@ -98,14 +98,13 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	// 0 text boxes, but page 0 has a rendered image.
 	boxes := []pdf.TextBox{}
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
-	pageImages := map[int]image.Image{0: dummyImg}
 
-	tables := p.enrichWithDeepDoc(context.Background(), nil, nil, boxes, pageImages, mock, NewTableBuilderFor(mock))
+	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) == 0 {
-		t.Fatal("enrichWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
+		t.Fatal("enrichOnePageWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}
 	if len(tables[0].Cells) == 0 {
-		t.Fatal("enrichWithDeepDoc: expected TSR cells in table")
+		t.Fatal("enrichOnePageWithDeepDoc: expected TSR cells in table")
 	}
 }
 
@@ -312,57 +311,15 @@ func TestNilChars_Handled(t *testing.T) {
 	}
 }
 
-func TestMatchTableImage_ByPositions(t *testing.T) {
-	tableByRegion := map[string]string{
-		"0_50.0_500.0_100.0_300.0": "img_base64_positions",
-	}
+func TestTableSection_StillParsesWithPositions(t *testing.T) {
+	// matchTableImage was removed along with Parse.fillSectionImages; the
+	// Python pipeline crops tables at tokenize time, not parse time. This
+	// guard keeps the table section shape exercised after that removal.
 	sec := &pdf.Section{
 		LayoutType: pdf.LayoutTypeTable,
 		Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 50.0, Right: 500.0, Top: 100.0, Bottom: 300.0}},
 	}
-	img, ok := matchTableImage(sec, tableByRegion)
-	if !ok {
-		t.Fatal("expected match by Positions")
-	}
-	if img != "img_base64_positions" {
-		t.Errorf("got %q, want img_base64_positions", img)
-	}
-}
-
-func TestMatchTableImage_FallbackToRegion(t *testing.T) {
-	tableByRegion := map[string]string{
-		"0_80.0_520.0_200.0_400.0": "img_base64_region",
-	}
-	sec := &pdf.Section{
-		LayoutType: pdf.LayoutTypeTable,
-		Positions:  nil,
-		TableItem:  &pdf.TableItem{RegionLeft: 80.0, RegionRight: 520.0, RegionTop: 200.0, RegionBottom: 400.0},
-	}
-	img, ok := matchTableImage(sec, tableByRegion)
-	if !ok {
-		t.Fatal("expected match by Region fallback")
-	}
-	if img != "img_base64_region" {
-		t.Errorf("got %q, want img_base64_region", img)
-	}
-}
-
-func TestMatchTableImage_NoMatch(t *testing.T) {
-	tableByRegion := map[string]string{"0_10.0_20.0_30.0_40.0": "no_chance"}
-	sec := &pdf.Section{
-		LayoutType: pdf.LayoutTypeTable,
-		Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 200, Top: 300, Bottom: 400}},
-	}
-	_, ok := matchTableImage(sec, tableByRegion)
-	if ok {
-		t.Error("expected no match")
-	}
-}
-
-func TestMatchTableImage_EmptySection(t *testing.T) {
-	sec := &pdf.Section{LayoutType: pdf.LayoutTypeTable}
-	_, ok := matchTableImage(sec, map[string]string{"x": "y"})
-	if ok {
-		t.Error("expected no match for empty section")
+	if len(sec.Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(sec.Positions))
 	}
 }

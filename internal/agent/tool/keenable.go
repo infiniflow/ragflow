@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	neturl "net/url"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -137,7 +137,7 @@ func NewKeenableToolWithEnvBaseURL(h *HTTPHelper, envBaseURL func() string) *Kee
 // Pulled out as a named function (not a var) so tests cannot
 // accidentally mutate it via package-var assignment.
 func defaultKeenableEnvBaseURL() string {
-	if v := strings.TrimSpace(os.Getenv("KEENABLE_API_URL")); v != "" {
+	if v := strings.TrimSpace(common.GetEnv(common.EnvKeenableAPIURL)); v != "" {
 		return v
 	}
 	return "https://api.keenable.ai"

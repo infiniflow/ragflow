@@ -16,6 +16,7 @@ import {
   initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
+  initialCompilationValues,
   initialCrawlerValues,
   initialDataOperationsValues,
   initialDocGeneratorValues,
@@ -181,6 +182,10 @@ export const useInitializeOperatorParams = () => {
         llm_id: llmId,
         sys_prompt: t('flow.prompts.system.summary'),
         prompts: t('flow.prompts.user.summary'),
+      },
+      [Operator.Compilation]: {
+        ...initialCompilationValues,
+        llm_id: llmId,
       },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,

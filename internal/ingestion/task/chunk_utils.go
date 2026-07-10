@@ -116,29 +116,34 @@ func PrepareTextsForDataflowEmbedding(chunks []map[string]any) []string {
 			text, _ = chunk["summary"].(string)
 		}
 		if text == "" {
-			text = MustGetChunkTextString(chunk, "PrepareTextsForDataflowEmbedding")
+			chunkText, err := MustGetChunkTextString(chunk)
+			if err != nil {
+				common.Error("chunk[text] is not string", err)
+			} else {
+				text = chunkText
+			}
 		}
-		texts = append(texts, text)
+		if text != "" {
+			texts = append(texts, text)
+		}
 	}
 	return texts
 }
 
 // MustGetChunkTextString returns chunk["text"] when it is a string.
 // Missing text is allowed and returns empty string.
-// FIXME: remove panic before production; current panic is intentional for dev/test
-// so list-shaped text payloads are surfaced immediately instead of being written
-// as silent bad data.
-func MustGetChunkTextString(chunk map[string]any, where string) string {
+func MustGetChunkTextString(chunk map[string]any) (string, error) {
 	val, exists := chunk["text"]
 	if !exists || val == nil {
-		return ""
+		return "", nil
 	}
 	text, ok := val.(string)
 	if ok {
-		return text
+		return text, nil
 	}
 
-	msg := fmt.Sprintf("%s: invalid chunk text type %T, expected string, chunk=%v", where, val, chunk)
-	common.Error(msg, nil)
-	panic(msg)
+	msg := fmt.Sprintf("invalid chunk text type %T, expected string, chunk=%v", val, chunk)
+	err := fmt.Errorf("unexpected chunk text type - not string")
+	common.Error(msg, err)
+	return "", err
 }

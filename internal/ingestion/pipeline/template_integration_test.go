@@ -55,7 +55,7 @@ func (fixedEmbedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, err
 
 func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -145,7 +145,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -233,7 +233,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 	t.Setenv("DEEPDOC_URL", "")
 	t.Setenv("OSSDEEPDOC_URL", "")
 
@@ -332,7 +332,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 }
 
 func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_manual.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -429,7 +429,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_laws.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -511,7 +511,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_paper.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -591,7 +591,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_book.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -676,10 +676,10 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	RequireTokenizerPool(t)
+	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseUrl)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
 	}
@@ -772,7 +772,7 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	mem := withRealTemplateDeps(t)
 
