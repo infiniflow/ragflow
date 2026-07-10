@@ -48,7 +48,7 @@ type Engine struct {
 	versionsSeen        map[string]map[string]int
 	cache               Cache
 	backgroundExec      *BackgroundExecutor
-	callbacks           *CallbackManager   // lifecycle callbacks (event recording, metrics)
+	callbacks           *CallbackManager     // lifecycle callbacks (event recording, metrics)
 	deferredCheckpoints []deferredCheckpoint // for DurabilityExit mode
 }
 
