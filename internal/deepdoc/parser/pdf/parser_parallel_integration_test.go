@@ -33,6 +33,7 @@ func TestParser_PageParallel_DeterministicOrder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("fixture=%s poolSize=%d: Parse: %v", name, poolSize, err)
 		}
+		t.Cleanup(func() { result.Close() })
 		return result
 	}
 

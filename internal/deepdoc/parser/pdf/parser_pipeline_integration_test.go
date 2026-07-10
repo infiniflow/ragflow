@@ -603,6 +603,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	defer result.Close()
 
 	if len(result.Sections) == 0 {
 		t.Error("large document should produce sections")

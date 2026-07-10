@@ -228,6 +228,9 @@ func (c *DocAnalyzerCache) OCRRecognize(ctx context.Context, img image.Image) ([
 // deliberately uncached — caching the outcome would defeat the
 // purpose of a health check.
 func (c *DocAnalyzerCache) Health() bool {
+	if c == nil || c.inner == nil {
+		return false
+	}
 	return c.inner.Health()
 }
 

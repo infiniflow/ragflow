@@ -45,7 +45,7 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 ) (annotated []pdf.TextBox, tables []pdf.TableItem,
 	dlaRegions []pdf.DLAPageRegions,
 ) {
-	if !docAnalyzer.Health() || renderErr != nil || pageImg == nil {
+	if docAnalyzer == nil || !docAnalyzer.Health() || renderErr != nil || pageImg == nil {
 		return pageBoxes, nil, nil
 	}
 	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)

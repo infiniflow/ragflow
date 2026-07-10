@@ -3,6 +3,7 @@ package utility
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -126,10 +127,17 @@ func (p *WorkerPool[T, R]) worker() {
 			res.Err = err
 		} else {
 			atomic.AddInt64(&p.activeWorkers, 1)
-			value, err := p.handler(j.ctx, j.input)
-			atomic.AddInt64(&p.activeWorkers, -1)
-			res.Value = value
-			res.Err = err
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						res.Err = fmt.Errorf("workerpool: handler panic: %v", r)
+					}
+					atomic.AddInt64(&p.activeWorkers, -1)
+				}()
+				value, err := p.handler(j.ctx, j.input)
+				res.Value = value
+				res.Err = err
+			}()
 		}
 
 		if res.Err != nil {

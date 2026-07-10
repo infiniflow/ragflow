@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"math"
 	"sync"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
@@ -182,7 +183,10 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	// Per-page zoom retry: if no boxes were produced at the default zoom
 	// and conditions allow, re-render at a higher zoom and re-run OCR/DLA.
 	if len(annotated) == 0 && p.Config.Zoom >= 1.0 && !p.Config.SkipOCR && renderErr == nil {
-		retryZoom := p.Config.Zoom * pdf.DlaScale
+		// Cap the retry zoom so a large Config.Zoom cannot drive the retry
+		// render to an unsafe DPI and spike memory on large pages.
+		const maxRetryZoom = 9.0
+		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
 		slog.Info("per-page zoom retry", "page", pg, "zoom", retryZoom)
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
@@ -496,14 +500,20 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	tb := NewTableBuilderFor(docAnalyzer)
 	pages := documentPages(pageCount)
 
-	pageResults, err := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
-	if err != nil {
-		slog.Warn("runPageWorkers: some pages failed", "err", err)
+	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
+	if pageErr != nil {
+		slog.Warn("runPageWorkers: some pages failed", "err", pageErr)
 	}
 
 	result, err := p.assembleDocument(ctx, pages, pageResults)
 	if err != nil {
 		return nil, err
+	}
+	// Preserve a hard failure from the page workers (e.g. context
+	// cancellation) — assembleDocument may still succeed on an empty
+	// result, which would otherwise swallow the error.
+	if pageErr != nil {
+		return result, pageErr
 	}
 	// Carry the engine on the result so the JSON/markdown serialization
 	// step can crop section images on demand, then release it. This also
