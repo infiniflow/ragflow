@@ -518,6 +518,8 @@ func init() {
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
 	Register("BGPT", newBGPTComponent)
+	Register("DuckDuckGo", newDuckDuckGoComponent)
 	Register("Google", newGoogleComponent)
+	Register("GoogleScholar", newGoogleScholarComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }

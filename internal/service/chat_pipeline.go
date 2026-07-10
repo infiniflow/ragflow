@@ -1866,7 +1866,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 	// when the LLM is registered as such, otherwise CHAT.
 	modelType := entity.ModelTypeChat
 	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.GetModelTypeByName(chat.TenantID, chat.LLMID); mtErr == nil {
+	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(chat.TenantID, chat.LLMID); mtErr == nil {
 		for _, mt := range modelTypes {
 			if mt == entity.ModelTypeImage2Text {
 				modelType = entity.ModelTypeImage2Text
@@ -1876,7 +1876,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 		}
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.GetModelConfigFromProviderInstance(chat.TenantID, modelType, chat.LLMID),
+		s.ModelProviderSvc.ResolveModelConfig(chat.TenantID, modelType, chat.LLMID),
 	)
 	if err != nil {
 		return nil, "", "", "", err
@@ -1955,7 +1955,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
+			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
 				embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
 			)
 			if err != nil {
@@ -1979,7 +1979,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
+		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
 			chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {

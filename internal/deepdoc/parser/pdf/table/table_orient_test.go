@@ -65,15 +65,6 @@ func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.O
 	return boxes, nil
 }
 
-func (m *mockRotationDoc) OCRRecognizeBatch(_ context.Context, cropped []image.Image) ([][]pdf.OCRText, []error) {
-	results := make([][]pdf.OCRText, len(cropped))
-	errs := make([]error, len(cropped))
-	for i, img := range cropped {
-		results[i], errs[i] = m.OCRRecognize(context.Background(), img)
-	}
-	return results, errs
-}
-
 func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
 	angle := rotationOrder[(m.callSeq-1)%len(rotationOrder)] // use angle from last Detect call
 	cfg, ok := m.angles[angle]

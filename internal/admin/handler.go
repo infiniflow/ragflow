@@ -85,25 +85,25 @@ func (h *Handler) Login(c *gin.Context) {
 	// This allows default admin account to log in admin system
 	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
 	// Check if user is superuser (admin)
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		common.ErrorWithCode(c, int(common.CodeForbidden), "Only superuser can login admin system")
+		common.ErrorWithCode(c, common.CodeForbidden, "Only superuser can login admin system")
 		return
 	}
 
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("Failed to get secret key: %s", err.Error()))
+		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
+		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
 	}
 
@@ -1192,11 +1192,11 @@ func (h *Handler) Reports(c *gin.Context) {
 	// Handle the heartbeat
 	errCode, message := h.service.HandleHeartbeat(&req)
 	if errCode != common.CodeLicenseValid {
-		common.ErrorWithCode(c, int(errCode), message)
+		common.ErrorWithCode(c, errCode, message)
 		return
 	}
 
-	common.ErrorWithCode(c, int(errCode), message)
+	common.ErrorWithCode(c, errCode, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1256,14 +1256,14 @@ func (h *Handler) ShowModel(c *gin.Context) {
 func (h *Handler) PingStore(c *gin.Context) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
-		common.ErrorWithCode(c, int(common.CodeServerError), "storage not initialized")
+		common.ErrorWithCode(c, common.CodeServerError, "storage not initialized")
 		return
 	}
 
 	if storageImpl.Health() {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
-		common.ErrorWithCode(c, int(common.CodeServerError), "storage health check failed")
+		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")
 	}
 }
 
@@ -1272,7 +1272,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	if redisClient.Health() {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
-		common.ErrorWithCode(c, int(common.CodeServerError), "cache health check failed")
+		common.ErrorWithCode(c, common.CodeServerError, "cache health check failed")
 	}
 }
 

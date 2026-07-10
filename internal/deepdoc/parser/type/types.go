@@ -23,14 +23,29 @@ type PipelineMetrics struct {
 
 // ParseResult encapsulates all outputs from a single Parse() call.
 type ParseResult struct {
-	Sections   []Section
-	Tables     []TableItem
-	PageImages map[int]image.Image
+	Sections []Section
+	Tables   []TableItem
+	// PageHeight and PageWidth record the PDF-point dimensions of
+	// each page's winning render. These are computed from the render
+	// image's pixel dimensions divided by the per-page zoom factor,
+	// so downstream consumers get PDF-point values directly without
+	// needing to track a per-page zoom map.
+	PageHeight map[int]float64
+	PageWidth  map[int]float64
 	Metrics    PipelineMetrics
 	Outlines   []Outline // PDF outlines/bookmarks extracted from the document
 
-	DLADebug []DLAPageRegions
-	TSRDebug []TSRRawCell
+	DLARegions []DLAPageRegions
+
+	// Engine is the native PDF backend used to lazily crop section
+	// images on demand (e.g. for markdown figure embeds or downstream
+	// chunk-time cropping). It is populated by ParseRaw and carries
+	// ownership of the engine: Parse does NOT close the engine, so the
+	// caller must release it via Close once the result is fully
+	// serialized. The JSON parse path closes it immediately after
+	// serialization; the markdown path crops figure images first, then
+	// closes. Close is idempotent and safe to call on a nil result.
+	Engine PDFEngine
 }
 
 // Figures returns all sections with LayoutType "figure".
@@ -39,22 +54,19 @@ func (r *ParseResult) Figures() []Section {
 	return CollectFigures(r.Sections)
 }
 
+// Close releases the native PDF engine held by the result, if any. It is
+// safe to call multiple times and on a nil/empty result.
+func (r *ParseResult) Close() {
+	if r != nil && r.Engine != nil {
+		_ = r.Engine.Close()
+		r.Engine = nil
+	}
+}
+
 // DLAPageRegions holds DLA layout regions for one page.
 type DLAPageRegions struct {
 	Page    int
 	Regions []DLARegion
-}
-
-// TSRRawCell holds a raw TSR cell before row/column grouping.
-type TSRRawCell struct {
-	TableIndex int     `json:"table_index"`
-	Page       int     `json:"page"`
-	Label      string  `json:"label"`
-	X0         float64 `json:"x0"`
-	Y0         float64 `json:"y0"`
-	X1         float64 `json:"x1"`
-	Y1         float64 `json:"y1"`
-	Text       string  `json:"text"`
 }
 
 // ── Character and text box types ──────────────────────────────────────────
@@ -195,25 +207,18 @@ type OCRText struct {
 // ParserConfig holds parser configuration.
 type ParserConfig struct {
 	Zoom               float64
-	FromPage           int
-	ToPage             int
 	TableContextSize   int
 	ImageContextSize   int
 	AutoRotateTables   *bool
 	SeparateTablesFigs bool
 	SortByTop          bool
-	BatchSize          int
 	SkipOCR            bool
-	MaxOCRConcurrency  int
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
 func DefaultParserConfig() ParserConfig {
 	return ParserConfig{
 		Zoom:               3,
-		FromPage:           0,
-		ToPage:             -1,
-		BatchSize:          50,
 		TableContextSize:   0,
 		ImageContextSize:   0,
 		SeparateTablesFigs: false,
@@ -250,7 +255,6 @@ type DocAnalyzer interface {
 	TSR(ctx context.Context, cropped image.Image) ([]TSRCell, error)
 	OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error)
 	OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error)
-	OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]OCRText, []error)
 	Health() bool
 }
 
@@ -266,6 +270,13 @@ type Outline struct {
 
 // PDFEngine abstracts page extraction capabilities.
 type PDFEngine interface {
+	// ExtractChars returns the per-glyph text of one page. pageNum is a
+	// 0-based page index. Each returned TextChar carries its bounding box
+	// in PDF-point space (post-/Rotate and CropBox-corrected) and is the
+	// finest-grained text unit: it is one glyph, not a word or line.
+	// Downstream processPageBoxes / CharsToBoxes merge these chars into
+	// line/word-level TextBoxes before DLA/TSR, so ExtractChars output is
+	// never fed to layout analysis as-is.
 	ExtractChars(pageNum int) ([]TextChar, error)
 	RenderPage(pageNum int, dpi float64) ([]byte, error)
 	RenderPageImage(pageNum int, dpi float64) (image.Image, error)

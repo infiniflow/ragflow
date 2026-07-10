@@ -39,6 +39,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -127,10 +128,11 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
-	return map[string]any{
+	out := map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
-	}, nil
+	}
+	return out, nil
 }
 
 // groupRecords mirrors `GroupTitleChunker.build_chunks`: merges
@@ -312,16 +314,20 @@ func (c *GroupTitleChunkerComponent) Outputs() map[string]string {
 func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	return runtime.TrackElapsed(ComponentNameGroupTitleChunker, func() (map[string]any, error) {
 		if inputs == nil {
-			return emptyOutputs(), nil
+			inputs = map[string]any{}
 		}
-		if _, ok := inputs["name"].(string); !ok {
+		// `name` is read from the workflow-wide Globals bag (seeded at
+		// pipeline start, published by the File component), not from the
+		// upstream output map.
+		name := globals.GlobalOrInput(ctx, inputs, "name", "")
+		if name == "" {
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
 				"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
 			}, nil
 		}
-		return invokeGroup(ctx, inputs, &c.param)
+		return invokeGroup(ctx, withName(inputs, name), &c.param)
 	})
 }
 
