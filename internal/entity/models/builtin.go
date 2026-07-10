@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -180,7 +180,7 @@ func (b *BuiltinModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespo
 func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
 	// Get TEI base URL from environment or config
 	// Default to port 6380 where docker-tei-cpu-1 maps internal port 80
-	teiBaseURL := getEnv("TEI_BASE_URL", "http://localhost:6380")
+	teiBaseURL := getEnv(common.EnvTEIBaseURL, "http://localhost:6380")
 
 	// Create a builtin model instance with TEI endpoint
 	driver := NewBuiltinModel(teiBaseURL, modelName)
@@ -189,7 +189,7 @@ func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
 
 // getEnv is a helper to get environment variable with default
 func getEnv(key, defaultValue string) string {
-	if value := strings.TrimSpace(strings.Replace(os.Getenv(key), "\\", "/", -1)); value != "" {
+	if value := strings.TrimSpace(strings.Replace(common.GetEnv(key), "\\", "/", -1)); value != "" {
 		return value
 	}
 	return defaultValue

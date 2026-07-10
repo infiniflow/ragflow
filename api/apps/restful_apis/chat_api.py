@@ -300,7 +300,7 @@ async def _validate_rerank_id(rerank_id, tenant_id):
         await thread_pool_exec(
             resolve_model_config,
             tenant_id=tenant_id,
-            model_name=rerank_id,
+            model_ref=rerank_id,
             model_type="rerank",
         )
     except Exception as e:
@@ -399,9 +399,9 @@ async def create():
             #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
-        req.setdefault("llm_id", tenant.llm_id)
+        req.setdefault("llm_id", tenant.tenant_llm_id)
         if req["llm_id"] is None:
-            req["llm_id"] = tenant.llm_id
+            req["llm_id"] = tenant.tenant_llm_id
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)

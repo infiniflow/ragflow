@@ -111,6 +111,7 @@ export interface IInstanceModel {
 }
 
 export interface IDefaultModel {
+  model_id: string;
   enable: boolean;
   model_instance: string;
   model_name: string;
