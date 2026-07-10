@@ -175,6 +175,19 @@ func (e *Ingestor) Start() error {
 				err = fmt.Errorf("task %s is in unexpected status %s", taskMessage.TaskID, task.Status)
 				return err
 			case common.RUNNING:
+				// Guard against MQ redelivery: if another worker in this
+				// process is already processing this task, ack the redelivered
+				// message and skip instead of scheduling it again.
+				if !e.claimTask(task.ID) {
+					common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
+						taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
+					err = taskHandle.Ack()
+					if err != nil {
+						common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), err)
+						return err
+					}
+					continue
+				}
 			}
 
 			// Construct TaskContext with parent context
@@ -228,6 +241,10 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	ctx := taskCtx.Ctx
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
+
+	// Release the claim when executeTask returns so that a future
+	// redelivery (after restart) can re-claim the task.
+	defer e.releaseTask(task.ID)
 
 	// terminal tracks whether the task reached a durably-persisted terminal
 	// status. If so the MQ message is Acked; otherwise it is Nacked so the
@@ -342,6 +359,26 @@ func (e *Ingestor) markFailed(taskID string) bool {
 		return false
 	}
 	return true
+}
+
+// claimTask registers a worker claim on a task ID. Returns false if another
+// worker has already claimed it (e.g. MQ redelivery), true on first claim.
+func (e *Ingestor) claimTask(taskID string) bool {
+	e.tasksMu.Lock()
+	defer e.tasksMu.Unlock()
+	if _, ok := e.currentTasks[taskID]; ok {
+		return false
+	}
+	e.currentTasks[taskID] = nil // placeholder; replaced after scheduling
+	return true
+}
+
+// releaseTask removes the claim so a future redelivery (after process restart)
+// can re-claim the task.
+func (e *Ingestor) releaseTask(taskID string) {
+	e.tasksMu.Lock()
+	delete(e.currentTasks, taskID)
+	e.tasksMu.Unlock()
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {

@@ -182,3 +182,67 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 			handle.acks, handle.nacks, handle.inProgress)
 	}
 }
+
+// TestClaimTask_FirstTrueThenFalse: claiming a task for the first time must
+// succeed; a second claim while the first worker is still processing must
+// fail. This is the local guard that catches MQ redeliveries.
+func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+
+	if !ingestor.claimTask("task-1") {
+		t.Fatal("first claim should succeed")
+	}
+
+	// Same task claimed again — must fail (another worker is already on it).
+	if ingestor.claimTask("task-1") {
+		t.Fatal("second claim should fail: task already claimed by another worker")
+	}
+
+	// Different task — should succeed.
+	if !ingestor.claimTask("task-2") {
+		t.Fatal("different task should succeed")
+	}
+}
+
+// TestClaimTask_AfterReleaseCanReclaim: after a worker finishes and releases
+// the task, a fresh claim (e.g. on restart) must succeed again.
+func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.claimTask("task-1")
+	ingestor.releaseTask("task-1")
+
+	if !ingestor.claimTask("task-1") {
+		t.Fatal("after release should be able to reclaim (previous worker finished)")
+	}
+}
+
+// TestExecuteTask_ReleasesTaskFromCurrentTasks: executeTask must call
+// releaseTask in its defer so the task is removed from currentTasks and
+// a subsequent claim succeeds.
+func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, docID, taskID := testutil.SeedTestData(t, db,
+		testutil.WithPipelineID("flow-1"),
+		testutil.WithTenantID("tenant-1"),
+	)
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
+		return nil
+	}
+	ingestor.claimTask(taskID)
+
+	handle := &fakeTaskHandle{}
+	ingestor.executeTask(newAckTaskCtx(context.Background(), taskID, docID, handle))
+
+	if _, stillActive := ingestor.currentTasks[taskID]; stillActive {
+		t.Fatal("expected task released from currentTasks after executeTask finished")
+	}
+	// After release, a new claim must succeed.
+	if !ingestor.claimTask(taskID) {
+		t.Fatal("expected reclaim after executeTask to succeed")
+	}
+}
