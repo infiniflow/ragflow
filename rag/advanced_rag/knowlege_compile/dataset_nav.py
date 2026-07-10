@@ -34,7 +34,6 @@ from typing import Any
 import xxhash
 
 from common.misc_utils import thread_pool_exec
-from common.token_utils import num_tokens_from_string
 from rag.utils.redis_conn import RedisDistributedLock
 
 from ._common import encode as _encode
@@ -64,9 +63,6 @@ _MAX_DOCS_PER_CLUSTER = 50
 _LOCK_TIMEOUT_S = 30
 _LOCK_BLOCKING_TIMEOUT_S = 5
 
-# Max summary tokens for nav_doc
-_MAX_DOC_SUMMARY_TOKENS = 128
-
 # Hard limit on how many sibling clusters we evaluate per KNN call
 _KNN_TOP_K = 5
 
@@ -77,18 +73,21 @@ _KNN_TOP_K = 5
 
 
 def _nav_doc_id(doc_id: str) -> str:
+    """Stable row id for a nav_doc (deterministic by doc_id)."""
     return xxhash.xxh64(
         f"dataset_nav:doc:{doc_id}".encode("utf-8", "surrogatepass"),
     ).hexdigest()
 
 
 def _nav_cluster_id(kb_id: str, name: str) -> str:
+    """Stable row id for a nav_cluster (deterministic by kb_id + name)."""
     return xxhash.xxh64(
         f"dataset_nav:{kb_id}:cluster:{name}".encode("utf-8", "surrogatepass"),
     ).hexdigest()
 
 
 def _nav_lock_key(kb_id: str) -> str:
+    """Redis lock key for concurrency control on a KB's nav tree."""
     return f"dataset_nav:{kb_id}"
 
 
@@ -117,11 +116,11 @@ def _vec_field(dim: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ES I/O
+# Doc store I/O — works with any engine (ES, Infinity, …) via docStoreConn
 # ---------------------------------------------------------------------------
 
 
-async def _es_get(tenant_id: str, kb_id: str, row_id: str) -> dict | None:
+async def _store_get(tenant_id: str, kb_id: str, row_id: str) -> dict | None:
     from common import settings
 
     index = _index_name(tenant_id)
@@ -139,7 +138,7 @@ async def _es_get(tenant_id: str, kb_id: str, row_id: str) -> dict | None:
         return None
 
 
-async def _es_search(
+async def _store_search(
     tenant_id: str,
     kb_id: str,
     condition: dict,
@@ -166,7 +165,7 @@ async def _es_search(
     return list(rows.values())
 
 
-async def _es_knn(
+async def _store_knn(
     tenant_id: str,
     kb_id: str,
     vec: list[float],
@@ -206,7 +205,7 @@ async def _es_knn(
     except TypeError:
         # Fallback: some doc store connectors don't accept knn_* kwargs.
         # Perform a plain search and lambda-rank in Python (slow-path).
-        rows = await _es_search(
+        rows = await _store_search(
             tenant_id,
             kb_id,
             filter_condition,
@@ -225,7 +224,7 @@ async def _es_knn(
     return list(results.values())
 
 
-async def _es_upsert(tenant_id: str, kb_id: str, doc: dict) -> None:
+async def _store_upsert(tenant_id: str, kb_id: str, doc: dict) -> None:
     from common import settings
 
     index = _index_name(tenant_id)
@@ -254,7 +253,7 @@ async def _es_upsert(tenant_id: str, kb_id: str, doc: dict) -> None:
         )
 
 
-async def _es_delete(tenant_id: str, kb_id: str, row_id: str) -> None:
+async def _store_delete(tenant_id: str, kb_id: str, row_id: str) -> None:
     from common import settings
 
     index = _index_name(tenant_id)
@@ -312,6 +311,7 @@ def _make_nav_doc_row(
     embd_mdl=None,
     embedding: list[float] | None = None,
 ) -> dict:
+    """Build a nav_doc ES/Infinity row dict for a single document leaf node."""
     row: dict = {
         "id": _nav_doc_id(doc_id),
         "kb_id": kb_id,
@@ -344,6 +344,7 @@ def _make_nav_cluster_row(
     doc_ids: list[str],
     embedding: list[float] | None = None,
 ) -> dict:
+    """Build a nav_cluster ES/Infinity row dict for an internal tree node."""
     cluster_id = _nav_cluster_id(kb_id, name)
     row: dict = {
         "id": cluster_id,
@@ -371,12 +372,14 @@ def _make_nav_cluster_row(
 
 
 def _tokenize(text: str) -> str:
+    """Coarse-grained tokenization for ES/Infinity full-text search."""
     from rag.nlp import rag_tokenizer
 
     return rag_tokenizer.tokenize(text)
 
 
 def _fine_tokenize(text: str) -> str:
+    """Fine-grained tokenization for ES/Infinity sub-word search."""
     from rag.nlp import rag_tokenizer
 
     return rag_tokenizer.fine_grained_tokenize(text)
@@ -393,10 +396,15 @@ async def _find_best_cluster(
     doc_embedding: list[float],
     vec_dim: int,
 ) -> tuple[str | None, str | None, float]:
-    """Layered KNN search: start from root, descend into best child.
+    """Locate the nearest cluster for a document via layered KNN descent.
+
+    Starts from the root cluster (depth_int=0) and recursively descends into
+    the best-matching child as long as similarity stays above
+    ``_RECURSE_THRESHOLD``.  Returns the deepest cluster whose children are
+    all less similar, along with the similarity score.
 
     Returns:
-        (best_cluster_name, best_cluster_parent, similarity)
+        (best_cluster_name, best_cluster_parent_name, similarity)
     """
     # Step 1: find the root cluster (depth_int=0)
     root_cond = {
@@ -405,7 +413,7 @@ async def _find_best_cluster(
         "type_kwd": ["nav_cluster"],
         "depth_int": [0],
     }
-    roots = await _es_knn(tenant_id, kb_id, doc_embedding, vec_dim, root_cond, top_k=1)
+    roots = await _store_knn(tenant_id, kb_id, doc_embedding, vec_dim, root_cond, top_k=1)
     if not roots:
         return None, None, 0.0
 
@@ -424,7 +432,7 @@ async def _find_best_cluster(
             "type_kwd": ["nav_cluster"],
             "parent_kwd": [best_name],
         }
-        children = await _es_knn(tenant_id, kb_id, doc_embedding, vec_dim, child_cond, top_k=1)
+        children = await _store_knn(tenant_id, kb_id, doc_embedding, vec_dim, child_cond, top_k=1)
         if not children:
             break
         child = children[0]
@@ -521,28 +529,8 @@ async def upsert_dataset_nav_doc(
         logging.info("dataset_nav: skipping doc=%s (kb=%s) — no summary", doc_id, kb_id)
         return
 
-    # Truncate doc summary
-    try:
-        n = num_tokens_from_string(summary)
-    except Exception:
-        n = len(summary) // 4
-    if n > _MAX_DOC_SUMMARY_TOKENS:
-        # binary search truncation matching old behavior
-        lo, hi = 0, len(summary)
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            try:
-                tn = num_tokens_from_string(summary[:mid])
-            except Exception:
-                tn = mid // 4
-            if tn <= _MAX_DOC_SUMMARY_TOKENS:
-                lo = mid
-            else:
-                hi = mid - 1
-        summary = summary[:lo].rstrip()
-
     # 2. Check if this doc already has a nav_doc row
-    existing_doc = await _es_get(tenant_id, kb_id, _nav_doc_id(doc_id))
+    existing_doc = await _store_get(tenant_id, kb_id, _nav_doc_id(doc_id))
     if existing_doc:
         old_payload = json.loads(existing_doc.get("content_with_weight") or "{}")
         if old_payload.get("description") == summary:
@@ -575,7 +563,7 @@ async def upsert_dataset_nav_doc(
         if best_name and sim >= _MERGE_THRESHOLD:
             # ── Merge into best cluster ──
             cluster_id = _nav_cluster_id(kb_id, best_name)
-            cluster_row = await _es_get(tenant_id, kb_id, cluster_id)
+            cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
             if cluster_row:
                 payload = json.loads(cluster_row.get("content_with_weight") or "{}")
                 old_desc = payload.get("description", "")
@@ -592,7 +580,7 @@ async def upsert_dataset_nav_doc(
                     new_emb = await _embed(embd_mdl, new_desc)
                     if new_emb:
                         cluster_row[_vec_field(len(new_emb))] = new_emb
-                await _es_upsert(tenant_id, kb_id, cluster_row)
+                await _store_upsert(tenant_id, kb_id, cluster_row)
 
             # Upsert nav_doc under the cluster
             depth = cluster_row.get("depth_int", 1) + 1 if cluster_row else 2
@@ -605,7 +593,7 @@ async def upsert_dataset_nav_doc(
                 embd_mdl,
                 doc_embedding,
             )
-            await _es_upsert(tenant_id, kb_id, nav_doc_row)
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
 
             # Check fanout — if the cluster now has too many children, trigger split
             await _maybe_split_cluster(
@@ -620,7 +608,7 @@ async def upsert_dataset_nav_doc(
             # ── Create new cluster as sibling/child ──
             parent_for_new = best_parent if best_parent else best_name
             depth_of_parent = 1  # default
-            parent_row = await _es_get(
+            parent_row = await _store_get(
                 tenant_id,
                 kb_id,
                 _nav_cluster_id(kb_id, parent_for_new),
@@ -641,7 +629,7 @@ async def upsert_dataset_nav_doc(
             )
             if embd_mdl and doc_embedding:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
-            await _es_upsert(tenant_id, kb_id, new_cluster)
+            await _store_upsert(tenant_id, kb_id, new_cluster)
 
             nav_doc_row = _make_nav_doc_row(
                 kb_id,
@@ -652,7 +640,7 @@ async def upsert_dataset_nav_doc(
                 embd_mdl,
                 doc_embedding,
             )
-            await _es_upsert(tenant_id, kb_id, nav_doc_row)
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
         else:
             # ── Create root-level new cluster ──
             new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
@@ -668,7 +656,7 @@ async def upsert_dataset_nav_doc(
             )
             if embd_mdl and doc_embedding:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
-            await _es_upsert(tenant_id, kb_id, new_cluster)
+            await _store_upsert(tenant_id, kb_id, new_cluster)
 
             nav_doc_row = _make_nav_doc_row(
                 kb_id,
@@ -679,7 +667,7 @@ async def upsert_dataset_nav_doc(
                 embd_mdl,
                 doc_embedding,
             )
-            await _es_upsert(tenant_id, kb_id, nav_doc_row)
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
 
     except Exception:
         logging.exception(
@@ -720,23 +708,23 @@ async def remove_dataset_nav_doc(
     try:
         # 1. Find and delete the nav_doc row
         doc_row_id = _nav_doc_id(doc_id)
-        doc_row = await _es_get(tenant_id, kb_id, doc_row_id)
+        doc_row = await _store_get(tenant_id, kb_id, doc_row_id)
         if not doc_row:
             return
         parent_name = doc_row.get("parent_kwd", "")
-        await _es_delete(tenant_id, kb_id, doc_row_id)
+        await _store_delete(tenant_id, kb_id, doc_row_id)
 
         # 2. Remove doc_id from the parent cluster's doc_ids_kwd
         if parent_name and parent_name != "root":
             cluster_id = _nav_cluster_id(kb_id, parent_name)
-            cluster_row = await _es_get(tenant_id, kb_id, cluster_id)
+            cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
             if cluster_row:
                 doc_ids = cluster_row.get("doc_ids_kwd") or []
                 if doc_id in doc_ids:
                     doc_ids.remove(doc_id)
                 if not doc_ids:
                     # Cluster is empty — delete it
-                    await _es_delete(tenant_id, kb_id, cluster_id)
+                    await _store_delete(tenant_id, kb_id, cluster_id)
                     # Recurse: check grandparent
                     grandparent = cluster_row.get("parent_kwd", "")
                     if grandparent and grandparent != "root":
@@ -748,7 +736,7 @@ async def remove_dataset_nav_doc(
                 else:
                     cluster_row["doc_ids_kwd"] = doc_ids
                     cluster_row["doc_count_int"] = len(doc_ids)
-                    await _es_upsert(tenant_id, kb_id, cluster_row)
+                    await _store_upsert(tenant_id, kb_id, cluster_row)
     except Exception:
         logging.exception(
             "dataset_nav: remove failed for kb=%s doc=%s",
@@ -769,7 +757,7 @@ async def _cleanup_empty_cluster(
 ) -> None:
     """Recursively remove a cluster if it has no doc children and no direct doc descendants."""
     cluster_id = _nav_cluster_id(kb_id, cluster_name)
-    cluster = await _es_get(tenant_id, kb_id, cluster_id)
+    cluster = await _store_get(tenant_id, kb_id, cluster_id)
     if not cluster:
         return
     # Check direct children (nav_cluster)
@@ -797,7 +785,7 @@ async def _cleanup_empty_cluster(
     children = settings.docStoreConn.get_fields(res, ["id"]) if res else {}
     if not children and not cluster.get("doc_ids_kwd"):
         grandparent = cluster.get("parent_kwd", "")
-        await _es_delete(tenant_id, kb_id, cluster_id)
+        await _store_delete(tenant_id, kb_id, cluster_id)
         if grandparent and grandparent != "root":
             await _cleanup_empty_cluster(tenant_id, kb_id, grandparent)
 
@@ -846,7 +834,7 @@ async def _maybe_split_cluster(
 
     # Load embeddings for all children
     vf = _vec_field(_EMBED_DIM) if _EMBED_DIM else "q_768_vec"
-    child_details = await _es_search(
+    child_details = await _store_search(
         tenant_id,
         kb_id,
         child_cond,
@@ -886,7 +874,7 @@ async def _maybe_split_cluster(
         labels.append(0 if d0 < d1 else 1)
 
     # Create sub-clusters
-    cluster_row = await _es_get(tenant_id, kb_id, _nav_cluster_id(kb_id, cluster_name))
+    cluster_row = await _store_get(tenant_id, kb_id, _nav_cluster_id(kb_id, cluster_name))
     depth = (cluster_row.get("depth_int", 0) if cluster_row else 0) + 1
 
     for gi in (0, 1):
@@ -898,7 +886,7 @@ async def _maybe_split_cluster(
         descs: list[str] = []
         for kn in kid_names:
             cid = _nav_cluster_id(kb_id, kn) if "navc_" in kn else _nav_doc_id(kn)
-            row = await _es_get(tenant_id, kb_id, cid)
+            row = await _store_get(tenant_id, kb_id, cid)
             if row:
                 payload = json.loads(row.get("content_with_weight") or "{}")
                 descs.append(payload.get("description", ""))
@@ -918,16 +906,16 @@ async def _maybe_split_cluster(
             doc_ids,
             group_emb,
         )
-        await _es_upsert(tenant_id, kb_id, new_cluster)
+        await _store_upsert(tenant_id, kb_id, new_cluster)
 
         # Reparent children to new split cluster
         for kn in kid_names:
             cid = _nav_cluster_id(kb_id, kn) if "navc_" in kn else _nav_doc_id(kn)
-            row = await _es_get(tenant_id, kb_id, cid)
+            row = await _store_get(tenant_id, kb_id, cid)
             if row:
                 row["parent_kwd"] = group_name
                 row["depth_int"] = depth + 1
-                await _es_upsert(tenant_id, kb_id, row)
+                await _store_upsert(tenant_id, kb_id, row)
 
 
 def remove_dataset_nav_doc_sync(
