@@ -915,6 +915,18 @@ func (s *Service) ShowUsersPlanSummary() (map[string]interface{}, error) {
 	return result, nil
 }
 
+// ShowUsersPlanQuota show users plan quota for enterprise edition
+func (s *Service) ShowUsersPlanQuota(quota int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"quota":   quota,
+		"command": "show_users_plan_quota",
+		"error":   "'Show users plan quota' is not supported",
+	}
+
+	return result, nil
+}
+
 // ShowUsersQuotaSummary show users quota summary for enterprise edition
 func (s *Service) ShowUsersQuotaSummary() (map[string]interface{}, error) {
 
