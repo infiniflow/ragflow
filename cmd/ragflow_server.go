@@ -401,6 +401,17 @@ func main() {
 }
 
 func runAdmin(args *serverArgs) error {
+
+	// Create HTTP server
+	config := server.GetConfig()
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
@@ -424,8 +435,6 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
-	config := server.GetConfig()
 	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
