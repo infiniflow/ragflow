@@ -227,10 +227,33 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 			return nil, common.CodeServerError, err
 		}
 		provider["name"] = providerName
+
+		// Set has_instance flag. Mirrors Python's:
+		//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
+		//   has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
+		provider["has_instance"] = m.providerHasInstance(tenantID, providerName)
+
 		result = append(result, provider)
 	}
 
 	return result, common.CodeSuccess, nil
+}
+
+// providerHasInstance checks whether the given tenant's provider has any
+// configured instances. Mirrors the Python pattern:
+//
+//	provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
+//	has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
+func (m *ModelProviderService) providerHasInstance(tenantID, providerName string) bool {
+	providerObj, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return false
+	}
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(providerObj.ID)
+	if err != nil {
+		return false
+	}
+	return len(instances) > 0
 }
 
 // isExcludedTenantProvider returns true for system-pool names that the Python
@@ -253,6 +276,30 @@ func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) 
 		return common.CodeNotFound, errors.New("user has no tenants")
 	}
 	tenantID := tenants[0].TenantID
+
+	// Find the provider first.
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeNotFound, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	// Delete all models and instances under this provider.
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(provider.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if len(instances) > 0 {
+		instanceIDs := make([]string, len(instances))
+		for i, inst := range instances {
+			instanceIDs[i] = inst.ID
+		}
+		if _, err := m.modelDAO.DeleteByInstanceIDs(instanceIDs); err != nil {
+			return common.CodeServerError, err
+		}
+		if _, err := m.modelInstanceDAO.DeleteByProviderID(provider.ID); err != nil {
+			return common.CodeServerError, err
+		}
+	}
 
 	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
@@ -338,7 +385,16 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	return result, nil
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
+// CreateInstanceModelInfo mirrors Python's model_info dict in
+// create_provider_instance. See api/apps/services/provider_api_service.py:434.
+type CreateInstanceModelInfo struct {
+	ModelName  string                 `json:"model_name"`
+	ModelTypes []string               `json:"model_type"`
+	MaxTokens  int                    `json:"max_tokens"`
+	Extra      map[string]interface{} `json:"extra"`
+}
+
+func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 	providerName = strings.ToLower(providerName)
 
@@ -360,19 +416,28 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		return common.CodeServerError, err
 	}
 
+	// Normalize api_key: VLLM with empty api_key defaults to "x".
+	// Mirrors Python's _normalize_provider_api_key.
+	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
+		apiKey = "x"
+	}
+
+	// Verify the API key against the provider.
+	// Mirrors Python's verify_api_key (provider_api_service.py:596).
+	modelVerifyResult := m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
+
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
 	extra["region"] = region
 	extra["base_url"] = baseURL
-	// convert extra to string
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
 		return common.CodeServerError, errors.New("fail to marshal extra")
 	}
 	extraStr := string(extraByte)
 
-	tenantModelProvider := &entity.TenantModelInstance{
+	tenantModelInstance := &entity.TenantModelInstance{
 		ID:           instanceID,
 		InstanceName: instanceName,
 		ProviderID:   provider.ID,
@@ -380,12 +445,142 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		Status:       "active",
 		Extra:        extraStr,
 	}
-	err = m.modelInstanceDAO.Create(tenantModelProvider)
-
+	err = m.modelInstanceDAO.Create(tenantModelInstance)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
 	}
+
+	// Add models with verify result in extra.
+	if len(modelInfo) > 0 {
+		for _, model := range modelInfo {
+			if model.Extra == nil {
+				model.Extra = make(map[string]interface{})
+			}
+			verifyStatus := modelVerifyResult[model.ModelName]
+			if verifyStatus == "" {
+				verifyStatus = entity.ModelVerifyUnknown
+			}
+			model.Extra["verify"] = verifyStatus
+			if err := m.addModelToInstance(tenantID, providerName, instanceName, model); err != nil {
+				return common.CodeServerError, err
+			}
+		}
+	}
+
 	return common.CodeSuccess, nil
+}
+
+// verifyProviderAPIKey verifies the API key against the provider by calling
+// the driver's CheckConnection. It returns a map from model name to verify
+// status (success/fail/unknown). Mirrors Python's verify_api_key in
+// provider_api_service.py:596.
+func (m *ModelProviderService) verifyProviderAPIKey(providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
+	result := make(map[string]string)
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		// Provider not in system pool — mark all models as unknown.
+		for _, model := range modelInfo {
+			result[model.ModelName] = entity.ModelVerifyUnknown
+		}
+		return result
+	}
+
+	apiKey = strings.TrimSpace(apiKey)
+	region = strings.TrimSpace(region)
+	baseURL = strings.TrimSpace(baseURL)
+	if region == "" {
+		region = "default"
+	}
+
+	driver := providerInfo.ModelDriver
+	if strings.EqualFold(providerInfo.Class, "local") {
+		var err error
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			for _, model := range modelInfo {
+				result[model.ModelName] = entity.ModelVerifyFail
+			}
+			return result
+		}
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey:  &apiKey,
+		Region:  &region,
+		BaseURL: &baseURL,
+	}
+
+	verifyErr := driver.CheckConnection(apiConfig)
+	verifyStatus := entity.ModelVerifySuccess
+	if verifyErr != nil {
+		verifyStatus = entity.ModelVerifyFail
+	}
+
+	for _, model := range modelInfo {
+		result[model.ModelName] = verifyStatus
+	}
+	return result
+}
+
+// addModelToInstance creates a single model under the given provider instance.
+// Mirrors Python's add_model_to_instance in provider_api_service.py:969.
+func (m *ModelProviderService) addModelToInstance(tenantID, providerName, instanceName string, model CreateInstanceModelInfo) error {
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return fmt.Errorf("no provider found for provider '%s'", providerName)
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceName)
+	}
+
+	// Check for duplicate model.
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, model.ModelName)
+	if err == nil {
+		return fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", model.ModelName, providerName, instanceName)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	// Compute model type bitmask.
+	combinedType := entity.ModelType(0)
+	for _, t := range model.ModelTypes {
+		combinedType |= entity.ModelTypeFromString(t)
+	}
+
+	// Build extra fields. Mirrors Python's extra_fields in add_model_to_instance.
+	extraFields := map[string]interface{}{
+		"max_tokens": model.MaxTokens,
+	}
+	if model.Extra != nil {
+		for k, v := range model.Extra {
+			extraFields[k] = v
+		}
+	}
+	extraBytes, err := json.Marshal(extraFields)
+	if err != nil {
+		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+	}
+
+	modelID := utility.GenerateToken()
+	tenantModel := &entity.TenantModel{
+		ID:         modelID,
+		ModelName:  model.ModelName,
+		ModelType:  int(combinedType),
+		ProviderID: provider.ID,
+		InstanceID: instance.ID,
+		Status:     "active",
+		Extra:      string(extraBytes),
+	}
+
+	if err := m.modelDAO.Create(tenantModel); err != nil {
+		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+	}
+
+	return nil
 }
 
 func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {

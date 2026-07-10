@@ -175,10 +175,11 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 }
 
 type CreateProviderInstanceRequest struct {
-	InstanceName string `json:"instance_name" binding:"required"`
-	APIKey       string `json:"api_key"`
-	BaseURL      string `json:"base_url"`
-	Region       string `json:"region"`
+	InstanceName string                            `json:"instance_name" binding:"required"`
+	APIKey       string                            `json:"api_key"`
+	BaseURL      string                            `json:"base_url"`
+	Region       string                            `json:"region"`
+	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
@@ -196,7 +197,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, int(common.CodeServerError), err.Error())
 		return

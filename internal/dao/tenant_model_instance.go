@@ -110,3 +110,9 @@ func (dao *TenantModelInstanceDAO) DeleteByProviderIDAndInstanceName(providerID,
 	result := DB.Unscoped().Where("provider_id = ? and instance_name = ?", providerID, instanceName).Delete(&entity.TenantModelInstance{})
 	return result.RowsAffected, result.Error
 }
+
+// DeleteByProviderID deletes all instances for the given provider.
+func (dao *TenantModelInstanceDAO) DeleteByProviderID(providerID string) (int64, error) {
+	result := DB.Unscoped().Where("provider_id = ?", providerID).Delete(&entity.TenantModelInstance{})
+	return result.RowsAffected, result.Error
+}
