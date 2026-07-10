@@ -74,7 +74,7 @@ func TestKGSearchSelectFields(t *testing.T) {
 // getTestConfig returns a minimal ES config for testing.
 // Reads from environment or uses defaults pointing to localhost.
 func getTestConfig() map[string]interface{} {
-	hosts := common.GetEnv(common.EnvESHosts)
+	hosts := common.GetEnv(common.EnvESHost)
 	if hosts == "" {
 		hosts = "http://localhost:1200"
 	}

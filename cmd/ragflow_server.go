@@ -400,24 +400,6 @@ func main() {
 	}
 }
 
-func startHeartBeat() {
-	if err := service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
-	}
-}
-
 func runAdmin(args *serverArgs) error {
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
@@ -541,8 +523,21 @@ func runIngestor(args *serverArgs) error {
 		localIP,
 		-1,
 	)
-
-	startHeartBeat()
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
 
 	// Wait for either an OS signal or a shutdown command from the admin
 	select {
@@ -603,8 +598,21 @@ func runSyncer(args *serverArgs) error {
 		localIP,
 		-1,
 	)
-
-	startHeartBeat()
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
 
 	// Wait for either an OS signal or a shutdown command from the admin
 	select {
@@ -896,8 +904,21 @@ func startServer(config *server.Config) {
 		localIP,
 		config.Server.Port,
 	)
-
-	startHeartBeat()
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)

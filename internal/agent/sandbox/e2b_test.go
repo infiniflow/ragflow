@@ -19,7 +19,6 @@ package sandbox
 import (
 	"context"
 	"errors"
-	"os"
 	"ragflow/internal/common"
 	"strings"
 	"testing"
