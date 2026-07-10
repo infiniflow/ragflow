@@ -22,7 +22,7 @@ type ErrorCode int
 
 const (
 	CodeSuccess                ErrorCode = 0
-	CodeMissingResource        ErrorCode = 1
+	CodeLackResources          ErrorCode = 1
 	CodeNotEffective           ErrorCode = 10
 	CodeExceptionError         ErrorCode = 100
 	CodeArgumentError          ErrorCode = 101
