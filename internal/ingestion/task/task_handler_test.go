@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
 )
 
 func testStrPtr(s string) *string { return &s }
@@ -65,10 +64,7 @@ func newNoopDataflowService(ctx *TaskContext, dataflowID string) (*PipelineExecu
 			return nil
 		}).
 		WithDocService(&stubDocService{}).
-		WithChunkCounter(&stubChunkCounter{}).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, nil
-		})
+		WithChunkCounter(&stubChunkCounter{})
 	return svc, nil
 }
 
@@ -203,10 +199,7 @@ func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 				return nil
 			}).
 			WithDocService(&stubDocService{}).
-			WithChunkCounter(&stubChunkCounter{}).
-			WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-				return nil, nil
-			})
+			WithChunkCounter(&stubChunkCounter{})
 		return svc, nil
 	})
 
