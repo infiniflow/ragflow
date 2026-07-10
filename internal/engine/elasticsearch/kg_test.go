@@ -18,7 +18,7 @@ package elasticsearch
 
 import (
 	"context"
-	"os"
+	"ragflow/internal/common"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -29,7 +29,7 @@ import (
 // Requires a running Elasticsearch instance and KG data indexed by Python task executor.
 // Set ES_TEST=1 to run.
 func TestKGSearchSelectFields(t *testing.T) {
-	if os.Getenv("ES_TEST") != "1" {
+	if common.GetEnv(common.EnvESTest) != "1" {
 		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
 	}
 
@@ -74,15 +74,15 @@ func TestKGSearchSelectFields(t *testing.T) {
 // getTestConfig returns a minimal ES config for testing.
 // Reads from environment or uses defaults pointing to localhost.
 func getTestConfig() map[string]interface{} {
-	hosts := os.Getenv("ES_HOSTS")
+	hosts := common.GetEnv(common.EnvESHost)
 	if hosts == "" {
 		hosts = "http://localhost:1200"
 	}
-	username := os.Getenv("ES_USERNAME")
+	username := common.GetEnv(common.EnvESUsername)
 	if username == "" {
 		username = "elastic"
 	}
-	password := os.Getenv("ES_PASSWORD")
+	password := common.GetEnv(common.EnvESPassword)
 	if password == "" {
 		password = "infini_rag_flow"
 	}

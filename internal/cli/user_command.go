@@ -3548,10 +3548,7 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	fileType := utility.GetFileType(filename)
-	config := map[string]string{
-		"lib_type": "office_oxide",
-	}
-	fileParser, err := parser.GetParser(fileType, config)
+	fileParser, err := parser.GetParser(fileType)
 	if err != nil {
 		return nil, err
 	}
