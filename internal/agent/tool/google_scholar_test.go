@@ -149,8 +149,11 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildGoogleScholarURL(tc.query, tc.max)
-			u, _ := url.Parse(got)
+			got := buildGoogleScholarURL(tc.query, tc.topN, tc.sortBy, tc.yearLow, tc.yearHigh, tc.patents)
+			u, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", got, err)
+			}
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -186,8 +189,11 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleScholarToolWith(helper)
-	out, _ := tool.InvokableRun(context.Background(),
-		`{"query":"transformer","max_results":5}`)
+	out, err := tool.InvokableRun(context.Background(),
+		`{"query":"transformer","top_n":5,"sort_by":"relevance","year_low":2020,"year_high":2024,"patents":true}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
 
 	var env googleScholarEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -232,7 +238,7 @@ func TestGoogleScholar_RequiresQuery(t *testing.T) {
 	}
 }
 
-func TestGoogleScholar_Info(t *testing.T) {
+func TestGoogleScholar_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleScholarTool()
@@ -241,7 +247,7 @@ func TestGoogleScholar_Info(t *testing.T) {
 		t.Errorf("Name = %q, want google_scholar", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Scholar") {
-		t.Errorf("Desc = %q, want to mention Scholar", meta.Description)
+		t.Errorf("Description = %q, want to mention Scholar", meta.Description)
 	}
 }
 

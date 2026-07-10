@@ -63,8 +63,11 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 		return host, net.ParseIP(host), nil
 	}
 	c := NewCrawlerTool().WithResolver(loopbackResolver)
-	out, _ := c.InvokableRun(context.Background(),
-		`{"url":`+jsonString(srv.URL)+`,"max_depth":0}`)
+	out, err := c.InvokableRun(context.Background(),
+		`{"query":`+jsonString(srv.URL)+`,"max_depth":0}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
 
 	var got crawlerResult
 	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
@@ -104,19 +107,19 @@ func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":"https://example.com","max_depth":1}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":"https://example.com","max_depth":1}`)
 	if !errors.Is(err, ErrCrawlerDepthUnsupported) {
 		t.Fatalf("err = %v, want ErrCrawlerDepthUnsupported", err)
 	}
 }
 
-func TestCrawler_RejectsMissingURL(t *testing.T) {
+func TestCrawler_RejectsMissingQuery(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":""}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":""}`)
 	if err == nil {
-		t.Fatal("expected error for empty url")
+		t.Fatal("expected error for empty query")
 	}
 }
 
@@ -124,23 +127,47 @@ func TestCrawler_RejectsNonHTTPScheme(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":"file:///etc/passwd"}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":"file:///etc/passwd"}`)
 	if err == nil || !strings.Contains(err.Error(), "scheme") {
 		t.Fatalf("err = %v, want to reject file:// scheme", err)
 	}
 }
 
-func TestCrawler_Info(t *testing.T) {
+func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("stop after legacy url normalization")
+	c := NewCrawlerTool().WithResolver(func(rawURL string) (string, net.IP, error) {
+		if rawURL != "https://example.com" {
+			t.Fatalf("resolver URL = %q, want https://example.com", rawURL)
+		}
+		return "example.com", net.ParseIP("93.184.216.34"), sentinel
+	})
+
+	_, err := c.InvokableRun(context.Background(), `{"url":"https://example.com"}`)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want resolver error after accepting legacy url", err)
+	}
+}
+
+func TestCrawler_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
 	meta := c.ToolMeta()
-	if meta.Name != "crawler" {
-		t.Errorf("Name = %q, want crawler", meta.Name)
+	if meta.Name != "web_crawler" {
+		t.Errorf("Name = %q, want web_crawler", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "text") {
-		t.Errorf("Desc = %q, want to mention text extraction", meta.Description)
+		t.Errorf("Description = %q, want to mention text extraction", meta.Description)
+	}
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Fatalf("parameters missing 'query'")
+	}
+	if !meta.Parameters["query"].Required {
+		t.Fatalf("query param should be required")
+	}
+	if _, ok := meta.Parameters["url"]; ok {
+		t.Fatalf("parameters should not expose legacy url param")
 	}
 }
-
-// jsonString is defined in exesql_test.go (same package).

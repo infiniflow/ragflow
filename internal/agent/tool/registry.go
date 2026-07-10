@@ -1,19 +1,3 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
 package tool
 
 import (
@@ -22,11 +6,12 @@ import (
 )
 
 // Factory builds a tool instance by DSL / Agent-visible name and
-// optional node-level configuration.
+// optional node-level configuration. The config map belongs to the
+// Agent node / DSL, not to the model-emitted function-call args.
 type Factory func(params map[string]any) (Tool, error)
 
 var registry = map[string]Factory{
-	"akshare":               noConfig("akshare", func() Tool { return NewAkShareTool() }),
+	"akshare":               buildAkShareTool,
 	"arxiv":                 noConfig("arxiv", func() Tool { return NewArxivTool() }),
 	"bgpt":                  noConfig("bgpt", func() Tool { return NewBGPTTool() }),
 	"code_exec":             noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
@@ -37,9 +22,9 @@ var registry = map[string]Factory{
 	"execute_sql":           buildExeSQLTool,
 	"exesql":                buildExeSQLTool,
 	"github":                noConfig("github", func() Tool { return NewGitHubTool() }),
-	"google":                noConfig("google", func() Tool { return NewGoogleTool() }),
-	"google_scholar":        noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
-	"google_scholar_search": noConfig("google_scholar_search", func() Tool { return NewGoogleScholarTool() }),
+	"google":                buildGoogleTool,
+	"google_scholar":        buildGoogleScholarTool,
+	"google_scholar_search": buildGoogleScholarTool,
 	"jin10":                 noConfig("jin10", func() Tool { return NewJin10Tool() }),
 	"keenable":              buildKeenableTool,
 	"pubmed":                noConfig("pubmed", func() Tool { return NewPubMedTool() }),
@@ -51,8 +36,8 @@ var registry = map[string]Factory{
 	"tavily":                noConfig("tavily", func() Tool { return NewTavilyTool() }),
 	"tavily_extract":        noConfig("tavily_extract", func() Tool { return NewTavilyExtractTool() }),
 	"tushare":               noConfig("tushare", func() Tool { return NewTushareTool() }),
-	"web_crawler":           noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
 	"wencai":                noConfig("wencai", func() Tool { return NewWencaiTool() }),
+	"web_crawler":           noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
 	"wikipedia":             buildWikipediaTool,
 	"wikipedia_search":      buildWikipediaTool,
 	"yahoo_finance":         noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
@@ -84,6 +69,7 @@ func BuildByName(name string, params map[string]any) (Tool, error) {
 }
 
 // BuildAll resolves a list of tool names into Tool instances.
+// perToolParams is keyed by the Agent-visible tool name.
 func BuildAll(names []string, perToolParams map[string]map[string]any) ([]Tool, error) {
 	if len(names) == 0 {
 		return nil, nil
@@ -106,12 +92,96 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]Tool, 
 	return tools, nil
 }
 
+func buildAkShareTool(params map[string]any) (Tool, error) {
+	topN := defaultAkShareTopN
+	if len(params) != 0 {
+		for key := range params {
+			if key != "top_n" {
+				return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "akshare")
+			}
+		}
+		if v, ok := intParam(params, "top_n"); ok {
+			topN = v
+		}
+		if topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "akshare")
+		}
+	}
+	return NewAkShareToolWithTopN(nil, topN), nil
+}
+
 func buildExeSQLTool(params map[string]any) (Tool, error) {
 	conn, err := decodeExeSQLConnParams(params)
 	if err != nil {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
+}
+
+func buildGoogleTool(params map[string]any) (Tool, error) {
+	if len(params) == 0 {
+		return NewGoogleTool(), nil
+	}
+	for key := range params {
+		switch key {
+		case "api_key", "country", "language", "q", "start", "num":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google", key)
+		}
+	}
+	defaults := googleParams{}
+	if v, ok := stringParam(params, "api_key"); ok {
+		defaults.APIKey = v
+	}
+	if v, ok := stringParam(params, "country"); ok {
+		defaults.Country = v
+	}
+	if v, ok := stringParam(params, "language"); ok {
+		defaults.Language = v
+	}
+	if v, ok := stringParam(params, "q"); ok {
+		defaults.Q = v
+	}
+	if v, ok := intParam(params, "start"); ok {
+		defaults.Start = v
+	}
+	if v, ok := intParam(params, "num"); ok {
+		defaults.Num = v
+	}
+	return NewGoogleToolWithDefaults(nil, defaults), nil
+}
+
+func buildGoogleScholarTool(params map[string]any) (Tool, error) {
+	if len(params) == 0 {
+		return NewGoogleScholarTool(), nil
+	}
+	for key := range params {
+		switch key {
+		case "query", "top_n", "sort_by", "year_low", "year_high", "patents":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google_scholar", key)
+		}
+	}
+	defaults := googleScholarParams{}
+	if v, ok := stringParam(params, "query"); ok {
+		defaults.Query = v
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		defaults.TopN = v
+	}
+	if v, ok := stringParam(params, "sort_by"); ok {
+		defaults.SortBy = v
+	}
+	if v, ok := intParam(params, "year_low"); ok {
+		defaults.YearLow = v
+	}
+	if v, ok := intParam(params, "year_high"); ok {
+		defaults.YearHigh = v
+	}
+	if v, ok := boolParam(params, "patents"); ok {
+		defaults.Patents = &v
+	}
+	return NewGoogleScholarToolWithDefaults(nil, defaults), nil
 }
 
 func buildKeenableTool(params map[string]any) (Tool, error) {
@@ -131,8 +201,8 @@ func buildKeenableTool(params map[string]any) (Tool, error) {
 }
 
 func buildWikipediaTool(params map[string]any) (Tool, error) {
-	topN := 5
-	language := "en"
+	topN := defaultWikipediaTopN
+	language := defaultWikipediaLanguage
 	for key := range params {
 		if key != "top_n" && key != "language" {
 			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level params top_n/language", "wikipedia")
@@ -150,7 +220,10 @@ func buildWikipediaTool(params map[string]any) (Tool, error) {
 	if language == "" {
 		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param language", "wikipedia")
 	}
-	return NewWikipediaTool(), nil
+	if !WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("agent tool: tool %q unsupported node-level param language %q", "wikipedia", language)
+	}
+	return NewWikipediaToolWithParams(nil, topN, language), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

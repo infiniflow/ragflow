@@ -22,57 +22,44 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 )
 
 const googleToolName = "google"
 
-const googleToolDescription = "Search the web via Google Programmable Search (CSE). Returns items[].{title, link, snippet}."
+const googleToolDescription = "Search the web via Google using SerpApi. Returns organic_results[].{title, link, snippet}."
 
-// googleParams is the JSON shape the model sends into InvokableRun. The
-// api_key (CX search-engine id) and cx are both required by the upstream
-// API; api_key is the Programmable Search API key and cx is the
-// search-engine ID.
+// googleParams is the JSON shape the model or canvas sends into InvokableRun.
 type googleParams struct {
-	APIKey     string `json:"api_key"`
-	CX         string `json:"cx"`
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
+	APIKey   string `json:"api_key"`
+	Q        string `json:"q"`
+	Start    int    `json:"start"`
+	Num      int    `json:"num"`
+	Country  string `json:"country"`
+	Language string `json:"language"`
 }
 
-// googleResult mirrors one element of the upstream `items` array.
-type googleResult struct {
-	Title   string `json:"title"`
-	Link    string `json:"link"`
-	Snippet string `json:"snippet"`
-}
+type googleResult map[string]any
 
-// googleResponse is the upstream Programmable Search envelope. We only
-// model the fields we care about.
 type googleResponse struct {
-	Items []googleResult `json:"items"`
+	OrganicResults []googleResult `json:"organic_results"`
 }
 
-// googleEnvelope is what the model sees.
 type googleEnvelope struct {
 	Results []googleResult `json:"results"`
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
-// GoogleTool is the Google
-// Programmable Search tool.
-// It performs a GET against the CSE endpoint using the shared
-// HTTPHelper.
 type GoogleTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults googleParams
 }
 
-// NewGoogleTool returns a GoogleTool using the default HTTPHelper.
 func NewGoogleTool() *GoogleTool {
 	return NewGoogleToolWith(NewHTTPHelper())
 }
 
-// NewGoogleToolWith returns a GoogleTool that uses the provided
-// HTTPHelper. Useful for tests.
 func NewGoogleToolWith(h *HTTPHelper) *GoogleTool {
 	if h == nil {
 		h = NewHTTPHelper()
@@ -80,71 +67,107 @@ func NewGoogleToolWith(h *HTTPHelper) *GoogleTool {
 	return &GoogleTool{helper: h}
 }
 
-// Info returns the tool's metadata for the chat model.
+func NewGoogleToolWithDefaults(h *HTTPHelper, defaults googleParams) *GoogleTool {
+	if h == nil {
+		h = NewHTTPHelper()
+	}
+	return &GoogleTool{helper: h, defaults: defaults}
+}
+
+// ToolMeta returns the tool's metadata for the chat model.
 func (g *GoogleTool) ToolMeta() ToolMeta {
 	return ToolMeta{
 		Name:        googleToolName,
 		Description: googleToolDescription,
 		Parameters: map[string]ParameterInfo{
-			"query": {
+			"q": {
 				Type:        ParamTypeString,
-				Description: "Search query",
+				Description: "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
 				Required:    true,
 			},
-			"api_key": {
-				Type:        ParamTypeString,
-				Description: "Google Programmable Search API key.",
-				Required:    true,
-			},
-			"cx": {
-				Type:        ParamTypeString,
-				Description: "Google Programmable Search engine ID (cx).",
-				Required:    true,
-			},
-			"max_results": {
+			"start": {
 				Type:        ParamTypeInteger,
-				Description: "Maximum number of results to return. Defaults to 5 (max 10 per request).",
+				Description: "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
+				Required:    false,
+			},
+			"num": {
+				Type:        ParamTypeInteger,
+				Description: "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
 				Required:    false,
 			},
 		},
 	}
 }
 
-// buildGoogleURL constructs the CSE query URL. The Programmable Search
-// API caps `num` at 10; we clamp to that range to avoid upstream errors.
-func buildGoogleURL(apiKey, cx, query string, maxResults int) string {
-	if maxResults <= 0 {
-		maxResults = 5
+// InputForm returns the Google fields exposed through Agent tool aggregation.
+func (g *GoogleTool) InputForm() map[string]any {
+	return map[string]any{
+		"q": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"start": map[string]any{
+			"name":  "From",
+			"type":  "integer",
+			"value": 0,
+		},
+		"num": map[string]any{
+			"name":  "Limit",
+			"type":  "integer",
+			"value": 12,
+		},
 	}
-	if maxResults > 10 {
-		maxResults = 10
-	}
-	q := url.Values{}
-	q.Set("key", apiKey)
-	q.Set("cx", cx)
-	q.Set("q", query)
-	q.Set("num", fmt.Sprintf("%d", maxResults))
-	return "https://www.googleapis.com/customsearch/v1?" + q.Encode()
 }
 
-// InvokableRun performs the Google Programmable Search.
+var googleEndpoint = "https://serpapi.com/search.json"
+
+func buildGoogleURL(p googleParams) string {
+	query := strings.TrimSpace(p.Q)
+	num := p.Num
+	if num <= 0 {
+		num = 6
+	}
+	country := strings.TrimSpace(p.Country)
+	if country == "" {
+		country = "us"
+	}
+	language := strings.TrimSpace(p.Language)
+	if language == "" {
+		language = "en"
+	}
+
+	q := url.Values{}
+	q.Set("api_key", p.APIKey)
+	q.Set("engine", "google")
+	q.Set("q", query)
+	q.Set("google_domain", "google.com")
+	q.Set("gl", country)
+	q.Set("hl", language)
+	q.Set("start", strconv.Itoa(p.Start))
+	q.Set("num", strconv.Itoa(num))
+	return googleEndpoint + "?" + q.Encode()
+}
+
+// InvokableRun performs the Google search via SerpApi. The api_key, country,
+// language, q, start, and num may come from the call args or the tool's
+// node-level defaults (NewGoogleToolWithDefaults).
 func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p googleParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleErrJSON(fmt.Errorf("google: parse arguments: %w", err)),
 			fmt.Errorf("google: parse arguments: %w", err)
 	}
-	if p.Query == "" {
+	p = mergeGoogleDefaults(g.defaults, p)
+	if strings.TrimSpace(p.Q) == "" {
 		return googleErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("google: query is required")
 	}
-	if p.APIKey == "" || p.CX == "" {
-		return googleErrJSON(fmt.Errorf("google: api_key and cx are required")),
-			fmt.Errorf("google: api_key and cx are required")
+	if strings.TrimSpace(p.APIKey) == "" {
+		return googleErrJSON(fmt.Errorf("google: api_key is required")),
+			fmt.Errorf("google: api_key is required")
 	}
 
-	endpoint := buildGoogleURL(p.APIKey, p.CX, p.Query, p.MaxResults)
-	resp, err := g.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
+	resp, err := g.helper.Do(ctx, http.MethodGet, buildGoogleURL(p), "", "", nil)
 	if err != nil {
 		return googleErrJSON(err), err
 	}
@@ -160,7 +183,29 @@ func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 		return googleErrJSON(fmt.Errorf("google: decode response: %w", err)),
 			fmt.Errorf("google: decode response: %w", err)
 	}
-	return googleJSON(googleEnvelope{Results: raw.Items}), nil
+	return googleJSON(googleEnvelope{Results: raw.OrganicResults}), nil
+}
+
+func mergeGoogleDefaults(defaults, p googleParams) googleParams {
+	if p.APIKey == "" {
+		p.APIKey = defaults.APIKey
+	}
+	if p.Q == "" {
+		p.Q = defaults.Q
+	}
+	if p.Start == 0 {
+		p.Start = defaults.Start
+	}
+	if p.Num == 0 {
+		p.Num = defaults.Num
+	}
+	if p.Country == "" {
+		p.Country = defaults.Country
+	}
+	if p.Language == "" {
+		p.Language = defaults.Language
+	}
+	return p
 }
 
 func googleJSON(env googleEnvelope) string {

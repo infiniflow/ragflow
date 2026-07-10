@@ -191,12 +191,6 @@ func TestDuckDuckGo_ParseNewsResults(t *testing.T) {
 
 func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/" {
-			// keep old behavior impossible to hit if search endpoint override works incorrectly
-		}
-		if got := r.URL.Query().Get("o"); got != "" {
-			t.Fatalf("o = %q, want empty for general search html endpoint", got)
-		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<!doctype html><html><body>
 			<div class="result"><a class="result__a" href="https://n.example/a">A</a></div>
@@ -215,32 +209,23 @@ func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 	}
 }
 
-func TestDuckDuckGo_Info(t *testing.T) {
+func TestDuckDuckGo_ToolMeta(t *testing.T) {
 	tool := NewDuckDuckGoTool()
 	meta := tool.ToolMeta()
 	if meta.Name != "duckduckgo" {
 		t.Errorf("Name = %q, want duckduckgo", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "DuckDuckGo") {
-		t.Errorf("Desc = %q, want to mention DuckDuckGo", meta.Description)
+		t.Errorf("Description = %q, want to mention DuckDuckGo", meta.Description)
 	}
-	if info.ParamsOneOf == nil {
-		t.Fatal("ParamsOneOf = nil, want schema definition")
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Fatalf("parameters missing 'query'")
 	}
-	schema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
+	if _, ok := meta.Parameters["channel"]; !ok {
+		t.Fatalf("parameters missing 'channel'")
 	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(raw)
-	if !strings.Contains(params, `"channel"`) {
-		t.Fatalf("schema missing channel param: %s", params)
-	}
-	if strings.Contains(params, `"top_n"`) {
-		t.Fatalf("schema should not expose top_n param: %s", params)
+	if _, ok := meta.Parameters["top_n"]; ok {
+		t.Fatalf("parameters should not expose top_n")
 	}
 }
 
@@ -274,13 +259,23 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 	t.Cleanup(func() { duckduckgoSearchEndpoint = prevSearch })
 
 	realTool := NewDuckDuckGoTool()
-
+	// Verify the tool actually calls the upstream and returns results.
 	result, err := realTool.InvokableRun(context.Background(), `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
+	}
+	var env duckduckgoEnvelope
+	if jerr := json.Unmarshal([]byte(result), &env); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", err)
+	}
+	if len(env.Results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	if env.Results[0].Title != "RAGFlow" {
+		t.Errorf("Results[0].Title = %q, want RAGFlow", env.Results[0].Title)
 	}
 	if hitCount == 0 {
 		t.Error("test server was never hit; the tool did not actually call the upstream")

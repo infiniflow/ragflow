@@ -57,8 +57,11 @@ func TestGoogle_BuildURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildGoogleURL(tc.apiKey, tc.cx, tc.query, tc.max)
-			u, _ := url.Parse(got)
+			got := buildGoogleURL(tc.params)
+			u, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", got, err)
+			}
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -97,8 +100,11 @@ func TestGoogle_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleToolWith(helper)
-	out, _ := tool.InvokableRun(context.Background(),
-		`{"query":"ragflow","api_key":"K","cx":"C","max_results":5}`)
+	out, err := tool.InvokableRun(context.Background(),
+		`{"q":"ragflow","api_key":"K","num":5,"country":"us","language":"en"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
 
 	var env googleEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -131,7 +137,7 @@ func TestGoogle_RequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestGoogle_InfoAndInputForm(t *testing.T) {
+func TestGoogle_ToolMetaAndInputForm(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleTool()

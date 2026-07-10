@@ -20,71 +20,65 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+
+	xhtml "golang.org/x/net/html"
 )
 
 const duckduckgoToolName = "duckduckgo"
 
-const duckduckgoToolDescription = "Search DuckDuckGo's Instant Answer API. Returns the abstract text and a list of related topics."
+const duckduckgoToolDescription = "Search DuckDuckGo web or news results. Returns results[].{title, url, body}."
 
-// duckduckgoParams is the JSON shape the model sends into InvokableRun.
-// max_results caps the number of RelatedTopics returned; the upstream
-// endpoint itself is uncapped and uses heuristic ranking.
+const duckduckgoChannelGeneral = "general"
+const duckduckgoChannelNews = "news"
+
+var duckduckgoSearchEndpoint = "https://duckduckgo.com/html/"
+var duckduckgoNewsEndpoint = "https://duckduckgo.com/news.js"
+var duckduckgoNewsBootstrapEndpoint = "https://duckduckgo.com/"
+
+var duckduckgoVQDPattern = regexp.MustCompile(`vqd="([^"]+)"`)
+
 type duckduckgoParams struct {
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
+	Query   string `json:"query"`
+	Channel string `json:"channel"`
+	TopN    int    `json:"top_n"`
 }
 
-// duckduckgoTopic is one element of the upstream `RelatedTopics` array.
-// DuckDuckGo returns a recursive tree: a topic may itself have
-// `Topics`, and may be a "name"/"value" pair (no URL) or a regular
-// hit with `FirstURL`. We flatten one level of nesting.
-type duckduckgoTopic struct {
-	Text     string            `json:"text,omitempty"`
-	FirstURL string            `json:"first_url,omitempty"`
-	Topics   []duckduckgoTopic `json:"topics,omitempty"`
+type duckduckgoResult struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	Body  string `json:"body"`
 }
 
-// duckduckgoResponse is the upstream Instant Answer envelope. We only
-// model the fields we care about.
-type duckduckgoResponse struct {
-	AbstractText  string            `json:"abstract_text"`
-	AbstractURL   string            `json:"abstract_url"`
-	Abstract      string            `json:"abstract"`
-	RelatedTopics []duckduckgoTopic `json:"related_topics"`
-}
-
-// duckduckgoTopicOut is the model-facing topic shape.
-type duckduckgoTopicOut struct {
-	Text     string `json:"text,omitempty"`
-	FirstURL string `json:"first_url,omitempty"`
-}
-
-// duckduckgoEnvelope is the JSON shape the model sees.
 type duckduckgoEnvelope struct {
-	AbstractText  string               `json:"abstract_text,omitempty"`
-	AbstractURL   string               `json:"abstract_url,omitempty"`
-	RelatedTopics []duckduckgoTopicOut `json:"related_topics,omitempty"`
-	Error         string               `json:"_ERROR,omitempty"`
+	Results []duckduckgoResult `json:"results"`
+	Error   string             `json:"_ERROR,omitempty"`
 }
 
-// DuckDuckGoTool is the DuckDuckGo
-// Instant Answer tool. It
-// performs a GET against the public Instant Answer endpoint using the
-// shared HTTPHelper and returns the abstract + a flat list of related
-// topics.
+type duckduckgoNewsResponse struct {
+	Results []duckduckgoNewsItem `json:"results"`
+}
+
+type duckduckgoNewsItem struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Excerpt string `json:"excerpt"`
+}
+
 type DuckDuckGoTool struct {
 	helper *HTTPHelper
 }
 
-// NewDuckDuckGoTool returns a DuckDuckGoTool using the default HTTPHelper.
 func NewDuckDuckGoTool() *DuckDuckGoTool {
 	return NewDuckDuckGoToolWith(NewHTTPHelper())
 }
 
-// NewDuckDuckGoToolWith returns a DuckDuckGoTool that uses the provided
-// HTTPHelper. Useful for tests.
 func NewDuckDuckGoToolWith(h *HTTPHelper) *DuckDuckGoTool {
 	if h == nil {
 		h = NewHTTPHelper()
@@ -92,7 +86,7 @@ func NewDuckDuckGoToolWith(h *HTTPHelper) *DuckDuckGoTool {
 	return &DuckDuckGoTool{helper: h}
 }
 
-// Info returns the tool's metadata for the chat model.
+// ToolMeta returns the tool's metadata for the chat model.
 func (d *DuckDuckGoTool) ToolMeta() ToolMeta {
 	return ToolMeta{
 		Name:        duckduckgoToolName,
@@ -100,61 +94,90 @@ func (d *DuckDuckGoTool) ToolMeta() ToolMeta {
 		Parameters: map[string]ParameterInfo{
 			"query": {
 				Type:        ParamTypeString,
-				Description: "Search query",
+				Description: "Search query.",
 				Required:    true,
 			},
-			"max_results": {
-				Type:        ParamTypeInteger,
-				Description: "Maximum number of related topics to return. Defaults to 5.",
+			"channel": {
+				Type:        ParamTypeString,
+				Description: "Search channel: general or news. Defaults to general.",
 				Required:    false,
 			},
 		},
 	}
 }
 
-// buildDuckDuckGoURL constructs the Instant Answer API URL.
-func buildDuckDuckGoURL(query string) string {
+func buildDuckDuckGoSearchURL(query string, topN int) string {
+	if topN <= 0 {
+		topN = 10
+	}
 	q := url.Values{}
 	q.Set("q", query)
-	q.Set("format", "json")
-	q.Set("no_html", "1")
-	q.Set("skip_disambig", "1")
-	return "https://api.duckduckgo.com/?" + q.Encode()
+	q.Set("kl", "wt-wt")
+	q.Set("dc", strconv.Itoa(topN+1))
+	return duckduckgoSearchEndpoint + "?" + q.Encode()
 }
 
-// flattenDuckDuckGoTopics flattens the upstream topic tree (which can
-// have arbitrary nesting) into a list, dropping entries without a URL.
-func flattenDuckDuckGoTopics(in []duckduckgoTopic) []duckduckgoTopicOut {
-	var out []duckduckgoTopicOut
-	for _, t := range in {
-		if t.FirstURL != "" && t.Text != "" {
-			out = append(out, duckduckgoTopicOut{Text: t.Text, FirstURL: t.FirstURL})
-		}
-		// recurse one level; upstream nests categories here
-		if len(t.Topics) > 0 {
-			out = append(out, flattenDuckDuckGoTopics(t.Topics)...)
-		}
+func buildDuckDuckGoNewsURL(query string, topN int) string {
+	return buildDuckDuckGoNewsURLWithVQD(query, topN, "")
+}
+
+func buildDuckDuckGoNewsURLWithVQD(query string, topN int, vqd string) string {
+	if topN <= 0 {
+		topN = 10
 	}
-	return out
+	q := url.Values{}
+	q.Set("q", query)
+	q.Set("l", "wt-wt")
+	q.Set("o", "json")
+	q.Set("p", "1")
+	q.Set("s", "0")
+	q.Set("dc", strconv.Itoa(topN))
+	if strings.TrimSpace(vqd) != "" {
+		q.Set("vqd", vqd)
+		q.Set("u", "bing")
+	}
+	return duckduckgoNewsEndpoint + "?" + q.Encode()
 }
 
-// InvokableRun performs the DuckDuckGo Instant Answer query.
+func buildDuckDuckGoNewsBootstrapURL(query string) string {
+	q := url.Values{}
+	q.Set("q", query)
+	q.Set("iar", "news")
+	q.Set("ia", "news")
+	q.Set("kl", "wt-wt")
+	return duckduckgoNewsBootstrapEndpoint + "?" + q.Encode()
+}
+
+// InvokableRun performs the DuckDuckGo search. It auto-detects the
+// channel (general HTML search or news JSON API) from the params.
 func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p duckduckgoParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse arguments: %w", err)),
 			fmt.Errorf("duckduckgo: parse arguments: %w", err)
 	}
-	if p.Query == "" {
+	if strings.TrimSpace(p.Query) == "" {
 		return duckduckgoErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("duckduckgo: query is required")
 	}
-	if p.MaxResults <= 0 {
-		p.MaxResults = 5
+
+	channel := normalizeDuckDuckGoChannel(p.Channel)
+	topN := p.TopN
+	if topN <= 0 {
+		topN = 10
 	}
 
-	endpoint := buildDuckDuckGoURL(p.Query)
-	resp, err := d.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
+	if channel == duckduckgoChannelNews {
+		return d.runNewsSearch(ctx, p.Query, topN)
+	}
+
+	endpoint := buildDuckDuckGoSearchURL(p.Query, topN)
+	headers := map[string]string{
+		"User-Agent": "Mozilla/5.0 (compatible; ragflow/1.0)",
+		"Accept":     "text/html,application/xhtml+xml",
+	}
+
+	resp, err := d.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
 	if err != nil {
 		return duckduckgoErrJSON(err), err
 	}
@@ -165,29 +188,244 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string) (str
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
-	var raw duckduckgoResponse
+	results, err := parseDuckDuckGoHTML(resp.Body, topN)
+	if err != nil {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse html: %w", err)),
+			fmt.Errorf("duckduckgo: parse html: %w", err)
+	}
+	return duckduckgoJSON(duckduckgoEnvelope{Results: results}), nil
+}
+
+func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN int) (string, error) {
+	vqd, err := d.fetchDuckDuckGoNewsVQD(ctx, query)
+	if err != nil {
+		return duckduckgoErrJSON(err), err
+	}
+
+	endpoint := buildDuckDuckGoNewsURLWithVQD(query, topN, vqd)
+	headers := map[string]string{
+		"User-Agent": "Mozilla/5.0 (compatible; ragflow/1.0)",
+		"Accept":     "application/json,text/javascript,*/*",
+	}
+
+	resp, err := d.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
+	if err != nil {
+		return duckduckgoErrJSON(err), err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)),
+			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
+	}
+
+	var raw duckduckgoNewsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: decode response: %w", err)),
-			fmt.Errorf("duckduckgo: decode response: %w", err)
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: decode news response: %w", err)),
+			fmt.Errorf("duckduckgo: decode news response: %w", err)
 	}
 
-	// Prefer AbstractText (rich) over Abstract (plain), as the Python
-	// tool did historically.
-	abstract := raw.AbstractText
-	if abstract == "" {
-		abstract = raw.Abstract
+	results := make([]duckduckgoResult, 0, min(topN, len(raw.Results)))
+	for _, item := range raw.Results {
+		if len(results) >= topN {
+			break
+		}
+		title := normalizeWhitespace(html.UnescapeString(item.Title))
+		resultURL := strings.TrimSpace(item.URL)
+		body := normalizeWhitespace(html.UnescapeString(item.Excerpt))
+		if title == "" || resultURL == "" {
+			continue
+		}
+		results = append(results, duckduckgoResult{
+			Title: title,
+			URL:   resultURL,
+			Body:  body,
+		})
 	}
 
-	topics := flattenDuckDuckGoTopics(raw.RelatedTopics)
-	if len(topics) > p.MaxResults {
-		topics = topics[:p.MaxResults]
+	return duckduckgoJSON(duckduckgoEnvelope{Results: results}), nil
+}
+
+func (d *DuckDuckGoTool) fetchDuckDuckGoNewsVQD(ctx context.Context, query string) (string, error) {
+	endpoint := buildDuckDuckGoNewsBootstrapURL(query)
+	headers := map[string]string{
+		"User-Agent": "Mozilla/5.0 (compatible; ragflow/1.0)",
+		"Accept":     "text/html,application/xhtml+xml",
 	}
 
-	return duckduckgoJSON(duckduckgoEnvelope{
-		AbstractText:  abstract,
-		AbstractURL:   raw.AbstractURL,
-		RelatedTopics: topics,
-	}), nil
+	resp, err := d.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("duckduckgo: news bootstrap returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("duckduckgo: read news bootstrap: %w", err)
+	}
+	matches := duckduckgoVQDPattern.FindSubmatch(body)
+	if len(matches) != 2 {
+		return "", fmt.Errorf("duckduckgo: news bootstrap missing vqd")
+	}
+	return string(matches[1]), nil
+}
+
+func normalizeDuckDuckGoChannel(channel string) string {
+	value := strings.ToLower(strings.TrimSpace(channel))
+	switch value {
+	case "", "text", duckduckgoChannelGeneral:
+		return duckduckgoChannelGeneral
+	case duckduckgoChannelNews:
+		return duckduckgoChannelNews
+	default:
+		return duckduckgoChannelGeneral
+	}
+}
+
+func parseDuckDuckGoHTML(body interface {
+	Read(p []byte) (int, error)
+}, topN int) ([]duckduckgoResult, error) {
+	if topN <= 0 {
+		topN = 10
+	}
+	doc, err := xhtml.Parse(body)
+	if err != nil {
+		return nil, err
+	}
+	return extractDuckDuckGoGeneralResults(doc, topN), nil
+}
+
+func extractDuckDuckGoGeneralResults(doc *xhtml.Node, topN int) []duckduckgoResult {
+	results := make([]duckduckgoResult, 0, topN)
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if len(results) >= topN {
+			return
+		}
+		if n.Type == xhtml.ElementNode && hasClassToken(n, "result") {
+			if res, ok := extractDuckDuckGoGeneralResult(n); ok {
+				results = append(results, res)
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return results
+}
+
+func extractDuckDuckGoGeneralResult(card *xhtml.Node) (duckduckgoResult, bool) {
+	var out duckduckgoResult
+	titleNode := findFirstNode(card, func(n *xhtml.Node) bool {
+		return n.Type == xhtml.ElementNode && n.Data == "a" && hasClassToken(n, "result__a")
+	})
+	if titleNode == nil {
+		return out, false
+	}
+	out.Title = normalizeWhitespace(collectText(titleNode))
+	out.URL = normalizeDuckDuckGoLink(attrValue(titleNode, "href"))
+	out.Body = normalizeWhitespace(textByClass(card, "result__snippet"))
+	if out.Title == "" || out.URL == "" {
+		return duckduckgoResult{}, false
+	}
+	return out, true
+}
+
+func findFirstNode(root *xhtml.Node, match func(*xhtml.Node) bool) *xhtml.Node {
+	if root == nil {
+		return nil
+	}
+	if match(root) {
+		return root
+	}
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		if hit := findFirstNode(c, match); hit != nil {
+			return hit
+		}
+	}
+	return nil
+}
+
+func textByClass(root *xhtml.Node, className string) string {
+	node := findFirstNode(root, func(n *xhtml.Node) bool {
+		return n.Type == xhtml.ElementNode && hasClassToken(n, className)
+	})
+	if node == nil {
+		return ""
+	}
+	return collectText(node)
+}
+
+func hasClassToken(n *xhtml.Node, want string) bool {
+	if n == nil || n.Type != xhtml.ElementNode || want == "" {
+		return false
+	}
+	for _, a := range n.Attr {
+		if a.Key != "class" {
+			continue
+		}
+		for _, token := range strings.Fields(a.Val) {
+			if token == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func attrValue(n *xhtml.Node, key string) string {
+	if n == nil {
+		return ""
+	}
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return strings.TrimSpace(a.Val)
+		}
+	}
+	return ""
+}
+
+func normalizeDuckDuckGoLink(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "//") {
+		raw = "https:" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return raw
+	}
+	if strings.Contains(parsed.Host, "duckduckgo.com") {
+		q := parsed.Query().Get("uddg")
+		if q != "" {
+			if decoded, err := url.QueryUnescape(q); err == nil && decoded != "" {
+				return decoded
+			}
+			return q
+		}
+	}
+	return raw
+}
+
+func normalizeWhitespace(s string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func duckduckgoJSON(env duckduckgoEnvelope) string {

@@ -66,7 +66,10 @@ func TestWikipedia_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildWikipediaURL(tc.lang, tc.query, tc.max)
-			u, _ := url.Parse(got)
+			u, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", got, err)
+			}
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -114,7 +117,13 @@ func TestWikipedia_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewWikipediaToolWith(helper)
-	out, _ := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if !strings.Contains(gotUA, "ragflow") {
+		t.Errorf("User-Agent = %q, want to contain ragflow", gotUA)
+	}
 
 	var env wikipediaEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -145,7 +154,10 @@ func TestWikipedia_ParseResults(t *testing.T) {
 // en.wikipedia.org endpoint at a httptest.Server without changing the
 // production URL builder.
 func rewriteHostTransport(srvURL string) http.RoundTripper {
-	u, _ := url.Parse(srvURL)
+	u, err := url.Parse(srvURL)
+	if err != nil {
+		panic("rewriteHostTransport: bad srvURL: " + err.Error())
+	}
 	return &hostSwapRT{inner: http.DefaultTransport, host: u.Host, scheme: u.Scheme}
 }
 
@@ -163,16 +175,16 @@ func (t *hostSwapRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.inner.RoundTrip(r2)
 }
 
-func TestWikipedia_Info(t *testing.T) {
+func TestWikipedia_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewWikipediaTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "wikipedia" {
-		t.Errorf("Name = %q, want wikipedia", meta.Name)
+	if meta.Name != "wikipedia_search" {
+		t.Errorf("Name = %q, want wikipedia_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Wikipedia") {
-		t.Errorf("Desc = %q, want to mention Wikipedia", meta.Description)
+		t.Errorf("Description = %q, want to mention Wikipedia", meta.Description)
 	}
 }
 

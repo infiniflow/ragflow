@@ -21,11 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 )
 
 const tavilyToolName = "tavily"
+
+const tavilyExtractToolName = "tavily_extract"
 
 const tavilyToolDescription = "Search the web via the Tavily API. Returns a list of {url, title, content} results."
 
@@ -33,26 +35,44 @@ const tavilyToolDescription = "Search the web via the Tavily API. Returns a list
 // api_key may be omitted when the env var TAVILY_API_KEY is set; the tool
 // resolves it from the environment in that case.
 type tavilyParams struct {
-	APIKey      string `json:"api_key"`
-	Query       string `json:"query"`
-	MaxResults  int    `json:"max_results"`
-	SearchDepth string `json:"search_depth"`
+	APIKey                   string   `json:"api_key"`
+	Query                    string   `json:"query"`
+	MaxResults               int      `json:"max_results"`
+	SearchDepth              string   `json:"search_depth"`
+	Topic                    string   `json:"topic"`
+	Days                     int      `json:"days"`
+	IncludeAnswer            bool     `json:"include_answer"`
+	IncludeRawContent        bool     `json:"include_raw_content"`
+	IncludeImages            bool     `json:"include_images"`
+	IncludeImageDescriptions bool     `json:"include_image_descriptions"`
+	IncludeDomains           []string `json:"include_domains"`
+	ExcludeDomains           []string `json:"exclude_domains"`
 }
 
 // tavilyRequestBody is the JSON body POSTed to the Tavily /search endpoint.
 // The struct matches the upstream API (https://docs.tavily.com).
 type tavilyRequestBody struct {
-	Query       string `json:"query"`
-	MaxResults  int    `json:"max_results"`
-	SearchDepth string `json:"search_depth"`
+	Query                    string   `json:"query"`
+	MaxResults               int      `json:"max_results"`
+	SearchDepth              string   `json:"search_depth"`
+	Topic                    string   `json:"topic,omitempty"`
+	Days                     int      `json:"days"`
+	IncludeAnswer            bool     `json:"include_answer"`
+	IncludeRawContent        bool     `json:"include_raw_content"`
+	IncludeImages            bool     `json:"include_images"`
+	IncludeImageDescriptions bool     `json:"include_image_descriptions"`
+	IncludeDomains           []string `json:"include_domains,omitempty"`
+	ExcludeDomains           []string `json:"exclude_domains,omitempty"`
 }
 
 // tavilyResult mirrors one element of the upstream `results` array. We
 // return these verbatim to the model.
 type tavilyResult struct {
-	URL     string `json:"url"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	URL        string  `json:"url"`
+	Title      string  `json:"title"`
+	Content    string  `json:"content"`
+	RawContent string  `json:"raw_content,omitempty"`
+	Score      float64 `json:"score,omitempty"`
 }
 
 // tavilyResponse is the envelope returned by Tavily. We only model the
@@ -68,11 +88,48 @@ type tavilyEnvelope struct {
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
+type tavilyExtractParams struct {
+	APIKey       string `json:"api_key"`
+	URLs         any    `json:"urls"`
+	ExtractDepth string `json:"extract_depth"`
+	Format       string `json:"format"`
+}
+
+type tavilyExtractRequestBody struct {
+	URLs          []string `json:"urls"`
+	ExtractDepth  string   `json:"extract_depth"`
+	Format        string   `json:"format"`
+	IncludeImages bool     `json:"include_images"`
+}
+
+type tavilyExtractResult struct {
+	URL        string `json:"url"`
+	RawContent string `json:"raw_content,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+type tavilyExtractResponse struct {
+	Results []tavilyExtractResult `json:"results"`
+}
+
+type tavilyExtractEnvelope struct {
+	Results []tavilyExtractResult `json:"results"`
+	Error   string                `json:"_ERROR,omitempty"`
+}
+
 // TavilyTool is the Tavily search
 // tool. It POSTs a search request
 // to https://api.tavily.com/search using the shared HTTPHelper and returns
 // the upstream `results` array as JSON.
 type TavilyTool struct {
+	helper *HTTPHelper
+	envKey func() string
+}
+
+// TavilyExtractTool is the Tavily Extract tool. It POSTs URLs to
+// https://api.tavily.com/extract and returns the upstream results array.
+type TavilyExtractTool struct {
 	helper *HTTPHelper
 	envKey func() string
 }
@@ -96,18 +153,45 @@ func NewTavilyToolWith(h *HTTPHelper) *TavilyTool {
 // resolver. Useful for tests that want to inject a fake credential
 // without mutating process state.
 func NewTavilyToolWithEnvKey(h *HTTPHelper, envKey func() string) *TavilyTool {
+	if h == nil {
+		h = NewHTTPHelper()
+	}
 	if envKey == nil {
 		envKey = defaultTavilyEnvKey
 	}
 	return &TavilyTool{helper: h, envKey: envKey}
 }
 
+// NewTavilyExtractTool returns a TavilyExtractTool using the default HTTPHelper.
+func NewTavilyExtractTool() *TavilyExtractTool {
+	return NewTavilyExtractToolWith(NewHTTPHelper())
+}
+
+// NewTavilyExtractToolWith returns a TavilyExtractTool using the provided helper.
+func NewTavilyExtractToolWith(h *HTTPHelper) *TavilyExtractTool {
+	if h == nil {
+		h = NewHTTPHelper()
+	}
+	return &TavilyExtractTool{helper: h, envKey: defaultTavilyEnvKey}
+}
+
+// NewTavilyExtractToolWithEnvKey returns a TavilyExtractTool with a custom env-key resolver.
+func NewTavilyExtractToolWithEnvKey(h *HTTPHelper, envKey func() string) *TavilyExtractTool {
+	if h == nil {
+		h = NewHTTPHelper()
+	}
+	if envKey == nil {
+		envKey = defaultTavilyEnvKey
+	}
+	return &TavilyExtractTool{helper: h, envKey: envKey}
+}
+
 // defaultTavilyEnvKey is the production env-key resolver. Pulled out
 // as a named function (not a var) so tests cannot accidentally
 // mutate it via package-var assignment.
-func defaultTavilyEnvKey() string { return os.Getenv("TAVILY_API_KEY") }
+func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
 
-// Info returns the tool's metadata for the chat model.
+// ToolMeta returns the tool's metadata for the chat model.
 func (t *TavilyTool) ToolMeta() ToolMeta {
 	return ToolMeta{
 		Name:        tavilyToolName,
@@ -133,6 +217,46 @@ func (t *TavilyTool) ToolMeta() ToolMeta {
 				Description: `Tavily search depth: "basic" (default) or "advanced".`,
 				Required:    false,
 			},
+			"topic": {
+				Type:        ParamTypeString,
+				Description: `Search topic: "general" (default) or "news".`,
+				Required:    false,
+			},
+			"include_domains": {
+				Type:        ParamTypeArray,
+				Description: "Domains that search results must include.",
+				Required:    false,
+			},
+			"exclude_domains": {
+				Type:        ParamTypeArray,
+				Description: "Domains that search results must exclude.",
+				Required:    false,
+			},
+		},
+	}
+}
+
+// ToolMeta returns the Tavily Extract tool metadata for the chat model.
+func (t *TavilyExtractTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        tavilyExtractToolName,
+		Description: "Extract web page content from one or more specified URLs using Tavily Extract.",
+		Parameters: map[string]ParameterInfo{
+			"urls": {
+				Type:        ParamTypeArray,
+				Description: "The URLs to extract content from.",
+				Required:    true,
+			},
+			"extract_depth": {
+				Type:        ParamTypeString,
+				Description: `Extraction depth: "basic" (default) or "advanced".`,
+				Required:    false,
+			},
+			"format": {
+				Type:        ParamTypeString,
+				Description: `Output format: "markdown" (default) or "text".`,
+				Required:    false,
+			},
 		},
 	}
 }
@@ -141,6 +265,10 @@ func (t *TavilyTool) ToolMeta() ToolMeta {
 // tests can substitute a httptest.Server URL. Tests must serialize
 // access with tavilyEndpointMu if running in parallel.
 var tavilyEndpoint = "https://api.tavily.com/search"
+
+// tavilyExtractEndpoint is the Tavily /extract URL. Exposed as a package var
+// so tests can substitute it through rewriteHostTransport.
+var tavilyExtractEndpoint = "https://api.tavily.com/extract"
 
 // InvokableRun performs the Tavily search. The api_key may come from the
 // argument or the TAVILY_API_KEY env var.
@@ -155,7 +283,7 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 			fmt.Errorf("tavily: query is required")
 	}
 	if p.MaxResults <= 0 {
-		p.MaxResults = 5
+		p.MaxResults = 6
 	}
 	if p.SearchDepth == "" {
 		p.SearchDepth = "basic"
@@ -171,9 +299,17 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 	}
 
 	body, _ := json.Marshal(tavilyRequestBody{
-		Query:       p.Query,
-		MaxResults:  p.MaxResults,
-		SearchDepth: p.SearchDepth,
+		Query:                    p.Query,
+		MaxResults:               p.MaxResults,
+		SearchDepth:              p.SearchDepth,
+		Topic:                    defaultString(p.Topic, "general"),
+		Days:                     p.Days,
+		IncludeAnswer:            p.IncludeAnswer,
+		IncludeRawContent:        false,
+		IncludeImages:            false,
+		IncludeImageDescriptions: p.IncludeImageDescriptions,
+		IncludeDomains:           p.IncludeDomains,
+		ExcludeDomains:           p.ExcludeDomains,
 	})
 
 	resp, err := t.helper.Do(ctx,
@@ -198,6 +334,63 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 	return tavilyJSON(tavilyEnvelope{Results: raw.Results}), nil
 }
 
+// InvokableRun performs the Tavily Extract request. The api_key may come from
+// the argument or the TAVILY_API_KEY env var.
+func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
+	var p tavilyExtractParams
+	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: parse arguments: %w", err)),
+			fmt.Errorf("tavily_extract: parse arguments: %w", err)
+	}
+	urls := normalizeTavilyURLs(p.URLs)
+	if len(urls) == 0 {
+		return tavilyExtractErrJSON(fmt.Errorf("urls is required")),
+			fmt.Errorf("tavily_extract: urls is required")
+	}
+	if p.ExtractDepth == "" {
+		p.ExtractDepth = "basic"
+	}
+	if p.Format == "" {
+		p.Format = "markdown"
+	}
+
+	apiKey := p.APIKey
+	if apiKey == "" {
+		apiKey = t.envKey()
+	}
+	if apiKey == "" {
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")),
+			fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")
+	}
+
+	body, _ := json.Marshal(tavilyExtractRequestBody{
+		URLs:          urls,
+		ExtractDepth:  p.ExtractDepth,
+		Format:        p.Format,
+		IncludeImages: false,
+	})
+	resp, err := t.helper.Do(ctx,
+		http.MethodPost, tavilyExtractEndpoint, string(body), "application/json",
+		map[string]string{"Authorization": "Bearer " + apiKey},
+	)
+	if err != nil {
+		return tavilyExtractErrJSON(err), err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)),
+			fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)
+	}
+
+	var raw tavilyExtractResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: decode response: %w", err)),
+			fmt.Errorf("tavily_extract: decode response: %w", err)
+	}
+	return tavilyExtractJSON(tavilyExtractEnvelope{Results: raw.Results}), nil
+}
+
 // tavilyJSON marshals the envelope to a JSON string for the model.
 func tavilyJSON(env tavilyEnvelope) string {
 	b, err := json.Marshal(env)
@@ -212,145 +405,55 @@ func tavilyErrJSON(err error) string {
 	return tavilyJSON(tavilyEnvelope{Error: err.Error()})
 }
 
-// ---- Tavily Extract ----
-
-const tavilyExtractToolName = "tavily_extract"
-const tavilyExtractToolDescription = "Extract content from URLs via the Tavily Extract API. Returns extracted text from each URL."
-
-const tavilyExtractEndpoint = "https://api.tavily.com/extract"
-
-type tavilyExtractParams struct {
-	APIKey       string   `json:"api_key"`
-	URLs         []string `json:"urls"`
-	ExtractDepth string   `json:"extract_depth"`
-	Format       string   `json:"format"`
-}
-
-type tavilyExtractRequestBody struct {
-	URLs         []string `json:"urls"`
-	ExtractDepth string   `json:"extract_depth"`
-	Format       string   `json:"format"`
-}
-
-type tavilyExtractResult struct {
-	URL        string `json:"url"`
-	RawContent string `json:"raw_content"`
-}
-
-type tavilyExtractResponse struct {
-	Results []tavilyExtractResult `json:"results"`
-}
-
-type tavilyExtractEnvelope struct {
-	Results []tavilyExtractResult `json:"results"`
-	Error   string                `json:"_ERROR,omitempty"`
-}
-
-// TavilyExtractTool extracts content from URLs via the Tavily Extract API.
-type TavilyExtractTool struct {
-	helper *HTTPHelper
-	envKey func() string
-}
-
-func NewTavilyExtractTool() *TavilyExtractTool {
-	return NewTavilyExtractToolWith(NewHTTPHelper())
-}
-
-func NewTavilyExtractToolWith(h *HTTPHelper) *TavilyExtractTool {
-	if h == nil {
-		h = NewHTTPHelper()
-	}
-	return &TavilyExtractTool{helper: h, envKey: defaultTavilyEnvKey}
-}
-
-func NewTavilyExtractToolWithEnvKey(h *HTTPHelper, envKey func() string) *TavilyExtractTool {
-	if envKey == nil {
-		envKey = defaultTavilyEnvKey
-	}
-	return &TavilyExtractTool{helper: h, envKey: envKey}
-}
-
-func (t *TavilyExtractTool) ToolMeta() ToolMeta {
-	return ToolMeta{
-		Name:        tavilyExtractToolName,
-		Description: tavilyExtractToolDescription,
-		Parameters: map[string]ParameterInfo{
-			"urls":          {Type: ParamTypeString, Description: "Comma-separated URLs to extract content from.", Required: true},
-			"api_key":       {Type: ParamTypeString, Description: "Tavily API key. Falls back to TAVILY_API_KEY env var.", Required: false},
-			"extract_depth": {Type: ParamTypeString, Description: `Extraction depth: "basic" or "advanced".`, Required: false},
-			"format":        {Type: ParamTypeString, Description: `Output format: "text" or "markdown".`, Required: false},
-		},
-	}
-}
-
-func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
-	var p tavilyExtractParams
-	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: parse: %w", err)),
-			fmt.Errorf("tavily_extract: parse: %w", err)
-	}
-	if len(p.URLs) == 0 && p.APIKey != "" {
-		// Accept comma-separated string in "urls" field.
-		var raw struct {
-			URLs string `json:"urls"`
-		}
-		if err := json.Unmarshal([]byte(argsJSON), &raw); err == nil && raw.URLs != "" {
-			parts := strings.Split(raw.URLs, ",")
-			for i := range parts {
-				parts[i] = strings.TrimSpace(parts[i])
-			}
-			p.URLs = parts
-		}
-	}
-	if len(p.URLs) == 0 {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: urls is required")),
-			fmt.Errorf("tavily_extract: urls is required")
-	}
-	apiKey := p.APIKey
-	if apiKey == "" {
-		apiKey = t.envKey()
-	}
-	if apiKey == "" {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: api_key is required")),
-			fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")
-	}
-	if p.ExtractDepth == "" {
-		p.ExtractDepth = "basic"
-	}
-	if p.Format == "" {
-		p.Format = "text"
-	}
-	body, _ := json.Marshal(tavilyExtractRequestBody{
-		URLs:         p.URLs,
-		ExtractDepth: p.ExtractDepth,
-		Format:       p.Format,
-	})
-	resp, err := t.helper.Do(ctx, http.MethodPost, tavilyExtractEndpoint, string(body), "application/json",
-		map[string]string{"Authorization": "Bearer " + apiKey})
-	if err != nil {
-		return tavilyExtractErrJSON(err), err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: upstream %d", resp.StatusCode)),
-			fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)
-	}
-	var raw tavilyExtractResponse
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: decode: %w", err)),
-			fmt.Errorf("tavily_extract: decode: %w", err)
-	}
-	return tavilyExtractJSON(tavilyExtractEnvelope{Results: raw.Results}), nil
-}
-
 func tavilyExtractJSON(env tavilyExtractEnvelope) string {
 	b, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Sprintf(`{"_ERROR":"tavily_extract: marshal: %s"}`, err)
+		return fmt.Sprintf(`{"_ERROR":"tavily_extract: marshal result: %s"}`, err)
 	}
 	return string(b)
 }
 
 func tavilyExtractErrJSON(err error) string {
 	return tavilyExtractJSON(tavilyExtractEnvelope{Error: err.Error()})
+}
+
+func normalizeTavilyURLs(raw any) []string {
+	switch v := raw.(type) {
+	case string:
+		return splitTavilyURLs(v)
+	case []string:
+		return compactStrings(v)
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return compactStrings(out)
+	default:
+		return nil
+	}
+}
+
+func splitTavilyURLs(s string) []string {
+	parts := strings.Split(s, ",")
+	return compactStrings(parts)
+}
+
+func compactStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func defaultString(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
 }

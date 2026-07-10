@@ -6,17 +6,20 @@ import (
 )
 
 func TestBuildAll_KnownTools(t *testing.T) {
-	tools, _ := BuildAll([]string{"retrieval", "wikipedia"}, nil)
+	tools, err := BuildAll([]string{"retrieval", "wikipedia"}, nil)
+	if err != nil {
+		t.Fatalf("BuildAll: %v", err)
+	}
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
 	meta0 := tools[0].ToolMeta()
 	if meta0.Name != "search_my_dateset" {
-		t.Errorf("tools[0].Name = %q, want search_my_dateset", meta0.Name)
+		t.Errorf("tools[0].ToolMeta().Name = %q, want search_my_dateset", meta0.Name)
 	}
 	meta1 := tools[1].ToolMeta()
-	if meta1.Name != "wikipedia" {
-		t.Errorf("tools[1].Name = %q, want wikipedia", meta1.Name)
+	if meta1.Name != "wikipedia_search" {
+		t.Errorf("tools[1].ToolMeta().Name = %q, want wikipedia_search", meta1.Name)
 	}
 }
 
@@ -63,7 +66,10 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 			"api_key": "key-test",
 		},
 	}
-	tools, _ := BuildAll(names, params)
+	tools, err := BuildAll(names, params)
+	if err != nil {
+		t.Fatalf("BuildAll(all registered): %v", err)
+	}
 	if len(tools) != len(names) {
 		t.Fatalf("len(tools) = %d, want %d", len(tools), len(names))
 	}
@@ -94,8 +100,8 @@ func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
 // retrieval/search_my_dateset alias pairs), builds the tool, and
-// asserts that its Info() returns a complete schema — non-empty
-// Name and Desc, non-nil ParamsOneOf, and a consistent canonical
+// asserts that its ToolMeta() returns a complete schema — non-empty
+// Name and Desc, non-nil Parameters, and a consistent canonical
 // name across alias entries. Catches drift like "tool renamed but
 // registry not updated", "param added but schema not updated",
 // "tool registered with empty description", and "alias points to
@@ -135,7 +141,10 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			"api_key": "key-xyz",
 		},
 	}
-	tools, _ := BuildAll(names, params)
+	tools, err := BuildAll(names, params)
+	if err != nil {
+		t.Fatalf("BuildAll(%d names): %v", len(names), err)
+	}
 	if len(tools) != len(names) {
 		t.Fatalf("BuildAll returned %d tools for %d names", len(tools), len(names))
 	}
@@ -144,15 +153,18 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	for i, name := range names {
 		meta := tools[i].ToolMeta()
 		if meta.Name == "" {
-			t.Errorf("tools[%d] (registry name %q).Name is empty", i, name)
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Name is empty", i, name)
 		}
 		if meta.Description == "" {
-			t.Errorf("tools[%d] (registry name %q).Description is empty", i, name)
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Description is empty", i, name)
+		}
+		if meta.Parameters == nil {
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Parameters is nil", i, name)
 		}
 	}
 
 	// Alias consistency: execute_sql and exesql must surface the
-	// same canonical Info().Name; same for retrieval/search_my_dataset/
+	// same canonical ToolMeta().Name; same for retrieval/search_my_dataset/
 	// search_my_dateset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
@@ -163,10 +175,10 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"retrieval":             "search_my_dateset",
 		"search_my_dataset":     "search_my_dateset",
 		"search_my_dateset":     "search_my_dateset",
-		"crawler":               "crawler",
-		"web_crawler":           "crawler",
-		"wikipedia":             "wikipedia",
-		"wikipedia_search":      "wikipedia",
+		"crawler":               "web_crawler",
+		"web_crawler":           "web_crawler",
+		"wikipedia":             "wikipedia_search",
+		"wikipedia_search":      "wikipedia_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]
@@ -176,16 +188,13 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		idx := indexOf(names, name)
 		meta := tools[idx].ToolMeta()
 		if meta.Name != canonical {
-			t.Errorf("registry name %q: Info().Name = %q, want %q (alias must surface canonical name)",
+			t.Errorf("registry name %q: ToolMeta().Name = %q, want %q (alias must surface canonical name)",
 				name, meta.Name, canonical)
 		}
 	}
 }
 
 // indexOf returns the index of s in xs, or -1 if not present.
-// Tiny helper to keep the alias loop above free of a slice lookup
-// closure; the test's names slice is <30 items so linear scan is
-// fine.
 func indexOf(xs []string, s string) int {
 	for i, x := range xs {
 		if x == s {
