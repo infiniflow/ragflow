@@ -118,10 +118,8 @@ export interface IUpdateProviderInstanceRequestBody {
 }
 
 export interface ISetDefaultModelRequestBody {
-  model_provider: string;
-  model_instance: string;
   model_type: string;
-  model_name: string;
+  model_id: string;
 }
 
 /**

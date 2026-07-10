@@ -54,6 +54,27 @@ type CompileOptions struct {
 	// compose.WithInterruptBeforeNodes / WithInterruptAfterNodes.
 	InterruptBefore []string
 	InterruptAfter  []string
+	// CheckPointID is the stable eino checkpoint identifier. Unlike
+	// eino's compose.WithCheckPointID (a run-time Option applied at
+	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
+	// call compose.WithCheckPointID (the option type is wrong for a
+	// GraphCompileOption), so it only records the id on the returned
+	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
+	// per-task value (e.g. taskID) so re-running the same task hits the
+	// same Redis checkpoint (agent:cp:{id}). When empty,
+	// CompiledCanvas.CheckPointID stays empty and the caller must supply
+	// its own id (or omit it for a fresh per-run checkpoint).
+	CheckPointID string
+	// InterruptAfterNonTerminal, when true, makes Compile compute the
+	// non-terminal node ids internally (components with out-degree > 0)
+	// and register compose.WithInterruptAfterNodes on them — the caller
+	// does not enumerate them. UserFillUp nodes are excluded (see §4.2.b)
+	// because they already emit their own compose.Interrupt;
+	// double-registering the same node for two interrupt sources would
+	// break resume. Terminal nodes (no downstream) are excluded so the
+	// graph does not pause on completion and force an extra, needless
+	// ResumeWithData round.
+	InterruptAfterNonTerminal bool
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
@@ -77,6 +98,27 @@ func WithInterruptBefore(nodes []string) CompileOption {
 // WithInterruptAfter configures compose.WithInterruptAfterNodes.
 func WithInterruptAfter(nodes []string) CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfter = nodes }
+}
+
+// WithCheckPointID sets the stable checkpoint id recorded on the returned
+// CompiledCanvas. Unlike eino's compose.WithCheckPointID (a run-time
+// Option), this is a compile-time descriptor: Compile stores the id so the
+// caller can pass it to Workflow.Invoke. Pass a stable, per-task value
+// (e.g. taskID) so re-running the same task loads the same Redis
+// checkpoint (agent:cp:{id}).
+func WithCheckPointID(id string) CompileOption {
+	return func(o *CompileOptions) { o.CheckPointID = id }
+}
+
+// WithInterruptAfterNonTerminalCpn registers an after-node interrupt on
+// every non-terminal component (out-degree > 0) automatically. The set is
+// computed inside Compile from the Canvas topology, so callers can't pass
+// the wrong list (e.g. all cpnIDs, which would also interrupt terminal
+// nodes and force an extra needless ResumeWithData round). UserFillUp
+// nodes are excluded (§4.2.b). See computeNonTerminalCpnIDs for the exact
+// selection rules.
+func WithInterruptAfterNonTerminalCpn() CompileOption {
+	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
@@ -121,6 +163,39 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		}
 	}
 
+	// S3 (plan §4.2.b 方案 A): ingestion resume mode forbids UserFillUp
+	// nodes. A UserFillUp node emits its own compose.Interrupt
+	// (wait-for-user); the pipeline resume loop (pipeline.go runResumable)
+	// classifies every interrupt via IsInterruptError and auto-resumes with
+	// nil data — so a UserFillUp pause would be silently skipped instead of
+	// waiting for a human. Reject at compile time so the mis-classification
+	// can never occur. The non-terminal-after filter (computeNonTerminalCpnIDs)
+	// already keeps UserFillUp out of the after-node set; this is a hard
+	// guard layered on top (plan §8 step 5). Checked before BuildWorkflow so
+	// the guard fires on DSL content regardless of whether the graph builds.
+	//
+	// The same guard also forbids legacy no-op nodes (e.g. "ExitLoop", see
+	// legacyNoOpNames / isLegacyNoOp). A no-op node routes to an echo body
+	// that never emits TrackProgress, so it would still be counted in
+	// ingestion_task.component_total yet never report progress — leaving the
+	// aggregate percent permanently below 100% (plan §8 "known
+	// inconsistency"). Forbidding it keeps component_total == "components
+	// that report progress", so percent can reach 100% and the
+	// resume/percent invariant holds. Ingestion DSLs must consist solely of
+	// progress-reporting components.
+	if cfg.InterruptAfterNonTerminal && c != nil {
+		var bad []string
+		bad = append(bad, AutoDiscoverUserFillUpIDs(c)...)
+		for cpnID, comp := range c.Components {
+			if isLegacyNoOp(comp.Obj.ComponentName) {
+				bad = append(bad, cpnID)
+			}
+		}
+		if len(bad) > 0 {
+			return nil, fmt.Errorf("canvas: Compile: WithInterruptAfterNonTerminalCpn forbids UserFillUp/legacy-no-op nodes %v (plan §4.2.b): ingestion has no user to fill up and no-op nodes do not report progress, breaking the resume/percent invariant", bad)
+		}
+	}
+
 	wf, err := BuildWorkflow(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: build workflow: %w", err)
@@ -140,15 +215,78 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	if len(cfg.InterruptBefore) > 0 {
 		compileOpts = append(compileOpts, compose.WithInterruptBeforeNodes(cfg.InterruptBefore))
 	}
-	if len(cfg.InterruptAfter) > 0 {
-		compileOpts = append(compileOpts, compose.WithInterruptAfterNodes(cfg.InterruptAfter))
+	// Merge the caller-supplied InterruptAfter list with the
+	// internally-computed non-terminal set (when requested). The
+	// computed set excludes UserFillUp nodes (§4.2.b); the caller list is
+	// trusted verbatim. Dedupe so a node isn't registered twice in one
+	// WithInterruptAfterNodes call.
+	after := append([]string{}, cfg.InterruptAfter...)
+	if cfg.InterruptAfterNonTerminal {
+		after = append(after, computeNonTerminalCpnIDs(c)...)
+	}
+	after = dedupeStrings(after)
+	if len(after) > 0 {
+		compileOpts = append(compileOpts, compose.WithInterruptAfterNodes(after))
 	}
 
 	runnable, err := wf.Compile(ctx, compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: eino compile: %w", err)
 	}
-	return &CompiledCanvas{Workflow: runnable}, nil
+	return &CompiledCanvas{Workflow: runnable, CheckPointID: cfg.CheckPointID}, nil
+}
+
+// computeNonTerminalCpnIDs returns the cpnIDs of every component with at
+// least one downstream edge (out-degree > 0). These are the nodes the
+// "interrupt-after-node" resume strategy must pause on: any node that has
+// work after it.
+//
+// Terminal nodes (no downstream) are intentionally excluded — interrupting
+// them would make Invoke return an interrupt error instead of a completion,
+// and force an extra needless ResumeWithData round before the graph truly
+// finishes.
+//
+// UserFillUp nodes are excluded (§4.2.b): they already emit their own
+// compose.Interrupt and must not be registered for a second, conflicting
+// interrupt source. Double-registering the same node breaks resume.
+func computeNonTerminalCpnIDs(c *Canvas) []string {
+	if c == nil {
+		return nil
+	}
+	exclude := make(map[string]bool, len(c.Components))
+	for _, id := range AutoDiscoverUserFillUpIDs(c) {
+		exclude[id] = true
+	}
+	var ids []string
+	for cpnID, comp := range c.Components {
+		if exclude[cpnID] {
+			continue
+		}
+		if len(comp.Downstream) > 0 {
+			ids = append(ids, cpnID)
+		}
+	}
+	return ids
+}
+
+// dedupeStrings returns in with duplicate entries removed, preserving
+// first-seen order. Used to merge the computed non-terminal set with the
+// caller-supplied InterruptAfter list without registering a node twice in
+// the same WithInterruptAfterNodes call.
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // checkPointAdapter drops the Delete method that compose.CheckPointStore

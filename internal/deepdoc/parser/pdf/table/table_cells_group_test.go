@@ -196,7 +196,7 @@ func TestFillCellTextFromBoxes(t *testing.T) {
 	})
 }
 
-// ── enrichWithDeepDoc noop ─────────────────────────────────────────────
+// ── enrichOnePageWithDeepDoc noop ──────────────────────────────────────
 
 func TestGroupTSRCellsToRows_SameHeight(t *testing.T) {
 	// All cells have identical height → medianH is that value → threshold = medianH/2
