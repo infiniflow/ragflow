@@ -546,22 +546,14 @@ async def _batch_merge(
 
             all_inserts.append(doc)
 
-        # 3. Update existing rows in-place, insert only new rows
-        updates = [(rid, id_to_doc[rid]) for rid in delete_ids]
-        for rid, doc in updates:
-            await thread_pool_exec(
-                settings.docStoreConn.update,
-                {"id": rid},
-                doc,
-                index,
-                kb_id,
-            )
-            total_up += 1
+        # 3. Delete existing rows (single call) then insert all (single call)
+        if delete_ids:
+            await thread_pool_exec(settings.docStoreConn.delete, {"id": delete_ids, "kb_id": [kb_id]}, index, kb_id)
+            total_up += len(delete_ids)
 
-        new_docs = [d for rid, d in id_to_doc.items() if rid not in existing_map]
-        if new_docs:
-            await thread_pool_exec(settings.docStoreConn.insert, new_docs, index, kb_id)
-            total_ins += len(new_docs)
+        if all_inserts:
+            await thread_pool_exec(settings.docStoreConn.insert, all_inserts, index, kb_id)
+            total_ins += len(all_inserts) - len(delete_ids)
 
         if progress_cb and (offset + BATCH) % (BATCH * 4) == 0:
             pct = min(0.99, (offset + BATCH) / total)
