@@ -1167,7 +1167,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     assert saved["rerank_id"] == "custom-reranker@OpenAI"
     assert {
         "tenant_id": "tenant-1",
-        "model_name": "custom-reranker@OpenAI",
+        "model_ref": "custom-reranker@OpenAI",
         "model_type": "rerank",
     } in query_calls
 
