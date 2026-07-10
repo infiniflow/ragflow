@@ -53,13 +53,13 @@ func TestParse_PdfiumRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	t.Logf("Parse: %d sections, %d tables, %d page images", len(result.Sections), len(result.Tables), len(result.PageImages))
+	t.Logf("Parse: %d sections, %d tables, %d pages", len(result.Sections), len(result.Tables), len(result.PageHeight))
 
 	if len(result.Sections) == 0 {
 		t.Error("expected at least one section")
 	}
-	if len(result.PageImages) == 0 {
-		t.Error("expected at least one page image")
+	if len(result.PageHeight) == 0 {
+		t.Error("expected at least one page dimension entry")
 	}
 }
 

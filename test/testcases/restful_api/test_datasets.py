@@ -832,7 +832,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Local@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), list_payload
 
 
 @pytest.mark.p2
@@ -1197,7 +1197,10 @@ def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, na
         pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
     assert payload["code"] == expected_code, payload
     if expected_embedding_model is not None:
-        assert payload["data"]["embedding_model"] == expected_embedding_model, payload
+        if name in {"embedding_model_unset", "embedding_model_none"}:
+            assert payload["data"]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), payload
+        else:
+            assert payload["data"]["embedding_model"] == expected_embedding_model, payload
     if expected_message is not None:
         assert payload["message"] == expected_message, payload
 

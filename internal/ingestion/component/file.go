@@ -43,6 +43,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
 )
@@ -131,7 +132,6 @@ func (c *FileComponent) Parallelism() int { return 1 }
 //  2. doc_id is empty — pull the first file descriptor out of
 //     `file` and use its `name`/`id` directly.
 func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	_ = ctx
 	// Parse the wire input through the schema type so the
 	// validation errors match the package convention.
 	in, err := parseFileInputs(inputs)
@@ -152,6 +152,12 @@ func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 	if in.fileDesc != nil {
 		out["file"] = in.fileDesc
 	}
+	// Publish the resolved run-level metadata into the workflow-wide
+	// CanvasState.Globals bag so downstream components (Tokenizer,
+	// Chunker, ...) read it from ctx instead of relying on this output
+	// re-emitting it. The Go runtime forwards only this explicit output
+	// to the next node, so shared fields must live in Globals.
+	globals.PublishGlobals(ctx, out)
 	return runtime.TrackElapsed("File", func() (map[string]any, error) {
 		return out, nil
 	})

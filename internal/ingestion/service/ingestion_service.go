@@ -18,14 +18,9 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"ragflow/internal/utility"
-	goruntime "runtime"
-	"strings"
 	"sync"
 
 	"ragflow/internal/common"
@@ -34,7 +29,6 @@ import (
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"gorm.io/gorm"
 )
@@ -170,7 +164,7 @@ func (e *Ingestor) Start() error {
 			}
 
 			// Construct TaskContext with parent context
-			taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task, taskHandle)
+			taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 
 			// Push to task channel; if full, reject the task (backpressure)
 			select {
@@ -294,50 +288,15 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 }
 
-// FIXME: should remove
-func (e *Ingestor) getPipelineID(tenantID string) (string, error) {
-	_, file, _, ok := goruntime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("failed to get runtime base dir")
-	}
-	base := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
-
-	// FIXME: now use mocked pipeline, need to change later
-	templatePath := filepath.Join(base, "agent", "templates", "ingestion_pipeline_general.json")
-	common.Warn(fmt.Sprintf("use mocked DSL, templatePath: %s", templatePath))
-	templateBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		return "", err
-	}
-
-	var templateDSL entity.JSONMap
-	if err := json.Unmarshal(templateBytes, &templateDSL); err != nil {
-		return "", err
-	}
-
-	des := "mock up DSL for integration test"
-	title := "mock up DSL"
-	ID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
-	userCanvas := entity.UserCanvas{UserID: tenantID, DSL: templateDSL,
-		Description: &des, Title: &title, ID: ID, Permission: "me"}
-
-	if err := dao.NewUserCanvasDAO().Create(&userCanvas); err != nil {
-		return "", err
-	}
-
-	return ID, nil
-}
-
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
-
-	if docTaskCtx.PipelineID, err = e.getPipelineID(docTaskCtx.Tenant.ID); err != nil {
-		return fmt.Errorf("get pipeline ID for %s: %w", ingestionTask.ID, err)
+	if docTaskCtx.PipelineID == "" {
+		return fmt.Errorf("ingestion task %s: no pipeline_id configured for document %s or dataset %s", ingestionTask.ID, docTaskCtx.Doc.ID, docTaskCtx.KB.ID)
 	}
-
+	docTaskCtx.Ctx = ctx
 	return taskpkg.NewTaskHandler(docTaskCtx).Handle()
 }
 

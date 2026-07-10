@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from enum import IntEnum
 from types import ModuleType, SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -141,6 +142,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         ensure_mineru_from_env=lambda *a, **kw: None,
         ensure_paddleocr_from_env=lambda *a, **kw: None,
         ensure_opendataloader_from_env=lambda *a, **kw: None,
+        resolve_model_id=MagicMock(),
     )
     _stub(
         monkeypatch,

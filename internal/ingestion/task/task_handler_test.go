@@ -6,23 +6,16 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
 )
 
 func testStrPtr(s string) *string { return &s }
 
-func makeTaskHandlerTestContext(taskType string) *TaskContext {
-	var progressCalls []float64
-	pipelineID := ""
-	if strings.HasPrefix(taskType, "dataflow") {
-		pipelineID = "flow-1"
-	}
+func makeTaskHandlerTestContext(pipelineID string) *TaskContext {
 	return &TaskContext{
 		IngestionTask: &entity.IngestionTask{
 			ID:         "task-1",
 			DocumentID: "doc-1",
 		},
-		TaskType:   taskType,
 		PipelineID: pipelineID,
 		Doc: entity.Document{
 			ID:           "doc-1",
@@ -40,9 +33,7 @@ func makeTaskHandlerTestContext(taskType string) *TaskContext {
 			ID:    "tenant-1",
 			LLMID: "gpt-4",
 		},
-		ProgressFunc: func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		},
+		ProgressFunc: func(prog float64, msg string) {},
 	}
 }
 
@@ -60,9 +51,10 @@ func newNoopDataflowService(ctx *TaskContext, dataflowID string) (*PipelineExecu
 		}).
 		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
 			return map[string]any{
-				"chunks": []map[string]any{
-					{"text": "stub dataflow chunk", "q_2_vec": []float64{0.1, 0.2}},
-				},
+				"chunks": []map[string]any{{
+					"text":    "stub dataflow chunk",
+					"q_2_vec": []float64{0.1, 0.2},
+				}},
 			}, dsl, nil
 		}).
 		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
@@ -72,10 +64,7 @@ func newNoopDataflowService(ctx *TaskContext, dataflowID string) (*PipelineExecu
 			return nil
 		}).
 		WithDocService(&stubDocService{}).
-		WithChunkCounter(&stubChunkCounter{}).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, nil
-		})
+		WithChunkCounter(&stubChunkCounter{})
 	return svc, nil
 }
 
@@ -83,44 +72,22 @@ func newNoopTaskHandler(ctx *TaskContext) *TaskHandler {
 	return NewTaskHandler(ctx).WithDataflowServiceFactory(newNoopDataflowService)
 }
 
-func TestTaskHandler_Dispatch(t *testing.T) {
-	tests := []struct {
-		name      string
-		taskType  string
-		wantErr   bool
-		wantPanic bool
-	}{
-		{"memory", "memory", false, false},
-		{"dataflow", "dataflow", false, false},
-		{"dataflow with suffix", "dataflow_test", false, false},
-		{"raptor", "raptor", false, false},
-		{"graphrag", "graphrag", false, false},
-		{"mindmap", "mindmap", false, false},
-		{"evaluation", "evaluation", false, false},
-		{"reembedding", "reembedding", false, false},
-		{"clone", "clone", false, false},
-		{"standard (empty task_type)", "", false, false},
-		{"standard (unknown task_type)", "unknown_type", false, false},
+func TestTaskHandler_HandleRejectsNilContext(t *testing.T) {
+	if err := NewTaskHandler(nil).Handle(); err == nil {
+		t.Fatal("expected error for nil context")
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := makeTaskHandlerTestContext(tt.taskType)
-			handler := newNoopTaskHandler(ctx)
-			err := handler.Handle()
-
-			if tt.wantErr && err == nil {
-				t.Error("expected error, got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
+func TestTaskHandler_HandleRequiresPipelineID(t *testing.T) {
+	ctx := makeTaskHandlerTestContext("")
+	handler := NewTaskHandler(ctx)
+	if err := handler.Handle(); err == nil {
+		t.Fatal("expected error for empty pipeline id")
 	}
 }
 
 func TestTaskHandler_DefaultDataflowServiceInjectsProgress(t *testing.T) {
-	ctx := makeTaskHandlerTestContext("dataflow")
+	ctx := makeTaskHandlerTestContext("flow-1")
 	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
 		svc, err := NewDataflowService(ctx, dataflowID, 0, 0)
 		if err != nil {
@@ -137,7 +104,7 @@ func TestTaskHandler_DefaultDataflowServiceInjectsProgress(t *testing.T) {
 }
 
 func TestTaskHandler_Dataflow_UsesTaskContext(t *testing.T) {
-	ctx := makeTaskHandlerTestContext("dataflow")
+	ctx := makeTaskHandlerTestContext("flow-1")
 	type ctxKey string
 	const key ctxKey = "trace"
 	ctx.Ctx = context.WithValue(context.Background(), key, "task-ctx")
@@ -165,8 +132,34 @@ func TestTaskHandler_Dataflow_UsesTaskContext(t *testing.T) {
 	}
 }
 
+func TestTaskHandler_Dataflow_UsesBackgroundContextWhenMissing(t *testing.T) {
+	ctx := makeTaskHandlerTestContext("flow-1")
+
+	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
+		return mustNewDataflowService(t, ctx, dataflowID, 0, 0).
+			WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
+				return `{"nodes":[{"id":"stub-node"}],"edges":[]}`, dataflowID, nil
+			}).
+			WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+				if runCtx == nil {
+					t.Fatal("runCtx is nil")
+				}
+				return map[string]any{"chunks": []map[string]any{{"text": "stub", "q_2_vec": []float64{0.1, 0.2}}}}, dsl, nil
+			}).
+			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+				return nil, nil
+			}).
+			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
+			WithDocService(&stubDocService{}).
+			WithChunkCounter(&stubChunkCounter{}), nil
+	})
+	if err := handler.Handle(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
-	ctx := makeTaskHandlerTestContext("dataflow")
+	ctx := makeTaskHandlerTestContext("flow-1")
 	ctx.Doc.PipelineID = testStrPtr("flow-1")
 	ctx.Doc.Name = testStrPtr("verify-dataflow.pdf")
 
@@ -180,7 +173,6 @@ func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 	ctx.ProgressFunc = func(prog float64, msg string) {
 		progressProgs = append(progressProgs, prog)
 		progressMsgs = append(progressMsgs, msg)
-		t.Logf("progress: prog=%.2f msg=%q", prog, msg)
 	}
 
 	handler := NewTaskHandler(ctx).WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
@@ -190,31 +182,24 @@ func TestTaskHandler_Dataflow_ShowsProgressAndPipelineLog(t *testing.T) {
 			}).
 			WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
 				pipelineCalled = true
-				t.Log("mock pipeline.run called")
 				return map[string]any{
-					"chunks": []map[string]any{
-						{"text": "stub dataflow chunk", "q_2_vec": []float64{0.1, 0.2}},
-					},
+					"chunks": []map[string]any{{
+						"text":    "stub dataflow chunk",
+						"q_2_vec": []float64{0.1, 0.2},
+					}},
 				}, dsl, nil
 			}).
 			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 				insertCalled = true
 				insertedChunkCount = len(chunks)
-				t.Logf("mock insertChunks called: %d chunks", len(chunks))
 				return nil, nil
 			}).
 			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
 				logCreateCalls++
-				if log.PipelineID != nil {
-					t.Logf("mock pipeline log created: pipeline_id=%s", *log.PipelineID)
-				}
 				return nil
 			}).
 			WithDocService(&stubDocService{}).
-			WithChunkCounter(&stubChunkCounter{}).
-			WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-				return nil, nil
-			})
+			WithChunkCounter(&stubChunkCounter{})
 		return svc, nil
 	})
 
