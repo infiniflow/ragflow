@@ -76,13 +76,13 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderby string, desc bool) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool) (*ListChatsResponse, error) {
 	chats, total, err := s.chatDAO.ListByTenantIDs(
 		nil,
 		userID,
 		page,
 		pageSize,
-		orderby,
+		orderBy,
 		desc,
 		keywords,
 	)
@@ -127,11 +127,11 @@ type CreateChatRequest struct {
 func (s *ChatService) Create(userID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
 	tenant, err := s.tenantDAO.GetByID(userID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("Tenant not found!")
+		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
-		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided.")
+		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
 	}
 
 	name, err := validateCreateChatName(req["name"])
@@ -174,13 +174,13 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
 		if _, ok := mapFromValue(promptConfigValue); !ok {
-			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object.")
+			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
 		}
 	}
 
 	if metaDataFilterValue, ok := req["meta_data_filter"]; ok && metaDataFilterValue != nil {
 		if _, ok := mapFromValue(metaDataFilterValue); !ok {
-			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object.")
+			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object")
 		}
 	}
 
@@ -240,17 +240,17 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 		return nil, common.CodeServerError, err
 	}
 	if exists {
-		return nil, common.CodeDataError, errors.New("Duplicated chat name in creating chat.")
+		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
 	}
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(chat); err != nil {
-		return nil, common.CodeDataError, errors.New("Failed to create chat.")
+		return nil, common.CodeDataError, errors.New("failed to create chat")
 	}
 
 	chat, err = s.chatDAO.GetByID(chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("Failed to retrieve created chat.")
+		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
 	}
 
 	response, err := s.buildCreateChatResponse(chat)
@@ -262,18 +262,18 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 
 func validateCreateChatName(value interface{}) (string, error) {
 	if value == nil {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", errors.New("Chat name must be a string.")
+		return "", errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, nil
 }
@@ -284,7 +284,7 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 	}
 	values, ok := listFromValue(value)
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list.")
+		return nil, errors.New("`dataset_ids` should be a list")
 	}
 
 	normalizedIDs := make([]string, 0, len(values))
@@ -299,14 +299,14 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 
 	for _, datasetID := range normalizedIDs {
 		if !s.kbDAO.Accessible(datasetID, tenantID) {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 	}
@@ -535,7 +535,7 @@ func mapFromValue(value interface{}) (map[string]interface{}, bool) {
 	case map[string]interface{}:
 		return typed, true
 	case entity.JSONMap:
-		return map[string]interface{}(typed), true
+		return typed, true
 	default:
 		return nil, false
 	}
@@ -561,7 +561,7 @@ func listFromValue(value interface{}) ([]interface{}, bool) {
 		}
 		return result, true
 	case entity.JSONSlice:
-		return []interface{}(typed), true
+		return typed, true
 	default:
 		return nil, false
 	}
@@ -650,8 +650,8 @@ func isTruthy(value interface{}) bool {
 
 // getDatasetNamesAndIDs gets knowledge base names by IDs
 func (s *ChatService) getDatasetNamesAndIDs(kbIDs entity.JSONSlice) ([]string, []string) {
-	var names = make([]string, 0, 0)
-	var ids = make([]string, 0, 0)
+	var names = make([]string, 0, len(kbIDs))
+	var ids = make([]string, 0, len(kbIDs))
 	for _, kbID := range kbIDs {
 		kbIDStr, ok := kbID.(string)
 		if !ok {
@@ -686,17 +686,17 @@ const (
 
 // splitModelNameAndFactory extracts the base model name by stripping
 // provider and instance suffixes, matching Python's rsplit("@", 2)[0].
-func (s *ChatService) splitModelNameAndFactory(embdID string) string {
-	if idx := strings.LastIndex(embdID, "@"); idx > 0 {
+func (s *ChatService) splitModelNameAndFactory(embeddingModelID string) string {
+	if idx := strings.LastIndex(embeddingModelID, "@"); idx > 0 {
 		// Strip the provider segment.
-		base := embdID[:idx]
+		base := embeddingModelID[:idx]
 		// Strip the instance segment (second-to-last @).
 		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
 			return base[:idx2]
 		}
 		return base
 	}
-	return embdID
+	return embeddingModelID
 }
 
 func (s *ChatService) getOwnedValidChat(userID, chatID string) (*entity.Chat, error) {
@@ -762,12 +762,12 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.tenantDAO.GetByID(userID); err != nil {
-		return nil, errors.New("Tenant not found!")
+	if _, err = s.tenantDAO.GetByID(userID); err != nil {
+		return nil, errors.New("tenant not found")
 	}
 
 	if !patch && isTruthy(req["tenant_id"]) {
-		return nil, errors.New("`tenant_id` must not be provided.")
+		return nil, errors.New("`tenant_id` must not be provided")
 	}
 
 	if value, ok := req["name"]; ok {
@@ -797,7 +797,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		llmSettingProvided = true
 		setting, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`llm_setting` should be an object.")
+			return nil, errors.New("`llm_setting` should be an object")
 		}
 		llmSetting = setting
 	}
@@ -827,7 +827,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 	if value, ok := req["prompt_config"]; ok {
 		promptConfig, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`prompt_config` should be an object.")
+			return nil, errors.New("`prompt_config` should be an object")
 		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
@@ -850,7 +850,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		} else {
 			metaDataFilter, ok := mapFromValue(value)
 			if !ok {
-				return nil, errors.New("`meta_data_filter` should be an object.")
+				return nil, errors.New("`meta_data_filter` should be an object")
 			}
 			req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
 		}
@@ -872,24 +872,24 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 			}
 			for _, existingName := range existingNames {
 				if existingName == name {
-					return nil, errors.New("Duplicated chat name.")
+					return nil, errors.New("duplicated chat name")
 				}
 			}
 		}
 	}
 
 	if len(updates) > 0 {
-		if err := s.chatDAO.UpdateByID(chatID, updates); err != nil {
+		if err = s.chatDAO.UpdateByID(chatID, updates); err != nil {
 			if patch {
-				return nil, errors.New("Failed to update chat.")
+				return nil, errors.New("failed to update chat")
 			}
-			return nil, errors.New("Chat not found!")
+			return nil, errors.New("chat not found")
 		}
 	}
 
 	updatedChat, err := s.chatDAO.GetByID(chatID)
 	if err != nil {
-		return nil, errors.New("Failed to retrieve updated chat.")
+		return nil, errors.New("failed to retrieve updated chat")
 	}
 	return s.buildRESTChatResponse(updatedChat), nil
 }
@@ -897,23 +897,23 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
 	if value == nil {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
 		return "", false, nil
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", false, errors.New("Chat name must be a string.")
+		return "", false, errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
-		return "", false, errors.New("`name` cannot be empty.")
+		return "", false, errors.New("`name` cannot be empty")
 	}
 	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, true, nil
 }
@@ -924,7 +924,7 @@ func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (
 	}
 	items, ok := value.([]interface{})
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list.")
+		return nil, errors.New("`dataset_ids` should be a list")
 	}
 
 	var kbs []*entity.Knowledgebase
@@ -935,27 +935,27 @@ func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (
 		}
 		datasetID := fmt.Sprint(item)
 		if !s.kbDAO.Accessible(datasetID, userID) {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(datasetID)
 		if err != nil || kb == nil {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 		kbIDs = append(kbIDs, datasetID)
 	}
 
-	embdIDs := make([]string, 0, len(kbs))
-	seenEmbdIDs := make(map[string]struct{})
+	embeddingModelIDs := make([]string, 0, len(kbs))
+	seenEmbedIDs := make(map[string]struct{})
 	for _, kb := range kbs {
-		embdIDs = append(embdIDs, kb.EmbdID)
-		seenEmbdIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
+		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
+		seenEmbedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
 	}
-	if len(seenEmbdIDs) > 1 {
-		return nil, fmt.Errorf("Datasets use different embedding models: %v", embdIDs)
+	if len(seenEmbedIDs) > 1 {
+		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)
 	}
 	return kbIDs, nil
 }
@@ -1075,7 +1075,7 @@ func (s *ChatService) DeleteChat(userID, chatID string) error {
 	if err := s.chatDAO.UpdateByID(chatID, map[string]interface{}{
 		"status": string(entity.StatusInvalid),
 	}); err != nil {
-		return fmt.Errorf("Failed to delete chat %s", chatID)
+		return fmt.Errorf("failed to delete chat %s", chatID)
 	}
 
 	return nil
@@ -1163,10 +1163,6 @@ func (s *ChatService) BulkDeleteChats(userID string, req *BulkDeleteChatsRequest
 // strPtr returns a pointer to a string
 func strPtr(s string) *string {
 	return &s
-}
-
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // Helper to count UTF-8 characters (not bytes)

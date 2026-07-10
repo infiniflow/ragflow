@@ -112,7 +112,6 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:         docID,
 			KbID:       kbID,
@@ -136,7 +135,7 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		}).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.Run(context.Background()); err != nil {
+	if err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(inserted) != 1 {
@@ -251,7 +250,6 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:         docID,
 			KbID:       kbID,
@@ -270,7 +268,7 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 	svc := mustNewDataflowService(t, taskCtx, canvasID, 0, 0).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.Run(context.Background()); err != nil {
+	if err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -375,7 +373,6 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:   docID,
 			KbID: kbID,
@@ -398,7 +395,7 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		}).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.RunDataflow(context.Background(), pipelineOut); err != nil {
+	if err := svc.processOutput(context.Background(), pipelineOut); err != nil {
 		t.Fatalf("RunDataflow: %v", err)
 	}
 

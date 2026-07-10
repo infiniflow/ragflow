@@ -65,7 +65,7 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 func (h *FileHandler) ListFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -126,7 +126,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -153,7 +153,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -187,7 +187,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -221,7 +221,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -262,7 +262,7 @@ type CreateFolderRequest struct {
 func (h *FileHandler) UploadFile(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -306,7 +306,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		result, err := h.fileService.UploadFile(userID, parentID, files)
 		if err != nil {
-			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
 
@@ -333,7 +333,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
 		if err != nil {
-			common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
 
@@ -361,13 +361,13 @@ type DeleteFileRequest struct {
 func (h *FileHandler) DeleteFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	var req DeleteFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -403,13 +403,13 @@ type MoveFileRequest struct {
 func (h *FileHandler) MoveFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	var req MoveFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeBadRequest), err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -446,7 +446,7 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 func (h *FileHandler) Download(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -533,7 +533,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

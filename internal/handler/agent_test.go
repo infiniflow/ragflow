@@ -332,7 +332,7 @@ type agentHandlerTestable struct {
 func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
@@ -345,7 +345,7 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	templates, err := h.svc.ListTemplates()
