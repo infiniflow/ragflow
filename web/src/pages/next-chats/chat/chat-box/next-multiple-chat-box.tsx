@@ -184,6 +184,7 @@ const ChatCard = forwardRef(function ChatCard(
               <LargeModelFormFieldWithoutFilter
                 triggerTestId="chat-detail-multimodel-card-model-select"
                 optionTestIdPrefix="chat-detail-llm-option-"
+                ownerTenantId={currentDialog?.tenant_id}
               ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>

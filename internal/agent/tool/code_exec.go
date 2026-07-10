@@ -94,7 +94,7 @@ func NewCodeExecTool() *CodeExecTool {
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python CodeExecParam ToolMeta (plan , 字段对齐).
+// the Python CodeExecParam ToolMeta (plan, field alignment).
 func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: codeExecToolName,

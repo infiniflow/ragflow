@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 )
 
 const ComponentNameHierarchyTitleChunker = "HierarchyTitleChunker"
@@ -265,10 +266,11 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 	if len(out2) == 0 {
 		return emptyOutputs(), nil
 	}
-	return map[string]any{
+	out := map[string]any{
 		"output_format": "chunks",
 		"chunks":        out2,
-	}, nil
+	}
+	return out, nil
 }
 
 // applyRootAsHeadingMaps mirrors the root_chunk_as_heading branch
@@ -320,16 +322,20 @@ func (c *HierarchyTitleChunkerComponent) Outputs() map[string]string {
 func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	return runtime.TrackElapsed(ComponentNameHierarchyTitleChunker, func() (map[string]any, error) {
 		if inputs == nil {
-			return emptyOutputs(), nil
+			inputs = map[string]any{}
 		}
-		if _, ok := inputs["name"].(string); !ok {
+		// `name` is read from the workflow-wide Globals bag (seeded at
+		// pipeline start, published by the File component), not from the
+		// upstream output map.
+		name := globals.GlobalOrInput(ctx, inputs, "name", "")
+		if name == "" {
 			return map[string]any{
 				"output_format": "chunks",
 				"chunks":        []map[string]any{},
 				"_ERROR":        "HierarchyTitleChunker: missing required upstream field \"name\"",
 			}, nil
 		}
-		return invokeHierarchy(ctx, inputs, &c.param)
+		return invokeHierarchy(ctx, withName(inputs, name), &c.param)
 	})
 }
 

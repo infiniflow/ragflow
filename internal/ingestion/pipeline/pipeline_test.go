@@ -18,6 +18,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -28,10 +29,12 @@ import (
 type mockCanvasStage struct {
 	output map[string]any
 	called bool
+	calls  int
 }
 
 func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	m.called = true
+	m.calls++
 	out := cloneMapOrEmpty(inputs)
 	for k, v := range m.output {
 		out[k] = v
@@ -163,13 +166,43 @@ func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) 
 	return out, nil
 }
 
-func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
-	origFactory := runtime.DefaultFactory()
-	runtime.SetDefaultFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
-		return &factorySentinelStage{marker: "default"}, nil
-	})
-	defer runtime.SetDefaultFactory(origFactory)
+// memCheckpointStore is a thread-safe in-memory canvas.CheckPointStore used
+// to exercise the resumable run path without Redis.
+type memCheckpointStore struct {
+	mu   sync.Mutex
+	data map[string][]byte
+}
 
+func newMemCheckpointStore() *memCheckpointStore {
+	return &memCheckpointStore{data: map[string][]byte{}}
+}
+
+func (s *memCheckpointStore) Get(_ context.Context, id string) ([]byte, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.data[id]
+	return v, ok, nil
+}
+
+func (s *memCheckpointStore) Set(_ context.Context, id string, payload []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	s.data[id] = cp
+	return nil
+}
+
+func (s *memCheckpointStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, id)
+	return nil
+}
+
+// TestPipelineRun_InstanceFactoryOverridesDefaultFactory verifies that a
+// pipeline-scoped component factory can provide task-specific components.
+func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 	pipe, err := NewPipelineFromDSL([]byte(`{
 		"dsl": {
 			"components": {
@@ -269,5 +302,77 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	}
 	if got["A"] != 1 || got["B"] != 1 {
 		t.Fatalf("markers = %#v, want one A and one B", got)
+	}
+}
+
+func TestPipelineRunResumableAutoResumes(t *testing.T) {
+	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
+
+	const (
+		nameA = "p.ResumeStageA"
+		nameB = "p.ResumeStageB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageB, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-resume", WithCheckPointStore(newMemCheckpointStore()))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !stageA.called || !stageB.called {
+		t.Fatalf("expected both stages to run, got A=%v B=%v", stageA.called, stageB.called)
+	}
+	// No re-run on resume: each node must execute exactly once.
+	if stageA.calls != 1 || stageB.calls != 1 {
+		t.Fatalf("expected each stage to run exactly once, got A.calls=%d B.calls=%d", stageA.calls, stageB.calls)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+// TestPipelineRun_RequireResumeRejectsWithoutStore verifies M4 (plan §6.a
+// 方案 A): with WithRequireResume set and no checkpoint store resolvable (no
+// injected store, no global Redis in unit scope), Run must refuse to start
+// and return ErrResumeUnavailable — a clear, distinguishable signal — rather
+// than silently degrading to a non-resumable runPlain. The reject fires
+// before compile, so the DSL does not need a runnable graph.
+func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "p.Docx", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "a"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-req-resume", WithRequireResume())
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	if !errors.Is(err, ErrResumeUnavailable) {
+		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
 }
