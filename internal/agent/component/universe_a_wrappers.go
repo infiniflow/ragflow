@@ -1422,6 +1422,155 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
+// googleScholarComponent delegates to internal/agent/tool/GoogleScholarTool.
+type googleScholarComponent struct {
+	inner  googleScholarInvoker
+	params map[string]any
+}
+
+type googleScholarInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+func newGoogleScholarComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{
+		inner:  agenttool.NewGoogleScholarTool(),
+		params: cloned,
+	}, nil
+}
+
+func newGoogleScholarComponentWithInvoker(inner googleScholarInvoker, params map[string]any) Component {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{inner: inner, params: cloned}
+}
+
+func (c *googleScholarComponent) Name() string { return "GoogleScholar" }
+
+func (c *googleScholarComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":     "Search query.",
+		"top_n":     "Maximum number of results (default 12).",
+		"sort_by":   "Sort order: relevance or date.",
+		"year_low":  "Earliest publication year to include.",
+		"year_high": "Latest publication year to include.",
+		"patents":   "Whether to include patents, defaults to true.",
+	}
+}
+
+func (c *googleScholarComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *googleScholarComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *googleScholarComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs))
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+
+	query := strings.TrimSpace(stringParam(merged["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if topN := toIntParam(merged["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	if sortBy := strings.TrimSpace(stringParam(merged["sort_by"])); sortBy != "" {
+		args["sort_by"] = sortBy
+	}
+	if yearLow := toIntParam(merged["year_low"]); yearLow > 0 {
+		args["year_low"] = yearLow
+	}
+	if yearHigh := toIntParam(merged["year_high"]); yearHigh > 0 {
+		args["year_high"] = yearHigh
+	}
+	if patents, ok := merged["patents"].(bool); ok {
+		args["patents"] = patents
+	} else {
+		args["patents"] = true
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: GoogleScholar: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderGoogleScholarResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *googleScholarComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderGoogleScholarResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("link")),
+			fmt.Sprintf("Authors: %s", field("authors")),
+			fmt.Sprintf("Year: %s", field("year")),
+			fmt.Sprintf("Snippet: %s", field("snippet")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 // Compile-time interface checks.
 var (
 	_ Component = (*retrievalComponent)(nil)
@@ -1431,6 +1580,7 @@ var (
 	_ Component = (*duckDuckGoComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*googleScholarComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
 )
 
@@ -1441,3 +1591,4 @@ var _ einotool.InvokableTool = (*agenttool.GoogleTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.TavilyExtractTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.DuckDuckGoTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.GoogleScholarTool)(nil)
