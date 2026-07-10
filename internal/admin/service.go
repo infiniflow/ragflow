@@ -1603,8 +1603,9 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
+
 	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
-	return common.CodeLicenseValid, ""
+	return CheckLicense()
 }
 
 // InitDefaultAdmin initialize default admin user
