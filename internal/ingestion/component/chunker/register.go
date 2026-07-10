@@ -69,5 +69,8 @@ var ChunkerInputs = map[string]string{
 var ChunkerOutputs = map[string]string{
 	"output_format": "Always \"chunks\" on success.",
 	"chunks":        "list[object]: per-chunk map (text + optional meta keys).",
+	"name":          "Source document name, carried forward from upstream (pass-through) when present — Tokenizer consumes it for title embedding.",
+	"tenant_id":     "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
+	"kb_id":         "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
 	"_ERROR":        "Set only on validation failure.",
 }

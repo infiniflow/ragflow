@@ -112,7 +112,6 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:         docID,
 			KbID:       kbID,
@@ -136,7 +135,7 @@ func TestDataflowService_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		}).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.Run(context.Background()); err != nil {
+	if err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(inserted) != 1 {
@@ -251,7 +250,6 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:         docID,
 			KbID:       kbID,
@@ -270,7 +268,7 @@ func TestDataflowService_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *test
 	svc := mustNewDataflowService(t, taskCtx, canvasID, 0, 0).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.Run(context.Background()); err != nil {
+	if err := svc.Execute(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -375,7 +373,6 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:   docID,
 			KbID: kbID,
@@ -398,7 +395,7 @@ func TestRunDataflow_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		}).
 		WithChunkCounter(&stubChunkCounter{})
 
-	if err := svc.RunDataflow(context.Background(), pipelineOut); err != nil {
+	if err := svc.processOutput(context.Background(), pipelineOut); err != nil {
 		t.Fatalf("RunDataflow: %v", err)
 	}
 
@@ -519,18 +516,18 @@ func disableTokenizerEmbeddingForTaskTemplate(t *testing.T, raw []byte) []byte {
 
 func prepareTokenizerResourceForTaskIntegration(t *testing.T) {
 	t.Helper()
-	if os.Getenv("RAGFLOW_DICT_PATH") != "" {
+	if common.GetEnv(common.EnvRAGFlowDictPath) != "" {
 		return
 	}
 	const systemDictPath = "/usr/share/infinity/resource"
 	if _, err := os.Stat(filepath.Join(systemDictPath, "rag", "huqie.txt")); err != nil {
 		t.Skipf("system tokenizer resource not found at %s: %v", systemDictPath, err)
 	}
-	if err := os.Setenv("RAGFLOW_DICT_PATH", systemDictPath); err != nil {
+	if err := os.Setenv(common.EnvRAGFlowDictPath, systemDictPath); err != nil {
 		t.Fatalf("set RAGFLOW_DICT_PATH=%s: %v", systemDictPath, err)
 	}
 	t.Cleanup(func() {
-		_ = os.Unsetenv("RAGFLOW_DICT_PATH")
+		_ = os.Unsetenv(common.EnvRAGFlowDictPath)
 	})
 }
 
@@ -626,7 +623,7 @@ func requireTokenizerPool(t *testing.T) {
 		return
 	}
 	cfg := &tokenizer.PoolConfig{
-		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),
+		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
