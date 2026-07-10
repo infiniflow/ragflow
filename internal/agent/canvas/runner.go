@@ -52,6 +52,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -207,6 +208,19 @@ func (r *Runner) Run(
 	r.runCancels[canvasID] = cancel
 	r.mu.Unlock()
 
+	// Generate identifiers and inject into root for the RunFunc/SSE envelope.
+	messageID := utility.GenerateToken()
+	taskID := ""
+	if v, ok := root["version_id"].(string); ok && v != "" {
+		taskID = v
+	}
+	if taskID == "" {
+		taskID = utility.GenerateToken()
+	}
+	root["__events__"] = out
+	root["__message_id__"] = messageID
+	root["__task_id__"] = taskID
+	root["__session_id__"] = sessionID
 	go func() {
 		defer close(out)
 		defer func() {

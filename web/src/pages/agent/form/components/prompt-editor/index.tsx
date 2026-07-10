@@ -25,7 +25,15 @@ import { cn } from '@/lib/utils';
 import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { forwardRef, ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  forwardRef,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
@@ -145,7 +153,7 @@ function PromptContent({
           <div className="absolute inset-y-0 right-2 z-10 flex items-center">
             <Tooltip>
               <TooltipTrigger asChild>
-                <label className="flex cursor-pointer items-center rounded-sm border border-border bg-bg-base/95 px-1 py-0.5 shadow-sm backdrop-blur-sm">
+                <label className="flex cursor-pointer items-center rounded-sm px-1 py-0.5 shadow-sm backdrop-blur-sm">
                   <span className="sr-only">{t('flow.mergePath')}</span>
                   <div className="origin-right scale-75">
                     <Switch
@@ -194,14 +202,18 @@ export const PromptEditor = forwardRef(function PromptEditor(
   ref: React.Ref<HTMLDivElement>,
 ) {
   const { t } = useTranslation();
+  const id = useId();
   const [isPathQueryAutoMergeEnabled, setIsPathQueryAutoMergeEnabled] =
     useState(enablePathQueryAutoMerge);
-  const initialConfig: InitialConfigType = {
-    namespace: 'PromptEditor',
-    theme,
-    onError,
-    nodes: Nodes,
-  };
+  const initialConfig: InitialConfigType = useMemo(
+    () => ({
+      namespace: `PromptEditor-${id}`,
+      theme,
+      onError,
+      nodes: Nodes,
+    }),
+    [id],
+  );
 
   useEffect(() => {
     setIsPathQueryAutoMergeEnabled(enablePathQueryAutoMerge);

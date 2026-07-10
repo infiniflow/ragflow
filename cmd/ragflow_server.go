@@ -26,10 +26,9 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
-	"ragflow/internal/ingestion"
+	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -55,7 +54,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
+	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -65,6 +64,7 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
+	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -84,6 +84,8 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
+		case "--migrate":
+			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -288,12 +290,12 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
@@ -338,7 +340,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(); err != nil {
+	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -396,11 +398,12 @@ func main() {
 	defer redis.Close()
 
 	if err = storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+		common.Error("Failed to initialize storage factory", err)
 	}
+	defer storage.CloseStorage()
 
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -421,17 +424,17 @@ func main() {
 		}
 	case "admin":
 		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start admin server: %v\n", err)
+			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(arguments); err != nil {
-			fmt.Printf("Failed to start syncer: %v\n", err)
+			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -441,6 +444,17 @@ func main() {
 }
 
 func runAdmin(args *serverArgs) error {
+
+	// Create HTTP server
+	config := server.GetConfig()
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
@@ -464,8 +478,6 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
-	config := server.GetConfig()
 	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
@@ -513,6 +525,18 @@ func runAdmin(args *serverArgs) error {
 }
 
 func runIngestor(args *serverArgs) error {
+	// Initialize tokenizer (rag_analyzer)
+	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
+	tokenizerCfg := &tokenizer.PoolConfig{
+		DictPath: dictPath,
+	}
+	if err := tokenizer.Init(tokenizerCfg); err != nil {
+		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
+	}
+	defer tokenizer.Close()
 
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
@@ -667,7 +691,7 @@ func runAPI(args *serverArgs) error {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
 	if dictPath == "" {
 		dictPath = "/usr/share/infinity/resource"
 	}
@@ -752,11 +776,11 @@ func startServer(config *server.Config) {
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
 		},
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderBy, desc)
 		},
 		func(userID string, req mcp.RetrievalRequest) (string, error) {
 			return handler.MCPRetrieval(datasetsService, userID, req)
@@ -782,7 +806,7 @@ func startServer(config *server.Config) {
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
-	// BotService delegates the agentbot completion to agentService so
+	// BotService delegates the agentBot completion to agentService so
 	// both paths share the same canvas runner. Reuse the llmService
 	// already constructed above (line 222) — do NOT redeclare with
 	// `:=` since the variable is in scope.
@@ -823,24 +847,8 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-	// Per-tenant canvas-runtime override selector, backed by the
-	// existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at
-	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
-	// endpoint stays registered and returns the explicit
-	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
-	// Skipping handler construction when rdb == nil silently removed
-	// the route until the next process restart, so a transient
-	// Redis blip at boot stranded canary operators with a 404 they
-	// could not diagnose from the client side. Keep the route hot.
-	var adminRuntimeSelector *runtime.Selector
-	if redisClient := redis.Get(); redisClient != nil {
-		if rdb := redisClient.GetClient(); rdb != nil {
-			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
-		}
-	}
-	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
-	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
+	componentsSvc := service.NewComponentsService()
+	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 
 	openaiChatSvc := service.NewOpenAIChatService()
 	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatSvc)
@@ -872,7 +880,6 @@ func startServer(config *server.Config) {
 		pluginHandler,
 		modelHandler,
 		fileCommitHandler,
-		adminRuntimeHandler,
 		openaiChatHandler,
 		botHandler,
 		componentsHandler)

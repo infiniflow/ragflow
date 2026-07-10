@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 )
 
@@ -415,8 +416,44 @@ type ModelItem struct {
 	ModelProvider *string `json:"model_provider"`
 	ModelInstance *string `json:"model_instance"`
 	ModelName     *string `json:"model_name"`
+	ModelID       string  `json:"model_id"`
 	ModelType     string  `json:"model_type"`
 	Enable        bool    `json:"enable"`
+}
+
+func tenantDefaultModelFields(modelType string) (string, string, entity.ModelType, error) {
+	switch modelType {
+	case "chat":
+		return "llm_id", "tenant_llm_id", entity.ModelTypeChat, nil
+	case "embedding":
+		return "embd_id", "tenant_embd_id", entity.ModelTypeEmbedding, nil
+	case "rerank":
+		return "rerank_id", "tenant_rerank_id", entity.ModelTypeRerank, nil
+	case "asr", "speech2text":
+		return "asr_id", "tenant_asr_id", entity.ModelTypeSpeech2Text, nil
+	case "vision", "image2text":
+		return "img2txt_id", "tenant_img2txt_id", entity.ModelTypeImage2Text, nil
+	case "tts":
+		return "tts_id", "tenant_tts_id", entity.ModelTypeTTS, nil
+	case "ocr":
+		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
+	default:
+		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
+	}
+}
+
+func ptrStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func factoryModelTypeName(modelType string) string {
+	if modelType == "image2text" {
+		return "vision"
+	}
+	return modelType
 }
 
 // GetDefaultModelName returns the full default model ID for a tenant and model type
@@ -458,10 +495,11 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 	var providerName *string
 	var instanceName *string
 	var modelName *string
-	if len(defaultChatModelParts) == 3 {
-		providerName = &defaultChatModelParts[2]
-		instanceName = &defaultChatModelParts[1]
-		modelName = &defaultChatModelParts[0]
+	if len(defaultChatModelParts) >= 3 {
+		providerName = &defaultChatModelParts[len(defaultChatModelParts)-1]
+		instanceName = &defaultChatModelParts[len(defaultChatModelParts)-2]
+		joinedModelName := strings.Join(defaultChatModelParts[:len(defaultChatModelParts)-2], "@")
+		modelName = &joinedModelName
 
 	} else if len(defaultChatModelParts) == 2 {
 		providerName = &defaultChatModelParts[1]
@@ -494,8 +532,9 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 		return nil, nil, nil, false, err
 	}
 
-	if !modelSchema.ModelTypeMap[modelType] {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't a chat model", *modelName)
+	factoryModelType := factoryModelTypeName(modelType)
+	if !modelSchema.ModelTypeMap[factoryModelType] {
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", *modelName, modelType)
 	}
 
 	var modelEntity *entity.TenantModel
@@ -506,10 +545,14 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 			return nil, nil, nil, false, err
 		}
 	}
+	if modelEntity == nil {
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", *modelName)
+	}
+	if modelEntity.Status != "active" {
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", *modelName)
+	}
 
-	enable := modelEntity == nil
-
-	return providerName, instanceName, modelName, enable, nil
+	return providerName, instanceName, modelName, true, nil
 
 }
 
@@ -533,6 +576,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultChatModelProvider,
 			ModelInstance: defaultChatModelInstance,
 			ModelName:     defaultChatModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantLLMID),
 			ModelType:     "chat",
 			Enable:        defaultChatModelEnable,
 		})
@@ -544,6 +588,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultEmbeddingModelProvider,
 			ModelInstance: defaultEmbeddingModelInstance,
 			ModelName:     defaultEmbeddingModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantEmbdID),
 			ModelType:     "embedding",
 			Enable:        defaultEmbeddingModelEnable,
 		})
@@ -555,6 +600,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultRerankModelProvider,
 			ModelInstance: defaultRerankModelInstance,
 			ModelName:     defaultRerankModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantRerankID),
 			ModelType:     "rerank",
 			Enable:        defaultRerankModelEnable,
 		})
@@ -566,6 +612,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultASRModelProvider,
 			ModelInstance: defaultASRModelInstance,
 			ModelName:     defaultASRModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantASRID),
 			ModelType:     "asr",
 			Enable:        defaultASREnable,
 		})
@@ -577,6 +624,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultImage2TextModelProvider,
 			ModelInstance: defaultImage2TextModelInstance,
 			ModelName:     defaultImage2TextModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantImg2TxtID),
 			ModelType:     "vision",
 			Enable:        defaultImage2TextModelEnable,
 		})
@@ -592,6 +640,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultOCRModelProvider,
 			ModelInstance: defaultOCRModelInstance,
 			ModelName:     defaultOCRModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
 			ModelType:     "ocr",
 			Enable:        defaultOCRModelEnable,
 		})
@@ -607,6 +656,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultTTSModelProvider,
 			ModelInstance: defaultTTSModelInstance,
 			ModelName:     defaultTTSModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
 			ModelType:     "tts",
 			Enable:        defaultTTSModelEnable,
 		})
@@ -616,6 +666,11 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 }
 
 func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName, modelName, modelType string) error {
+	_, _, modelTypeBit, err := tenantDefaultModelFields(modelType)
+	if err != nil {
+		return err
+	}
+
 	// Check if the provider and instance exists
 	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
@@ -632,18 +687,23 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 		return err
 	}
 
-	if !modelSchema.ModelTypeMap[modelType] {
-		return fmt.Errorf("model %s isn't a chat model", modelName)
+	factoryModelType := factoryModelTypeName(modelType)
+	if !modelSchema.ModelTypeMap[factoryModelType] {
+		return fmt.Errorf("model %s isn't a %s model", modelName, modelType)
 	}
 
-	var modelEntity *entity.TenantModel
-	modelEntity, err = s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
-	if err != nil || modelEntity != nil {
-		var errString = err.Error()
-		if errString == "record not found" {
-			return nil
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return fmt.Errorf("model %s isn't available", modelName)
 		}
+		return err
+	}
+	if modelEntity.Status != "active" {
 		return fmt.Errorf("model %s isn't available", modelName)
+	}
+	if !entity.ModelType(modelEntity.ModelType).Has(modelTypeBit) {
+		return fmt.Errorf("model %s isn't a %s model", modelName, modelType)
 	}
 
 	return nil
@@ -661,32 +721,12 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 
 	ownedTenant := tenantInfos[0]
 	var defaultModel string
-	var modelTypeID string
-	if modelType == "chat" {
-		modelTypeID = "llm_id"
-	}
-	if modelType == "embedding" {
-		modelTypeID = "embd_id"
-	}
-	if modelType == "rerank" {
-		modelTypeID = "rerank_id"
-	}
-	if modelType == "asr" {
-		modelTypeID = "asr_id"
-	}
-	if modelType == "vision" {
-		modelTypeID = "img2txt_id"
-	}
-	if modelType == "tts" {
-		modelTypeID = "tts_id"
-	}
-	if modelType == "ocr" {
-		modelTypeID = "ocr_id"
-	}
-	if modelTypeID == "" {
-		return fmt.Errorf("model type %s is invalid", modelType)
+	modelTypeID, tenantModelTypeID, modelTypeBit, err := tenantDefaultModelFields(modelType)
+	if err != nil {
+		return err
 	}
 
+	var tenantModelID interface{}
 	if modelID != "" {
 		modelEntity, err := s.modelDAO.GetByID(modelID)
 		if err != nil {
@@ -704,24 +744,41 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 		if providerEntity.TenantID != ownedTenant.TenantID {
 			return fmt.Errorf("model %s does not belong to your tenant", modelID)
 		}
+		if modelEntity.Status != "active" {
+			return fmt.Errorf("model %s isn't available", modelEntity.ModelName)
+		}
+		if !entity.ModelType(modelEntity.ModelType).Has(modelTypeBit) {
+			return fmt.Errorf("model %s isn't a %s model", modelEntity.ModelName, modelType)
+		}
 
-		if modelProvider == "" {
-			modelProvider = providerEntity.ProviderName
-		}
-		if modelInstance == "" {
-			modelInstance = instanceEntity.InstanceName
-		}
-		if modelName == "" {
-			modelName = modelEntity.ModelName
-		}
+		modelProvider = providerEntity.ProviderName
+		modelInstance = instanceEntity.InstanceName
+		modelName = modelEntity.ModelName
+		tenantModelID = modelID
 	}
 
 	if modelProvider == "" && modelInstance == "" && modelName == "" {
 		defaultModel = ""
+		tenantModelID = nil
 	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
 		err = s.checkModelAvailable(ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
 		if err != nil {
 			return err
+		}
+		if modelID == "" {
+			modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
+			if err != nil {
+				return err
+			}
+			modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
+			if err != nil {
+				return err
+			}
+			modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+			if err != nil {
+				return err
+			}
+			tenantModelID = modelEntity.ID
 		}
 		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
 	} else {
@@ -729,7 +786,8 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	}
 
 	err = s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
-		modelTypeID: defaultModel,
+		modelTypeID:       defaultModel,
+		tenantModelTypeID: tenantModelID,
 	})
 
 	return nil
@@ -835,14 +893,14 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 
 	status := "1"
 	ut := &entity.UserTenant{
-		ID:        common.GenerateUUID(),
+		ID:        utility.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	if err := s.userTenantDAO.Create(ut); err != nil {
+	if err = s.userTenantDAO.Create(ut); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
 	}
 

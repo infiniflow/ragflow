@@ -18,7 +18,6 @@ import importlib
 import os
 import sys
 import types
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -245,7 +244,7 @@ def test_get_optimal_clusters_evaluates_upper_bound_candidate(monkeypatch, rapto
     evaluated = []
 
     class RecordingGaussianMixture:
-        def __init__(self, n_components, random_state=None):
+        def __init__(self, n_components, random_state=None, **kwargs):
             self.n_components = n_components
             evaluated.append(n_components)
 

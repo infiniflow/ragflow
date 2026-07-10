@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"ragflow/internal/harness/graph/channels"
@@ -331,10 +332,8 @@ func NewNonNullWriteValidator(whitelist ...string) *NonNullWriteValidator {
 }
 
 func (v *NonNullWriteValidator) Validate(entry *ChannelWriteEntry) error {
-	for _, channel := range v.whitelist {
-		if entry.Channel == channel {
-			return nil
-		}
+	if slices.Contains(v.whitelist, entry.Channel) {
+		return nil
 	}
 
 	if entry.Value == nil {

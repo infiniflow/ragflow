@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -157,7 +156,7 @@ func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, err
 		taskRecord := map[string]string{
 			"task_id": taskID,
 		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		_, err := s.ingestionTaskDAO.Delete(taskID, nil)
 		if err != nil {
 			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {
@@ -449,10 +448,10 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
 			switch llm.ModelType {
-			case string(entity.ModelTypeChat):
+			case entity.ModelTypeChat.String():
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
-			case string(entity.ModelTypeEmbedding):
+			case entity.ModelTypeEmbedding.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
 				if apiKey == "" {
@@ -461,7 +460,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeRerank):
+			case entity.ModelTypeRerank.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
 				if apiKey == "" {
@@ -470,7 +469,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeSpeech2Text):
+			case entity.ModelTypeSpeech2Text.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
 				if apiKey == "" {
@@ -479,7 +478,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeImage2Text):
+			case entity.ModelTypeImage2Text.String():
 				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
 				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
 				if apiKey == "" {
@@ -972,7 +971,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken(key)
+	beta := utility.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
@@ -1191,7 +1190,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 // getESClusterStats gets Elasticsearch cluster stats
 func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
 	// Check if Elasticsearch is the doc engine
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1564,7 +1563,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1574,17 +1573,17 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"env":   common.EnvDefaultSuperuserEmail,
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := os.Getenv("DB_TYPE")
+	dbType := common.GetEnv(common.EnvDBType)
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -1594,7 +1593,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := os.Getenv("DEVICE")
+	device := common.GetEnv(common.EnvDevice)
 	if device == "" {
 		device = "cpu"
 	}
@@ -1604,12 +1603,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := os.Getenv("STORAGE_IMPL")
+	storageImpl := common.GetEnv(common.EnvStorageImpl)
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE_IMPL",
+		"env":   common.EnvStorageImpl,
 		"value": storageImpl,
 	})
 
@@ -1678,8 +1677,9 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
+
 	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
-	return common.CodeLicenseValid, ""
+	return CheckLicense()
 }
 
 // InitDefaultAdmin initialize default admin user

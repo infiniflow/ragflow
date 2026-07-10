@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
 
@@ -75,13 +76,13 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderby string, desc bool) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool) (*ListChatsResponse, error) {
 	chats, total, err := s.chatDAO.ListByTenantIDs(
 		nil,
 		userID,
 		page,
 		pageSize,
-		orderby,
+		orderBy,
 		desc,
 		keywords,
 	)
@@ -126,11 +127,11 @@ type CreateChatRequest struct {
 func (s *ChatService) Create(userID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
 	tenant, err := s.tenantDAO.GetByID(userID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("Tenant not found!")
+		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
-		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided.")
+		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
 	}
 
 	name, err := validateCreateChatName(req["name"])
@@ -151,27 +152,35 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	if llmIDValue, ok := req["llm_id"]; ok {
 		llmID := stringFromValue(llmIDValue)
 		llmSetting, _ := mapFromValue(req["llm_setting"])
-		if err = validateCreateLLMID(llmID, userID, llmSetting); err != nil {
+		tenantLLMID, err := resolveCreateLLMID(llmID, userID, llmSetting)
+		if err != nil {
 			return nil, common.CodeDataError, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
 		}
 	}
 
 	if rerankIDValue, ok := req["rerank_id"]; ok {
 		rerankID := stringFromValue(rerankIDValue)
-		if err = validateCreateRerankID(rerankID, userID); err != nil {
+		tenantRerankID, err := resolveCreateRerankID(rerankID, userID)
+		if err != nil {
 			return nil, common.CodeDataError, err
+		}
+		if tenantRerankID != "" {
+			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
 		if _, ok := mapFromValue(promptConfigValue); !ok {
-			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object.")
+			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
 		}
 	}
 
 	if metaDataFilterValue, ok := req["meta_data_filter"]; ok && metaDataFilterValue != nil {
 		if _, ok := mapFromValue(metaDataFilterValue); !ok {
-			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object.")
+			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object")
 		}
 	}
 
@@ -180,6 +189,19 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
 		req["llm_id"] = tenant.LLMID
+		if tenant.TenantLLMID != nil {
+			req["tenant_llm_id"] = *tenant.TenantLLMID
+		}
+	}
+	if stringFromValue(req["llm_id"]) != "" && !isTruthy(req["tenant_llm_id"]) {
+		llmSetting, _ := mapFromValue(req["llm_setting"])
+		tenantLLMID, err := resolveCreateLLMID(stringFromValue(req["llm_id"]), userID, llmSetting)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
+		}
 	}
 	if _, ok := req["llm_setting"]; !ok || req["llm_setting"] == nil {
 		req["llm_setting"] = map[string]interface{}{}
@@ -195,6 +217,7 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	}
 	if _, ok := req["rerank_id"]; !ok {
 		req["rerank_id"] = ""
+		req["tenant_rerank_id"] = nil
 	}
 	if _, ok := req["similarity_threshold"]; !ok {
 		req["similarity_threshold"] = 0.1
@@ -217,17 +240,17 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 		return nil, common.CodeServerError, err
 	}
 	if exists {
-		return nil, common.CodeDataError, errors.New("Duplicated chat name in creating chat.")
+		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
 	}
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(chat); err != nil {
-		return nil, common.CodeDataError, errors.New("Failed to create chat.")
+		return nil, common.CodeDataError, errors.New("failed to create chat")
 	}
 
 	chat, err = s.chatDAO.GetByID(chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("Failed to retrieve created chat.")
+		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
 	}
 
 	response, err := s.buildCreateChatResponse(chat)
@@ -239,18 +262,18 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 
 func validateCreateChatName(value interface{}) (string, error) {
 	if value == nil {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", errors.New("Chat name must be a string.")
+		return "", errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, nil
 }
@@ -261,7 +284,7 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 	}
 	values, ok := listFromValue(value)
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list.")
+		return nil, errors.New("`dataset_ids` should be a list")
 	}
 
 	normalizedIDs := make([]string, 0, len(values))
@@ -276,71 +299,77 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 
 	for _, datasetID := range normalizedIDs {
 		if !s.kbDAO.Accessible(datasetID, tenantID) {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 	}
 
-	embedIDs := make(map[string]struct{}, len(kbs))
-	for _, kb := range kbs {
-		embedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
-	}
-	if len(embedIDs) > 1 {
-		return nil, fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	if err := validateDatasetEmbeddingModels(kbs); err != nil {
+		return nil, err
 	}
 	return normalizedIDs, nil
 }
 
-func validateCreateLLMID(llmID, tenantID string, llmSetting map[string]interface{}) error {
+func resolveCreateLLMID(llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
 	if llmID == "" {
-		return nil
+		return "", nil
 	}
 	modelType := entity.ModelTypeChat
 	switch confModelType := llmSetting["model_type"].(type) {
 	case string:
-		if confModelType == string(entity.ModelTypeImage2Text) {
+		if confModelType == entity.ModelTypeImage2Text.String() {
 			modelType = entity.ModelTypeImage2Text
 		}
 	case []interface{}:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
 		}
 	case []string:
 		for _, item := range confModelType {
-			if item == string(entity.ModelTypeImage2Text) {
+			if item == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 				break
 			}
 		}
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, modelType, llmID); err != nil {
-		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, modelType, llmID); err != nil {
+		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return nil
+	tenantLLMID, err := modelProvider.ResolveModelID(tenantID, modelType, llmID)
+	if err != nil {
+		return "", err
+	}
+	return tenantLLMID, nil
 }
 
-func validateCreateRerankID(rerankID, tenantID string) error {
+func resolveCreateRerankID(rerankID, tenantID string) (string, error) {
 	if rerankID == "" {
-		return nil
+		return "", nil
 	}
 	llmName := strings.Split(rerankID, "@")[0]
 	if _, ok := DefaultRerankModels[llmName]; ok {
-		return nil
+		return "", nil
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
-		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return nil
+	tenantRerankID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
+		return "", err
+	}
+	return tenantRerankID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -401,6 +430,8 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	icon := stringFromValue(req["icon"])
 	llmID := stringFromValue(req["llm_id"])
 	rerankID := stringFromValue(req["rerank_id"])
+	tenantLLMID := stringFromValue(req["tenant_llm_id"])
+	tenantRerankID := stringFromValue(req["tenant_rerank_id"])
 	llmSetting, _ := mapFromValue(req["llm_setting"])
 	promptConfig, _ := mapFromValue(req["prompt_config"])
 	kbIDs, _ := stringListFromValue(req["kb_ids"])
@@ -415,12 +446,13 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	}
 
 	chat := &entity.Chat{
-		ID:                     common.GenerateUUID(),
+		ID:                     utility.GenerateUUID(),
 		TenantID:               tenantID,
 		Name:                   &name,
 		Description:            &description,
 		Icon:                   &icon,
 		LLMID:                  llmID,
+		TenantLLMID:            stringPtrIfNotEmpty(tenantLLMID),
 		LLMSetting:             entity.JSONMap(llmSetting),
 		PromptType:             stringFromValue(req["prompt_type"]),
 		PromptConfig:           entity.JSONMap(promptConfig),
@@ -430,6 +462,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		TopK:                   int64FromValue(req["top_k"]),
 		DoRefer:                stringFromValue(req["do_refer"]),
 		RerankID:               rerankID,
+		TenantRerankID:         stringPtrIfNotEmpty(tenantRerankID),
 		KBIDs:                  kbIDsJSON,
 		Status:                 &statusValue,
 	}
@@ -450,6 +483,13 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		chat.MetaDataFilter = &metaDataFilterJSON
 	}
 	return chat
+}
+
+func stringPtrIfNotEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (s *ChatService) buildCreateChatResponse(chat *entity.Chat) (map[string]interface{}, error) {
@@ -495,7 +535,7 @@ func mapFromValue(value interface{}) (map[string]interface{}, bool) {
 	case map[string]interface{}:
 		return typed, true
 	case entity.JSONMap:
-		return map[string]interface{}(typed), true
+		return typed, true
 	default:
 		return nil, false
 	}
@@ -521,7 +561,7 @@ func listFromValue(value interface{}) ([]interface{}, bool) {
 		}
 		return result, true
 	case entity.JSONSlice:
-		return []interface{}(typed), true
+		return typed, true
 	default:
 		return nil, false
 	}
@@ -610,8 +650,8 @@ func isTruthy(value interface{}) bool {
 
 // getDatasetNamesAndIDs gets knowledge base names by IDs
 func (s *ChatService) getDatasetNamesAndIDs(kbIDs entity.JSONSlice) ([]string, []string) {
-	var names = make([]string, 0, 0)
-	var ids = make([]string, 0, 0)
+	var names = make([]string, 0, len(kbIDs))
+	var ids = make([]string, 0, len(kbIDs))
 	for _, kbID := range kbIDs {
 		kbIDStr, ok := kbID.(string)
 		if !ok {
@@ -644,22 +684,19 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-// splitModelNameAndFactory extracts the base model name (removes vendor suffix)
-func (s *ChatService) splitModelNameAndFactory(embdID string) string {
-	// Remove vendor suffix (e.g., "model@openai" -> "model")
-	if idx := strings.LastIndex(embdID, "@"); idx > 0 {
-		return embdID[:idx]
+// splitModelNameAndFactory extracts the base model name by stripping
+// provider and instance suffixes, matching Python's rsplit("@", 2)[0].
+func (s *ChatService) splitModelNameAndFactory(embeddingModelID string) string {
+	if idx := strings.LastIndex(embeddingModelID, "@"); idx > 0 {
+		// Strip the provider segment.
+		base := embeddingModelID[:idx]
+		// Strip the instance segment (second-to-last @).
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
 	}
-	return embdID
-}
-
-// getEmbdIDs extracts embedding IDs from knowledge bases
-func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
-	ids := make([]string, len(kbs))
-	for i, kb := range kbs {
-		ids[i] = kb.EmbdID
-	}
-	return ids
+	return embeddingModelID
 }
 
 func (s *ChatService) getOwnedValidChat(userID, chatID string) (*entity.Chat, error) {
@@ -725,12 +762,12 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.tenantDAO.GetByID(userID); err != nil {
-		return nil, errors.New("Tenant not found!")
+	if _, err = s.tenantDAO.GetByID(userID); err != nil {
+		return nil, errors.New("tenant not found")
 	}
 
 	if !patch && isTruthy(req["tenant_id"]) {
-		return nil, errors.New("`tenant_id` must not be provided.")
+		return nil, errors.New("`tenant_id` must not be provided")
 	}
 
 	if value, ok := req["name"]; ok {
@@ -760,29 +797,37 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		llmSettingProvided = true
 		setting, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`llm_setting` should be an object.")
+			return nil, errors.New("`llm_setting` should be an object")
 		}
 		llmSetting = setting
 	}
 
 	if value, ok := req["llm_id"]; ok {
 		llmID := fmt.Sprint(value)
-		if err := s.validateRESTLLMID(llmID, userID, llmSetting); err != nil {
+		tenantLLMID, err := s.resolveRESTLLMID(llmID, userID, llmSetting)
+		if err != nil {
 			return nil, err
+		}
+		if tenantLLMID != "" {
+			req["tenant_llm_id"] = tenantLLMID
 		}
 	}
 
 	if value, ok := req["rerank_id"]; ok {
 		rerankID := fmt.Sprint(value)
-		if err := s.validateRESTRerankID(rerankID, userID); err != nil {
+		tenantRerankID, err := s.resolveRESTRerankID(rerankID, userID)
+		if err != nil {
 			return nil, err
+		}
+		if tenantRerankID != "" {
+			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
 
 	if value, ok := req["prompt_config"]; ok {
 		promptConfig, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`prompt_config` should be an object.")
+			return nil, errors.New("`prompt_config` should be an object")
 		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
@@ -805,7 +850,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		} else {
 			metaDataFilter, ok := mapFromValue(value)
 			if !ok {
-				return nil, errors.New("`meta_data_filter` should be an object.")
+				return nil, errors.New("`meta_data_filter` should be an object")
 			}
 			req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
 		}
@@ -827,24 +872,24 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 			}
 			for _, existingName := range existingNames {
 				if existingName == name {
-					return nil, errors.New("Duplicated chat name.")
+					return nil, errors.New("duplicated chat name")
 				}
 			}
 		}
 	}
 
 	if len(updates) > 0 {
-		if err := s.chatDAO.UpdateByID(chatID, updates); err != nil {
+		if err = s.chatDAO.UpdateByID(chatID, updates); err != nil {
 			if patch {
-				return nil, errors.New("Failed to update chat.")
+				return nil, errors.New("failed to update chat")
 			}
-			return nil, errors.New("Chat not found!")
+			return nil, errors.New("chat not found")
 		}
 	}
 
 	updatedChat, err := s.chatDAO.GetByID(chatID)
 	if err != nil {
-		return nil, errors.New("Failed to retrieve updated chat.")
+		return nil, errors.New("failed to retrieve updated chat")
 	}
 	return s.buildRESTChatResponse(updatedChat), nil
 }
@@ -852,23 +897,23 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
 	if value == nil {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
 		return "", false, nil
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", false, errors.New("Chat name must be a string.")
+		return "", false, errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
-		return "", false, errors.New("`name` cannot be empty.")
+		return "", false, errors.New("`name` cannot be empty")
 	}
 	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, true, nil
 }
@@ -879,7 +924,7 @@ func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (
 	}
 	items, ok := value.([]interface{})
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list.")
+		return nil, errors.New("`dataset_ids` should be a list")
 	}
 
 	var kbs []*entity.Knowledgebase
@@ -890,69 +935,79 @@ func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (
 		}
 		datasetID := fmt.Sprint(item)
 		if !s.kbDAO.Accessible(datasetID, userID) {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(datasetID)
 		if err != nil || kb == nil {
-			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 		kbIDs = append(kbIDs, datasetID)
 	}
 
-	embdIDs := make([]string, 0, len(kbs))
-	seenEmbdIDs := make(map[string]struct{})
+	embeddingModelIDs := make([]string, 0, len(kbs))
+	seenEmbedIDs := make(map[string]struct{})
 	for _, kb := range kbs {
-		embdIDs = append(embdIDs, kb.EmbdID)
-		seenEmbdIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
+		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
+		seenEmbedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
 	}
-	if len(seenEmbdIDs) > 1 {
-		return nil, fmt.Errorf("Datasets use different embedding models: %v", embdIDs)
+	if len(seenEmbedIDs) > 1 {
+		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)
 	}
 	return kbIDs, nil
 }
 
-func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[string]interface{}) error {
+func (s *ChatService) resolveRESTLLMID(llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
 	if llmID == "" {
-		return nil
+		return "", nil
 	}
 	modelType := entity.ModelTypeChat
 	if rawModelType, ok := llmSetting["model_type"]; ok {
 		switch typedModelType := rawModelType.(type) {
 		case string:
-			if typedModelType == string(entity.ModelTypeImage2Text) {
+			if typedModelType == entity.ModelTypeImage2Text.String() {
 				modelType = entity.ModelTypeImage2Text
 			}
 		case []interface{}:
 			for _, item := range typedModelType {
-				if fmt.Sprint(item) == string(entity.ModelTypeImage2Text) {
+				if fmt.Sprint(item) == entity.ModelTypeImage2Text.String() {
 					modelType = entity.ModelTypeImage2Text
 					break
 				}
 			}
 		}
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, modelType, llmID); err != nil {
-		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, modelType, llmID); err != nil {
+		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return nil
+	tenantLLMID, err := modelProvider.ResolveModelID(tenantID, modelType, llmID)
+	if err != nil {
+		return "", err
+	}
+	return tenantLLMID, nil
 }
 
-func (s *ChatService) validateRESTRerankID(rerankID, tenantID string) error {
+func (s *ChatService) resolveRESTRerankID(rerankID, tenantID string) (string, error) {
 	if rerankID == "" {
-		return nil
+		return "", nil
 	}
 	baseName := s.splitModelNameAndFactory(rerankID)
 	if _, ok := defaultRerankModels[baseName]; ok {
-		return nil
+		return "", nil
 	}
-	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
-		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	modelProvider := NewModelProviderService()
+	if _, _, _, _, err := modelProvider.ResolveModelConfig(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return nil
+	tenantRerankID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
+		return "", err
+	}
+	return tenantRerankID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
@@ -1020,7 +1075,7 @@ func (s *ChatService) DeleteChat(userID, chatID string) error {
 	if err := s.chatDAO.UpdateByID(chatID, map[string]interface{}{
 		"status": string(entity.StatusInvalid),
 	}); err != nil {
-		return fmt.Errorf("Failed to delete chat %s", chatID)
+		return fmt.Errorf("failed to delete chat %s", chatID)
 	}
 
 	return nil
@@ -1108,10 +1163,6 @@ func (s *ChatService) BulkDeleteChats(userID string, req *BulkDeleteChatsRequest
 // strPtr returns a pointer to a string
 func strPtr(s string) *string {
 	return &s
-}
-
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // Helper to count UTF-8 characters (not bytes)

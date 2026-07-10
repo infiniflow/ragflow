@@ -102,6 +102,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				queue.PUT("/messages", r.handler.PullMessageFromQueue)
 			}
 
+			protected.GET("/store", r.handler.PingStore)
+			protected.GET("/cache", r.handler.PingCache)
+			protected.GET("/engine", r.handler.PingEngine)
+
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 
@@ -139,6 +143,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/index", r.handler.ListUsersIndex)
 			protected.GET("/users/quota", r.handler.ListUsersQuota)
 			protected.GET("/users/plan/summary", r.handler.ShowUsersPlanSummary)
+			protected.GET("/users/plan", r.handler.ShowUsersPlan)
 			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
 			protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
 			protected.GET("/data/summary", r.handler.ShowDataSummary)

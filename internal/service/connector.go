@@ -28,8 +28,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -252,7 +252,7 @@ func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRe
 	}
 
 	connector := &entity.Connector{
-		ID:          common.GenerateUUID(),
+		ID:          utility.GenerateUUID(),
 		TenantID:    userID,
 		Name:        req.Name,
 		Source:      req.Source,
@@ -443,7 +443,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		return nil, common.CodeServerError, err
 	}
 
-	flowID := common.GenerateUUID()
+	flowID := utility.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
@@ -565,13 +565,13 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *
 
 func defaultGoogleWebOAuthRedirectURI(source string) string {
 	if source == "gmail" {
-		return getenvDefault("GMAIL_WEB_OAUTH_REDIRECT_URI", "http://localhost:9384/api/v1/connectors/gmail/oauth/web/callback")
+		return getEnvDefault(common.EnvGmailWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/gmail/oauth/web/callback")
 	}
-	return getenvDefault("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9384/api/v1/connectors/google-drive/oauth/web/callback")
+	return getEnvDefault(common.EnvGoogleDriveWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/google-drive/oauth/web/callback")
 }
 
-func getenvDefault(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+func getEnvDefault(key, fallback string) string {
+	if value := strings.TrimSpace(common.GetEnv(key)); value != "" {
 		return value
 	}
 	return fallback
@@ -1050,7 +1050,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		redirectURI = defaultBoxWebOAuthRedirectURI()
 	}
 
-	flowID := common.GenerateUUID()
+	flowID := utility.GenerateUUID()
 	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -1162,8 +1162,8 @@ func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebO
 }
 
 func defaultBoxWebOAuthRedirectURI() string {
-	return getenvDefault(
-		"BOX_WEB_OAUTH_REDIRECT_URI",
+	return getEnvDefault(
+		common.EnvBoxWebOAuthRedirectURI,
 		"http://localhost:9384/api/v1/connectors/box/oauth/web/callback",
 	)
 }

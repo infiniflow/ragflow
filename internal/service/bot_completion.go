@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 
 	"go.uber.org/zap"
@@ -326,12 +327,12 @@ func (s *BotService) ChatbotCompletion(
 			},
 		})
 		session = &entity.API4Conversation{
-			ID:       common.GenerateUUID(),
+			ID:       utility.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
 			Message:  seedMsg,
 		}
-		if err := s.api4ConversationDAO.Create(session); err != nil {
+		if err = s.api4ConversationDAO.Create(session); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}

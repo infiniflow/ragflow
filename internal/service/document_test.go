@@ -70,6 +70,9 @@ func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) boo
 	_, ok := f.objects[f.key(bucket, fnm)]
 	return ok
 }
+func (f *fakeUploadStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	return []string{}, nil
+}
 func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
@@ -90,6 +93,7 @@ func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string
 	delete(f.objects, f.key(srcBucket, srcPath))
 	return true
 }
+func (f *fakeUploadStorage) Close() error { return nil }
 
 type fakeChatDocEngine struct{}
 
@@ -384,6 +388,8 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.Document{},
 		&entity.Knowledgebase{},
 		&entity.Task{},
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -415,6 +421,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		taskDAO:          dao.NewTaskDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
+		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
 	}
@@ -507,6 +514,21 @@ func insertTestTask(t *testing.T, id, docID string) {
 	}
 }
 
+func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
+	t.Helper()
+	task := &entity.IngestionTask{
+		ID:         id,
+		UserID:     userID,
+		DocumentID: docID,
+		DatasetID:  datasetID,
+		Schema:     entity.JSONMap{},
+		Status:     common.CREATED,
+	}
+	if err := dao.DB.Create(task).Error; err != nil {
+		t.Fatalf("insert test ingestion task: %v", err)
+	}
+}
+
 func insertTestFile2Document(t *testing.T, id, fileID, docID string) {
 	t.Helper()
 	f2d := &entity.File2Document{
@@ -566,7 +588,7 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 3, 100, 50)
 	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
-	insertTestTask(t, "task-1", "doc-1")
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -621,6 +643,7 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "path/to/blob"
 	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
@@ -653,6 +676,7 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 2, 20, 10)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestDoc(t, "doc-2", "kb-1", 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "shared/blob"
 	insertTestFile(t, "file-shared", "kb-1", "shared.pdf", &loc)
 
@@ -896,6 +920,9 @@ func TestDeleteDocuments_DeleteAll(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
 	insertTestDoc(t, "doc-2", "kb-1", 40, 20)
 	insertTestDoc(t, "doc-3", "kb-1", 30, 20)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	insertTestIngestionTask(t, "task-2", "user-1", "doc-2", "kb-1")
+	insertTestIngestionTask(t, "task-3", "user-1", "doc-3", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -923,6 +950,9 @@ func TestDeleteDocuments_ByIDs(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
 	insertTestDoc(t, "doc-2", "kb-1", 40, 20)
 	insertTestDoc(t, "doc-3", "kb-1", 30, 20) // won't be deleted
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	insertTestIngestionTask(t, "task-2", "user-1", "doc-2", "kb-1")
+	insertTestIngestionTask(t, "task-3", "user-1", "doc-3", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -999,6 +1029,7 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -1041,6 +1072,79 @@ func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64
 	}
 	if err := dao.DB.Create(task).Error; err != nil {
 		t.Fatalf("insert test task: %v", err)
+	}
+}
+
+func TestQueueDocumentDataflowTask_PublishesIngestionTaskMessage(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+
+	var publishedSubject string
+	var publishedPayload []byte
+	svc := testDocumentService(t)
+	svc.publishTask = func(subject string, payload []byte) error {
+		publishedSubject = subject
+		publishedPayload = append([]byte(nil), payload...)
+		return nil
+	}
+
+	kb, err := svc.kbDAO.GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+
+	if err := svc.queueDocumentDataflowTask(kb, doc, "user-1"); err != nil {
+		t.Fatalf("queueDocumentDataflowTask: %v", err)
+	}
+
+	if publishedSubject != "tasks.RAGFLOW" {
+		t.Fatalf("subject = %q, want %q", publishedSubject, "tasks.RAGFLOW")
+	}
+	if len(publishedPayload) == 0 {
+		t.Fatal("expected published payload")
+	}
+
+	var msg common.TaskMessage
+	if err := json.Unmarshal(publishedPayload, &msg); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if msg.TaskType != common.TaskTypeIngestionTask {
+		t.Fatalf("task type = %q, want %q", msg.TaskType, common.TaskTypeIngestionTask)
+	}
+	if msg.TaskID == "" {
+		t.Fatal("expected non-empty task id")
+	}
+
+	ingestionTask, err := svc.ingestionTaskDAO.GetByID(msg.TaskID)
+	if err != nil {
+		t.Fatalf("load ingestion task: %v", err)
+	}
+	if ingestionTask.DocumentID != "doc-1" {
+		t.Fatalf("ingestion task document id = %q, want %q", ingestionTask.DocumentID, "doc-1")
+	}
+	if ingestionTask.DatasetID != "kb-1" {
+		t.Fatalf("ingestion task dataset id = %q, want %q", ingestionTask.DatasetID, "kb-1")
+	}
+	if ingestionTask.UserID != "user-1" {
+		t.Fatalf("ingestion task user id = %q, want %q", ingestionTask.UserID, "user-1")
+	}
+	if ingestionTask.Status != common.CREATED {
+		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
+	}
+
+	tasks, err := svc.taskDAO.GetByDocID("doc-1")
+	if err != nil {
+		t.Fatalf("load legacy tasks: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("expected no legacy task rows, got %d", len(tasks))
 	}
 }
 
@@ -1218,6 +1322,7 @@ func TestDeleteDocument_DeligatesToFullCleanup(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 5, 2)
 	insertTestDoc(t, "doc-1", "kb-1", 5, 2)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 

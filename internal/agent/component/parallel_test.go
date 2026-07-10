@@ -35,6 +35,7 @@ package component
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -45,14 +46,7 @@ import (
 // assert their absence here.
 func TestParallel_Registered(t *testing.T) {
 	names := RegisteredNames()
-	hasParallel := false
-	for _, n := range names {
-		if n == "parallel" {
-			hasParallel = true
-			break
-		}
-	}
-	if !hasParallel {
+	if !slices.Contains(names, "parallel") {
 		t.Errorf("Parallel not registered; RegisteredNames=%v", names)
 	}
 }

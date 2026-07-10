@@ -93,6 +93,36 @@ type CompileOptions struct {
 	// graph.WithInterrupts / graph.WithInterruptsAfter.
 	InterruptBefore []string
 	InterruptAfter  []string
+	// CheckPointID is the stable eino checkpoint identifier. Unlike
+	// eino's compose.WithCheckPointID (a run-time Option applied at
+	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
+	// call compose.WithCheckPointID (the option type is wrong for a
+	// GraphCompileOption), so it only records the id on the returned
+	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
+	// per-task value (e.g. taskID) so re-running the same task hits the
+	// same Redis checkpoint (agent:cp:{id}). When empty,
+	// CompiledCanvas.CheckPointID stays empty and the caller must supply
+	// its own id (or omit it for a fresh per-run checkpoint).
+	CheckPointID string
+	// InterruptAfterNonTerminal, when true, makes Compile compute the
+	// non-terminal node ids internally (components with out-degree > 0)
+	// and register compose.WithInterruptAfterNodes on them — the caller
+	// does not enumerate them. UserFillUp nodes are excluded (see §4.2.b)
+	// because they already emit their own compose.Interrupt;
+	// double-registering the same node for two interrupt sources would
+	// break resume. Terminal nodes (no downstream) are excluded so the
+	// graph does not pause on completion and force an extra, needless
+	// ResumeWithData round.
+	InterruptAfterNonTerminal bool
+	// SetupOverrides is a run-level override map keyed by cpnID. Each
+	// component's `params["setups"]` is merged only with its own entry
+	// (an arbitrary string-keyed map); the override wins on top-level key
+	// collision (see node_body.go mergeSetups). Components absent from the
+	// map are left untouched. Used by the ingestion pipeline so a single
+	// Pipeline.Run can override the DSL-baked component setups without
+	// mutating the shared *Canvas (see node_body.go applySetupOverrides /
+	// mergeSetups).
+	SetupOverrides map[string]any
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
@@ -118,10 +148,30 @@ func WithInterruptAfter(nodes []string) CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfter = nodes }
 }
 
+// WithCheckPointID sets the stable checkpoint id recorded on the returned
+// CompiledCanvas. Thread it to Graph.Invoke with the same id so re-running
+// the same task loads the same checkpoint (agent:cp:{id}).
+func WithCheckPointID(id string) CompileOption {
+	return func(o *CompileOptions) { o.CheckPointID = id }
+}
+
+// WithInterruptAfterNonTerminalCpn registers an after-node interrupt on
+// every non-terminal component (out-degree > 0) automatically.
+// UserFillUp nodes are excluded (§4.2.b). See computeNonTerminalCpnIDs.
+func WithInterruptAfterNonTerminalCpn() CompileOption {
+	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
+}
+
+// WithSetupOverrides attaches a run-level setups override map (keyed by
+// cpnID) to the compile. Each component's `params["setups"]` is merged
+// with its own entry (run-level wins on key collision).
+func WithSetupOverrides(m map[string]any) CompileOption {
+	return func(o *CompileOptions) { o.SetupOverrides = m }
+}
+
 // foldLegacyComponents mutates c in place, folding LoopItem/IterationItem
 // nodes out of the component topology before BuildWorkflow sees them.
 //
-// For each legacy child node (name == LoopItem or IterationItem, case-insensitive):
 //  1. Find its parent (NodeParents first, then topology scan via downstream edges).
 //  2. Append the child's Downstream to the parent's Downstream (body nodes
 //     remain reachable inside the parent's sub-graph).
@@ -347,6 +397,26 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		foldLegacyComponents(work)
 	}
 
+	// Ingestion safety guard: when InterruptAfterNonTerminal is set,
+	// forbid UserFillUp and legacy no-op nodes. See plan §8 for rationale.
+	if cfg.InterruptAfterNonTerminal && work != nil {
+		var bad []string
+		bad = append(bad, AutoDiscoverUserFillUpIDs(work)...)
+		for cpnID, comp := range work.Components {
+			if isLegacyNoOp(comp.Obj.ComponentName) {
+				bad = append(bad, cpnID)
+			}
+		}
+		if len(bad) > 0 {
+			return nil, fmt.Errorf("canvas: Compile: WithInterruptAfterNonTerminalCpn forbids UserFillUp/legacy-no-op nodes %v (plan §4.2.b)", bad)
+		}
+	}
+
+	// Thread the run-level setups override (if any) into ctx.
+	if cfg.SetupOverrides != nil {
+		ctx = withSetupOverrides(ctx, cfg.SetupOverrides)
+	}
+
 	sg, err := BuildWorkflow(ctx, work)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: build workflow: %w", err)
@@ -359,8 +429,13 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	if len(cfg.InterruptBefore) > 0 {
 		compileOpts = append(compileOpts, graphpkg.WithInterrupts(cfg.InterruptBefore...))
 	}
-	if len(cfg.InterruptAfter) > 0 {
-		compileOpts = append(compileOpts, graphpkg.WithInterruptsAfter(cfg.InterruptAfter...))
+	after := append([]string{}, cfg.InterruptAfter...)
+	if cfg.InterruptAfterNonTerminal {
+		after = append(after, computeNonTerminalCpnIDs(work)...)
+	}
+	after = dedupeStrings(after)
+	if len(after) > 0 {
+		compileOpts = append(compileOpts, graphpkg.WithInterruptsAfter(after...))
 	}
 
 	var args []interface{}
@@ -371,5 +446,43 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	if err != nil {
 		return nil, fmt.Errorf("canvas: harness compile: %w", err)
 	}
-	return &CompiledCanvas{Graph: cg}, nil
+	return &CompiledCanvas{Graph: cg, CheckPointID: cfg.CheckPointID}, nil
+}
+
+// computeNonTerminalCpnIDs returns cpnIDs of components with out-degree > 0.
+// UserFillUp nodes are excluded (§4.2.b); terminal nodes are excluded too.
+func computeNonTerminalCpnIDs(c *Canvas) []string {
+	if c == nil {
+		return nil
+	}
+	exclude := make(map[string]bool, len(c.Components))
+	for _, id := range AutoDiscoverUserFillUpIDs(c) {
+		exclude[id] = true
+	}
+	var ids []string
+	for cpnID, comp := range c.Components {
+		if exclude[cpnID] {
+			continue
+		}
+		if len(comp.Downstream) > 0 {
+			ids = append(ids, cpnID)
+		}
+	}
+	return ids
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }

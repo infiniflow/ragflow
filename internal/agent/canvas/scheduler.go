@@ -195,7 +195,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (types.StateGraph, error) {
 		if name == "" {
 			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
 		}
-		body, err := buildNodeBody(cpnID, name, c.Components[cpnID].Obj.Params)
+		body, err := buildNodeBody(ctx, cpnID, name, c.Components[cpnID].Obj.Params)
 		if err != nil {
 			return nil, err
 		}

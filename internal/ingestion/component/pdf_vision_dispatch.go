@@ -201,7 +201,7 @@ func defaultPDFVisionModelResolver(
 		driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
 		return driver, modelName, apiConfig, err
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfigFromProviderInstance(tenantID, entity.ModelTypeImage2Text, modelID)
+	driver, modelName, apiConfig, _, err := resolveModelConfig(tenantID, entity.ModelTypeImage2Text, modelID)
 	return driver, modelName, apiConfig, err
 }
 
@@ -303,7 +303,112 @@ func resolveTenantModelByType(tenantID string, modelType entity.ModelType) (mode
 	if modelID == "" {
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
-	return resolveModelConfigFromProviderInstance(tenantID, modelType, modelID)
+	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
+		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(tenantID, modelType, tenantModelID)
+		if err == nil {
+			return driver, modelName, apiConfig, maxTokens, nil
+		}
+	}
+	return resolveModelConfig(tenantID, modelType, modelID)
+}
+
+func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
+	if tenant == nil {
+		return ""
+	}
+	switch modelType {
+	case entity.ModelTypeChat:
+		return stringValue(tenant.TenantLLMID)
+	case entity.ModelTypeEmbedding:
+		return stringValue(tenant.TenantEmbdID)
+	case entity.ModelTypeRerank:
+		return stringValue(tenant.TenantRerankID)
+	case entity.ModelTypeSpeech2Text:
+		return stringValue(tenant.TenantASRID)
+	case entity.ModelTypeImage2Text:
+		return stringValue(tenant.TenantImg2TxtID)
+	case entity.ModelTypeTTS:
+		return stringValue(tenant.TenantTTSID)
+	case entity.ModelTypeOCR:
+		return stringValue(tenant.TenantOCRID)
+	default:
+		return ""
+	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func resolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	modelDAO := dao.NewTenantModelDAO()
+	if _, err := modelDAO.GetByID(modelRef); err == nil {
+		return resolveModelConfigByID(tenantID, modelType, modelRef)
+	} else if !errorsIsRecordNotFound(err) {
+		return nil, "", nil, 0, err
+	}
+	return resolveModelConfigFromProviderInstance(tenantID, modelType, modelRef)
+}
+
+func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	modelDAO := dao.NewTenantModelDAO()
+	instanceDAO := dao.NewTenantModelInstanceDAO()
+	providerDAO := dao.NewTenantModelProviderDAO()
+
+	modelObj, err := modelDAO.GetByID(modelID)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	if modelObj.Status != "active" {
+		return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelID)
+	}
+	if !entity.ModelType(modelObj.ModelType).Has(modelType) {
+		return nil, "", nil, 0, fmt.Errorf("model %q cannot be used as %s model", modelID, modelType.String())
+	}
+	instance, err := instanceDAO.GetByID(modelObj.InstanceID)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	provider, err := providerDAO.GetByID(modelObj.ProviderID)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	if provider.TenantID != tenantID {
+		return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+	}
+
+	apiKey := instance.APIKey
+	var extra map[string]string
+	_ = json.Unmarshal([]byte(instance.Extra), &extra)
+	region := extra["region"]
+	baseURL := extra["base_url"]
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(provider.ProviderName)
+	if providerInfo == nil {
+		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", provider.ProviderName)
+	}
+	driver, err := newModelDriverForBaseURLLocal(providerInfo.ModelDriver, provider.ProviderName, region, baseURL)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	maxTokens := 0
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxTokens != nil {
+		maxTokens = *mi.MaxTokens
+	}
+	if strings.TrimSpace(modelObj.Extra) != "" {
+		var tenantExtra tenantModelExtra
+		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
+			return nil, "", nil, 0, err
+		}
+		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
+			maxTokens = *tenantExtra.MaxTokens
+		}
+	}
+	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
+	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 }
 
 func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -332,7 +437,7 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	baseURL := extra["base_url"]
 
 	modelObj, modelErr := modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, string(modelType), pureModelName,
+		provider.ID, instance.ID, int(modelType), pureModelName,
 	)
 	switch {
 	case modelErr == nil:
@@ -405,9 +510,9 @@ func parseCompositeModelName(compositeName string) (modelName, instanceName, pro
 		return parts[0], "default", parts[1], nil
 	case 1:
 		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	default:
-		return "", "", "", fmt.Errorf("invalid model name format: %s", compositeName)
 	}
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }
 
 func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {

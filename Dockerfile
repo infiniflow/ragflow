@@ -59,7 +59,7 @@ RUN mkdir -p /usr/share/infinity/resource && \
     cp -r /tmp/resource/* /usr/share/infinity/resource && \
     rm -rf /tmp/resource
 
-ARG NGINX_VERSION=1.31.0-1~noble
+ARG NGINX_VERSION=1.31.2-1~noble
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     mkdir -p /etc/apt/keyrings && \
     curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
@@ -226,6 +226,10 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 # Install frontend dependencies — depends only on package manifests so
 # web source / docs changes don't invalidate this layer.
 COPY web/package.json web/package-lock.json web/.npmrc ./web/
+# The `prepare` lifecycle script (npm install) runs `node scripts/prepare.js`,
+# so that file must be present before `npm install` or the build fails with
+# "Cannot find module '/ragflow/web/scripts/prepare.js'".
+COPY web/scripts ./web/scripts
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
 

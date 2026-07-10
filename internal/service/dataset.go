@@ -102,6 +102,47 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
+// validateDatasetEmbeddingModels checks that all given datasets use the same
+// embedding model (or all use none). Returns an error on mismatch.
+func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
+	embdIDs := make(map[string]struct{})
+	hasEmbd := false
+	noEmbd := false
+	for _, kb := range kbs {
+		if kb.EmbdID != "" {
+			hasEmbd = true
+			baseName := kb.EmbdID
+			if idx := strings.LastIndex(kb.EmbdID, "@"); idx > 0 {
+				baseName = kb.EmbdID[:idx]
+				// Strip the second-to-last @-segment too (instance name),
+				// matching Python's _base_model_name which uses rsplit("@", 2).
+				if idx2 := strings.LastIndex(baseName, "@"); idx2 > 0 {
+					baseName = baseName[:idx2]
+				}
+			}
+			embdIDs[baseName] = struct{}{}
+		} else {
+			noEmbd = true
+		}
+	}
+	if hasEmbd && noEmbd {
+		return fmt.Errorf("Cannot search across datasets where some have embedding models and others do not.")
+	}
+	if len(embdIDs) > 1 {
+		return fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	}
+	return nil
+}
+
+// getEmbdIDs extracts embedding IDs from knowledge bases.
+func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
+	ids := make([]string, len(kbs))
+	for i, kb := range kbs {
+		ids[i] = kb.EmbdID
+	}
+	return ids
+}
+
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetService struct {
 	kbDAO          *dao.KnowledgebaseDAO
@@ -224,7 +265,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		_, _ = hasher.Write([]byte{0})
 	}
 
-	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	taskID := utility.GenerateUUID()
 	beginAt := time.Now().Truncate(time.Second)
 	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
 
@@ -735,7 +776,7 @@ func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc 
 
 	now := time.Now()
 	task := &entity.Task{
-		ID:       common.GenerateUUID(),
+		ID:       utility.GenerateUUID(),
 		DocID:    doc.ID,
 		FromPage: 0,
 		ToPage:   maximumTaskPageNumber,
@@ -808,7 +849,7 @@ func (d *DatasetService) buildDatasetParseTasks(doc *entity.Document, bucket, ob
 		digest := datasetParseTaskDigest(doc, pageRange.from, pageRange.to)
 		chunkIDs := ""
 		tasks = append(tasks, &entity.Task{
-			ID:          common.GenerateUUID(),
+			ID:          utility.GenerateUUID(),
 			DocID:       doc.ID,
 			FromPage:    pageRange.from,
 			ToPage:      pageRange.to,
@@ -864,7 +905,7 @@ func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *CheckEmbe
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -1872,13 +1913,8 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}
 
 	// Check if all kbs have the same embedding model
-	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
-		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("Datasets use different embedding models.")
-			}
-		}
+	if err := validateDatasetEmbeddingModels(kbRecords); err != nil {
+		return nil, err
 	}
 
 	// Override request fields with values from saved search config (if search_id is provided)
@@ -1954,7 +1990,7 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
@@ -2045,41 +2081,28 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Determine embedding model
 	var embeddingModel *models.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
 		if embErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
 		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	} else {
-		driver, modelName, apiConfig, maxTokens, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
-		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+		common.Info("Fetched embedding model for retrieval",
+			zap.String("tenantID", tenantIDs[0]),
+			zap.String("modelName", modelName))
+
 	}
-	modelNameStr := ""
-	if embeddingModel.ModelName != nil {
-		modelNameStr = *embeddingModel.ModelName
-	}
-	common.Info("Fetched embedding model for retrieval",
-		zap.String("tenantID", tenantIDs[0]),
-		zap.String("modelName", modelNameStr))
 
 	// Get rerank model if rerankID is specified
 	var rerankModel *models.RerankModel
-
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
 		rerankModel = models.NewRerankModel(driver, &modelName, apiConfig)
-	}
-
-	if rerankModel != nil {
 		common.Info("Fetched rerank model",
 			zap.String("tenantID", tenantIDs[0]),
-			zap.String("modelName", *rerankModel.ModelName))
+			zap.String("modelName", modelName))
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
@@ -2446,12 +2469,22 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	parserConfig["llm_id"] = tenant.LLMID
 
 	embdID := tenant.EmbdID
+	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
 		embdID = embeddingModel
+		tenantEmbdID = ""
+	}
+	if embdID != "" && tenantEmbdID == "" {
+		resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+		if err == nil {
+			tenantEmbdID = resolvedID
+		} else {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	kbID := utility.GenerateToken()
@@ -2476,6 +2509,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		ParserConfig: parserConfig,
 		Permission:   permission,
 		EmbdID:       embdID,
+		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
 	}
 
@@ -2762,14 +2796,24 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 	if embdIDProvided {
+		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
 		if embdID == "" {
 			embdID = kb.EmbdID
+		} else {
+			tenantEmbdID = ""
 		}
 		ok, message := d.verifyEmbeddingAvailability(embdID, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
+		if embdID != "" && tenantEmbdID == "" {
+			resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+			if err == nil {
+				tenantEmbdID = resolvedID
+			}
+		}
 		updates["embd_id"] = embdID
+		updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 	}
 
 	if req.AutoMetadataConfig != nil {
@@ -3549,14 +3593,23 @@ func validateDatasetAvatar(avatar string) error {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if embeddingModel == "" {
-		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+		return errors.New("Embedding model identifier is required")
 	}
 
-	modelName, provider, ok := strings.Cut(embeddingModel, "@")
-	if !ok {
+	if !strings.Contains(embeddingModel, "@") {
+		return nil
+	}
+
+	parts := strings.Split(embeddingModel, "@")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return errors.New("Both model_name and provider must be non-empty strings")
+		}
+	}
+	if len(parts) < 2 {
 		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
 	}
-	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(provider) == "" {
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
 		return errors.New("Both model_name and provider must be non-empty strings")
 	}
 
@@ -3614,7 +3667,7 @@ func normalizeDatasetID(id string) (string, error) {
 }
 
 func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeEmbedding, embdID)
+	_, _, _, _, err := NewModelProviderService().ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

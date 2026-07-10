@@ -41,8 +41,16 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.LoginUserByCommand(cmd)
 	case "admin_logout":
 		return c.Logout()
+	case "admin_ping_store":
+		return c.AdminPingStoreCommand(cmd)
+	case "admin_ping_engine":
+		return c.AdminPingEngineCommand(cmd)
+	case "admin_ping_mq":
+		return c.AdminPingMQCommand(cmd)
+	case "admin_ping_cache":
+		return c.AdminPingCacheCommand(cmd)
 	case "admin_ping_server":
-		return c.PingByCommand(cmd)
+		return c.PingServerByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "admin_list_services":
@@ -191,8 +199,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersSummaryCommand(cmd)
 	case "admin_show_users_activity_command":
 		return c.AdminShowUsersActivityCommand(cmd)
-	case "admin_show_users_plan_command":
-		return c.AdminShowUsersPlanCommand(cmd)
+	case "admin_show_users_plan_summary":
+		return c.AdminShowUsersPlanSummaryCommand(cmd)
+	case "admin_show_users_plan_quota":
+		return c.AdminShowUsersPlanQuotaCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
@@ -281,6 +291,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonUseAPIServerCommand(cmd)
 	case "admin_use_admin_server":
 		return c.CommonUseAdminServerCommand(cmd)
+	case "admin_list_bucket_objects":
+		return c.AdminListBucketObjects(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
@@ -294,7 +306,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_logout":
 		return c.Logout()
 	case "api_ping_server":
-		return c.PingByCommand(cmd)
+		return c.PingServerByCommand(cmd)
 	case "api_list_configs":
 		return c.ListConfigs(cmd)
 	case "api_set_log_level":

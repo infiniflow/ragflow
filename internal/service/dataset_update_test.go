@@ -271,7 +271,7 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
-	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", string(entity.ModelTypeEmbedding))
+	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
 	embeddingModel := "embedding-2@test@ZHIPU-AI"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
@@ -293,6 +293,40 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	}
 	if persisted.EmbdID != embeddingModel {
 		t.Fatalf("expected persisted embedding model %q, got %q", embeddingModel, persisted.EmbdID)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
+	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
+	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+
+	embeddingModelID := "model-1"
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		EmbeddingModel: &embeddingModelID,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["embedding_model"] != embeddingModelID {
+		t.Fatalf("expected embedding model %q, got %#v", embeddingModelID, result["embedding_model"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.EmbdID != embeddingModelID {
+		t.Fatalf("expected persisted embedding model %q, got %q", embeddingModelID, persisted.EmbdID)
+	}
+	if persisted.TenantEmbdID == nil || *persisted.TenantEmbdID != embeddingModelID {
+		t.Fatalf("expected persisted tenant_embd_id %q, got %#v", embeddingModelID, persisted.TenantEmbdID)
 	}
 }
 
@@ -408,7 +442,7 @@ func insertDatasetUpdateModelInstance(t *testing.T, id, providerID, instanceName
 	}
 }
 
-func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, modelName, modelType string) {
+func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, modelName string, modelType int) {
 	t.Helper()
 
 	model := &entity.TenantModel{

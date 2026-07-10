@@ -17,7 +17,7 @@ import logging
 
 from quart import request
 
-from api.apps import login_required
+from api.apps import login_required, current_user
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
@@ -316,6 +316,9 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           required:
             - instance_name
             - api_key
+            - base_url
+            - region
+            - model_info
           properties:
             instance_name:
               type: string
@@ -336,10 +339,24 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           type: object
     """
     data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
     if not data or "instance_name" not in data:
         return get_error_argument_result(message="instance_name is required")
 
     instance_name = data["instance_name"]
+    # data only contains instance_name — no other fields needed
+    if set(data.keys()) == {"instance_name"}:
+        try:
+            success, msg = await provider_api_service.create_name_only_provider_instance(tenant_id, provider_id_or_name, instance_name)
+            if success:
+                return get_result(message=msg)
+            else:
+                return get_error_data_result(message=msg)
+        except Exception as e:
+            logging.exception(e)
+            return get_error_data_result(message="Internal server error")
+
     api_key = data.get("api_key", "")
     base_url = data.get("base_url", "")
     region = data.get("region", "")
@@ -397,7 +414,10 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
               description: Region.
             model_info:
               type: object
-              description: Model info.
+              description: Model info. optional
+            instance_id:
+              type: string
+              description: Instance ID. optional
     responses:
       200:
         description: Instance created successfully.
@@ -405,6 +425,8 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
           type: object
     """
     data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
     if not data or ("api_key" not in data and provider_id_or_name != "VLLM"):
         return get_error_argument_result(message="api_key is required")
 
@@ -414,8 +436,16 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
     model_info = data.get("model_info", [])
 
     try:
-        success, msg = await provider_api_service.verify_api_key(provider_id_or_name, api_key, base_url, region, model_info)
+        success, msg, model_verify_result = await provider_api_service.verify_api_key(provider_id_or_name, api_key, base_url, region, model_info)
         if success:
+            if data.get("instance_id"):
+                # if instance_id is provided, update the model verify result
+                instance_id = data["instance_id"]
+                try:
+                    for model, verify_result in model_verify_result.items():
+                        provider_api_service.update_model(current_user.id, provider_id_or_name, instance_id, model, {"verify": verify_result})
+                except Exception as e:
+                    logging.exception(e)
             return get_result(message=msg)
         else:
             return get_error_data_result(message=msg)
@@ -507,6 +537,115 @@ def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = Non
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_provider_instance(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
+    """
+    Update a provider instance.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_id_or_name
+        type: string
+        required: true
+        description: Provider ID or name.
+      - in: path
+        name: instance_id_or_name
+        type: string
+        required: true
+        description: Instance ID or name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Instance update parameters.
+        required: true
+        schema:
+          type: object
+          required:
+            - instance_name
+            - api_key
+            - base_url
+            - region
+            - model_info
+          properties:
+            instance_name:
+              type: string
+              description: Instance name.
+            api_key:
+              type: string
+              description: API key.
+            base_url:
+              type: string
+              description: Base URL.
+            region:
+              type: string
+              description: Region.
+            model_info:
+              type: array
+              description: List of models to configure for this instance.
+              items:
+                type: object
+                properties:
+                  model_type:
+                    type: array
+                    description: Model types.
+                  model_name:
+                    type: string
+                    description: Model name.
+                  max_tokens:
+                    type: integer
+                    description: Max tokens.
+                  extra:
+                    type: object
+                    description: Extra model info (e.g. is_tools).
+            verify:
+              type: boolean
+              description: Verify api_key and base_url, default true
+    responses:
+      200:
+        description: Instance updated successfully.
+        schema:
+          type: object
+    """
+    data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
+    if not instance_id_or_name:
+        return get_error_argument_result(message="instance_id_or_name is required")
+    if not data:
+        return get_error_argument_result(message="Request body is required")
+    required_keys = ["instance_name", "api_key", "base_url", "model_info"]
+    missing = [k for k in required_keys if k not in data]
+    if missing:
+        return get_error_argument_result(message=f"Missing required fields: {', '.join(missing)}")
+
+    instance_name = data["instance_name"]
+    api_key = data["api_key"]
+    base_url = data["base_url"]
+    region = data.get("region", "default")
+    model_info = data["model_info"]
+    verify = data.get("verify", True)
+
+    try:
+        success, msg = await provider_api_service.update_provider_instance(tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify)
+        if success:
+            return get_result(message=msg)
+        else:
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -761,12 +900,71 @@ async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instan
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
+    """
+    Delete models from an instance.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_id_or_name
+        type: string
+        required: true
+        description: Provider ID or name.
+      - in: path
+        name: instance_id_or_name
+        type: string
+        required: true
+        description: Instance ID or name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Model details.
+        required: true
+        schema:
+          type: object
+          required:
+            - model_name
+            - model_type
+          properties:
+            model_name:
+              type: list of string
+              description: Model name.
+    responses:
+      200:
+        description: Model deleted successfully.
+    """
+    data = await request.get_json()
+    if not data or "model_name" not in data:
+        return get_error_argument_result(message="model_name is required")
+    model_name = data["model_name"]
+    try:
+        success, result = await provider_api_service.delete_models_from_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name)
+        if success:
+            return get_result(message=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
+async def alter_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
-    Enable or disable a model.
+    Enable or disable a model, or update max_tokens
     ---
     tags:
       - Providers
@@ -813,15 +1011,15 @@ async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: st
           type: object
     """
     data = await request.get_json()
-    if not data or "status" not in data:
-        return get_error_argument_result(message="status is required")
+    if not data or ("status" not in data and "max_tokens" not in data):
+        return get_error_argument_result(message="status or max_tokens required.")
 
-    status = data["status"]
-    if status not in ("active", "inactive"):
+    update_dict = {k: data[k] for k in ["status", "max_tokens", "model_type", "extra"] if k in data}
+    if update_dict.get("status") and update_dict["status"] not in ("active", "inactive"):
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model_status(tenant_id, provider_id_or_name, instance_id_or_name, model_name, status)
+        success, msg = provider_api_service.update_model(tenant_id, provider_id_or_name, instance_id_or_name, model_name, update_dict)
         if success:
             return get_result(message=msg)
         else:

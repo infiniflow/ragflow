@@ -167,3 +167,106 @@ func TestTavily_Info(t *testing.T) {
 		t.Errorf("Desc = %q, want to mention Tavily", meta.Description)
 	}
 }
+
+func TestTavilyExtract_BuildRequest(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotAuth, gotMethod string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://example.com","raw_content":"hello"}]}`))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	tool := NewTavilyExtractToolWith(helper)
+	out, err := tool.InvokableRun(context.Background(),
+		`{"urls":"https://a.example, https://b.example","api_key":"key-xyz","extract_depth":"advanced","format":"text"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if out == "" {
+		t.Fatal("InvokableRun returned empty string")
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if !strings.HasSuffix(gotPath, "extract") {
+		t.Errorf("path = %q, want .../extract", gotPath)
+	}
+	if gotAuth != "Bearer key-xyz" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer key-xyz")
+	}
+	urls, ok := gotBody["urls"].([]any)
+	if !ok || len(urls) != 2 || urls[0] != "https://a.example" || urls[1] != "https://b.example" {
+		t.Errorf("body.urls = %#v, want two trimmed URLs", gotBody["urls"])
+	}
+	if gotBody["extract_depth"] != "advanced" {
+		t.Errorf("body.extract_depth = %v, want advanced", gotBody["extract_depth"])
+	}
+	if gotBody["format"] != "text" {
+		t.Errorf("body.format = %v, want text", gotBody["format"])
+	}
+}
+
+func TestTavilyExtract_ParseResponse(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://a.example/","raw_content":"alpha"}]}`))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	tool := NewTavilyExtractToolWith(helper)
+	out, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"],"api_key":"k"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+
+	var env tavilyExtractEnvelope
+	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if env.Error != "" {
+		t.Errorf("Error = %q, want empty", env.Error)
+	}
+	if len(env.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(env.Results))
+	}
+	if env.Results[0].URL != "https://a.example/" || env.Results[0].RawContent != "alpha" {
+		t.Errorf("Results[0] = %+v, want url and raw_content", env.Results[0])
+	}
+}
+
+func TestTavilyExtract_RequiresAPIKey(t *testing.T) {
+	t.Parallel()
+
+	tool := NewTavilyExtractToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
+	_, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"]}`)
+	if err == nil {
+		t.Fatal("expected error for missing api_key")
+	}
+	if !strings.Contains(err.Error(), "api_key") {
+		t.Errorf("err = %v, want to mention api_key", err)
+	}
+}
+
+func TestTavilyExtract_Info(t *testing.T) {
+	t.Parallel()
+
+	tool := NewTavilyExtractTool()
+	meta := tool.ToolMeta()
+	if meta.Name != "tavily_extract" {
+		t.Errorf("Name = %q, want tavily_extract", meta.Name)
+	}
+	if !strings.Contains(meta.Description, "Tavily Extract") {
+		t.Errorf("Description = %q, want to mention Tavily Extract", meta.Description)
+	}
+}

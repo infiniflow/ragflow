@@ -126,10 +126,10 @@ export function NextMessageInput({
   }, []);
 
   const submit = React.useCallback(() => {
-    if (isUploading) return;
+    if (isUploading || sendLoading) return;
     pressEnter();
     setFiles([]);
-  }, [isUploading, pressEnter]);
+  }, [isUploading, sendLoading, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -222,6 +222,7 @@ export function NextMessageInput({
           "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          resize={resize}
           autoSize={{ minRows: 2, maxRows: 8 }}
         />
 

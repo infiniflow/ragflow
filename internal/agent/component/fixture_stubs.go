@@ -17,9 +17,11 @@
 // Package component — e2e fixture stubs and compat shims.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// seven component names that are registered here: Retrieval,
+// fixture-backed component names that are registered here: Retrieval,
 // TavilySearch, ExeSQL, Generate, Answer, Iteration,
-// IterationItem. Their bodies are deliberately trivial — they
+// IterationItem. Some names (for example TavilySearch) now route to
+// production wrappers while their stubs remain available as direct test
+// constructors. The fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,
 // and produces outputs downstream templates can resolve", not
@@ -27,7 +29,7 @@
 // universe_a_wrappers.go and the real production bodies in
 // their own .go files replace these stubs in production paths.
 //
-// The seven names were chosen by enumerating the component_name
+// The fixture names were chosen by enumerating the component_name
 // values in the testdata fixtures (see the `examples` var in
 // internal/agent/canvas/dsl_examples_test.go). Keeping the list
 // in sync with the fixture set is a single-source-of-truth
@@ -38,9 +40,11 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
 )
 
 // ----- Retrieval -----
@@ -153,6 +157,15 @@ func (t *TavilySearchStub) Inputs() map[string]string {
 func (t *TavilySearchStub) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered search results for downstream LLM prompts.",
+	}
+}
+
+func (t *TavilySearchStub) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
 	}
 }
 
@@ -503,12 +516,68 @@ func init() {
 	Register("SearchMyDataset", newRetrievalComponent)
 	Register("search_my_dataset", newRetrievalComponent)
 	Register("search_my_dateset", newRetrievalComponent)
-	Register(componentNameTavilySearch, NewTavilySearchStub)
+	Register(componentNameTavilySearch, newTavilySearchComponent)
+	Register("TavilyExtract", newTavilyExtractComponent)
 	Register(componentNameExeSQL, newExeSQLComponent)
 	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
+	Register("BGPT", newBGPTComponent)
+	Register("Wikipedia", newWikipediaComponent)
+	Register("DuckDuckGo", newDuckDuckGoComponent)
+	Register("Google", newGoogleComponent)
+	Register("GoogleScholar", newGoogleScholarComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }
+
+// ---- Canvas-facing tool wrappers (harness Component delegate) ----
+
+func newBGPTComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "BGPT", inner: agenttool.NewBGPTTool()}, nil
+}
+
+func newWikipediaComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "Wikipedia", inner: agenttool.NewWikipediaTool()}, nil
+}
+
+func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "DuckDuckGo", inner: agenttool.NewDuckDuckGoTool()}, nil
+}
+
+func newGoogleComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "Google", inner: agenttool.NewGoogleTool()}, nil
+}
+
+func newGoogleScholarComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "GoogleScholar", inner: agenttool.NewGoogleScholarTool()}, nil
+}
+
+func newTavilyExtractComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "TavilyExtract", inner: agenttool.NewTavilyExtractTool()}, nil
+}
+
+// simpleToolDelegate wraps an agenttool.Tool as a Component.
+type simpleToolDelegate struct {
+	name  string
+	inner agenttool.Tool
+}
+
+func (d *simpleToolDelegate) Name() string { return d.name }
+
+func (d *simpleToolDelegate) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	argsJSON, _ := json.Marshal(inputs)
+	out, err := d.inner.InvokableRun(ctx, string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("canvas: %s: %w", d.name, err)
+	}
+	return parseToolEnvelope(out), nil
+}
+
+func (d *simpleToolDelegate) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func (d *simpleToolDelegate) Inputs() map[string]string  { return nil }
+func (d *simpleToolDelegate) Outputs() map[string]string { return nil }

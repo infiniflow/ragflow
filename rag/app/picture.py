@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, get_model_config_from_provider_instance, ensure_paddleocr_from_env
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, resolve_model_config, ensure_paddleocr_from_env
 from common.constants import LLMType
 from common.parser_config_utils import normalize_layout_recognizer
 from common.string_utils import clean_markdown_block
@@ -61,7 +61,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             ans += "\n" + ans
-            tokenize(doc, ans, eng)
+            tokenize(doc, ans, eng, language=lang)
             return [doc]
         except Exception as e:
             callback(prog=-1, msg=str(e))
@@ -84,7 +84,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
-            tokenize(doc, txt, eng)
+            tokenize(doc, txt, eng, language=lang)
             callback(0.8, "OCR results is too long to use CV LLM.")
             return attach_media_context([doc], 0, image_ctx)
 
@@ -98,7 +98,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 ans = cv_mdl.describe(img_binary.read())
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
-            tokenize(doc, txt, eng)
+            tokenize(doc, txt, eng, language=lang)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
             callback(prog=-1, msg=str(e))
@@ -124,7 +124,7 @@ def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):
         if not paddleocr_llm_name:
             return ""
 
-        ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+        ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
         ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config)
         pdf_parser = ocr_model.mdl
 

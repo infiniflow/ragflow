@@ -6,6 +6,7 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useFetchChatList } from '@/hooks/use-chat-request';
+import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -16,9 +17,18 @@ import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
 
 export default function ChatList() {
-  const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchChatList();
+  const {
+    data,
+    setPagination,
+    pagination,
+    handleInputChange,
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchChatList();
   const { t } = useTranslation();
+  const { t: tc } = useTranslation('common');
+  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
   const {
     initialChatName,
     chatRenameVisible,
@@ -102,6 +112,9 @@ export default function ChatList() {
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
+              filters={owners}
+              value={filterValue}
+              onChange={handleFilterSubmit}
             >
               <Button data-testid="create-chat" onClick={handleShowCreateModal}>
                 <Plus className="size-[1em]" />

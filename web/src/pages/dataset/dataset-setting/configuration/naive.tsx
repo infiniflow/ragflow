@@ -3,10 +3,12 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { ChildrenDelimiterForm } from '@/components/children-delimiter-form';
+import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '@/components/max-token-number-from-field';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   ConfigurationFormContainer,
   MainContainer,
@@ -19,10 +21,15 @@ import {
 } from './common-item';
 
 export function NaiveConfiguration() {
+  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField testId="ds-settings-parser-pdf-parser-select"></LayoutRecognizeFormField>
+        <CompilationTemplateFormField horizontal></CompilationTemplateFormField>
+        <LayoutRecognizeFormField
+          testId="ds-settings-parser-pdf-parser-select"
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
         <MaxTokenNumberFormField
           initialValue={512}
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"

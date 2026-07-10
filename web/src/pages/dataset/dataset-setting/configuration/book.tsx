@@ -3,6 +3,7 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   ConfigurationFormContainer,
   MainContainer,
@@ -10,10 +11,13 @@ import {
 import { AutoMetadata } from './common-item';
 
 export function BookConfiguration() {
+  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

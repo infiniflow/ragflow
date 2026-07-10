@@ -13,6 +13,7 @@ import {
   OutputFormatMap,
   SpreadsheetOutputFormat,
 } from '../../constant/pipeline';
+import { useOwnerTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -61,12 +62,14 @@ export function ParserMethodFormField({
   optionsWithoutLLM,
 }: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
+      ownerTenantId={ownerTenantId}
     ></LayoutRecognizeFormField>
   );
 }

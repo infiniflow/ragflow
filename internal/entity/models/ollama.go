@@ -69,7 +69,7 @@ func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (o *OllamaModel) Name() string {
-	return "ollama"
+	return "Ollama"
 }
 
 func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {

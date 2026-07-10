@@ -43,6 +43,10 @@ from rag.utils.raptor_utils import (
     SUPPORTED_TREE_BUILDERS,
 )
 
+# Regularization added to GMM covariance diagonals; keeps components
+# from collapsing on singleton/near-identical reduced points.
+_GMM_REG_COVAR = 1e-4
+
 
 @dataclass
 class _PsiTreeNode:
@@ -254,7 +258,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         for n in n_clusters:
             self._check_task_canceled(task_id, "get optimal clusters")
 
-            gm = GaussianMixture(n_components=n, random_state=random_state)
+            gm = GaussianMixture(n_components=n, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
             gm.fit(embeddings)
             bics.append(gm.bic(embeddings))
         optimal_clusters = n_clusters[np.argmin(bics)]
@@ -344,7 +348,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             if n_clusters <= 1:
                 labels = [0 for _ in range(len(reduced_embeddings))]
             else:
-                gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
+                gm = GaussianMixture(n_components=n_clusters, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
                 gm.fit(reduced_embeddings)
                 probs = gm.predict_proba(reduced_embeddings)
                 labels = []
@@ -859,7 +863,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     break
                 logging.info(
                     "RAPTOR small-N collapse: layer of %d node(s) [%d:%d] collapsed into %d summary; stopping at tree top",
-                    end - start, start, end, produced,
+                    end - start,
+                    start,
+                    end,
+                    produced,
                 )
                 layers.append((end, len(chunks)))
                 if callback:

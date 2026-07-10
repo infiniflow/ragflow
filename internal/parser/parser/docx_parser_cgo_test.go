@@ -9,10 +9,7 @@ import (
 )
 
 func TestDOCXParser_ParseWithResult_CGOMinimalDocument(t *testing.T) {
-	p, err := NewDOCXParser(OfficeOxide)
-	if err != nil {
-		t.Fatalf("NewDOCXParser: %v", err)
-	}
+	p := NewDOCXParser()
 	data := minimalDOCX(t, "Hello from DOCX parser")
 	res := p.ParseWithResult("sample.docx", data)
 	if res.Err != nil {

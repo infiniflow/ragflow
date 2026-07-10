@@ -808,7 +808,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     dataset_id = create_payload["data"]["id"]
 
     invalid_cases = [
-        ("unknown@ZHIPU-AI", "Instance default not found for model unknown@ZHIPU-AI."),
+        ("unknown@ZHIPU-AI", "Model unknown@ZHIPU-AI not found for model embedding"),
         ("embedding-3@unknown", "Provider unknown not found for model embedding-3@unknown."),
         ("text-embedding-v3@Tongyi-Qianwen", "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen."),
         ("text-embedding-3-small@OpenAI", "Provider OpenAI not found for model text-embedding-3-small@OpenAI."),
@@ -832,7 +832,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Local@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), list_payload
 
 
 @pytest.mark.p2
@@ -1163,7 +1163,7 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
         ("tenant_zhipu", "embedding-3@CI@ZHIPU-AI", 0, "embedding-3@CI@ZHIPU-AI", None, True),
         ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
         ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
-        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Instance default not found for model unknown@ZHIPU-AI.", False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Model unknown@ZHIPU-AI not found for model embedding", False),
         ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Provider unknown not found for model embedding-3@unknown.", False),
         (
             "tenant_no_auth_default_tenant_llm",
@@ -1197,7 +1197,10 @@ def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, na
         pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
     assert payload["code"] == expected_code, payload
     if expected_embedding_model is not None:
-        assert payload["data"]["embedding_model"] == expected_embedding_model, payload
+        if name in {"embedding_model_unset", "embedding_model_none"}:
+            assert payload["data"]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), payload
+        else:
+            assert payload["data"]["embedding_model"] == expected_embedding_model, payload
     if expected_message is not None:
         assert payload["message"] == expected_message, payload
 

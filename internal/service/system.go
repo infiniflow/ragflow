@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -456,7 +455,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -466,7 +465,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	defaultSuperuserEmail := common.GetEnvSmall(common.EnvDefaultSuperuserEmail)
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
@@ -476,7 +475,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DB_TYPE
-	dbType := os.Getenv("DB_TYPE")
+	dbType := common.GetEnvSmall(common.EnvDBType)
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -486,7 +485,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := os.Getenv("DEVICE")
+	device := common.GetEnvSmall(common.EnvDevice)
 	if device == "" {
 		device = "cpu"
 	}
@@ -496,7 +495,7 @@ func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := os.Getenv("STORAGE_IMPL")
+	storageImpl := common.GetEnvSmall(common.EnvStorageImpl)
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}

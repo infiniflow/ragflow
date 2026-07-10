@@ -26,33 +26,36 @@ import (
 type Factory func(params map[string]any) (Tool, error)
 
 var registry = map[string]Factory{
-	"akshare":           noConfig("akshare", func() Tool { return NewAkShareTool() }),
-	"arxiv":             noConfig("arxiv", func() Tool { return NewArxivTool() }),
-	"bgpt":              noConfig("bgpt", func() Tool { return NewBGPTTool() }),
-	"code_exec":         noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
-	"crawler":           noConfig("crawler", func() Tool { return NewCrawlerTool() }),
-	"deepl":             noConfig("deepl", func() Tool { return NewDeepLTool() }),
-	"duckduckgo":        noConfig("duckduckgo", func() Tool { return NewDuckDuckGoTool() }),
-	"email":             noConfig("email", func() Tool { return NewEmailTool() }),
-	"execute_sql":       buildExeSQLTool,
-	"exesql":            buildExeSQLTool,
-	"github":            noConfig("github", func() Tool { return NewGitHubTool() }),
-	"google":            noConfig("google", func() Tool { return NewGoogleTool() }),
-	"google_scholar":    noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
-	"jin10":             noConfig("jin10", func() Tool { return NewJin10Tool() }),
-	"keenable":          buildKeenableTool,
-	"pubmed":            noConfig("pubmed", func() Tool { return NewPubMedTool() }),
-	"qweather":          noConfig("qweather", func() Tool { return NewQWeatherTool() }),
-	"retrieval":         noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
-	"search_my_dataset": noConfig("search_my_dataset", func() Tool { return NewRetrievalTool() }),
-	"search_my_dateset": noConfig("search_my_dateset", func() Tool { return NewRetrievalTool() }),
-	"searxng":           noConfig("searxng", func() Tool { return NewSearXNGTool() }),
-	"tavily":            noConfig("tavily", func() Tool { return NewTavilyTool() }),
-	"tushare":           noConfig("tushare", func() Tool { return NewTushareTool() }),
-	"web_crawler":       noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
-	"wencai":            noConfig("wencai", func() Tool { return NewWencaiTool() }),
-	"wikipedia":         noConfig("wikipedia", func() Tool { return NewWikipediaTool() }),
-	"yahoo_finance":     noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
+	"akshare":               noConfig("akshare", func() Tool { return NewAkShareTool() }),
+	"arxiv":                 noConfig("arxiv", func() Tool { return NewArxivTool() }),
+	"bgpt":                  noConfig("bgpt", func() Tool { return NewBGPTTool() }),
+	"code_exec":             noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
+	"crawler":               noConfig("crawler", func() Tool { return NewCrawlerTool() }),
+	"deepl":                 noConfig("deepl", func() Tool { return NewDeepLTool() }),
+	"duckduckgo":            noConfig("duckduckgo", func() Tool { return NewDuckDuckGoTool() }),
+	"email":                 noConfig("email", func() Tool { return NewEmailTool() }),
+	"execute_sql":           buildExeSQLTool,
+	"exesql":                buildExeSQLTool,
+	"github":                noConfig("github", func() Tool { return NewGitHubTool() }),
+	"google":                noConfig("google", func() Tool { return NewGoogleTool() }),
+	"google_scholar":        noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
+	"google_scholar_search": noConfig("google_scholar_search", func() Tool { return NewGoogleScholarTool() }),
+	"jin10":                 noConfig("jin10", func() Tool { return NewJin10Tool() }),
+	"keenable":              buildKeenableTool,
+	"pubmed":                noConfig("pubmed", func() Tool { return NewPubMedTool() }),
+	"qweather":              noConfig("qweather", func() Tool { return NewQWeatherTool() }),
+	"retrieval":             noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
+	"search_my_dataset":     noConfig("search_my_dataset", func() Tool { return NewRetrievalTool() }),
+	"search_my_dateset":     noConfig("search_my_dateset", func() Tool { return NewRetrievalTool() }),
+	"searxng":               noConfig("searxng", func() Tool { return NewSearXNGTool() }),
+	"tavily":                noConfig("tavily", func() Tool { return NewTavilyTool() }),
+	"tavily_extract":        noConfig("tavily_extract", func() Tool { return NewTavilyExtractTool() }),
+	"tushare":               noConfig("tushare", func() Tool { return NewTushareTool() }),
+	"web_crawler":           noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
+	"wencai":                noConfig("wencai", func() Tool { return NewWencaiTool() }),
+	"wikipedia":             buildWikipediaTool,
+	"wikipedia_search":      buildWikipediaTool,
+	"yahoo_finance":         noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
 }
 
 func noConfig(name string, fn func() Tool) Factory {
@@ -127,6 +130,29 @@ func buildKeenableTool(params map[string]any) (Tool, error) {
 	return NewKeenableToolWithAPIKey(nil, apiKey), nil
 }
 
+func buildWikipediaTool(params map[string]any) (Tool, error) {
+	topN := 5
+	language := "en"
+	for key := range params {
+		if key != "top_n" && key != "language" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level params top_n/language", "wikipedia")
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "wikipedia")
+	}
+	if v, ok := stringParam(params, "language"); ok {
+		language = strings.TrimSpace(v)
+	}
+	if language == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param language", "wikipedia")
+	}
+	return NewWikipediaTool(), nil
+}
+
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {
 	if len(params) == 0 {
 		return exesqlConnParams{}, fmt.Errorf(
@@ -188,4 +214,13 @@ func intParam(params map[string]any, key string) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func boolParam(params map[string]any, key string) (bool, bool) {
+	v, ok := params[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
 }
