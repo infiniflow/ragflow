@@ -28,7 +28,9 @@ export default function ChatList() {
   } = useFetchChatList();
   const { t } = useTranslation();
   const { t: tc } = useTranslation('common');
-  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
+  const owners = [
+    buildOwnersFilter(data?.chats ?? [], undefined, tc('owner')),
+  ];
   const {
     initialChatName,
     chatRenameVisible,

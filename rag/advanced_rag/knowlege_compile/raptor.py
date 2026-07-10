@@ -863,10 +863,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     break
                 logging.info(
                     "RAPTOR small-N collapse: layer of %d node(s) [%d:%d] collapsed into %d summary; stopping at tree top",
-                    end - start,
-                    start,
-                    end,
-                    produced,
+                    end - start, start, end, produced,
                 )
                 layers.append((end, len(chunks)))
                 if callback:

@@ -22,6 +22,7 @@ import { BedrockInstanceCard } from './bedrock-instance-card';
 import { DraftModeCard } from './components/draft-mode-card';
 import { InstanceNameSection } from './components/instance-name-section';
 import { SavedModeCard } from './components/saved-mode-card';
+import { SoMarkInstanceCard } from './somark-instance-card';
 import {
   useDeleteInstance,
   useDraftAutoSave,
@@ -35,7 +36,6 @@ import {
   useVerifyProvider,
 } from './hooks';
 import { ProviderInstanceCardProps } from './interface';
-import { SoMarkInstanceCard } from './somark-instance-card';
 
 /**
  * One inline provider-instance card. The provider name + doc-link arrow

@@ -22,7 +22,7 @@ def get_model_type_human(model_type: int) -> List[str]:
     return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
 
 
-def calculate_model_type(model_type_name_list: List[str] | str) -> int:
+def calculate_model_type(model_type_name_list: List[str]|str) -> int:
     model_type = 0
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]

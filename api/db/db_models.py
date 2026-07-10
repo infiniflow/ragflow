@@ -43,6 +43,7 @@ from peewee import (
     Metadata,
     Model,
     TextField,
+    PrimaryKeyField,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase

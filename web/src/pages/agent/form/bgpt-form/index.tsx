@@ -48,11 +48,7 @@ export function BGPTFormWidgets() {
           <FormItem>
             <FormLabel>{t('bgptApiKey')}</FormLabel>
             <FormControl>
-              <Input
-                {...field}
-                type="password"
-                placeholder={t('bgptApiKeyTip')}
-              />
+              <Input {...field} type="password" placeholder={t('bgptApiKeyTip')} />
             </FormControl>
             <FormMessage />
           </FormItem>

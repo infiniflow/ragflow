@@ -641,7 +641,9 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
     verify = data.get("verify", True)
 
     try:
-        success, msg = await provider_api_service.update_provider_instance(tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify)
+        success, msg = await provider_api_service.update_provider_instance(
+            tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify
+        )
         if success:
             return get_result(message=msg)
         else:
@@ -959,6 +961,7 @@ async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, 
         return get_error_data_result(message="Internal server error")
 
 
+
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1019,7 +1022,9 @@ async def alter_model(tenant_id: str = None, provider_id_or_name: str = None, in
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model(tenant_id, provider_id_or_name, instance_id_or_name, model_name, update_dict)
+        success, msg = provider_api_service.update_model(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, update_dict
+        )
         if success:
             return get_result(message=msg)
         else:

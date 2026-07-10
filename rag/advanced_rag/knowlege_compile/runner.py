@@ -276,8 +276,7 @@ async def run_structure_compile_over_batches(
             if plan_cfg:
                 logging.debug(
                     "synthesis: template %s plan config %r reserved for future use",
-                    template_id,
-                    plan_cfg,
+                    template_id, plan_cfg,
                 )
 
             if cancel_check():

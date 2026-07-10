@@ -1990,7 +1990,9 @@ async def _wiki_planning_call(
 
     entities_summary = "\n".join(_wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]) or "  (none)"
     concepts_summary = "\n".join(_wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]) or "  (none)"
-    topics_summary = "\n".join(f"  - {t.strip()}" for t in raw_topics[:200] if isinstance(t, str) and t.strip()) or "  (none)"
+    topics_summary = "\n".join(
+        f"  - {t.strip()}" for t in raw_topics[:200] if isinstance(t, str) and t.strip()
+    ) or "  (none)"
 
     kb_lines: list[str] = []
     for name, rec in reconciliation.items():

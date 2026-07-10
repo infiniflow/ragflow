@@ -419,7 +419,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        qai_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
+        qai_list, tbls = docx_parser(filename, binary,
+                                     from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         res = tokenize_table(tbls, doc, eng, language=lang)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))

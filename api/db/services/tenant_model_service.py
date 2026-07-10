@@ -31,14 +31,23 @@ class TenantModelService(CommonService):
     def get_by_provider_id_and_instance_id_and_model_type_and_model_name(cls, provider_id, instance_id, model_type, model_name):
         if isinstance(model_type, str):
             model_type = calculate_model_type([model_type])
-        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_type.bin_and(model_type) > 0, cls.model.model_name == model_name)
+        return cls.model.get_or_none(
+            cls.model.provider_id == provider_id,
+            cls.model.instance_id == instance_id,
+            cls.model.model_type.bin_and(model_type) > 0,
+            cls.model.model_name == model_name
+        )
 
     @classmethod
     @DB.connection_context()
     def get_by_provider_id_and_instance_id_and_model_type(cls, provider_id, instance_id, model_type):
         if isinstance(model_type, str):
             model_type = calculate_model_type([model_type])
-        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_type.bin_and(model_type) > 0)
+        return cls.model.get_or_none(
+            cls.model.provider_id == provider_id,
+            cls.model.instance_id == instance_id,
+            cls.model.model_type.bin_and(model_type) > 0
+        )
 
     @classmethod
     @DB.connection_context()

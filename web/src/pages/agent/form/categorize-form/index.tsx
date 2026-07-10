@@ -37,9 +37,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <QueryVariable></QueryVariable>
-        <LargeModelFormField
-          ownerTenantId={ownerTenantId}
-        ></LargeModelFormField>
+        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
         <MessageHistoryWindowSizeFormField
           min={0}
         ></MessageHistoryWindowSizeFormField>

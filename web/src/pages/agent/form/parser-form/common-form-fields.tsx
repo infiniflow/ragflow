@@ -8,12 +8,12 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FileType,
   OutputFormatMap,
   SpreadsheetOutputFormat,
 } from '../../constant/pipeline';
-import { useOwnerTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 

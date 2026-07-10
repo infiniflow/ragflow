@@ -3,11 +3,11 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
 
 export function ManualConfiguration() {
@@ -15,9 +15,7 @@ export function ManualConfiguration() {
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField
-          ownerTenantId={ownerTenantId}
-        ></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField ownerTenantId={ownerTenantId}></LayoutRecognizeFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

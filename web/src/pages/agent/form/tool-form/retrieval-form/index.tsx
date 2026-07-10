@@ -58,9 +58,7 @@ const RetrievalForm = () => {
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields
-                  ownerTenantId={ownerTenantId}
-                ></RerankFormFields>
+                <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}

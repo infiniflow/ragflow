@@ -50,9 +50,18 @@ def _load_split_model_name():
     The function is pure-Python and does not reference any module-level
     names, so it can be exec'd standalone in an empty namespace.
     """
-    src_path = Path(__file__).resolve().parents[5] / "api" / "db" / "joint_services" / "tenant_model_service.py"
+    src_path = (
+        Path(__file__).resolve().parents[5]
+        / "api"
+        / "db"
+        / "joint_services"
+        / "tenant_model_service.py"
+    )
     tree = ast.parse(src_path.read_text(encoding="utf-8"))
-    fn_node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "split_model_name")
+    fn_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "split_model_name"
+    )
     module = ast.Module(body=[fn_node], type_ignores=[])
     ns: dict = {}
     exec(compile(module, str(src_path), "exec"), ns)

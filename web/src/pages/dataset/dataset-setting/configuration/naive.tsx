@@ -8,11 +8,11 @@ import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '@/components/max-token-number-from-field';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
   EnableTocToggle,
