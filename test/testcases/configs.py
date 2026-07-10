@@ -41,6 +41,7 @@ def _config_value(name: str, default: str | None = None) -> str | None:
 
 API_PROXY_SCHEME = _config_value("API_PROXY_SCHEME", "python")
 IS_GO_PROXY = API_PROXY_SCHEME == "go"
+SDK_UNAUTHORIZED_ERROR_MESSAGE = "Invalid access token" if IS_GO_PROXY else "<Unauthorized '401: Unauthorized'>"
 
 
 def _default_host_address() -> str:

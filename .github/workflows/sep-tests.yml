@@ -40,6 +40,7 @@ jobs:
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_python_changes: ${{ steps.detect_changes.outputs.has_python_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
+      api_proxy_schemes: ${{ steps.detect_changes.outputs.api_proxy_schemes }}
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -176,16 +177,24 @@ jobs:
             if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
               CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
             else
-              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+              BASE_SHA="${{ github.event.before }}"
+              if [[ -n "${BASE_SHA}" && ! "${BASE_SHA}" =~ ^0+$ ]]; then
+                CHANGED_FILES=$(git diff --name-only "${BASE_SHA}" "${GITHUB_SHA}")
+              else
+                CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+              fi
             fi
 
             while IFS= read -r file; do
               case "$file" in
-                *.go|go.mod|go.sum)                      has_go=true ;;
+                # Docker, test, SDK, and workflow changes can alter either server path.
+                Dockerfile|docker/**|.github/workflows/**|test/**|sdk/**)
+                  has_go=true
+                  has_python=true
+                  ;;
+                *.go|go.mod|go.sum|build.sh)              has_go=true ;;
                 *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
                 web/*)                                    has_web=true ;;
-                Dockerfile|docker-compose*.yml)  has_go=true; has_python=true ;;
-                build.sh)                        has_go=true ;;
               esac
             done <<< "$CHANGED_FILES"
 
@@ -196,10 +205,19 @@ jobs:
             fi
           fi
 
+          if [[ "$has_go" == "true" && "$has_python" == "true" ]]; then
+            api_proxy_schemes='["go","python"]'
+          elif [[ "$has_go" == "true" ]]; then
+            api_proxy_schemes='["go"]'
+          else
+            api_proxy_schemes='["python"]'
+          fi
+
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_python_changes=${has_python}" >> $GITHUB_OUTPUT
           echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
-          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}"
+          echo "api_proxy_schemes=${api_proxy_schemes}" >> $GITHUB_OUTPUT
+          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}, proxy schemes: ${api_proxy_schemes}"
 
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
@@ -218,13 +236,18 @@ jobs:
 
 
   ragflow_tests_infinity:
-    name: ragflow_tests_infinity
+    name: ragflow_tests_infinity (${{ matrix.api_proxy_scheme }})
     needs: ragflow_preflight
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    strategy:
+      fail-fast: false
+      matrix:
+        api_proxy_scheme: ${{ fromJSON(needs.ragflow_preflight.outputs.api_proxy_schemes) }}
     env:
       DOC_ENGINE: infinity
-      RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
+      API_PROXY_SCHEME: ${{ matrix.api_proxy_scheme }}
+      RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity-${{ matrix.api_proxy_scheme }}
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
@@ -245,7 +268,7 @@ jobs:
           fetch-tags: true
 
       - name: Build ragflow go server
-        if: env.HAS_GO == 'true'
+        if: env.API_PROXY_SCHEME == 'go'
         run: |
           set -euo pipefail
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -267,7 +290,7 @@ jobs:
           ./build.sh --go
 
       - name: Run Go unit tests
-        if: env.HAS_GO == 'true'
+        if: env.API_PROXY_SCHEME == 'go'
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
         # test binaries link against it transitively through
@@ -297,30 +320,27 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
-        if: env.HAS_PYTHON == 'true'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
           # install ss
           sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}"
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${COMPOSE_PROJECT_NAME}-ragflow-cpu-1" >> ${GITHUB_ENV}
-          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}
+          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}/${API_PROXY_SCHEME}
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf "${ARTIFACTS_DIR}" && mkdir -p "${ARTIFACTS_DIR}"
 
@@ -413,7 +433,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^NATS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^NATS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -440,6 +460,7 @@ jobs:
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
+                 echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
                echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -448,14 +469,12 @@ jobs:
 
 
       - name: Start ragflow:nightly for Infinity
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Infinity
-        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -476,7 +495,6 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run New RESTFUL api tests against Infinity
-        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -496,7 +514,6 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Infinity
-        if: env.HAS_PYTHON == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -608,7 +625,7 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
       - name: Stop ragflow to save coverage Infinity
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() && env.API_PROXY_SCHEME == 'python' }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -623,7 +640,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} stop
 
       - name: Generate server coverage report Infinity
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() && env.API_PROXY_SCHEME == 'python' }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -649,7 +666,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Collect ragflow log Infinity
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() }}
         run: |
           if [ -d docker/ragflow-logs ]; then
             cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
@@ -660,7 +677,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Infinity
-        if: ${{ always() && (env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true') }}
+        if: ${{ always() }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
@@ -675,13 +692,18 @@ jobs:
 
 
   ragflow_tests_elasticsearch:
-    name: ragflow_tests_elasticsearch
+    name: ragflow_tests_elasticsearch (${{ matrix.api_proxy_scheme }})
     needs: ragflow_preflight
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    strategy:
+      fail-fast: false
+      matrix:
+        api_proxy_scheme: ${{ fromJSON(needs.ragflow_preflight.outputs.api_proxy_schemes) }}
     env:
       DOC_ENGINE: elasticsearch
-      RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
+      API_PROXY_SCHEME: ${{ matrix.api_proxy_scheme }}
+      RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch-${{ matrix.api_proxy_scheme }}
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_PYTHON: ${{ needs.ragflow_preflight.outputs.has_python_changes }}
@@ -702,7 +724,7 @@ jobs:
           fetch-tags: true
 
       - name: Build ragflow go server
-        if: env.HAS_GO == 'true'
+        if: env.API_PROXY_SCHEME == 'go'
         run: |
           set -euo pipefail
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -724,7 +746,7 @@ jobs:
           ./build.sh --go
 
       - name: Run Go unit tests
-        if: env.HAS_GO == 'true'
+        if: env.API_PROXY_SCHEME == 'go'
         # Runs after `./build.sh --go`, which guarantees the C++ static
         # library (librag_tokenizer_c_api.a) is present on disk. The Go
         # test binaries link against it transitively through
@@ -754,30 +776,27 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
-        if: env.HAS_PYTHON == 'true'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         working-directory: docker
         run: |
           set -euo pipefail
           # install ss
           sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}"
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${COMPOSE_PROJECT_NAME}-ragflow-cpu-1" >> ${GITHUB_ENV}
-          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}
+          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}/${API_PROXY_SCHEME}
           echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
           rm -rf "${ARTIFACTS_DIR}" && mkdir -p "${ARTIFACTS_DIR}"
 
@@ -870,7 +889,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^NATS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^NATS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -897,6 +916,7 @@ jobs:
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
+                 echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
                echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -905,14 +925,12 @@ jobs:
 
 
       - name: Start ragflow:nightly for Elasticsearch
-        if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Elasticsearch
-        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -933,7 +951,6 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-es-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run New RESTFUL api tests against Elasticsearch
-        if: env.HAS_PYTHON == 'true'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -953,7 +970,6 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Elasticsearch
-        if: env.HAS_PYTHON == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -1065,7 +1081,7 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
 
       - name: Stop ragflow to save coverage Elasticsearch
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() && env.API_PROXY_SCHEME == 'python' }}
         run: |
           # Send SIGINT to ragflow_server.py to trigger coverage save
           PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
@@ -1080,7 +1096,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} stop
 
       - name: Generate server coverage report Elasticsearch
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() && env.API_PROXY_SCHEME == 'python' }}
         run: |
           # .coverage file should be in docker/ragflow-logs/.coverage
           if [ -f docker/ragflow-logs/.coverage ]; then
@@ -1101,7 +1117,7 @@ jobs:
           fi
 
       - name: Collect ragflow log Elasticsearch
-        if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
+        if: ${{ !cancelled() }}
         run: |
           if [ -d docker/ragflow-logs ]; then
             cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
@@ -1112,7 +1128,7 @@ jobs:
           sudo rm -rf docker/ragflow-logs || true
 
       - name: Stop ragflow:nightly for Elasticsearch
-        if: ${{ always() && (env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true') }}
+        if: ${{ always() }}
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
