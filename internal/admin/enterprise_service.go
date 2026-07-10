@@ -1157,3 +1157,7 @@ func (s *Service) RemoveIngestionTasksByCondition(tasks []string, email, status 
 
 	return []map[string]interface{}{element}, nil
 }
+
+func CheckLicense() (common.ErrorCode, string) {
+	return common.CodeLicenseValid, ""
+}
