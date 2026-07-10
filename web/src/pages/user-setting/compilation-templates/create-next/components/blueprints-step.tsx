@@ -5,12 +5,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { TreeDataItem, TreeView } from '@/components/ui/tree-view';
 import { useFetchWikiPresets } from '@/hooks/use-compilation-template-request';
 import { IWikiPreset } from '@/interfaces/database/compilation-template';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
 import { groupBy } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type WikiPresetTreeItem = TreeDataItem & {
   _preset?: IWikiPreset;
@@ -73,11 +74,33 @@ export function BlueprintsStep({
     `templates.${selectedTemplateIndex}.config.instruction` as const;
   const pageExamplePath =
     `templates.${selectedTemplateIndex}.config.page_example` as const;
+  const useBlueprintPath =
+    `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
   const pageExample = useWatch({
     control: form.control,
     name: pageExamplePath,
   });
+
+  const instruction = useWatch({
+    control: form.control,
+    name: instructionPath,
+  });
+
+  const useBlueprint = useWatch({
+    control: form.control,
+    name: useBlueprintPath,
+  });
+
+  const selectedTemplateName = useMemo(() => {
+    if (!selectedItemId) return '';
+    const selectedItem = treeData
+      .flatMap((node) => node.children ?? [])
+      .find((child) => child.id === selectedItemId);
+    return selectedItem?.name ?? '';
+  }, [treeData, selectedItemId]);
+
+  const hasTemplateData = Boolean(selectedItemId || instruction || pageExample);
 
   const handleSelect = useCallback(
     (item?: TreeDataItem) => {
@@ -95,6 +118,14 @@ export function BlueprintsStep({
       });
     },
     [form, instructionPath, pageExamplePath],
+  );
+
+  const handleToggleBlueprint = useCallback(
+    (checked: boolean | 'indeterminate') => {
+      if (checked === 'indeterminate') return;
+      form.setValue(useBlueprintPath, checked, { shouldValidate: false });
+    },
+    [form, useBlueprintPath],
   );
 
   const handlePageExampleChange = useCallback(
@@ -120,7 +151,20 @@ export function BlueprintsStep({
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col">
-          {selectedItemId ? (
+          {hasTemplateData && (
+            <section className="flex justify-between p-5">
+              <span>{selectedTemplateName}</span>
+              <div className="space-x-2">
+                <Checkbox
+                  id="use-blueprint-checkbox"
+                  checked={Boolean(useBlueprint)}
+                  onCheckedChange={handleToggleBlueprint}
+                />
+                <span>{t('setting.useBlueprint')}</span>
+              </div>
+            </section>
+          )}
+          {hasTemplateData ? (
             <div className="flex-1 min-h-0 flex flex-col p-5 gap-4 overflow-y-auto">
               <RAGFlowFormItem
                 name={instructionPath}

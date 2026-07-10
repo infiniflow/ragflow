@@ -15,6 +15,20 @@ import { FormSchemaType, TemplateSchemaType } from './schema';
 
 export const DefaultFieldKeys = ['type', 'description', 'rule'];
 
+export const splitExampleToBlueprintFields = (
+  example: string,
+): { instruction: string; page_example: string } => {
+  const trimmed = example.trim();
+  const separatorIndex = trimmed.indexOf('\n\n');
+  if (separatorIndex === -1) {
+    return { instruction: trimmed, page_example: '' };
+  }
+  return {
+    instruction: trimmed.slice(0, separatorIndex).trim(),
+    page_example: trimmed.slice(separatorIndex + 2).trim(),
+  };
+};
+
 export const FieldKeyOrders = [
   DefaultFieldKeys,
   ['statement', 'subject'],
@@ -42,6 +56,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     example: '',
     instruction: '',
     page_example: '',
+    use_blueprint: false,
   },
 };
 
@@ -61,6 +76,7 @@ export const isConfigMetaKey = (key: string) =>
     'instruction',
     'page_example',
     'synthesis',
+    'use_blueprint',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -88,6 +104,10 @@ export const buildConfigFromBuiltin = (
   kind: string,
   llmId: string,
 ): TemplateSchemaType['config'] => {
+  const example =
+    typeof builtinTemplate.config?.example === 'string'
+      ? builtinTemplate.config.example
+      : '';
   const sections: TemplateSchemaType['config'] = {
     kind,
     llm_id: llmId,
@@ -106,7 +126,16 @@ export const buildConfigFromBuiltin = (
             .synthesis as TemplateSchemaType['config']['synthesis'],
         }
       : {}),
+    use_blueprint:
+      kind === CompilationTemplateKind.Artifacts && example.length > 0,
   };
+
+  if (kind === CompilationTemplateKind.Artifacts && example.length > 0) {
+    const { instruction, page_example } =
+      splitExampleToBlueprintFields(example);
+    sections.instruction = instruction;
+    sections.page_example = page_example;
+  }
 
   if (kind === CompilationTemplateKind.Tree) {
     const builtinRaptor: ICompilationTemplateRaptorConfig =
@@ -136,6 +165,7 @@ export const transformDetailToForm = (
   detail: ICompilationTemplate,
 ): TemplateSchemaType => {
   const config = detail.config ?? {};
+  const example = typeof config.example === 'string' ? config.example : '';
   const base: TemplateSchemaType['config'] = {
     kind: config.kind ?? '',
     llm_id: config.llm_id ?? '',
@@ -147,7 +177,16 @@ export const transformDetailToForm = (
             config.synthesis as TemplateSchemaType['config']['synthesis'],
         }
       : {}),
+    use_blueprint:
+      detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
   };
+
+  if (detail.kind === CompilationTemplateKind.Artifacts && example.length > 0) {
+    const { instruction, page_example } =
+      splitExampleToBlueprintFields(example);
+    base.instruction = instruction;
+    base.page_example = page_example;
+  }
 
   if (detail.kind === CompilationTemplateKind.Tree) {
     const raptor: ICompilationTemplateRaptorConfig = config.raptor ?? {};
@@ -222,9 +261,13 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   });
 
   if (template.kind === CompilationTemplateKind.Artifacts) {
-    const instruction = String(template.config.instruction ?? '').trim();
-    const pageExample = String(template.config.page_example ?? '').trim();
-    config.example = [instruction, pageExample].filter(Boolean).join('\n\n');
+    if (template.config.use_blueprint) {
+      const instruction = String(template.config.instruction ?? '').trim();
+      const pageExample = String(template.config.page_example ?? '').trim();
+      config.example = [instruction, pageExample].filter(Boolean).join('\n\n');
+    } else {
+      config.example = '';
+    }
   }
 
   return {

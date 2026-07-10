@@ -38,6 +38,7 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
         buildSectionSchema(t),
         buildSynthesisSchema(),
         z.string(),
+        z.boolean(),
       ]),
     ),
   });

@@ -11,8 +11,8 @@ import { useTranslation } from 'react-i18next';
 
 import { formatKindLabel } from '@/utils/compilation-template-util';
 
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
-import { DefaultTemplateValues } from '@/pages/user-setting/compilation-templates/edit-template/utils';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
+import { DefaultTemplateValues } from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { useTemplateAddButton } from '../hooks/use-template-add-button';
 

@@ -3,7 +3,7 @@ import {
   createEmptyField,
   getFieldKeyOrder,
   getTypeOptionsFromBuiltinSection,
-} from '@/pages/user-setting/compilation-templates/edit-template/utils';
+} from '@/pages/user-setting/compilation-templates/create-next/utils';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 
