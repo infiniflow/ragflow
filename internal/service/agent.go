@@ -524,10 +524,10 @@ func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string)
 		return ErrAgentNotOwner
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.versionDAO.DeleteByCanvasIDTx(tx, canvasID); err != nil {
+		if _, err = s.versionDAO.DeleteByCanvasIDTx(tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent: cascade versions: %w", err)
 		}
-		if err := s.canvasDAO.DeleteTx(tx, canvasID); err != nil {
+		if err = s.canvasDAO.DeleteTx(tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent %s: %w", canvasID, err)
 		}
 		return nil
