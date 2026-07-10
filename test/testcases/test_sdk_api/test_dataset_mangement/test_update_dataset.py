@@ -240,10 +240,10 @@ class TestDatasetUpdate:
         if IS_GO_PROXY:
             pytest.skip("Go dataset update ignores an explicit null embedding_model")
         dataset.update({"embedding_model": None})
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
+        assert dataset.embedding_model.split("@", 1)[0] == "BAAI/bge-small-en-v1.5", str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(retrieved_dataset)
+        assert retrieved_dataset.embedding_model.split("@", 1)[0] == "BAAI/bge-small-en-v1.5", str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

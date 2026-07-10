@@ -1,4 +1,3 @@
-
 package table
 
 import (
@@ -20,7 +19,7 @@ func TestCellTexts(t *testing.T) {
 }
 
 func TestConstructTable_Simple3x2(t *testing.T) {
-	// 3 columns × 2 rows — cells pre-filled (simulating extractTableBoxesFromImage).
+	// 3 columns × 2 rows — cells pre-filled (simulating enrichOnePageWithDeepDoc).
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A", Label: "table row"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 50, Text: "B", Label: "table row"},
@@ -106,7 +105,7 @@ func TestConstructTable_CellsTextFilledAfterCall(t *testing.T) {
 	// constructTable should populate cell text from boxes.
 	// Bug: fillCellTextFromBoxes modifies a local copy — original cells stay empty,
 	// causing generate_test.go to output empty rows.
-	// Cells pre-filled — constructTable no longer fills text (done in extractTableBoxesFromImage).
+	// Cells pre-filled — constructTable no longer fills text (done in enrichOnePageWithDeepDoc).
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A1", Label: "table row"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 50, Text: "B1", Label: "table row"},
@@ -161,7 +160,7 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	}
 
 	// TSR cells in crop pixel space (matching real TSR output).
-	// Cells pre-filled (extractTableBoxesFromImage already ran fillText + OCR).
+	// Cells pre-filled (enrichOnePageWithDeepDoc already ran fillText + OCR).
 	cells := []pdf.TSRCell{
 		{X0: 35, Y0: 441, X1: 456, Y1: 500, Text: "标职务", Label: "table row"},
 		{X0: 460, Y0: 441, X1: 630, Y1: 500, Text: "飞机", Label: "table row"},
@@ -252,9 +251,9 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	// Boxes have R/C annotations but their spatial overlap with cell rects
 	// is marginal (real-world scenario). R/C path should still fill text.
 	boxes := []pdf.TextBox{
-		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0}, // overlap ~92% → OK
+		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0},  // overlap ~92% → OK
 		{X0: 215, X1: 395, Top: 12, Bottom: 48, Text: "B", R: 0, C: 1}, // overlap ~90% → OK
-		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0}, // overlap ~92% → OK
+		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0},  // overlap ~92% → OK
 		{X0: 215, X1: 350, Top: 58, Bottom: 92, Text: "D", R: 1, C: 1}, // overlap ~50% → MARGINAL
 	}
 
@@ -450,7 +449,7 @@ func TestIsCaptionBox(t *testing.T) {
 		{"Table 1: Transport Levels", true},
 		{"图表 1: 测试", true},
 		{"公司领导班子成员、出差地", false}, // plain text, not caption
-		{"第十条到厂矿单位出差", false}, // normal paragraph
+		{"第十条到厂矿单位出差", false},   // normal paragraph
 		{"", false},
 	}
 	for _, tt := range tests {

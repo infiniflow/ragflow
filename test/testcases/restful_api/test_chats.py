@@ -16,6 +16,7 @@
 
 import asyncio
 import importlib.util
+import re
 import sys
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
@@ -774,7 +775,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     class _StubTenantService:
         @staticmethod
         def get_by_id(_tenant_id):
-            return True, SimpleNamespace(llm_id="glm-4")
+            return True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")
 
         @staticmethod
         def get_joined_tenants_by_user_id(_user_id):
@@ -1141,7 +1142,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
             "vector_similarity_weight": 0.25,
         },
     )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@CI@ZHIPU-AI")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@CI@ZHIPU-AI", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
@@ -1165,7 +1166,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     assert saved["rerank_id"] == "custom-reranker@OpenAI"
     assert {
         "tenant_id": "tenant-1",
-        "model_name": "custom-reranker@OpenAI",
+        "model_ref": "custom-reranker@OpenAI",
         "model_type": "rerank",
     } in query_calls
 
@@ -1175,7 +1176,7 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     module = _load_chat_routes_unit_module(monkeypatch)
     saved = {}
     _set_route_unit_request_json(monkeypatch, module, {"name": "chat-a"})
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
 
@@ -1214,7 +1215,7 @@ def test_chat_create_uses_direct_chat_fields_unit(monkeypatch):
             "vector_similarity_weight": 0.25,
         },
     )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
@@ -1370,7 +1371,7 @@ def test_patch_chat_drops_response_only_fields_before_update_unit(monkeypatch):
     _set_route_unit_request_json(monkeypatch, module, payload)
     monkeypatch.setattr(module.DialogService, "query", lambda **kwargs: [] if "name" in kwargs else [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module, "get_api_key", lambda *args, **kwargs: SimpleNamespace(id=1))
@@ -1398,7 +1399,7 @@ def test_patch_chat_merges_prompt_and_llm_settings_unit(monkeypatch):
     )
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
 
     def _update(_chat_id, payload):
         updated.update(payload)
@@ -1441,7 +1442,7 @@ def test_update_chat_allows_knowledge_placeholder_without_sources_unit(monkeypat
     )
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     updated = {}
 
     def _update(_chat_id, payload):
@@ -1539,7 +1540,15 @@ def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_docume
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         if expected_code == 0:
-            assert body["data"]["llm_id"] == expected_llm_id, (scenario_name, body)
+            actual_llm_id = body["data"]["llm_id"]
+            tenant_llm_id = body["data"].get("tenant_llm_id")
+            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
+                if tenant_llm_id:
+                    assert actual_llm_id == tenant_llm_id, (scenario_name, body)
+                else:
+                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, body)
+            else:
+                assert actual_llm_id == expected_llm_id, (scenario_name, body)
             assert body["data"]["llm_setting"] == expected_llm_setting, (scenario_name, body)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
@@ -1818,7 +1827,15 @@ def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             get_payload = get_res.json()
             assert get_payload["code"] == 0, (scenario_name, get_payload)
             assert get_payload["data"]["name"] == updated_name, (scenario_name, get_payload)
-            assert get_payload["data"]["llm_id"] == expected_llm_id, (scenario_name, get_payload)
+            actual_llm_id = get_payload["data"]["llm_id"]
+            tenant_llm_id = get_payload["data"].get("tenant_llm_id")
+            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
+                if tenant_llm_id:
+                    assert actual_llm_id == tenant_llm_id, (scenario_name, get_payload)
+                else:
+                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, get_payload)
+            else:
+                assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
             assert get_payload["data"]["llm_setting"] == expected_llm_setting, (scenario_name, get_payload)
         else:
             assert body["message"] == expected_message, (scenario_name, body)

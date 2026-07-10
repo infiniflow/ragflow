@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildModelValue, parseModelValue } from '@/utils/llm-util';
+import { parseModelValue } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -616,7 +616,7 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     const dict: Record<string, string> = {};
     Object.entries(ModelTypeToField).forEach(([key, field]) => {
       const model = defaultModels.find((m) => m.model_type === key);
-      dict[field] = model && model.enable ? buildModelValue(model) : '';
+      dict[field] = model && model.enable ? model.model_id : '';
     });
     return dict;
   }, [defaultModels]);

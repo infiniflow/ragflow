@@ -37,8 +37,6 @@ import (
 	"strings"
 )
 
-const TextParserLibType = "text"
-
 // TextParser is the text&code family parser. It implements the
 // structured ParseResultProducer contract directly.
 type TextParser struct {
@@ -49,12 +47,10 @@ type TextParser struct {
 	maxItemBytes int
 }
 
-// NewTextParser constructs a TextParser. The libType argument
-// preserves the parser-library constructor signature for
-// consistency with the other family parsers; the value is ignored
-// (TextParser has no alternative backend).
-func NewTextParser(_ string) (*TextParser, error) {
-	return &TextParser{maxItemBytes: 8192}, nil
+// NewTextParser constructs a TextParser with the default
+// paragraph-sized chunking ceiling.
+func NewTextParser() *TextParser {
+	return &TextParser{maxItemBytes: 8192}
 }
 
 // ParseWithResult emits one item per non-empty paragraph. The

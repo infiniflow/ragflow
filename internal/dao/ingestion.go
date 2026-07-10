@@ -91,6 +91,12 @@ func (dao *IngestionTaskDAO) UpdateStatus(taskID, status string) error {
 	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", status).Error
 }
 
+// UpdateComponentTotal records the number of components in the task's DSL
+// graph. It is the authoritative denominator for progress percentage.
+func (dao *IngestionTaskDAO) UpdateComponentTotal(taskID string, total int) error {
+	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
+}
+
 // CheckAnd called by ingestor
 // if task status is RUNNING, COMPLETED, STOPPED, FAILED, just return without error
 // if task status is CREATE, update to RUNNING
@@ -211,15 +217,9 @@ func (dao *IngestionTaskDAO) SetStoppingByAPIServer(taskID string) (*entity.Inge
 	}
 }
 
-type TaskletInfo struct {
-	TaskletID     string   `json:"tasklet_id"`
-	FilesToDelete []string `json:"files_to_delete"`
-}
-
 type TaskInfo struct {
-	TaskID        string        `json:"task_id"`
-	FilesToDelete []string      `json:"files_to_delete"`
-	Tasklets      []TaskletInfo `json:"tasklets"`
+	TaskID        string   `json:"task_id"`
+	FilesToDelete []string `json:"files_to_delete"`
 }
 
 func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userID *string) (*TaskInfo, error) {
@@ -264,57 +264,10 @@ func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userI
 	taskStatus := tasks[0].Status
 	switch taskStatus {
 	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
-		// get all ingestion tasklets
-		var tasklets []*entity.IngestionTasklet
-		err = tx.Where("task_id = ?", taskID).Find(&tasklets).Error
-		if err != nil {
-			return nil, err
-		}
-		var TaskletInfos []TaskletInfo
-		for _, tasklet := range tasklets {
-			// get all ingestion tasklet log
-			var taskletLogs []*entity.IngestionTaskletLog
-			err = tx.Where("tasklet_id = ?", tasklet.ID).Find(&taskletLogs).Error
-
-			fileMap := make(map[string]bool)
-			for _, taskletLog := range taskletLogs {
-				files, ok := taskletLog.Checkpoint["files"].([]string)
-				if ok {
-					for _, file := range files {
-						fileMap[file] = true
-					}
-				}
-			}
-			var filesToDelete []string
-			for file := range fileMap {
-				filesToDelete = append(filesToDelete, file)
-			}
-			TaskletInfos = append(TaskletInfos, TaskletInfo{
-				TaskletID:     tasklet.ID,
-				FilesToDelete: filesToDelete,
-			})
-		}
-
-		// get all ingestion task log
-		var taskLogs []*entity.IngestionTaskLog
-		err = tx.Where("task_id = ?", taskID).Find(&taskLogs).Error
-		if err != nil {
-			return nil, err
-		}
-
-		fileMap := make(map[string]bool)
-		for _, taskLog := range taskLogs {
-			files, ok := taskLog.Checkpoint["files"].([]string)
-			if ok {
-				for _, file := range files {
-					fileMap[file] = true
-				}
-			}
-		}
+		// ingestion_task_log no longer carries file references (the old
+		// checkpoint JSON column was dropped in favor of typed columns), so
+		// there are no task-level files to delete here.
 		var filesToDelete []string
-		for file := range fileMap {
-			filesToDelete = append(filesToDelete, file)
-		}
 
 		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
 		if err != nil {
@@ -324,7 +277,6 @@ func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userI
 		taskInfo := &TaskInfo{
 			TaskID:        taskID,
 			FilesToDelete: filesToDelete,
-			Tasklets:      TaskletInfos,
 		}
 		committed = true
 		return taskInfo, nil
@@ -394,10 +346,74 @@ func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) er
 	return DB.Save(ingestionLog).Error
 }
 
+// ListLogsByTaskID returns the task's logs in chronological (write) order.
+// Ordering is by auto-increment `id ASC` (NOT `create_time`) because
+// create_time has only second-level resolution and would tie-break
+// arbitrarily; `id` is monotonic and always reflects write order. This
+// feeds the frontend log stream (GET .../logs), which renders each row by
+// phase (0 started / 1 done / -1 failed).
 func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").Find(&tasks).Error
+	err := DB.Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
+}
+
+// TaskProgress is the server-side aggregate of a task's component progress,
+// served by GET /api/v1/ingestion_task/{task_id}/progress so the frontend
+// can render a progress bar without pulling the full log stream.
+type TaskProgress struct {
+	Total   int     `json:"total"`
+	Done    int     `json:"done"`
+	Failed  int     `json:"failed"`
+	Running int     `json:"running"`
+	Percent float64 `json:"percent"`
+}
+
+// AggregateProgress computes {total, done, failed, running, percent} for a
+// task purely in SQL. It takes each component's latest row (max id per
+// component) and classifies by its phase:
+//
+//	done    = latest phase is exit/success   (1)
+//	failed  = latest phase is error/failure  (-1 legacy, or 2 after 1c)
+//	running = anything else (started, 0)
+//
+// `total` is the authoritative denominator from ingestion_task.component_total.
+// The classification is forward-compatible with the §5.1 ProgressPhase
+// renumbering (exit=1 stays; error moves -1 -> 2).
+func (dao *IngestionTaskLogDAO) AggregateProgress(taskID string, total int) (*TaskProgress, error) {
+	// Latest row id per component for this task.
+	latestIDs := DB.Model(&entity.IngestionTaskLog{}).
+		Select("MAX(id)").
+		Where("task_id = ?", taskID).
+		Group("component")
+
+	type phaseRow struct {
+		Phase int
+	}
+	var rows []phaseRow
+	err := DB.Model(&entity.IngestionTaskLog{}).
+		Select("phase").
+		Where("id IN (?)", latestIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	progress := &TaskProgress{Total: total}
+	for _, r := range rows {
+		switch {
+		case r.Phase == 1:
+			progress.Done++
+		case r.Phase < 0 || r.Phase == 2:
+			progress.Failed++
+		default:
+			progress.Running++
+		}
+	}
+	if total > 0 {
+		progress.Percent = float64(progress.Done) / float64(total) * 100
+	}
+	return progress, nil
 }
 
 func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.IngestionTaskLog, error) {
@@ -414,69 +430,5 @@ func (dao *IngestionTaskLogDAO) GetLogByLogID(logID string) (*entity.IngestionTa
 
 func (dao *IngestionTaskLogDAO) DeleteByTaskID(taskID string) (int64, error) {
 	result := DB.Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
-	return result.RowsAffected, result.Error
-}
-
-type IngestionTaskletDAO struct{}
-
-func NewIngestionTaskletDAO() *IngestionTaskletDAO {
-	return &IngestionTaskletDAO{}
-}
-
-func (dao *IngestionTaskletDAO) Create(ingestionTasklet *entity.IngestionTasklet) error {
-	return DB.Create(ingestionTasklet).Error
-}
-
-func (dao *IngestionTaskletDAO) UpdateStatus(taskletID, status string) error {
-	return DB.Model(&entity.IngestionTasklet{}).Where("id = ?", taskletID).Update("status", status).Error
-}
-func (dao *IngestionTaskletDAO) GetAllTasklets() ([]*entity.IngestionTasklet, error) {
-	var tasks []*entity.IngestionTasklet
-	err := DB.Find(&tasks).Error
-	return tasks, err
-}
-
-func (dao *IngestionTaskletDAO) ListByUserID(userID string) ([]*entity.IngestionTasklet, error) {
-	var tasks []*entity.IngestionTasklet
-	err := DB.Where("user_id = ?", userID).Find(&tasks).Error
-	return tasks, err
-}
-
-func (dao *IngestionTaskletDAO) GetByID(id string) (*entity.IngestionTasklet, error) {
-	var task *entity.IngestionTasklet
-	err := DB.Where("id = ?", id).First(&task).Error
-	return task, err
-}
-
-type IngestionTaskletLogDAO struct{}
-
-func NewIngestionTaskletLogDAO() *IngestionTaskletLogDAO {
-	return &IngestionTaskletLogDAO{}
-}
-
-func (dao *IngestionTaskletLogDAO) Create(ingestionLog *entity.IngestionTaskletLog) error {
-	return DB.Create(ingestionLog).Error
-}
-
-func (dao *IngestionTaskletLogDAO) ListLogsByTaskletID(taskID string) ([]*entity.IngestionTaskletLog, error) {
-	var tasks []*entity.IngestionTaskletLog
-	err := DB.Where("task_id = ?", taskID).Find(&tasks).Error
-	return tasks, err
-}
-
-func (dao *IngestionTaskletLogDAO) GetLogByLogID(logID string) (*entity.IngestionTaskletLog, error) {
-	var task *entity.IngestionTaskletLog
-	err := DB.Where("id = ?", logID).First(&task).Error
-	return task, err
-}
-
-func (dao *IngestionTaskletLogDAO) LatestLogByTaskletID(taskletID string) (*entity.IngestionTaskletLog, error) {
-	var tasklet *entity.IngestionTaskletLog
-	err := DB.Where("tasklet_id = ?", taskletID).Order("create_time DESC").First(&tasklet).Error
-	return tasklet, err
-}
-
-func (dao *IngestionTaskletLogDAO) DeleteByTaskletID(taskID string) (int64, error) {
-	result := DB.Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskletLog{})
 	return result.RowsAffected, result.Error
 }

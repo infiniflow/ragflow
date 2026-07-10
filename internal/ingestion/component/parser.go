@@ -22,20 +22,22 @@
 //   - WHAT IS PORTED:
 //
 //   - The component's lifecycle contract: NewParserComponent /
-//     Invoke / Parallelism / Inputs / Outputs and registration
-//     under runtime.CategoryIngestion.
+//     Invoke / Inputs / Outputs and registration under
+//     runtime.CategoryIngestion.
 //
-//   - The Python fan-out pattern from rag/flow/parser/parser.py
-//     (parallel page parsing, deterministic merge by page number,
-//     see plan §8 R8) — the Go implementation uses
-//     golang.org/x/sync/errgroup with up to 4 goroutines and
-//     bounds each fan-out batch by a "page_size" input (default
-//     = ceil(total_pages / 4)).
+//   - Per-page parallelism is delegated to the parser backends
+//     (e.g. internal/deepdoc/parser/pdf fans out one worker per
+//     page and assembles the results in page order). This
+//     component only reshapes the parser output into the
+//     schema.Page layout and keeps the deterministic, page-number
+//     sorted merge contract (plan §8 R8) that the downstream
+//     chunker / tokenizer rely on for stable chunk IDs.
 //
-//   - TrackProgress (start/done callback), WithTimeout (60s per
-//     page-batch) and TrackElapsed (_created_time / _elapsed_time
-//     stamping) — see internal/agent/runtime/helpers.go for the
-//     helpers, plan §1 background.
+//   - Progress (start/done callback) and elapsed-time stamping
+//     (_created_time / _elapsed_time) are owned by the canvas
+//     framework (internal/agent/canvas/node_body.go realComponentBody),
+//     which wraps every component Invoke. This component does not call
+//     those helpers itself. See internal/agent/runtime/helpers.go.
 //
 //   - WHAT IS NOT YET PORTED:
 //
@@ -77,10 +79,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
-
-	"golang.org/x/sync/errgroup"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
@@ -88,19 +87,6 @@ import (
 )
 
 const ComponentNameParser = "Parser"
-
-// parserParallelism is the fan-out degree for the Parser component.
-// Matches the plan §2 AD-5a choice ("Parser: 4 (parallel page
-// parsing)"). Used by the pipeline runner when it needs to know how
-// many goroutines the component is willing to absorb.
-const parserParallelism = 4
-
-// parserPageBatchTimeout is the per-batch timeout. Mirrors the
-// Python component's `@timeout(60)` decorator on the page parse
-// branch. WithTimeout collapses the dual-layer
-// asyncio.wait_for / @timeout model into a single context, see
-// plan §8 R1.
-const parserPageBatchTimeout = 60 * time.Second
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
@@ -179,12 +165,6 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	return &ParserComponent{Param: p}, nil
 }
 
-// Parallelism declares the goroutine fan-out degree. The pipeline
-// runner uses this to decide how many worker slots the component
-// can absorb. We return 4 to match the Python asyncio.gather
-// pattern that fans one batch per page-range.
-func (c *ParserComponent) Parallelism() int { return parserParallelism }
-
 // Inputs returns the static parameter metadata. The component
 // reads the following from the inputs map at Invoke time:
 //
@@ -193,16 +173,12 @@ func (c *ParserComponent) Parallelism() int { return parserParallelism }
 //	                                them from bucket/path or doc_id.
 //	doc_id    (string, optional) — document ID used for naming and,
 //	                                when binary is absent, storage lookup.
-//	page_size (int, optional)    — pages per goroutine for
-//	                                fan-out. Defaults to
-//	                                ceil(totalPages / Parallelism).
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"binary":    "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
-		"doc_id":    "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
-		"bucket":    "Optional storage bucket override. Used when binary is absent.",
-		"path":      "Optional storage object key override. Used when binary is absent.",
-		"page_size": "Optional integer. Pages per goroutine for fan-out. Default: ceil(totalPages / 4).",
+		"binary": "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
+		"doc_id": "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
+		"bucket": "Optional storage bucket override. Used when binary is absent.",
+		"path":   "Optional storage object key override. Used when binary is absent.",
 	}
 }
 
@@ -240,13 +216,13 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
 //	}
 //
-// The fan-out is bounded by Parallelism() goroutines. Each
-// goroutine parses its page-batch under a derived timeout
-// (WithTimeout, 60s). The first error cancels the errgroup
-// context; siblings observe ctx.Done() and abandon their work.
+// Per-page parallelism and aggregation now live in the parser
+// backends (e.g. internal/deepdoc/parser/pdf fans out one worker
+// per page and assembles the results in page order), so this
+// component does no goroutine fan-out of its own.
 //
-// DETERMINISTIC MERGE (plan §8 R8): after fan-out, the page slice
-// is sorted by PageNumber. This guarantees the same input
+// DETERMINISTIC MERGE (plan §8 R8): after the page slice is built,
+// it is sorted by PageNumber. This guarantees the same input
 // produces byte-identical output across runs and is the contract
 // that downstream Chunker / Tokenizer rely on for stable chunk
 // IDs (chunks that span pages must reference adjacent PageNumbers
@@ -336,123 +312,60 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 			pages = [][]byte{nil}
 		}
 	}
-	totalPages := len(pages)
 
-	// 4. Fan-out: split pages into batches of pageSize. The
-	//    default pageSize is ceil(totalPages / Parallelism),
-	//    matching the plan §2 AD-5a target.
-	pageSize := resolvePageSize(inputs, totalPages)
-	batches := splitIntoBatches(pages, pageSize)
-
-	// 5. Drive the fan-out from TrackProgress (which delivers the
-	//    start/done/fail callback sequence); stamp
-	//    _created_time / _elapsed_time on the result via
-	//    TrackElapsed without re-running the work.
-	var out map[string]any
-	progressErr := runtime.TrackProgress(ComponentNameParser, nil, func() error {
-		parsed, err := fanOutAndMerge(ctx, batches, parserParallelism)
-		if err != nil {
-			return err
-		}
-		// Sort by PageNumber — DETERMINISTIC MERGE (plan §8 R8).
-		sortPagesByNumber(parsed)
-		out = buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
-		return nil
-	})
-	if progressErr != nil {
-		return nil, fmt.Errorf("Parser: %w", progressErr)
+	// 4. Build the page slice sequentially. Per-page parallelism now
+	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf
+	//    fans out one worker per page and assembles in page order), so
+	//    this component only reshapes the parser output. The DETERMINISTIC
+	//    MERGE (plan §8 R8) keeps pages sorted by PageNumber so the
+	//    downstream chunker / tokenizer get stable chunk IDs.
+	parsed, err := buildPagesFromBytes(ctx, pages)
+	if err != nil {
+		return nil, fmt.Errorf("Parser: %w", err)
 	}
-	// Stamp _created_time / _elapsed_time. We pass a closure
-	// that returns the pre-built `out` so the helper does not
-	// re-execute the fan-out.
-	return runtime.TrackElapsed(ComponentNameParser, func() (map[string]any, error) {
-		return out, nil
-	})
+	sortPagesByNumber(parsed)
+	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
+	// Forward the storage references so a downstream chunker can
+	// re-acquire the source PDF and crop section images on demand,
+	// instead of carrying the binary across the component boundary.
+	if docID != "" {
+		out["doc_id"] = docID
+	}
+	if bucket, _ := getString(inputs, "bucket"); bucket != "" {
+		out["bucket"] = bucket
+	}
+	if path, _ := getString(inputs, "path"); path != "" {
+		out["path"] = path
+	}
+	// Progress (_created_time / _elapsed_time stamping, start/done
+	// callbacks) is owned by the canvas framework (realComponentBody),
+	// not by this component, so we return the work result directly.
+	return out, nil
 }
 
-// fanOutAndMerge parses each batch in parallel and concatenates
-// the per-batch results. The first error cancels the errgroup
-// context; siblings see ctx.Done() and abandon their parse
-// (returning ctx.Err()).
+// buildPagesFromBytes reshapes already-prepared page bytes into the
+// schema.Page layout the downstream chunker consumes. The per-page
+// parse (including any parallelism) now lives in the parser backends
+// (internal/parser/parser and internal/deepdoc/parser/pdf); this
+// component only wraps the bytes into pages and honors context
+// cancellation so an abandoned run does not keep reshaping pages.
 //
-// Concurrency model: at most `parallelism` goroutines run
-// concurrently. errgroup.WithContext provides the cancel-on-
-// first-error behaviour, and golang.org/x/sync/errgroup is
-// already in go.mod (line 59).
-func fanOutAndMerge(parent context.Context, batches [][][]byte, parallelism int) ([]schema.Page, error) {
-	if len(batches) == 0 {
-		return nil, nil
-	}
-	if parallelism < 1 {
-		parallelism = 1
-	}
-	g, ctx := errgroup.WithContext(parent)
-	g.SetLimit(parallelism)
-
-	// One slot per batch; we collect the results in order so the
-	// caller can sort the merged slice by PageNumber without
-	// needing a mutex.
-	results := make([][]schema.Page, len(batches))
-	for i, batch := range batches {
-		i, batch := i, batch
-		g.Go(func() error {
-			pages, err := parseBatch(ctx, batch)
-			if err != nil {
-				return err
-			}
-			results[i] = pages
-			return nil
+// The function is format-agnostic: it does not resolve parsers or
+// inspect file families — it only carries the raw bytes under the
+// "text" key with doc_type_kwd "text", matching the shape downstream
+// readers expect from the raw-text fallback and dispatch paths.
+func buildPagesFromBytes(ctx context.Context, pages [][]byte) ([]schema.Page, error) {
+	out := make([]schema.Page, 0, len(pages))
+	for _, raw := range pages {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		out = append(out, schema.Page{
+			"text":         string(raw),
+			"doc_type_kwd": "text",
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	// Flatten in batch order. The caller is responsible for
-	// sorting by PageNumber — we deliberately do NOT sort here
-	// so the per-batch order is visible to tests.
-	total := 0
-	for _, r := range results {
-		total += len(r)
-	}
-	merged := make([]schema.Page, 0, total)
-	for _, r := range results {
-		merged = append(merged, r...)
-	}
-	return merged, nil
-}
-
-// parseBatch parses a single batch of pages under a derived
-// 60-second timeout. The batch is the unit of fan-out: if a
-// batch exceeds its timeout, ONLY that batch errors; siblings
-// see ctx.Done() and abandon their work (errgroup cancel
-// cascades).
-//
-// runtime.WithTimeout returns just an error; we capture the
-// result pages in a closure-scoped variable and read it back
-// after Wait. This keeps the helper at its single-purpose
-// signature (ctx, fn -> error) without growing the runtime API.
-func parseBatch(ctx context.Context, batch [][]byte) ([]schema.Page, error) {
-	var pages []schema.Page
-	err := runtime.WithTimeout(ctx, parserPageBatchTimeout, func(ctx context.Context) error {
-		pages = make([]schema.Page, 0, len(batch))
-		for _, raw := range batch {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			// Text-page mode: the bytes are already page text.
-			pages = append(pages, schema.Page{
-				"text":         string(raw),
-				"doc_type_kwd": "text",
-			})
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return pages, nil
+	return out, nil
 }
 
 // --- input helpers ---
@@ -485,14 +398,14 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	bucket, _ := getString(inputs, "bucket")
 	path, _ := getString(inputs, "path")
 	if bucket != "" && path != "" {
-		return fetchBinary(ctx, bucket, path)
+		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := resolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}
-		return fetchBinary(ctx, ref.Bucket, ref.Path)
+		return FetchBinary(ctx, ref.Bucket, ref.Path)
 	}
 	return nil, nil
 }
@@ -529,57 +442,6 @@ func containsFormFeed(b []byte) bool {
 		}
 	}
 	return false
-}
-
-// splitIntoBatches partitions the page slice into batches of
-// `size` consecutive pages. A non-positive size collapses to
-// one batch.
-func splitIntoBatches(pages [][]byte, size int) [][][]byte {
-	if size < 1 {
-		size = len(pages)
-	}
-	if size < 1 {
-		return nil
-	}
-	batches := make([][][]byte, 0, (len(pages)+size-1)/size)
-	for i := 0; i < len(pages); i += size {
-		end := i + size
-		if end > len(pages) {
-			end = len(pages)
-		}
-		batch := make([][]byte, end-i)
-		copy(batch, pages[i:end])
-		batches = append(batches, batch)
-	}
-	return batches
-}
-
-// resolvePageSize returns the inputs["page_size"] value when
-// valid, otherwise ceil(totalPages / Parallelism). A page_size
-// of 0 or 1 is treated as "use the default" so a caller that
-// sets page_size=1 to mean "no batching" still fans out across
-// `Parallelism` goroutines.
-func resolvePageSize(inputs map[string]any, totalPages int) int {
-	if inputs != nil {
-		if v, ok := inputs["page_size"].(int); ok && v > 1 {
-			return v
-		}
-		if v, ok := inputs["page_size"].(int64); ok && v > 1 {
-			return int(v)
-		}
-		if v, ok := inputs["page_size"].(float64); ok && v > 1 {
-			return int(v)
-		}
-	}
-	if totalPages < 1 {
-		return 1
-	}
-	// ceil(totalPages / Parallelism)
-	size := (totalPages + parserParallelism - 1) / parserParallelism
-	if size < 1 {
-		size = 1
-	}
-	return size
 }
 
 // sortPagesByNumber orders pages by their PageNumber key

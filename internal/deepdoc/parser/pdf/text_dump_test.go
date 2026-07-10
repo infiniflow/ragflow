@@ -24,7 +24,7 @@ func TestDumpTextOutput(t *testing.T) {
 	}
 
 	count := len(entries)
-	if n := os.Getenv("DUMP_COUNT"); n != "" {
+	if n := common.GetEnv(common.EnvDumpCount); n != "" {
 		c := 0
 		for _, ch := range n {
 			c = c*10 + int(ch-'0')

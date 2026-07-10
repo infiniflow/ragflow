@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
@@ -1209,7 +1208,7 @@ func memoryMessageSelectFields() []string {
 }
 
 func memoryIndexName(tenantID string) string {
-	prefix := strings.TrimSpace(os.Getenv("ES_INDEX_PREFIX"))
+	prefix := strings.TrimSpace(common.GetEnv(common.EnvESIndexPrefix))
 	if prefix == "" {
 		return fmt.Sprintf("memory_%s", tenantID)
 	}
