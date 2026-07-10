@@ -18,9 +18,11 @@ package chunker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // TestTitleChunker_Registered asserts the registry has a CategoryIngestion
@@ -253,5 +255,137 @@ func TestTitleChunker_InvokeDeterministic(t *testing.T) {
 				t.Fatalf("run %d: chunk[%d] text changed", run, i)
 			}
 		}
+	}
+}
+
+// TestNewLevelContext_MostLevelIsMode pins Gap A: most_level is the
+// most-frequent non-body heading level (the mode), matching python
+// Counter(levels).most_common(). The old loop iterated map values and
+// returned the smallest count, which skewed the group fallback target.
+func TestNewLevelContext_MostLevelIsMode(t *testing.T) {
+	p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+		Method: "group",
+		Levels: [][]string{{`^# `, `^## `, `^### `}},
+	}}
+	records := []lineRecord{
+		{text: "# a", docType: "text"},
+		{text: "## b", docType: "text"},
+		{text: "## c", docType: "text"},
+		{text: "### d", docType: "text"},
+	}
+	lc := newLevelContext(records, p)
+	// selectLevelGroup picks the single 3-pattern family; per-line
+	// levels are [1,2,2,3], so the mode (most frequent heading level)
+	// is level 2.
+	if lc.mostLevel != 2 {
+		t.Errorf("mostLevel = %d, want 2 (the most frequent heading level)", lc.mostLevel)
+	}
+}
+
+// TestNotBullet pins Gap B: the port of rag/nlp.not_bullet must reject
+// numbered/bulleted list lines so they are not promoted to headings.
+func TestNotBullet(t *testing.T) {
+	bullet := []string{
+		"0",
+		"1 2个",
+		"1... trailing",
+		"1.2.3.4的",
+		"2.3.4中",
+		"0.5 section",
+	}
+	for _, s := range bullet {
+		if !notBullet(s) {
+			t.Errorf("notBullet(%q) = false, want true", s)
+		}
+	}
+	heading := []string{
+		"# Heading",
+		"## Subheading",
+		"Section 1",
+		"Article 12",
+		"1.2 Normal sentence",
+		"1.2.3 without marker",
+	}
+	for _, s := range heading {
+		if notBullet(s) {
+			t.Errorf("notBullet(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestNotTitle pins the port of rag/nlp.not_title used by the layout
+// fallback: long/no-space/punctuated lines are "not a title", while
+// the 第…条 exception and short title-like lines are titles.
+func TestNotTitle(t *testing.T) {
+	longLine := "one two three four five six seven eight nine ten eleven twelve thirteen"
+	if !notTitle(longLine) {
+		t.Errorf("notTitle(>12 words) = false, want true")
+	}
+	noSpace := strings.Repeat("x", 40)
+	if !notTitle(noSpace) {
+		t.Errorf("notTitle(no space, >=32 chars) = false, want true")
+	}
+	if !notTitle("This, is a body line") {
+		t.Errorf("notTitle(comma line) = false, want true")
+	}
+	if notTitle("第三条 关于某某规定") {
+		t.Errorf("notTitle(第…条) = true, want false (exception)")
+	}
+	if notTitle("Chapter One") {
+		t.Errorf("notTitle(Chapter One) = true, want false")
+	}
+}
+
+// TestResolveTitleLevels_NonTextPinnedToBody pins Gap D: a non-text
+// record whose caption would match a heading regex is still pinned to
+// BODY_LEVEL, because python never runs regex/layout detection for
+// doc_type_kwd != "text".
+func TestResolveTitleLevels_NonTextPinnedToBody(t *testing.T) {
+	p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+		Method: "group",
+		Levels: [][]string{{`^# `}},
+	}}
+	records := []lineRecord{
+		{text: "# Real Heading", docType: "text"},
+		{text: "# image caption that matches", docType: "image"},
+		{text: "body line", docType: "text"},
+	}
+	levels := resolveTitleLevels(records, p)
+	if levels[0] != 1 {
+		t.Errorf("text heading level = %d, want 1", levels[0])
+	}
+	if levels[1] != bodyLevel {
+		t.Errorf("non-text caption level = %d, want bodyLevel (%d)", levels[1], bodyLevel)
+	}
+	if levels[2] != bodyLevel {
+		t.Errorf("body level = %d, want bodyLevel", levels[2])
+	}
+}
+
+// TestResolveTitleLevels_LayoutFallback pins Gap C: a text record that
+// misses every regex but whose layout flags it as a section/title/head
+// and whose text passes not_title is promoted to fallback_level =
+// len(selected_group) + 1. The group must have at least one regex hit
+// (here "# Real Heading") so it is selected; with one pattern the
+// fallback_level is 2.
+func TestResolveTitleLevels_LayoutFallback(t *testing.T) {
+	p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+		Method: "group",
+		Levels: [][]string{{`^# `}},
+	}}
+	records := []lineRecord{
+		{text: "# Real Heading", docType: "text", layout: "title"},
+		{text: "Chapter One Overview", docType: "text", layout: "title"},
+		{text: "Some body paragraph text here.", docType: "text", layout: "text"},
+	}
+	levels := resolveTitleLevels(records, p)
+	if levels[0] != 1 {
+		t.Errorf("regex heading level = %d, want 1", levels[0])
+	}
+	if levels[1] != 2 {
+		t.Errorf("layout title level = %d, want 2 (fallback_level)", levels[1])
+	}
+	if levels[2] != bodyLevel {
+		t.Errorf("plain body level = %d, want bodyLevel", levels[2])
 	}
 }

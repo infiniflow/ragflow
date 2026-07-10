@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -26,21 +24,66 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-type XLSParser struct{}
+type XLSParser struct {
+	libType                        string
+	ParseMethod                    string
+	OutputFormat                   string
+	TCADPAPIServer                 string
+	TCADPAPIKey                    string
+	TCADPTableResultType           string
+	TCADPMarkdownImageResponseType string
+}
 
-func NewXLSParser() *XLSParser {
-	return &XLSParser{}
+func NewXLSParser(libType string) (*XLSParser, error) {
+	if libType == "" {
+		libType = "excelize"
+	}
+	return &XLSParser{
+		libType:                        libType,
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}, nil
 }
 
 func (p *XLSParser) String() string {
 	return "XLSParser"
 }
 
-// ParseWithResult delegates to excelize which handles both .xls
-// and .xlsx through the same API. The python ExcelParser falls
-// back to a similar delegation; on the Go side excelize is the
-// single library for both extensions.
+func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
+		p.ParseMethod = v
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
+		p.TCADPAPIServer = v
+	}
+	if v, ok := setup["tcadp_api_key"].(string); ok {
+		p.TCADPAPIKey = v
+	}
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
+		p.TCADPTableResultType = v
+	}
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
+		p.TCADPMarkdownImageResponseType = v
+	}
+}
+
 func (p *XLSParser) ParseWithResult(filename string, data []byte) ParseResult {
+	method := normalizeXLSXParseMethod(p.ParseMethod)
+	if method == "tcadp" {
+		return parseSpreadsheetWithTCADP(
+			filename, data, "XLS",
+			p.TCADPAPIServer, p.TCADPAPIKey,
+			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
+			p.OutputFormat,
+		)
+	}
+
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls open: %w", err)}

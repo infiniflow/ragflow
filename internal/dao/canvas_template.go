@@ -38,3 +38,12 @@ func (dao *CanvasTemplateDAO) GetAll() ([]*entity.CanvasTemplate, error) {
 	}
 	return templates, nil
 }
+
+// GetByID fetches a single canvas template by its primary key.
+func (dao *CanvasTemplateDAO) GetByID(id string) (*entity.CanvasTemplate, error) {
+	var template entity.CanvasTemplate
+	if err := DB.Where("id = ?", id).First(&template).Error; err != nil {
+		return nil, err
+	}
+	return &template, nil
+}

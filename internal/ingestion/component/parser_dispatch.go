@@ -47,6 +47,7 @@ import (
 // contract (see internal/parser/parser/parse_result.go).
 type parserDispatchResult struct {
 	OutputFormat string
+	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
 	File         map[string]any
 	JSON         []map[string]any
 	Markdown     string
@@ -204,11 +205,17 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 		return utility.FileTypeOTHER
 	}
 	if raw, ok := inputs["file_type"].(string); ok && raw != "" {
-		if ft := familyToExt(pythonFamilyName(strings.ToLower(raw))); ft != utility.FileTypeOTHER {
+		lower := strings.ToLower(raw)
+		// csv is a spreadsheet-family member but uses its own
+		// dedicated parser rather than the xlsx/xls path.
+		if lower == "csv" {
+			return utility.FileTypeCSV
+		}
+		if ft := familyToExt(pythonFamilyName(lower)); ft != utility.FileTypeOTHER {
 			return ft
 		}
 		// Direct extension match — handles "md", "docx", etc.
-		if ft := utility.GetFileType("x." + strings.ToLower(raw)); ft != utility.FileTypeOTHER {
+		if ft := utility.GetFileType("x." + lower); ft != utility.FileTypeOTHER {
 			return ft
 		}
 	}
@@ -235,15 +242,29 @@ func familyToExt(family string) utility.FileType {
 	case "docx":
 		return utility.FileTypeDOCX
 	case "slides":
-		return utility.FileTypePPTX // pptx arm picks the slide parser
+		return utility.FileTypePPTX
 	case "spreadsheet":
 		return utility.FileTypeXLSX
+	case "csv":
+		return utility.FileTypeCSV
 	case "html":
 		return utility.FileTypeHTML
 	case "markdown":
 		return utility.FileTypeMarkdown
 	case "text&code":
 		return utility.FileTypeTXT
+	case "epub":
+		return utility.FileTypeEPUB
+	case "json":
+		return utility.FileTypeJSON
+	case "video":
+		return utility.FileTypeVIDEO
+	case "email":
+		return utility.FileTypeEMAIL
+	case "audio":
+		return utility.FileTypeAURAL
+	case "picture", "image", "visual":
+		return utility.FileTypeVISUAL
 	}
 	return utility.FileTypeOTHER
 }
@@ -273,19 +294,25 @@ func pythonFamilyName(raw string) string {
 		return "html"
 	case "md", "markdown", "mdx":
 		return "markdown"
-	case "jpg", "jpeg", "png", "gif":
-		return "image"
-	case "eml", "msg":
-		return "email"
 	case "epub":
 		return "epub"
+	case "json", "jsonl", "ldjson":
+		return "json"
 	case "txt", "py", "js", "java", "c", "cpp", "h", "php",
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
-	case "mp4", "avi", "mkv":
+	case "mp4", "avi", "mkv", "mov", "webm", "flv",
+		"mpeg", "mpg", "wmv", "3gp", "3gpp":
 		return "video"
-	case "wav", "mp3", "aac", "flac", "ogg":
+	case "eml", "msg":
+		return "email"
+	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
 		return "audio"
+	case "visual", "picture", "image",
+		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
+		"webp", "svg", "ico", "avif", "heic", "apng":
+		return "picture"
 	}
 	return ""
 }

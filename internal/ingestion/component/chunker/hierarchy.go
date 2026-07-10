@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// SCOPE (honest) for hierarchy.go (Phase 2.3d):
+// SCOPE (honest) for hierarchy.go:
 //
 //   - Implements the HierarchyTitleChunker variant: builds a heading
 //     tree from per-line levels, then walks the tree in DFS to emit
@@ -42,7 +42,6 @@ package chunker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
@@ -142,149 +141,82 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	lines := make([]string, len(records))
-	textRecords := make([]int, 0, len(records))
-	textLines := make([]string, 0, len(records))
-	for i, r := range records {
-		lines[i] = r.text
-		if r.isText() {
-			textLines = append(textLines, r.text)
-			textRecords = append(textRecords, i)
-		}
-	}
-	ctx := newLevelContext(textLines, p)
+	ctx := newLevelContext(records, p)
 	levels := ctx.Levels()
-	// Re-map per-text-record levels onto the global record index so
-	// non-text records carry the sentinel bodyLevel (matching python
-	// `flush_text_records` entry pre-condition).
-	recordLevels := make([]int, len(records))
-	for i, lvl := range levels {
-		recordLevels[textRecords[i]] = lvl
-	}
-	for i := range recordLevels {
-		if records[i].isText() && recordLevels[i] == 0 {
-			recordLevels[i] = bodyLevel
+
+	// Mirror python HierarchyTitleChunker.build_chunks: accumulate
+	// contiguous text records into a run; on each non-text record flush
+	// the run (build the heading tree + emit its paths) and emit the
+	// non-text record as its own single-record group. A final flush
+	// handles the trailing run.
+	//
+	// The target level is resolved per run via
+	// resolve_target_level(text_levels, hierarchy) — the exact call
+	// python makes inside flush_text_records (Gap H: the hierarchy
+	// pointer is dereferenced defensively so a nil never panics).
+	var recordGroups [][]lineRecord
+	var textRun []lineRecord
+	var textLevels []int
+
+	flush := func() {
+		if len(textRun) == 0 {
+			return
 		}
-	}
-
-	// Same loop as python `flush_text_records` — but here we
-	// sequence-fan-out across 2 workers to honour Plan §4
-	// Phase 2 row 2.3d. In practice the work is dominated by the
-	// single tree build + DFS walk, so we keep the code simple and
-	// parallel by chunk, not by record.
-
-	// Split text records into contiguous runs (so flush_text_records
-	// semantics survive).
-	var runs [][]int
-	var curRun []int
-	for i := range recordLevels {
-		if !records[i].isText() {
-			if len(curRun) > 0 {
-				runs = append(runs, curRun)
-				curRun = nil
-			}
-			curRun = nil
-			continue
+		h := 1
+		if p.Hierarchy != nil {
+			h = *p.Hierarchy
 		}
-		curRun = append(curRun, i)
-	}
-	if len(curRun) > 0 {
-		runs = append(runs, curRun)
-	}
-
-	// Parallelism fan-out happens implicitly via goroutines; see comment above.
-
-	// For each run: build tree, get paths, expand to record-index lists.
-	runRecords := make([][][]int, len(runs))
-	for i, run := range runs {
-		indexed := make([]indexedLine, 0, len(run))
-		for j, recIdx := range run {
-			indexed = append(indexed, indexedLine{level: recordLevels[recIdx], index: j})
-		}
-		targetLevel := resolveTargetLevel(recordLevels, *p.Hierarchy)
+		targetLevel := resolveTargetLevel(textLevels, h)
 		if targetLevel == 0 {
-			// Fall back to flat behaviour.
-			var all []int
-			all = append(all, run...)
-			runRecords[i] = [][]int{all}
-			continue
-		}
-		root := buildTree(indexed, targetLevel)
-		var pathIndexes [][]int
-		root.getPaths(&pathIndexes, nil, targetLevel, p.IncludeHeadingContent)
-		// Map the per-run text-record indexes back to global record indexes.
-		expanded := make([][]int, 0, len(pathIndexes))
-		for _, path := range pathIndexes {
-			out := make([]int, 0, len(path))
-			for _, idx := range path {
-				if idx >= 0 && idx < len(run) {
-					out = append(out, run[idx])
+			// resolve_target_level returned None (no heading levels in
+			// the run): emit the whole run as a single group, exactly
+			// like python's `record_groups.append(text_records.copy())`.
+			runCopy := make([]lineRecord, len(textRun))
+			copy(runCopy, textRun)
+			recordGroups = append(recordGroups, runCopy)
+		} else {
+			indexed := make([]indexedLine, len(textRun))
+			for j := range textRun {
+				indexed[j] = indexedLine{level: textLevels[j], index: j}
+			}
+			root := buildTree(indexed, targetLevel)
+			var pathIndexes [][]int
+			root.getPaths(&pathIndexes, nil, targetLevel, p.IncludeHeadingContent)
+			for _, path := range pathIndexes {
+				if len(path) == 0 {
+					continue
 				}
-			}
-			if len(out) > 0 {
-				expanded = append(expanded, out)
+				grp := make([]lineRecord, len(path))
+				for k, idx := range path {
+					grp[k] = textRun[idx]
+				}
+				recordGroups = append(recordGroups, grp)
 			}
 		}
-		runRecords[i] = expanded
+		textRun = textRun[:0]
+		textLevels = textLevels[:0]
 	}
 
-	// Interleave: text runs are batched; non-text records flow inline.
-	var combined [][]int
-	runIdx := 0
-	for i, lvl := range recordLevels {
-		if i > 0 && !records[i].isText() {
-			_ = lvl
-		}
-		if records[i].isText() {
+	for i, rec := range records {
+		if rec.isText() {
+			textRun = append(textRun, rec)
+			textLevels = append(textLevels, levels[i])
 			continue
 		}
-		// Flush current run's records.
-		if runIdx < len(runRecords) {
-			combined = append(combined, runRecords[runIdx]...)
-			runIdx++
-		}
-		combined = append(combined, []int{i})
+		flush()
+		recordGroups = append(recordGroups, []lineRecord{rec})
 	}
-	if runIdx < len(runRecords) {
-		for i := runIdx; i < len(runRecords); i++ {
-			combined = append(combined, runRecords[i]...)
-		}
-	}
+	flush()
 
-	out2 := make([]map[string]any, 0, len(combined))
-	for _, path := range combined {
-		var sb strings.Builder
-		for _, idx := range path {
-			sb.WriteString(records[idx].text)
-			sb.WriteString("\n")
-		}
-		out2 = append(out2, map[string]any{"text": sb.String()})
-	}
-	if p.RootChunkAsHeading && len(out2) > 1 {
-		out2 = applyRootAsHeadingMaps(out2)
-	}
-	if len(out2) == 0 {
+	chunks := buildChunksFromRecordGroups(recordGroups, p, isPlainTextFormat(inputs))
+	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
 	out := map[string]any{
 		"output_format": "chunks",
-		"chunks":        out2,
+		"chunks":        chunks,
 	}
 	return out, nil
-}
-
-// applyRootAsHeadingMaps mirrors the root_chunk_as_heading branch
-// for output []map[string]any. We prepend the root text to every
-// following chunk and drop the root chunk.
-func applyRootAsHeadingMaps(chunks []map[string]any) []map[string]any {
-	if len(chunks) < 2 {
-		return chunks
-	}
-	rootText := toString(chunks[0]["text"])
-	for i := 1; i < len(chunks); i++ {
-		chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
-	}
-	return chunks[1:]
 }
 
 // HierarchyTitleChunkerComponent is the standalone variant entry point.

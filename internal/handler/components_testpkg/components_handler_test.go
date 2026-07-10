@@ -133,8 +133,8 @@ func TestComponentsHandler_NoFilter(t *testing.T) {
 }
 
 // TestComponentsHandler_FilterIngestion verifies the
-// ?category=ingestion filter returns the 8 ingestion components
-// (Extractor, File, Parser, Tokenizer + 4 chunker variants). Names
+// ?category=ingestion filter returns the 10 ingestion components
+// (Extractor, File, Parser, Tokenizer + 6 chunker variants). Names
 // must be sorted ascending (plan §4 task 1 stable output).
 func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	eng := newComponentsTestRig(t)
@@ -147,7 +147,7 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "titlechunker", "tokenchunker", "tokenizer",
+		"onechunker", "parser", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion", data, wantNames)
 
@@ -172,7 +172,7 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "titlechunker", "tokenchunker", "tokenizer",
+		"onechunker", "parser", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion,shared", data, wantNames)
 }

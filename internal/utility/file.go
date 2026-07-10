@@ -35,9 +35,14 @@ const (
 	FileTypePPTX     FileType = "pptx"
 	FileTypeXLS      FileType = "xls"
 	FileTypeXLSX     FileType = "xlsx"
+	FileTypeCSV      FileType = "csv"
 	FileTypeHTML     FileType = "html"
 	FileTypeMarkdown FileType = "md"
 	FileTypeTXT      FileType = "txt"
+	FileTypeEPUB     FileType = "epub"
+	FileTypeJSON     FileType = "json"
+	FileTypeVIDEO    FileType = "video"
+	FileTypeEMAIL    FileType = "email"
 	FileTypeVISUAL   FileType = "visual"
 	FileTypeAURAL    FileType = "aural"
 	FileTypeFOLDER   FileType = "folder"
@@ -80,6 +85,8 @@ func GetFileType(filename string) FileType {
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
+	case "csv":
+		return FileTypeCSV
 	case "doc":
 		return FileTypeDOC
 	case "docx":
@@ -90,10 +97,23 @@ func GetFileType(filename string) FileType {
 		return FileTypePPTX
 	case "html", "htm":
 		return FileTypeHTML
-	case "md":
+	case "md", "markdown", "mdx":
 		return FileTypeMarkdown
-	case "txt":
+	case "txt", "py", "js", "java", "c", "cpp", "h", "php",
+		"go", "ts", "sh", "cs", "kt", "sql":
 		return FileTypeTXT
+	case "epub":
+		return FileTypeEPUB
+	case "json", "jsonl", "ldjson":
+		return FileTypeJSON
+	case "eml", "msg":
+		return FileTypeEMAIL
+	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
+		return FileTypeAURAL
+	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
+		"mpg", "wmv", "3gp", "3gpp":
+		return FileTypeVIDEO
 	default:
 		return FileTypeOTHER
 	}

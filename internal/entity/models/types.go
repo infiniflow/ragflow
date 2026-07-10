@@ -202,6 +202,7 @@ type OCRConfig struct {
 }
 
 type ParseFileConfig struct {
+	ParseMethod string `json:"parse_method"`
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration

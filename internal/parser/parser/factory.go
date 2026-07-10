@@ -52,7 +52,7 @@ func GetParserByID(parserID string) (ParseResultProducer, error) {
 	case "resume":
 		return NewResumePDFParser(), nil
 	case "picture":
-		return NewPicturePDFParser(), nil
+		return NewPictureParser(), nil
 	case "one":
 		return NewOnePDFParser(), nil
 	case "audio":

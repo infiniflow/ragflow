@@ -38,6 +38,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
@@ -511,29 +512,39 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"task_id":"task-3"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-3/result":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Title\n\nBody\n"}}}`))
-		default:
-			http.NotFound(w, r)
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
+	// Mock resolveTenantModelByType to return a MinerU driver pointing at the test server.
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "MinerU"
+	param.Setups["pdf"]["parse_method"] = "mineru"
 	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["mineru_apiserver"] = server.URL
 	c := &ParserComponent{Param: param}
 
 	out, err := c.Invoke(context.Background(), map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -545,6 +556,57 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if !ok || !strings.Contains(md, "Title") {
 		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
 	}
+}
+
+// mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
+type mineruTestDriver struct{}
+
+func (d *mineruTestDriver) NewInstance(baseURL map[string]string) modelModule.ModelDriver { return d }
+func (d *mineruTestDriver) Name() string                                                  { return "mineru" }
+func (d *mineruTestDriver) ChatWithMessages(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ChatStreamlyWithSender(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Rerank(modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudio(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeech(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) OCRFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ParseFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListModels(apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Balance(apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) CheckConnection(apiConfig *modelModule.APIConfig) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListTasks(apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ShowTask(taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {

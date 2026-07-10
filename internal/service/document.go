@@ -68,6 +68,7 @@ type DocumentService struct {
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
+	canvasTemplateDAO   *dao.CanvasTemplateDAO
 	api4ConvDAO         *dao.API4ConversationDAO
 }
 
@@ -88,6 +89,7 @@ func NewDocumentService() *DocumentService {
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
+		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
 	}
 }
@@ -1516,7 +1518,6 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 			pageSize = int64(documentParserConfigInt(doc.ParserConfig, "task_page_size", 22))
 		}
 		if doc.ParserID == string(entity.ParserTypeOne) ||
-			doc.ParserID == string(entity.ParserTypeKG) ||
 			documentParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 			pageSize = maximumTaskPageNumber
 		}
