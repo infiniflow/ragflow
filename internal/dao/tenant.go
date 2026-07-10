@@ -54,17 +54,24 @@ type TenantWithRole struct {
 
 // TenantInfo tenant information with role (for owner tenant)
 type TenantInfo struct {
-	TenantID  string  `gorm:"column:tenant_id" json:"tenant_id"`
-	Name      *string `gorm:"column:name" json:"name,omitempty"`
-	LLMID     string  `gorm:"column:llm_id" json:"llm_id"`
-	EmbDID    string  `gorm:"column:embd_id" json:"embd_id"`
-	RerankID  string  `gorm:"column:rerank_id" json:"rerank_id"`
-	ASRID     string  `gorm:"column:asr_id" json:"asr_id"`
-	Img2TxtID string  `gorm:"column:img2txt_id" json:"img2txt_id"`
-	TTSID     string  `gorm:"column:tts_id" json:"tts_id"`
-	OCRID     *string `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
-	ParserIDs string  `gorm:"column:parser_ids" json:"parser_ids"`
-	Role      string  `gorm:"column:role" json:"role"`
+	TenantID        string  `gorm:"column:tenant_id" json:"tenant_id"`
+	Name            *string `gorm:"column:name" json:"name,omitempty"`
+	LLMID           string  `gorm:"column:llm_id" json:"llm_id"`
+	TenantLLMID     *string `gorm:"column:tenant_llm_id" json:"tenant_llm_id,omitempty"`
+	EmbDID          string  `gorm:"column:embd_id" json:"embd_id"`
+	TenantEmbdID    *string `gorm:"column:tenant_embd_id" json:"tenant_embd_id,omitempty"`
+	RerankID        string  `gorm:"column:rerank_id" json:"rerank_id"`
+	TenantRerankID  *string `gorm:"column:tenant_rerank_id" json:"tenant_rerank_id,omitempty"`
+	ASRID           string  `gorm:"column:asr_id" json:"asr_id"`
+	TenantASRID     *string `gorm:"column:tenant_asr_id" json:"tenant_asr_id,omitempty"`
+	Img2TxtID       string  `gorm:"column:img2txt_id" json:"img2txt_id"`
+	TenantImg2TxtID *string `gorm:"column:tenant_img2txt_id" json:"tenant_img2txt_id,omitempty"`
+	TTSID           string  `gorm:"column:tts_id" json:"tts_id"`
+	TenantTTSID     *string `gorm:"column:tenant_tts_id" json:"tenant_tts_id,omitempty"`
+	OCRID           string  `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
+	TenantOCRID     *string `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
+	ParserIDs       string  `gorm:"column:parser_ids" json:"parser_ids"`
+	Role            string  `gorm:"column:role" json:"role"`
 }
 
 // GetInfoByUserID get tenant information for the owner tenant of a user
@@ -72,7 +79,7 @@ func (dao *TenantDAO) GetInfoByUserID(userID string) ([]*TenantInfo, error) {
 	var results []*TenantInfo
 
 	err := DB.Model(&entity.Tenant{}).
-		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.embd_id, tenant.rerank_id, tenant.asr_id, tenant.img2txt_id, tenant.tts_id, tenant.ocr_id, tenant.parser_ids, user_tenant.role").
+		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.tenant_llm_id, tenant.embd_id, tenant.tenant_embd_id, tenant.rerank_id, tenant.tenant_rerank_id, tenant.asr_id, tenant.tenant_asr_id, tenant.img2txt_id, tenant.tenant_img2txt_id, tenant.tts_id, tenant.tenant_tts_id, tenant.ocr_id, tenant.tenant_ocr_id, tenant.parser_ids, user_tenant.role").
 		Joins("INNER JOIN user_tenant ON user_tenant.tenant_id = tenant.id").
 		Where("user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role = ? AND tenant.status = ?", userID, "1", "owner", "1").
 		Scan(&results).Error

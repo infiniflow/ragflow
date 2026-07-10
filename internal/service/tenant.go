@@ -630,11 +630,11 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	if ownedTenant.OCRID == nil {
+	if ownedTenant.OCRID == "" {
 		return result, nil
 	}
 
-	defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, *ownedTenant.OCRID, "ocr")
+	defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultOCRModelProvider,
