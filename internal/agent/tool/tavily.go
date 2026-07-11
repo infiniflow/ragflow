@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -192,7 +192,7 @@ func NewTavilyExtractToolWithEnvKey(h *HTTPHelper, envKey func() string) *Tavily
 // defaultTavilyEnvKey is the production env-key resolver. Pulled out
 // as a named function (not a var) so tests cannot accidentally
 // mutate it via package-var assignment.
-func defaultTavilyEnvKey() string { return os.Getenv("TAVILY_API_KEY") }
+func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
 
 // Info returns the tool's metadata for the chat model.
 func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {

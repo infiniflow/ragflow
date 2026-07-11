@@ -313,6 +313,10 @@ type bgptInvoker interface {
 	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
 }
 
+type duckDuckGoInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
@@ -404,6 +408,200 @@ func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 
 func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// wikipediaComponent delegates to internal/agent/tool/WikipediaTool.
+// Python's canvas component is named "Wikipedia" and stores top_n/language
+// on the node params while accepting query at runtime.
+type wikipediaComponent struct {
+	inner *agenttool.WikipediaTool
+}
+
+func newWikipediaComponent(params map[string]any) (Component, error) {
+	topN := 10
+	if v, ok := params["top_n"]; ok {
+		topN = toIntParam(v)
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: Wikipedia: top_n must be a positive integer")
+	}
+	language := "en"
+	if v, ok := params["language"].(string); ok && strings.TrimSpace(v) != "" {
+		language = strings.TrimSpace(v)
+	}
+	if !agenttool.WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("canvas: Wikipedia: unsupported language %q", language)
+	}
+	return &wikipediaComponent{inner: agenttool.NewWikipediaToolWithParams(nil, topN, language)}, nil
+}
+
+func (c *wikipediaComponent) Name() string { return "Wikipedia" }
+
+func (c *wikipediaComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
+	}
+}
+
+func (c *wikipediaComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *wikipediaComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered Wikipedia article summaries for downstream LLM prompts.",
+		"json":               "Raw Wikipedia result list.",
+	}
+}
+
+func (c *wikipediaComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"query": query})
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if results, ok := decoded["results"]; ok {
+		decoded["json"] = results
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			if _, ok := decoded["formalized_content"]; !ok {
+				decoded["formalized_content"] = ""
+			}
+			if _, ok := decoded["json"]; !ok {
+				decoded["json"] = []any{}
+			}
+			return decoded, nil
+		}
+		return nil, fmt.Errorf("canvas: Wikipedia: %w", err)
+	}
+	return decoded, nil
+}
+
+func (c *wikipediaComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// duckDuckGoComponent delegates to internal/agent/tool/DuckDuckGoTool.
+type duckDuckGoComponent struct {
+	inner duckDuckGoInvoker
+}
+
+func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
+	return newDuckDuckGoComponentWithInvoker(agenttool.NewDuckDuckGoTool()), nil
+}
+
+func newDuckDuckGoComponentWithInvoker(inner duckDuckGoInvoker) Component {
+	return &duckDuckGoComponent{inner: inner}
+}
+
+func (c *duckDuckGoComponent) Name() string { return "DuckDuckGo" }
+
+func (c *duckDuckGoComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"channel": "Search channel: general or news.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *duckDuckGoComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"channel": map[string]any{
+			"name":    "Channel",
+			"type":    "options",
+			"value":   "general",
+			"options": []string{"general", "news"},
+		},
+	}
+}
+
+func (c *duckDuckGoComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *duckDuckGoComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if channel := strings.TrimSpace(stringParam(inputs["channel"])); channel != "" {
+		args["channel"] = channel
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: DuckDuckGo: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderDuckDuckGoResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *duckDuckGoComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderDuckDuckGoResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("url")),
+			fmt.Sprintf("Body: %s", field("body")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func stringParam(v any) string {
@@ -1303,20 +1501,175 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
+// googleScholarComponent delegates to internal/agent/tool/GoogleScholarTool.
+type googleScholarComponent struct {
+	inner  googleScholarInvoker
+	params map[string]any
+}
+
+type googleScholarInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+func newGoogleScholarComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{
+		inner:  agenttool.NewGoogleScholarTool(),
+		params: cloned,
+	}, nil
+}
+
+func newGoogleScholarComponentWithInvoker(inner googleScholarInvoker, params map[string]any) Component {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{inner: inner, params: cloned}
+}
+
+func (c *googleScholarComponent) Name() string { return "GoogleScholar" }
+
+func (c *googleScholarComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":     "Search query.",
+		"top_n":     "Maximum number of results (default 12).",
+		"sort_by":   "Sort order: relevance or date.",
+		"year_low":  "Earliest publication year to include.",
+		"year_high": "Latest publication year to include.",
+		"patents":   "Whether to include patents, defaults to true.",
+	}
+}
+
+func (c *googleScholarComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *googleScholarComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *googleScholarComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs))
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+
+	query := strings.TrimSpace(stringParam(merged["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if topN := toIntParam(merged["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	if sortBy := strings.TrimSpace(stringParam(merged["sort_by"])); sortBy != "" {
+		args["sort_by"] = sortBy
+	}
+	if yearLow := toIntParam(merged["year_low"]); yearLow > 0 {
+		args["year_low"] = yearLow
+	}
+	if yearHigh := toIntParam(merged["year_high"]); yearHigh > 0 {
+		args["year_high"] = yearHigh
+	}
+	if patents, ok := merged["patents"].(bool); ok {
+		args["patents"] = patents
+	} else {
+		args["patents"] = true
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: GoogleScholar: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderGoogleScholarResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *googleScholarComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderGoogleScholarResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("link")),
+			fmt.Sprintf("Authors: %s", field("authors")),
+			fmt.Sprintf("Year: %s", field("year")),
+			fmt.Sprintf("Snippet: %s", field("snippet")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 // Compile-time interface checks.
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*googleComponent)(nil)
 	_ Component = (*tavilyExtractComponent)(nil)
+	_ Component = (*duckDuckGoComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*wikipediaComponent)(nil)
+	_ Component = (*googleScholarComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.WikipediaTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.GoogleTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.TavilyExtractTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.DuckDuckGoTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.GoogleScholarTool)(nil)

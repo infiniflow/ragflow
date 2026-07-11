@@ -37,7 +37,7 @@ import (
 
 // TestRealProducerConsumer exercises the project's real producer and consumer code paths:
 //
-//	Producer: document.go pattern — CheckAndCreate(IngestionTask) → PublishTask(NATS)
+//	Producer: document.go pattern — Create(IngestionTask) → PublishTask(NATS)
 //	Consumer: Ingestor.Start() core logic — calls each actual function in sequence
 func TestRealProducerConsumer(t *testing.T) {
 	// ── 1. NATS ──
@@ -89,9 +89,9 @@ func TestRealProducerConsumer(t *testing.T) {
 		DatasetID:  "kb1",
 		Status:     common.CREATED,
 	}
-	created, err := dao.NewIngestionTaskDAO().CheckAndCreate(ingestionTask)
+	created, err := dao.NewIngestionTaskDAO().Create(ingestionTask)
 	if err != nil {
-		t.Fatalf("CheckAndCreate: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
 	t.Logf("Producer: IngestionTask created id=%s status=%s", created.ID, created.Status)
 
@@ -148,12 +148,9 @@ func TestRealProducerConsumer(t *testing.T) {
 	}
 
 	// ── 5. executeTask (our modified version) ──
-	// executeTask needs DB data for TaskHandler
-	db.Create(&entity.Task{ID: task.ID, DocID: "doc-real", FromPage: 0, ToPage: 100000})
-
-	tc, err := LoadTaskContext(task.ID)
+	tc, err := LoadFromIngestionTask(task)
 	if err != nil {
-		t.Fatalf("LoadTaskContext: %v", err)
+		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)

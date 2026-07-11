@@ -29,34 +29,36 @@ import (
 type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
-	"akshare":           buildAkShareTool,
-	"arxiv":             noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
-	"bgpt":              noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
-	"code_exec":         noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
-	"crawler":           noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"deepl":             noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
-	"duckduckgo":        noConfig("duckduckgo", func() einotool.BaseTool { return NewDuckDuckGoTool() }),
-	"email":             noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
-	"execute_sql":       buildExeSQLTool,
-	"exesql":            buildExeSQLTool,
-	"github":            noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
-	"google":            buildGoogleTool,
-	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
-	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
-	"keenable":          buildKeenableTool,
-	"pubmed":            noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
-	"qweather":          noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
-	"retrieval":         noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dataset": noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dateset": noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"searxng":           noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
-	"tavily":            noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
-	"tavily_extract":    noConfig("tavily_extract", func() einotool.BaseTool { return NewTavilyExtractTool() }),
-	"tushare":           noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":            noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
-	"web_crawler":       noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":         noConfig("wikipedia", func() einotool.BaseTool { return NewWikipediaTool() }),
-	"yahoo_finance":     noConfig("yahoo_finance", func() einotool.BaseTool { return NewYahooFinanceTool() }),
+	"akshare":               buildAkShareTool,
+	"arxiv":                 noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"bgpt":                  noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
+	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
+	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"deepl":                 noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"duckduckgo":            noConfig("duckduckgo", func() einotool.BaseTool { return NewDuckDuckGoTool() }),
+	"email":                 noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
+	"execute_sql":           buildExeSQLTool,
+	"exesql":                buildExeSQLTool,
+	"github":                noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
+	"google":                buildGoogleTool,
+	"google_scholar":        buildGoogleScholarTool,
+	"google_scholar_search": buildGoogleScholarTool,
+	"jin10":                 noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
+	"keenable":              buildKeenableTool,
+	"pubmed":                noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
+	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
+	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
+	"search_my_dateset":     noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
+	"searxng":               noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
+	"tavily":                noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
+	"tavily_extract":        noConfig("tavily_extract", func() einotool.BaseTool { return NewTavilyExtractTool() }),
+	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"wencai":                noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
+	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"wikipedia":             buildWikipediaTool,
+	"wikipedia_search":      buildWikipediaTool,
+	"yahoo_finance":         noConfig("yahoo_finance", func() einotool.BaseTool { return NewYahooFinanceTool() }),
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -167,6 +169,39 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewGoogleToolWithDefaults(nil, defaults), nil
 }
 
+func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
+	if len(params) == 0 {
+		return NewGoogleScholarTool(), nil
+	}
+	for key := range params {
+		switch key {
+		case "query", "top_n", "sort_by", "year_low", "year_high", "patents":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google_scholar", key)
+		}
+	}
+	defaults := googleScholarParams{}
+	if v, ok := stringParam(params, "query"); ok {
+		defaults.Query = v
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		defaults.TopN = v
+	}
+	if v, ok := stringParam(params, "sort_by"); ok {
+		defaults.SortBy = v
+	}
+	if v, ok := intParam(params, "year_low"); ok {
+		defaults.YearLow = v
+	}
+	if v, ok := intParam(params, "year_high"); ok {
+		defaults.YearHigh = v
+	}
+	if v, ok := boolParam(params, "patents"); ok {
+		defaults.Patents = &v
+	}
+	return NewGoogleScholarToolWithDefaults(nil, defaults), nil
+}
+
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 	if len(params) == 0 {
 		return NewKeenableTool(), nil
@@ -181,6 +216,32 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
 	}
 	return NewKeenableToolWithAPIKey(nil, apiKey), nil
+}
+
+func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultWikipediaTopN
+	language := defaultWikipediaLanguage
+	for key := range params {
+		if key != "top_n" && key != "language" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level params top_n/language", "wikipedia")
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "wikipedia")
+	}
+	if v, ok := stringParam(params, "language"); ok {
+		language = strings.TrimSpace(v)
+	}
+	if language == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param language", "wikipedia")
+	}
+	if !WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("agent tool: tool %q unsupported node-level param language %q", "wikipedia", language)
+	}
+	return NewWikipediaToolWithParams(nil, topN, language), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {
@@ -244,4 +305,13 @@ func intParam(params map[string]any, key string) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func boolParam(params map[string]any, key string) (bool, bool) {
+	v, ok := params[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
 }
