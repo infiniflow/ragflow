@@ -174,10 +174,22 @@ def test_normalize_ascii_comparison_operators():
             {"key": "date", "op": "<=", "value": "2026-04-30"},
             {"key": "n", "op": "!=", "value": "5"},
             {"key": "n", "op": "==", "value": "5"},
+            {"key": "n", "op": "=>", "value": "5"},
+            {"key": "n", "op": "=<", "value": "5"},
             {"key": "n", "op": "<", "value": "5"},
         ]
     )
-    assert [c["op"] for c in got] == ["≥", "≤", "≠", "=", "<"]
+    assert [c["op"] for c in got] == ["≥", "≤", "≠", "=", "≥", "≤", "<"]
+
+
+def test_normalize_condition_operators_edge_cases():
+    """None, empty list and non-dict items are handled by the guards."""
+    assert normalize_condition_operators(None) == []
+    assert normalize_condition_operators([]) == []
+    # non-dict items are skipped; dict items are still normalised
+    assert normalize_condition_operators(
+        ["not-a-dict", None, {"key": "d", "op": ">=", "value": "x"}]
+    ) == [{"key": "d", "op": "≥", "value": "x"}]
 
 
 def test_normalize_preserves_unicode_operators_and_fields():

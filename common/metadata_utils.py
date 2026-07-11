@@ -20,10 +20,16 @@ from typing import Any, Callable, Dict
 import json_repair
 
 
+# The three comparison operators that both convert_conditions() (the metadata_condition
+# input format) and _OP_ALIASES (LLM/user ASCII operators) normalise identically. Kept as
+# a shared base so the two mappings cannot diverge on the overlapping operators.
+_COMPARISON_OP_ALIASES = {">=": "≥", "<=": "≤", "!=": "≠"}
+
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
-    op_mapping = {"is": "=", "not is": "≠", ">=": "≥", "<=": "≤", "!=": "≠"}
+    op_mapping = {"is": "=", "not is": "≠", **_COMPARISON_OP_ALIASES}
     return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
 
 
@@ -31,9 +37,9 @@ def convert_conditions(metadata_condition):
 # user-supplied filter conditions may carry ASCII operators, but both the ES push-down
 # (SUPPORTED_OPERATORS) and the in-memory path only recognise the Unicode set. An
 # un-normalised operator is silently dropped (push-down raises UnsupportedMetaFilter and
-# the in-memory path matches nothing), losing the whole filter. Mirrors the mapping used
-# by convert_conditions() above.
-_OP_ALIASES = {">=": "≥", "<=": "≤", "!=": "≠", "==": "=", "=>": "≥", "=<": "≤"}
+# the in-memory path matches nothing), losing the whole filter. Extends the shared
+# _COMPARISON_OP_ALIASES with the extra ASCII spellings (==, =>, =<) this path also sees.
+_OP_ALIASES = {**_COMPARISON_OP_ALIASES, "==": "=", "=>": "≥", "=<": "≤"}
 
 
 def normalize_condition_operators(conditions: list[dict]) -> list[dict]:
