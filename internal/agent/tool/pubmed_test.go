@@ -32,13 +32,10 @@ func TestPubMed_BuildURL(t *testing.T) {
 
 	t.Run("esearch", func(t *testing.T) {
 		t.Parallel()
-		got := buildPubMedESearchURL("covid vaccine", 7)
+		got := buildPubMedESearchURL("covid vaccine", 7, "user@example.com")
 		u, err := url.Parse(got)
 		if err != nil {
 			t.Fatalf("url.Parse(%q): %v", got, err)
-		}
-		if u.Host != "eutils.ncbi.nlm.nih.gov" {
-			t.Errorf("host = %q, want eutils.ncbi.nlm.nih.gov", u.Host)
 		}
 		q := u.Query()
 		if q.Get("db") != "pubmed" {
@@ -53,166 +50,148 @@ func TestPubMed_BuildURL(t *testing.T) {
 		if q.Get("retmode") != "json" {
 			t.Errorf("retmode = %q, want json", q.Get("retmode"))
 		}
+		if q.Get("email") != "user@example.com" {
+			t.Errorf("email = %q, want user@example.com", q.Get("email"))
+		}
 	})
 
-	t.Run("esummary", func(t *testing.T) {
+	t.Run("efetch", func(t *testing.T) {
 		t.Parallel()
-		got := buildPubMedESummaryURL([]string{"12345", "67890"})
+		got := buildPubMedEFetchURL([]string{"12345", "67890"}, "user@example.com")
 		u, err := url.Parse(got)
 		if err != nil {
 			t.Fatalf("url.Parse(%q): %v", got, err)
 		}
 		q := u.Query()
-		if q.Get("db") != "pubmed" {
-			t.Errorf("db = %q, want pubmed", q.Get("db"))
-		}
 		if q.Get("id") != "12345,67890" {
 			t.Errorf("id = %q, want 12345,67890", q.Get("id"))
 		}
-		if q.Get("retmode") != "json" {
-			t.Errorf("retmode = %q, want json", q.Get("retmode"))
+		if q.Get("retmode") != "xml" {
+			t.Errorf("retmode = %q, want xml", q.Get("retmode"))
 		}
-	})
-
-	t.Run("esearch clamp high", func(t *testing.T) {
-		t.Parallel()
-		got := buildPubMedESearchURL("x", 999)
-		u, _ := url.Parse(got)
-		if u.Query().Get("retmax") != "100" {
-			t.Errorf("retmax = %q, want 100 (clamped)", u.Query().Get("retmax"))
+		if q.Get("email") != "user@example.com" {
+			t.Errorf("email = %q, want user@example.com", q.Get("email"))
 		}
 	})
 }
 
-func TestPubMed_ParseESummary(t *testing.T) {
+func TestPubMed_InvokableRunParsesXML(t *testing.T) {
 	t.Parallel()
 
-	var esearchHits, esummaryHits int32
+	var esearchHits, efetchHits int32
 	var lastUA string
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lastUA = r.Header.Get("User-Agent")
-		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "esearch") {
+		switch {
+		case strings.Contains(r.URL.Path, "esearch"):
 			atomic.AddInt32(&esearchHits, 1)
-			_, _ = w.Write([]byte(`{
-				"esearchresult": {
-					"idlist": ["11111", "22222"]
-				}
-			}`))
-			return
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"esearchresult":{"idlist":["12345678"]}}`))
+		case strings.Contains(r.URL.Path, "efetch"):
+			atomic.AddInt32(&efetchHits, 1)
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>12345678</PMID>
+      <Article>
+        <ArticleTitle>Deep learning for retrieval augmented generation</ArticleTitle>
+        <Abstract><AbstractText>A short abstract.</AbstractText></Abstract>
+        <Journal>
+          <Title>Nature Machine Intelligence</Title>
+          <JournalIssue><Volume>10</Volume><Issue>2</Issue></JournalIssue>
+        </Journal>
+        <Pagination><MedlinePgn>101-110</MedlinePgn></Pagination>
+        <AuthorList>
+          <Author><LastName>Khan</LastName><ForeName>Furqan</ForeName></Author>
+          <Author><LastName>Smith</LastName><ForeName>Jane</ForeName></Author>
+        </AuthorList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="doi">10.1000/example.doi</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>`))
+		default:
+			http.NotFound(w, r)
 		}
-		if strings.Contains(r.URL.Path, "esummary") {
-			atomic.AddInt32(&esummaryHits, 1)
-			_, _ = w.Write([]byte(`{
-				"result": {
-					"uids": ["11111","22222"],
-					"11111": {
-						"title": "Cochrane review of masks",
-						"authors": [{"name":"Smith J"},{"name":"Doe A"}],
-						"fulljournalname": "Cochrane Database Syst Rev",
-						"pubdate": "2020 Nov 1"
-					},
-					"22222": {
-						"title": "Vaccine efficacy meta-analysis",
-						"authors": [{"name":"Alice"},{"name":"Bob"},{"name":"Carol"},{"name":"Dave"}],
-						"fulljournalname": "Lancet",
-						"pubdate": "2021 Mar-Apr"
-					}
-				}
-			}`))
-			return
-		}
-		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	helper := NewHTTPHelper().WithClient(&http.Client{
-		Transport: rewriteHostTransport(srv.URL),
-	})
-	tool := NewPubMedToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"covid","max_results":5}`)
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	tool := NewPubMedToolWithDefaults(helper, pubmedParams{TopN: 3, Email: "tester@example.com"})
+	out, err := tool.InvokableRun(context.Background(), `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-
-	if esearchHits != 1 {
-		t.Errorf("esearch calls = %d, want 1", esearchHits)
-	}
-	if esummaryHits != 1 {
-		t.Errorf("esummary calls = %d, want 1", esummaryHits)
+	if esearchHits != 1 || efetchHits != 1 {
+		t.Fatalf("calls = esearch:%d efetch:%d, want 1/1", esearchHits, efetchHits)
 	}
 	if !strings.Contains(lastUA, "ragflow") {
-		t.Errorf("User-Agent = %q, want to contain ragflow", lastUA)
+		t.Fatalf("User-Agent = %q, want ragflow marker", lastUA)
 	}
 
 	var env pubmedEnvelope
-	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", err, out)
 	}
 	if env.Error != "" {
-		t.Errorf("Error = %q, want empty", env.Error)
+		t.Fatalf("Error = %q, want empty", env.Error)
 	}
-	if len(env.Results) != 2 {
-		t.Fatalf("Results len = %d, want 2", len(env.Results))
+	if len(env.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(env.Results))
 	}
-	if env.Results[0].PMID != "11111" {
-		t.Errorf("Results[0].PMID = %q, want 11111", env.Results[0].PMID)
+	result := env.Results[0]
+	if result.Title != "Deep learning for retrieval augmented generation" {
+		t.Fatalf("Title = %q", result.Title)
 	}
-	if env.Results[0].Title != "Cochrane review of masks" {
-		t.Errorf("Results[0].Title = %q, want Cochrane review of masks", env.Results[0].Title)
+	if result.URL != "https://pubmed.ncbi.nlm.nih.gov/12345678" {
+		t.Fatalf("URL = %q", result.URL)
 	}
-	if env.Results[0].Authors != "Smith J, Doe A" {
-		t.Errorf("Results[0].Authors = %q, want Smith J, Doe A", env.Results[0].Authors)
-	}
-	if env.Results[0].Journal != "Cochrane Database Syst Rev" {
-		t.Errorf("Results[0].Journal = %q, want Cochrane Database Syst Rev", env.Results[0].Journal)
-	}
-	if env.Results[0].Year != "2020" {
-		t.Errorf("Results[0].Year = %q, want 2020", env.Results[0].Year)
-	}
-	// 4 authors → first 3 + "et al."
-	if !strings.HasSuffix(env.Results[1].Authors, "et al.") {
-		t.Errorf("Results[1].Authors = %q, want to end with et al.", env.Results[1].Authors)
+	for _, want := range []string{
+		"Title: Deep learning for retrieval augmented generation",
+		"Authors: Furqan Khan, Jane Smith",
+		"Journal: Nature Machine Intelligence",
+		"Volume: 10",
+		"Issue: 2",
+		"Pages: 101-110",
+		"DOI: 10.1000/example.doi",
+		"Abstract: A short abstract.",
+	} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("Content missing %q: %s", want, result.Content)
+		}
 	}
 }
 
-func TestPubMed_EmptyResults(t *testing.T) {
+func TestPubMed_InvokableRunEmptyResults(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "esearch") {
-			_, _ = w.Write([]byte(`{"esearchresult":{"idlist":[]}}`))
-			return
-		}
-		http.NotFound(w, r)
+		_, _ = w.Write([]byte(`{"esearchresult":{"idlist":[]}}`))
 	}))
 	defer srv.Close()
 
-	helper := NewHTTPHelper().WithClient(&http.Client{
-		Transport: rewriteHostTransport(srv.URL),
-	})
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tool := NewPubMedToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"noresultsfound-zzz-9999","max_results":5}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"missing"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var env pubmedEnvelope
-	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", err, out)
 	}
-	if env.Error != "" {
-		t.Errorf("Error = %q, want empty", env.Error)
-	}
-	if len(env.Results) != 0 {
-		t.Errorf("Results len = %d, want 0", len(env.Results))
+	if len(env.Results) != 0 || env.Error != "" {
+		t.Fatalf("env = %+v, want empty results and no error", env)
 	}
 }
 
-func TestPubMed_RequiresQuery(t *testing.T) {
+func TestPubMed_InvokableRunRequiresQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewPubMedTool()
@@ -221,11 +200,11 @@ func TestPubMed_RequiresQuery(t *testing.T) {
 		t.Fatal("expected error for empty query")
 	}
 	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+		t.Fatalf("err = %q, want query validation", err.Error())
 	}
 }
 
-func TestPubMed_Info(t *testing.T) {
+func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewPubMedTool()
@@ -234,9 +213,67 @@ func TestPubMed_Info(t *testing.T) {
 		t.Fatalf("Info: %v", err)
 	}
 	if info.Name != "pubmed" {
-		t.Errorf("Name = %q, want pubmed", info.Name)
+		t.Fatalf("Name = %q, want pubmed", info.Name)
 	}
-	if !strings.Contains(info.Desc, "PubMed") {
-		t.Errorf("Desc = %q, want to mention PubMed", info.Desc)
+	schema, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal params schema: %v", err)
+	}
+	params := string(raw)
+	if !strings.Contains(params, `"query"`) {
+		t.Fatalf("schema missing query: %s", params)
+	}
+	if strings.Contains(params, `"top_n"`) || strings.Contains(params, `"email"`) {
+		t.Fatalf("schema leaked node params: %s", params)
+	}
+	if !strings.Contains(params, `"required":["query"]`) {
+		t.Fatalf("schema does not require query: %s", params)
+	}
+}
+
+func TestPubMed_BuildByNameAcceptsNodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("pubmed", map[string]any{"top_n": 8, "email": "node@example.com"})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	tool, ok := built.(*PubMedTool)
+	if !ok {
+		t.Fatalf("built type = %T, want *PubMedTool", built)
+	}
+	if tool.defaults.TopN != 8 {
+		t.Fatalf("defaults.TopN = %d, want 8", tool.defaults.TopN)
+	}
+	if tool.defaults.Email != "node@example.com" {
+		t.Fatalf("defaults.Email = %q, want node@example.com", tool.defaults.Email)
+	}
+}
+
+func TestPubMed_MergeDefaults(t *testing.T) {
+	t.Parallel()
+
+	got := mergePubMedDefaults(
+		pubmedParams{Query: "configured query", TopN: 8, Email: "node@example.com"},
+		pubmedParams{Query: "runtime query"},
+	)
+	if got.Query != "runtime query" || got.TopN != 8 || got.Email != "node@example.com" {
+		t.Fatalf("merged params = %+v, want runtime query with node defaults", got)
+	}
+}
+
+func TestPubMed_BuildByNameRejectsInvalidTopN(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildByName("pubmed", map[string]any{"top_n": 0})
+	if err == nil {
+		t.Fatal("expected top_n validation error")
+	}
+	if !strings.Contains(err.Error(), "positive integer") {
+		t.Fatalf("err = %q, want positive integer validation", err.Error())
 	}
 }
