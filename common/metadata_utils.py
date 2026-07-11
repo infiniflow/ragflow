@@ -194,8 +194,10 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        The filtered doc_ids. ``["-999"]`` (the "no results" sentinel) when a
+        manual, auto, or semi_auto filter generated conditions that matched no
+        document; ``None`` when auto/semi_auto produced no conditions, i.e. no
+        effective filter, leaving retrieval unrestricted.
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
