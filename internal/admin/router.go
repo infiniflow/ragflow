@@ -143,6 +143,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/index", r.handler.ListUsersIndex)
 			protected.GET("/users/quota", r.handler.ListUsersQuota)
 			protected.GET("/users/plan/summary", r.handler.ShowUsersPlanSummary)
+			protected.GET("/users/plan", r.handler.ShowUsersPlan)
 			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
 			protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
 			protected.GET("/data/summary", r.handler.ShowDataSummary)

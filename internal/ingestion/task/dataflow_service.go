@@ -22,7 +22,6 @@ import (
 	"fmt"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/utility"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -89,22 +88,6 @@ func (d *defaultDocService) SetDocumentMetadata(docID string, meta map[string]an
 
 func (d *defaultChunkCounter) IncrementChunkNum(docID, kbID string, chunkNum, tokenConsumption int, duration float64) error {
 	return service.NewDocumentService().IncrementChunkNum(docID, kbID, chunkNum, tokenConsumption, duration)
-}
-
-func encodeTexts(model *models.EmbeddingModel, texts []string) ([][]float64, int, error) {
-	texts = TruncateTexts(texts, model.MaxTokens)
-	config := &models.EmbeddingConfig{Dimension: 0}
-	embeds, err := model.ModelDriver.Embed(model.ModelName, texts, model.APIConfig, config)
-	if err != nil {
-		return nil, 0, err
-	}
-	vecs := make([][]float64, len(embeds))
-	totalTokens := 0
-	for i, v := range embeds {
-		vecs[i] = v.Embedding
-		totalTokens += v.TokenCount
-	}
-	return vecs, totalTokens, nil
 }
 
 type PipelineExecutor struct {
@@ -310,9 +293,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
 
 	metadata := s.processChunks(chunks)
-	if err := s.prepareChunkAssets(chunks); err != nil {
-		return err
-	}
 
 	if len(metadata) > 0 {
 		if err := s.updateDocumentMetadata(s.taskCtx.Doc.ID, metadata); err != nil {
@@ -348,10 +328,6 @@ func (s *PipelineExecutor) processChunks(chunks []map[string]any) map[string]any
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
-}
-
-func (s *PipelineExecutor) prepareChunkAssets(chunks []map[string]any) error {
-	return PrepareDataflowChunkAssets(chunks)
 }
 
 func (s *PipelineExecutor) insertChunks(ctx context.Context, chunks []map[string]any) error {
@@ -432,19 +408,6 @@ func (s *PipelineExecutor) progress(prog float64, msg string) {
 		s.progressFunc(prog, msg)
 	}
 }
-
-func hasVectors(chunks []map[string]any) bool {
-	for _, ck := range chunks {
-		for k := range ck {
-			if matchQVec.MatchString(k) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-var matchQVec = regexp.MustCompile(`^q_\d+_vec$`)
 
 func (s *PipelineExecutor) defaultLoadDSL(ctx context.Context, dataflowID string) (string, string, error) {
 	if s == nil || s.taskCtx == nil {
