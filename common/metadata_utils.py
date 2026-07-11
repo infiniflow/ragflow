@@ -240,7 +240,11 @@ async def apply_meta_data_filter(
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
-            return None
+            # Conditions were generated but matched no document: return the "no results"
+            # sentinel (as `manual` does below), NOT None. None means "no metadata filter"
+            # and falls back to unrestricted retrieval, so a query that legitimately matches
+            # nothing (e.g. an exact date with no documents) would surface arbitrary results.
+            return ["-999"] if filters.get("conditions") else None
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -262,7 +266,11 @@ async def apply_meta_data_filter(
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
-                    return None
+                    # Conditions were generated but matched no document: return the "no results"
+                    # sentinel (as `manual` does below), NOT None. None means "no metadata filter"
+                    # and falls back to unrestricted retrieval, so a query that legitimately matches
+                    # nothing (e.g. an exact date with no documents) would surface arbitrary results.
+                    return ["-999"] if filters.get("conditions") else None
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
