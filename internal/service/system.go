@@ -366,6 +366,10 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	messageQueueOK, messageQueueMeta := timedHealthCheck(func() error {
 
 		msgQueueEngine := engine.GetMessageQueueEngine()
+		if msgQueueEngine == nil {
+			return fmt.Errorf("message queue is not initialized")
+		}
+
 		status := msgQueueEngine.CheckStatus()
 
 		if msgQueueEngine == nil || status != "CONNECTED" {
