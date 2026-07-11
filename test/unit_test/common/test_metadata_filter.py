@@ -640,3 +640,28 @@ def test_infinity_string_op_with_empty_value_raises(infinity_translator):
 def test_infinity_membership_with_empty_csv_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"key": "tag", "op": "in", "value": ""})
+
+
+def test_equal_iso_date_matches_parent_and_keyword(es_translator):
+    """Regression: `=` on an ISO-date value must also match the parent field.
+
+    ES dynamic date detection types a `YYYY-MM-DD` meta field as `date`, which has
+    no `.keyword` sub-field, so a `.keyword`-only term would silently match nothing.
+    """
+    from common.metadata_es_filter import META_FIELDS_PREFIX
+
+    def _field(key: str) -> str:
+        return f"{META_FIELDS_PREFIX}.{key}"
+
+    clauses = es_translator.translate({"key": "date", "op": "=", "value": "2026-04-23"}).to_clauses()
+    assert clauses == [
+        {
+            "bool": {
+                "should": [
+                    {"term": {_field("date"): "2026-04-23"}},
+                    {"term": {_field("date") + ".keyword": {"value": "2026-04-23", "case_insensitive": True}}},
+                ],
+                "minimum_should_match": 1,
+            }
+        }
+    ]
