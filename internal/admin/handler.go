@@ -56,9 +56,25 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// Health check
-func (h *Handler) Health(c *gin.Context) {
-	c.JSON(200, gin.H{"status": "ok"})
+// Healthz to get system health
+func (h *Handler) Healthz(c *gin.Context) {
+	result, allOK := service.GetComponentsHealthz(c.Request.Context())
+	if allOK {
+		c.JSON(http.StatusOK, gin.H{
+			"code": 0,
+			"data": result,
+		})
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": common.CodeServerError,
+			"data": result,
+		})
+	}
+}
+
+// Live endpoint
+func (h *Handler) Live(c *gin.Context) {
+	common.SuccessNoData(c, "")
 }
 
 // Ping ping endpoint

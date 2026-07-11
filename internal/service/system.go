@@ -75,12 +75,13 @@ type HealthzMeta struct {
 }
 
 type HealthzResponse struct {
-	DB        string                 `json:"db"`
-	Redis     string                 `json:"redis"`
-	DocEngine string                 `json:"doc_engine"`
-	Storage   string                 `json:"storage"`
-	Status    string                 `json:"status"`
-	Meta      map[string]HealthzMeta `json:"_meta,omitempty"`
+	DB           string                 `json:"db"`
+	Redis        string                 `json:"redis"`
+	DocEngine    string                 `json:"doc_engine"`
+	Storage      string                 `json:"storage"`
+	MessageQueue string                 `json:"message_queue"`
+	Status       string                 `json:"status"`
+	Meta         map[string]HealthzMeta `json:"_meta,omitempty"`
 }
 
 // GetVersion get RAGFlow version
@@ -312,8 +313,7 @@ func timedHealthCheck(check func() error) (bool, HealthzMeta) {
 	return true, meta
 }
 
-// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
-func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
+func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	meta := map[string]HealthzMeta{}
 
 	dbOK, dbMeta := timedHealthCheck(func() error {
@@ -363,18 +363,38 @@ func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 		meta["storage"] = storageMeta
 	}
 
-	allOK := dbOK && redisOK && docOK && storageOK
+	messageQueueOK, messageQueueMeta := timedHealthCheck(func() error {
+
+		msgQueueEngine := engine.GetMessageQueueEngine()
+		status := msgQueueEngine.CheckStatus()
+
+		if msgQueueEngine == nil || status != "CONNECTED" {
+			return fmt.Errorf("message queue is not healthy")
+		}
+		return nil
+	})
+	if !messageQueueOK {
+		meta["message_queue"] = messageQueueMeta
+	}
+
+	allOK := dbOK && redisOK && docOK && storageOK && messageQueueOK
 	result := &HealthzResponse{
-		DB:        okNok(dbOK),
-		Redis:     okNok(redisOK),
-		DocEngine: okNok(docOK),
-		Storage:   okNok(storageOK),
-		Status:    okNok(allOK),
+		DB:           okNok(dbOK),
+		Redis:        okNok(redisOK),
+		DocEngine:    okNok(docOK),
+		Storage:      okNok(storageOK),
+		MessageQueue: okNok(messageQueueOK),
+		Status:       okNok(allOK),
 	}
 	if len(meta) > 0 {
 		result.Meta = meta
 	}
 	return result, allOK
+}
+
+// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
+func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
+	return GetComponentsHealthz(ctx)
 }
 
 // ListAllVariables list all variables
