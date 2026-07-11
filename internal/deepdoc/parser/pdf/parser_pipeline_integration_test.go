@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 

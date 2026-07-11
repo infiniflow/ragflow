@@ -66,8 +66,10 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		for _, t := range texts {
 			if strings.TrimSpace(t.Text) != "" {
 				result = append(result, pdf.TextBox{
-					X0: px0, X1: px1,
-					Top: py0, Bottom: py1,
+					X0:         px0,
+					X1:         px1,
+					Top:        py0,
+					Bottom:     py1,
 					Text:       t.Text,
 					PageNumber: pageNum,
 				})

@@ -30,6 +30,7 @@ export const getFieldKeyOrder = (keys: string[]): string[] => {
 };
 
 export const DefaultTemplateValues: TemplateSchemaType = {
+  id: undefined,
   name: '',
   description: '',
   llm_id: '',
@@ -137,6 +138,7 @@ export const transformDetailToForm = (
   if (detail.kind === CompilationTemplateKind.Tree) {
     const raptor: ICompilationTemplateRaptorConfig = config.raptor ?? {};
     return {
+      id: detail.id,
       name: detail.name ?? '',
       description: detail.description ?? '',
       llm_id: config.llm_id ?? '',
@@ -161,6 +163,7 @@ export const transformDetailToForm = (
   });
 
   return {
+    id: detail.id,
     name: detail.name ?? '',
     description: detail.description ?? '',
     llm_id: config.llm_id ?? '',
@@ -207,6 +210,7 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   }
 
   return {
+    id: template.id,
     name: template.name,
     description: template.description,
     kind: template.kind,
