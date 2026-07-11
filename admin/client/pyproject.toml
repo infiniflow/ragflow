@@ -8,7 +8,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "requests>=2.30.0,<3.0.0",
-    "beartype>=0.20.0,<1.0.0",
+    "beartype>=0.22.9,<1.0.0",
     "pycryptodomex>=3.10.0",
     "lark>=1.1.0",
     "requests-toolbelt>=1.0.0",

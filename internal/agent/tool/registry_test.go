@@ -25,8 +25,8 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
-	if info1.Name != "wikipedia" {
-		t.Errorf("tools[1].Info().Name = %q, want wikipedia", info1.Name)
+	if info1.Name != "wikipedia_search" {
+		t.Errorf("tools[1].Info().Name = %q, want wikipedia_search", info1.Name)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
@@ -122,7 +122,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
@@ -188,6 +188,8 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"search_my_dateset":     "search_my_dateset",
 		"crawler":               "web_crawler",
 		"web_crawler":           "web_crawler",
+		"wikipedia":             "wikipedia_search",
+		"wikipedia_search":      "wikipedia_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

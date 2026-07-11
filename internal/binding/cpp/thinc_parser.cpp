@@ -165,7 +165,7 @@ struct Tok2vecModel {
     int po_nO=96,po_nP=3,po_nI=576;
     struct ResBlk{bool has=false;std::vector<float>W,b,lnG,lnb;};
     ResBlk res[4]; int n_res=0;
-    
+
     bool load(const std::string& dir) {
         std::ifstream cf(dir+"/model.ckpt"); if(!cf)return false;
         std::stringstream cb;cb<<cf.rdbuf();
@@ -206,7 +206,7 @@ struct Tok2vecModel {
             if(ld(pk+"W",&rb.W,&r0,&r1,&r2)){ld(pk+"B",&rb.b);ld(pk+"lnG",&rb.lnG);ld(pk+"lnb",&rb.lnb);rb.has=true;n_res++;}}
         return!embeds.empty();
     }
-    
+
     // Run tok2vec → (n_tokens, 96)
     void forward(const std::vector<std::string>& tokens, float* out) {
         int n=(int)tokens.size(),D=96,NE=(int)embeds.size(),EC=NE*D;
@@ -241,7 +241,7 @@ struct ParserModel {
     std::vector<float> pW_pre,pb_pre,pad_pre; // preaffine
     std::vector<float> pW_cls,pb_cls; // classifier
     std::vector<std::string> move_names;
-    
+
     bool load(const std::string& dir) {
         std::ifstream cf(dir+"/model.ckpt"); if(!cf)return false;
         std::stringstream cb;cb<<cf.rdbuf();
@@ -275,7 +275,7 @@ struct ParserModel {
             if(mn&&mn->type==JVal::ARR)for(auto& v:mn->arr)move_names.push_back(v.str);}
         return!pW_hid.empty() && !pW_pre.empty() && !pW_cls.empty();
     }
-    
+
     // Run parser forward + state machine → (heads, labels)
     void parse(const float* tokvecs, int n_tokens,
                std::vector<int>& out_heads, std::vector<std::string>& out_labels) {
@@ -283,7 +283,7 @@ struct ParserModel {
         std::vector<float> hidden((size_t)n_tokens*nO,0);
         for(int i=0;i<n_tokens;i++) linear(hidden.data()+(size_t)i*nO, tokvecs+(size_t)i*96,
                                            pW_hid.data(), pb_hid.data(), nO, 96);
-        
+
         // 2. Pre-compute features
         std::vector<float> precomp((size_t)(n_tokens+1)*nP*nO*nI,0);
         // Pad token (index 0)
@@ -304,20 +304,20 @@ struct ParserModel {
                 }
             }
         }
-        
+
         // Helper: get feature value for a token at piece p, window w, output dim o
         auto feat = [&](int idx, int p, int w, int o) -> float {
             int ri = (idx < 0 || idx >= n_tokens) ? 0 : idx + 1;
             return precomp[(size_t)ri*nP*nO*nI + (size_t)p*nO*nI + (size_t)w + (size_t)o*nI];
         };
-        
+
                 // 3. Arc-hybrid state machine
         out_heads.assign(n_tokens, -1);
         out_labels.assign(n_tokens, "");
         std::vector<int> stack;
         std::vector<int> buffer(n_tokens);
         for(int i=0;i<n_tokens;i++) buffer[i]=i;
-        
+
         // Validate move_names covers all actions before indexing
         if((int)move_names.size()!=n_actions){out_heads.clear();out_labels.clear();return;}
         int act_S=-1, act_D=-1;
@@ -325,7 +325,7 @@ struct ParserModel {
             if(move_names[i]=="S") act_S=i;
             if(move_names[i]=="D") act_D=i;
         }
-        
+
         auto leftmost = [&](int idx)->int{
             for(int i=0;i<n_tokens;i++) if(out_heads[i]==idx) return i;
             return -1;
@@ -334,21 +334,21 @@ struct ParserModel {
             int r=-1; for(int i=0;i<n_tokens;i++) if(out_heads[i]==idx) r=i;
             return r;
         };
-        
+
         std::vector<float> scores(n_actions,0);
         std::vector<float> feats(nP*nI*nO,0);
-        
+
         for(int step=0; step<n_tokens*4 && !(buffer.empty()&&stack.size()<=1); step++){
             int s0=stack.empty()?-1:stack.back();
             int s1=stack.size()<2?-1:stack[stack.size()-2];
             int s2=stack.size()<3?-1:stack[stack.size()-3];
             int b0=buffer.empty()?-1:buffer[0];
             int b1=buffer.size()<2?-1:buffer[1];
-            
+
             // Build feature indices (same as verified Python implementation)
             int idxs[16]={s0,s1, b0,s0, s0,leftmost(s0), s0,rightmost(s0),
                           s1,leftmost(s1), s1,rightmost(s1), s2,b1, b0,b1};
-            
+
             // Build feature vector: sum of precomputed features at each (idx, piece, window)
             for(int o=0;o<nO;o++) feats[o]=0;
             for(int p=0;p<nP;p++){
@@ -359,7 +359,7 @@ struct ParserModel {
                     }
                 }
             }
-            
+
             // Classify
             for(int a=0;a<n_actions;a++){
                 float s=pb_cls[a];
@@ -368,7 +368,7 @@ struct ParserModel {
                 for(int j=0;j<nO;j++) s += pW_cls[(size_t)a*nO+j] * hidden[(size_t)cls_idx*nO+j];
                 scores[a]=s;
             }
-            
+
             // Pick best VALID action
             int best=-1; float best_sc=-1e30f;
             for(int a=0;a<n_actions;a++){
@@ -380,7 +380,7 @@ struct ParserModel {
                 if(valid && scores[a]>best_sc){best_sc=scores[a];best=a;}
             }
             if(best<0) break;
-            
+
             const std::string& act=move_names[best];
             if(act=="S"){stack.push_back(buffer[0]);buffer.erase(buffer.begin());}
             else if(act=="D"){stack.pop_back();}
@@ -432,23 +432,23 @@ void ThincParser_Destroy(ThincParserHandle h) { delete (ParserState*)h; }
 char* ThincParser_Predict(ThincParserHandle h, const char* tokens_json) {
     auto* s=(ParserState*)h;
     if(!s||!s->loaded||!tokens_json) return strdup("[]");
-    
+
     auto j=JParser().parse(std::string(tokens_json));
     if(j.type!=JVal::ARR) return strdup("[]");
     std::vector<std::string> tokens;
     for(auto& v:j.arr) tokens.push_back(v.str);
     int n=(int)tokens.size();
     if(!n) return strdup("[]");
-    
+
     // Run tok2vec
     std::vector<float> tokvecs((size_t)n*96,0);
     s->tok2vec.forward(tokens, tokvecs.data());
-    
+
     // Run parser
     std::vector<int> heads;
     std::vector<std::string> labels;
     s->parser.parse(tokvecs.data(), n, heads, labels);
-    
+
     // Build JSON output
     std::string r="[";
     for(int i=0;i<n;i++){
@@ -507,11 +507,11 @@ char* ThincTagger_Predict(ThincTaggerHandle h, const char* tokens_json) {
     for(auto& v:j.arr) tokens.push_back(v.str);
     int n=(int)tokens.size(), n_tags=(int)s->tW.size()/96;
     if(!n||!n_tags)return strdup("[]");
-    
+
     // Run tok2vec to get 96-dim embeddings, then softmax + argmax
     std::vector<float> tokvecs((size_t)n*96,0);
     s->tok2vec.forward(tokens, tokvecs.data());
-    
+
     std::vector<int> best_tags(n, 0);
     for(int i=0;i<n;i++){
         float best_sc=-1e30f;
@@ -521,7 +521,7 @@ char* ThincTagger_Predict(ThincTaggerHandle h, const char* tokens_json) {
             if(sc>best_sc){best_sc=sc;best_tags[i]=t;}
         }
     }
-    
+
     // Strip morphologizer output to just POS (e.g. "Gender=Masc|Number=Sing|POS=NOUN" → "NOUN")
     // For non-morphologizer models the tag string is used as-is.
     auto pos_only = [](const std::string& t) -> std::string {
