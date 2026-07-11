@@ -122,18 +122,18 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	var req ChatCompletionsRequest
 	b, err := json.Marshal(rawBody)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if err = json.Unmarshal(b, &req); err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
