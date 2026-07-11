@@ -422,6 +422,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		ingestionTaskSvc: NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
 	}
@@ -1082,14 +1083,9 @@ func TestQueueDocumentDataflowTask_PublishesIngestionTaskMessage(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
 
-	var publishedSubject string
-	var publishedPayload []byte
+	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
-	svc.publishTask = func(subject string, payload []byte) error {
-		publishedSubject = subject
-		publishedPayload = append([]byte(nil), payload...)
-		return nil
-	}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
 	kb, err := svc.kbDAO.GetByID("kb-1")
 	if err != nil {
@@ -1104,17 +1100,14 @@ func TestQueueDocumentDataflowTask_PublishesIngestionTaskMessage(t *testing.T) {
 		t.Fatalf("queueDocumentDataflowTask: %v", err)
 	}
 
-	if publishedSubject != "tasks.RAGFLOW" {
-		t.Fatalf("subject = %q, want %q", publishedSubject, "tasks.RAGFLOW")
+	if publisher.subject != "tasks.RAGFLOW" {
+		t.Fatalf("subject = %q, want %q", publisher.subject, "tasks.RAGFLOW")
 	}
-	if len(publishedPayload) == 0 {
-		t.Fatal("expected published payload")
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
 	}
 
-	var msg common.TaskMessage
-	if err := json.Unmarshal(publishedPayload, &msg); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
+	msg := publisher.messages[0]
 	if msg.TaskType != common.TaskTypeIngestionTask {
 		t.Fatalf("task type = %q, want %q", msg.TaskType, common.TaskTypeIngestionTask)
 	}
