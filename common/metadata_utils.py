@@ -27,6 +27,24 @@ def convert_conditions(metadata_condition):
     return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
 
 
+# ASCII -> Unicode comparison-operator aliases. LLM-generated (auto/semi_auto) and
+# user-supplied filter conditions may carry ASCII operators, but both the ES push-down
+# (SUPPORTED_OPERATORS) and the in-memory path only recognise the Unicode set. An
+# un-normalised operator is silently dropped (push-down raises UnsupportedMetaFilter and
+# the in-memory path matches nothing), losing the whole filter. Mirrors the mapping used
+# by convert_conditions() above.
+_OP_ALIASES = {">=": "≥", "<=": "≤", "!=": "≠", "==": "=", "=>": "≥", "=<": "≤"}
+
+
+def normalize_condition_operators(conditions: list[dict]) -> list[dict]:
+    """Return ``conditions`` with ASCII comparison operators normalised to Unicode."""
+    return [
+        {**c, "op": _OP_ALIASES.get(str(c.get("op", "")), c.get("op"))}
+        for c in (conditions or [])
+        if isinstance(c, dict)
+    ]
+
+
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     doc_ids = None
 
@@ -195,6 +213,7 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
+        conditions = normalize_condition_operators(conditions)
         if conditions and kb_ids:
             try:
                 from api.db.services.doc_metadata_service import DocMetadataService
