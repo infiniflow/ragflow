@@ -152,13 +152,13 @@ def check_admin_auth(func):
 def login_admin(email: str, password: str):
     """
     :param email: admin email
-    :param password: string before decrypt
+    :param password: string before decrypt (RSA encrypted + base64 encoded)
     """
     users = UserService.query(email=email)
     if not users:
         raise UserNotFoundError(email)
-    psw = decrypt(password)
-    user = UserService.query_user(email, psw)
+    decrypted = decrypt(password)
+    user = UserService.query_user(email, decrypted)
     if not user:
         raise AdminException("Email and password do not match!")
     if not user.is_superuser:

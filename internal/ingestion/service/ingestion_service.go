@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
+	servicepkg "ragflow/internal/service"
 
 	"google.golang.org/grpc"
 	"gorm.io/gorm"
@@ -61,6 +62,7 @@ type Ingestor struct {
 
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	ingestionTaskSvc    *servicepkg.IngestionTaskService
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -84,6 +86,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		ShutdownCh:          make(chan struct{}, 1),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	return ingestor
@@ -124,7 +127,7 @@ func (e *Ingestor) Start() error {
 				continue
 			}
 			var task *entity.IngestionTask
-			task, err = e.ingestionTaskDAO.SetRunningByIngestor(taskMessage.TaskID)
+			task, err = e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
 			if err != nil {
 				if errors.Is(err, common.ErrTaskNotFound) {
 					common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -216,7 +219,7 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			common.Error(fmt.Sprintf("Failed to get latest task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
 				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 			}
 			return
@@ -232,7 +235,7 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 		err = e.ingestionTaskLogDAO.Create(latestLog)
 		if err != nil {
 			common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
 				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 			}
 			return
@@ -244,7 +247,7 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	currentStep, ok := common.GetInt(checkpointMap["current_step"])
 	if !ok {
 		common.Error(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
 			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 		}
 		return
@@ -252,7 +255,7 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	totalStep, ok := common.GetInt(checkpointMap["total_step"])
 	if !ok {
 		common.Error(fmt.Sprintf("Failed to get total step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
 			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 		}
 		return
@@ -273,13 +276,13 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	}
 	if err := e.runDocumentTask(ctx, task); err != nil {
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		if uErr := e.ingestionTaskDAO.UpdateStatus(task.ID, common.FAILED); uErr != nil {
+		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
 			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
 		}
 		return
 	}
 
-	err = e.ingestionTaskDAO.UpdateStatus(task.ID, common.COMPLETED)
+	err = e.ingestionTaskSvc.MarkCompleted(task.ID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return
