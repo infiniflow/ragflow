@@ -91,3 +91,19 @@ async def test_apply_meta_data_filter_semi_auto_no_conditions_returns_none():
 
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl)
         assert doc_ids is None
+
+
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_auto_no_conditions_returns_none():
+    # Same as above for the `auto` method.
+    meta_data_filter = {"method": "auto"}
+    metas = {"date": {"2026-04-23": ["doc1"]}}
+    question = "hello"
+
+    chat_mdl = MagicMock()
+
+    with patch("rag.prompts.generator.gen_meta_filter", new_callable=AsyncMock) as mock_gen:
+        mock_gen.return_value = {"conditions": [], "logic": "and"}
+
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl)
+        assert doc_ids is None
