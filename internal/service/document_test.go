@@ -184,6 +184,7 @@ func (fakeChatDocEngine) Close() error {
 func (fakeChatDocEngine) GetType() string {
 	return "fake"
 }
+func (fakeChatDocEngine) SupportsPageRank() bool { return false }
 func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
 	return nil
 }

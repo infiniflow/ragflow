@@ -376,3 +376,91 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
 }
+
+// recordingSink captures OnComponentTotal / OnComponentProgress calls so tests
+// can assert the pipeline forwards progress to the sink instead of writing
+// the DAO layer directly.
+type recordingSink struct {
+	mu       sync.Mutex
+	total    int
+	totalSet bool
+	events   []ProgressEvent
+}
+
+func (r *recordingSink) OnComponentTotal(taskID string, total int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.total = total
+	r.totalSet = true
+}
+
+func (r *recordingSink) OnComponentProgress(ev ProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+// TestPipelineRunForwardsProgressToSink verifies the pipeline reports the
+// component-total denominator and each component lifecycle event to the
+// injected ProgressSink, and carries task/document/total context on every
+// event so the sink needs no canvas knowledge.
+func TestPipelineRunForwardsProgressToSink(t *testing.T) {
+	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
+	const (
+		nameA = "p.SinkStageA"
+		nameB = "p.SinkStageB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageB, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	sink := &recordingSink{}
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-sink", WithProgressSink(sink), WithDocumentID("doc-sink"))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if !sink.totalSet || sink.total != 3 {
+		t.Fatalf("OnComponentTotal = (%d, set=%v), want 3", sink.total, sink.totalSet)
+	}
+	if len(sink.events) == 0 {
+		t.Fatal("expected progress events, got none")
+	}
+	seen := map[string]bool{}
+	for _, ev := range sink.events {
+		if ev.TaskID != "task-sink" {
+			t.Fatalf("event TaskID = %q, want task-sink", ev.TaskID)
+		}
+		if ev.DocumentID != "doc-sink" {
+			t.Fatalf("event DocumentID = %q, want doc-sink", ev.DocumentID)
+		}
+		if ev.Total != 3 {
+			t.Fatalf("event Total = %d, want 3", ev.Total)
+		}
+		seen[ev.Component] = true
+	}
+	for _, want := range []string{"a", "b"} {
+		if !seen[want] {
+			t.Fatalf("expected progress event for component %q, seen=%v", want, seen)
+		}
+	}
+}

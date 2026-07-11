@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 // =============================================================================
@@ -433,3 +436,68 @@ func TestInsertChunks_ReportsBatchProgress(t *testing.T) {
 // =============================================================================
 // Stub implementations for testing
 // =============================================================================
+
+// recordingProgressSink captures progress events for asserting the executor
+// forwards its sink through defaultRunPipeline into the pipeline.
+type recordingProgressSink struct {
+	mu       sync.Mutex
+	total    int
+	totalSet bool
+	events   []pipelinepkg.ProgressEvent
+}
+
+func (r *recordingProgressSink) OnComponentTotal(taskID string, total int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.total = total
+	r.totalSet = true
+}
+
+func (r *recordingProgressSink) OnComponentProgress(ev pipelinepkg.ProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+type sinkPassthroughStage struct{}
+
+func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+	return inputs, nil
+}
+
+// TestPipelineExecutorDefaultRunPipelineForwardsSink verifies the sink set via
+// WithProgressSink is threaded through defaultRunPipeline into the pipeline,
+// which reports the component total and lifecycle events back to the sink.
+func TestPipelineExecutorDefaultRunPipelineForwardsSink(t *testing.T) {
+	const nameA = "task.SinkPassthroughA"
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return sinkPassthroughStage{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	sink := &recordingProgressSink{}
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
+	svc.WithProgressSink(sink)
+
+	dsl := `{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["a"]},"a":{"obj":{"component_name":"` + nameA + `","params":{}},"upstream":["begin"]}},"path":["begin","a"],"graph":{"nodes":[]}}}`
+
+	if _, _, err := svc.defaultRunPipeline(context.Background(), dsl); err != nil {
+		t.Fatalf("defaultRunPipeline: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if !sink.totalSet || sink.total != 2 {
+		t.Fatalf("OnComponentTotal = (%d, set=%v), want 2", sink.total, sink.totalSet)
+	}
+	if len(sink.events) == 0 {
+		t.Fatal("expected progress events forwarded to sink, got none")
+	}
+	for _, ev := range sink.events {
+		if ev.TaskID != "task-1" {
+			t.Fatalf("event TaskID = %q, want task-1", ev.TaskID)
+		}
+		if ev.DocumentID != "doc-1" {
+			t.Fatalf("event DocumentID = %q, want doc-1", ev.DocumentID)
+		}
+	}
+}

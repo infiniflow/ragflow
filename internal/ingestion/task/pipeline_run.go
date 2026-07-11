@@ -61,7 +61,9 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		pipelineID = s.taskCtx.IngestionTask.ID
 	}
-	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID)
+	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
+		pipelinepkg.WithProgressSink(s.progressSink),
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
 	if err != nil {
 		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}

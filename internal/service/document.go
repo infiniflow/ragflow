@@ -45,7 +45,6 @@ import (
 	"ragflow/internal/engine/redis"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
-	"ragflow/internal/server"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -64,7 +63,6 @@ type DocumentService struct {
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	ingestionTaskSvc    *IngestionTaskService
 	docEngine           engine.DocEngine
-	engineType          server.EngineType
 	metadataSvc         *MetadataService
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
@@ -75,7 +73,6 @@ type DocumentService struct {
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
-	cfg := server.GetConfig()
 	publisher := NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
@@ -86,7 +83,6 @@ func NewDocumentService() *DocumentService {
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
-		engineType:          cfg.DocEngine.Type,
 		metadataSvc:         NewMetadataService(),
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
@@ -648,6 +644,18 @@ func (s *DocumentService) IncrementChunkNum(docID, kbID string, chunkNum, tokenN
 		}
 
 		return nil
+	})
+}
+
+// UpdateRunProgress mirrors a pipeline run's live progress into the document
+// row so the document-list endpoint (which reads document.progress/run/
+// progress_msg) reflects in-flight Go pipeline progress. Best-effort by
+// design; callers log and continue on error.
+func (s *DocumentService) UpdateRunProgress(docID string, progress float64, run, progressMsg string) error {
+	return s.documentDAO.UpdateByID(docID, map[string]interface{}{
+		"progress":     progress,
+		"run":          run,
+		"progress_msg": progressMsg,
 	})
 }
 

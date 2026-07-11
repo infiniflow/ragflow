@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 type ProgressFunc func(prog float64, msg string)
@@ -53,6 +54,7 @@ type PipelineExecutor struct {
 	logCreateFunc    func(log *entity.PipelineOperationLog) error
 	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
+	progressSink     pipelinepkg.ProgressSink
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -129,6 +131,14 @@ func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID 
 
 func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl string) (map[string]any, string, error)) *PipelineExecutor {
 	s.runPipelineFunc = f
+	return s
+}
+
+// WithProgressSink injects a sink that receives pipeline component progress
+// events. The sink owns all document/ingestion_task_log persistence; when
+// unset, the pipeline runs DB-independent (progress events are dropped).
+func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
+	s.progressSink = sink
 	return s
 }
 

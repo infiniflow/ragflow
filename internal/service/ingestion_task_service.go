@@ -11,6 +11,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// Step-checkpoint keys for IngestionTaskLog.Checkpoint, consumed by
+// ListAllForAdmin to render the task's current step.
+const (
+	checkpointKeyCurrentStep = "current_step"
+	checkpointKeyTotalStep   = "total_step"
+)
+
 type InvalidTaskTransitionError struct {
 	TaskID string
 	From   string
@@ -354,4 +361,72 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 		TaskType: common.TaskTypeIngestionTask,
 	}
 	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
+}
+
+// UpdateComponentTotal records the number of components in the task's DSL
+// graph - the authoritative denominator for progress percentage.
+func (s *IngestionTaskService) UpdateComponentTotal(taskID string, total int) error {
+	return s.ingestionTaskDAO.UpdateComponentTotal(taskID, total)
+}
+
+// RecordComponentProgress appends a component lifecycle row to
+// ingestion_task_log (phase: 0 started / 1 done / 2 errored). The row's
+// Checkpoint is empty; component progress and step checkpoints are distinct
+// row models sharing the same table.
+func (s *IngestionTaskService) RecordComponentProgress(taskID, component string, index, phase int, message string) error {
+	entry := &entity.IngestionTaskLog{
+		TaskID:         taskID,
+		Checkpoint:     entity.JSONMap{},
+		ComponentIndex: index,
+		Phase:          phase,
+		Component:      component,
+		Message:        message,
+	}
+	return s.ingestionTaskLogDAO.Create(entry)
+}
+
+// AggregateTaskProgress returns the SQL-aggregated component progress for a
+// task (done/failed/running/percent against the given total denominator).
+func (s *IngestionTaskService) AggregateTaskProgress(taskID string, total int) (*dao.TaskProgress, error) {
+	return s.ingestionTaskLogDAO.AggregateProgress(taskID, total)
+}
+
+// AdvanceStepCheckpoint loads the task's latest step-checkpoint row,
+// initializing one (current_step=1, total_step=5) when none exists, then
+// bumps current_step by one to signal processing started. ListAllForAdmin
+// reads current_step back to render the task's step.
+//
+// Returns an error when the checkpoint cannot be parsed or the initial
+// load/create fails; the caller should mark the task FAILED. A failure to
+// persist the bumped value is best-effort (logged) and does not return an
+// error, matching the legacy semantics where the run proceeds even if the
+// checkpoint write fails.
+func (s *IngestionTaskService) AdvanceStepCheckpoint(taskID string) error {
+	latestLog, err := s.ingestionTaskLogDAO.LatestLogByTaskID(taskID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load latest task log for task %s: %w", taskID, err)
+		}
+		latestLog = &entity.IngestionTaskLog{
+			TaskID: taskID,
+			Checkpoint: entity.JSONMap{
+				checkpointKeyCurrentStep: 1,
+				checkpointKeyTotalStep:   5,
+			},
+		}
+		if err := s.ingestionTaskLogDAO.Create(latestLog); err != nil {
+			return fmt.Errorf("create task log for task %s: %w", taskID, err)
+		}
+	}
+	checkpointMap := latestLog.Checkpoint
+	currentStep, ok := common.GetInt(checkpointMap[checkpointKeyCurrentStep])
+	if !ok {
+		return fmt.Errorf("parse current_step from task log for task %s", taskID)
+	}
+	checkpointMap[checkpointKeyCurrentStep] = currentStep + 1
+	latestLog.Checkpoint = checkpointMap
+	if err := s.ingestionTaskLogDAO.Update(latestLog); err != nil {
+		common.Error(fmt.Sprintf("Failed to persist checkpoint for task %s", taskID), err)
+	}
+	return nil
 }

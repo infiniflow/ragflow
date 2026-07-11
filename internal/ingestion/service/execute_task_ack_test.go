@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,18 +15,21 @@ import (
 )
 
 // fakeTaskHandle records Ack/Nack/InProgress calls so tests can assert the worker
-// acknowledges the MQ message at the right time without a live broker.
+// acknowledges the MQ message at the right time without a live broker. The
+// counters are atomic because executeTask drives them from multiple goroutines
+// (the heartbeat goroutine calls InProgress; the defer calls Ack/Nack) while the
+// test goroutine reads them - plain ints would be a data race under -race.
 type fakeTaskHandle struct {
 	msg        common.TaskMessage
-	acks       int
-	nacks      int
-	inProgress int
+	acks       atomic.Int64
+	nacks      atomic.Int64
+	inProgress atomic.Int64
 }
 
 func (f *fakeTaskHandle) GetMessage() common.TaskMessage { return f.msg }
-func (f *fakeTaskHandle) Ack() error                     { f.acks++; return nil }
-func (f *fakeTaskHandle) Nack() error                    { f.nacks++; return nil }
-func (f *fakeTaskHandle) InProgress() error              { f.inProgress++; return nil }
+func (f *fakeTaskHandle) Ack() error                     { f.acks.Add(1); return nil }
+func (f *fakeTaskHandle) Nack() error                    { f.nacks.Add(1); return nil }
+func (f *fakeTaskHandle) InProgress() error              { f.inProgress.Add(1); return nil }
 
 func newAckTaskCtx(ctx context.Context, taskID, docID string, handle *fakeTaskHandle) *taskpkg.TaskContext {
 	taskCtx := taskpkg.NewTaskContextForScheduling(
@@ -57,8 +61,8 @@ func TestExecuteTask_AcksMessageOnCompletion(t *testing.T) {
 	handle := &fakeTaskHandle{}
 	ingestor.executeTask(newAckTaskCtx(context.Background(), taskID, docID, handle))
 
-	if handle.acks != 1 || handle.nacks != 0 {
-		t.Fatalf("expected 1 Ack / 0 Nack on completion, got acks=%d nacks=%d", handle.acks, handle.nacks)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack / 0 Nack on completion, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 	if err != nil {
@@ -90,8 +94,8 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 	handle := &fakeTaskHandle{}
 	ingestor.executeTask(newAckTaskCtx(context.Background(), taskID, docID, handle))
 
-	if handle.acks != 1 || handle.nacks != 0 {
-		t.Fatalf("expected 1 Ack / 0 Nack on failure, got acks=%d nacks=%d", handle.acks, handle.nacks)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack / 0 Nack on failure, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 	if err != nil {
@@ -131,8 +135,8 @@ func TestExecuteTask_NacksMessageOnContextCancel(t *testing.T) {
 	if runCalled {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
-	if handle.nacks != 1 || handle.acks != 0 {
-		t.Fatalf("expected 1 Nack / 0 Ack on cancel, got acks=%d nacks=%d", handle.acks, handle.nacks)
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("expected 1 Nack / 0 Ack on cancel, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 
@@ -168,18 +172,18 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	time.Sleep(30 * time.Millisecond) // let the ticker fire a few times
 	close(proceed)                    // release the long task
 
-	if handle.inProgress == 0 {
+	if handle.inProgress.Load() == 0 {
 		t.Fatal("expected InProgress heartbeats while runDocumentTask was blocked, got 0")
 	}
 
 	// Poll for Ack completion (executeTask must finish MarkCompleted + Ack).
 	deadline := time.Now().Add(2 * time.Second)
-	for handle.acks == 0 && time.Now().Before(deadline) {
+	for handle.acks.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if handle.acks != 1 {
+	if handle.acks.Load() != 1 {
 		t.Fatalf("expected 1 Ack on completion after heartbeat, got acks=%d nacks=%d inProgress=%d",
-			handle.acks, handle.nacks, handle.inProgress)
+			handle.acks.Load(), handle.nacks.Load(), handle.inProgress.Load())
 	}
 }
 
@@ -245,4 +249,93 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	if !ingestor.claimTask(taskID) {
 		t.Fatal("expected reclaim after executeTask to succeed")
 	}
+}
+
+// TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.
+func TestSettleMessage_AckOnTerminal(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{}
+	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+
+	ingestor.settleMessage(taskCtx, func(ctx context.Context) bool { return true })
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("body=true: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestSettleMessage_NackOnNonTerminal: body returns false -> Nack, no Ack.
+func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{}
+	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+
+	ingestor.settleMessage(taskCtx, func(ctx context.Context) bool { return false })
+
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("body=false: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestSettleMessage_NackOnPanic: if body panics, the message is still Nacked
+// (terminal=false default) and the panic propagates.
+func TestSettleMessage_NackOnPanic(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{}
+	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+
+	panicked := true
+	func() {
+		defer func() { recover() }()
+		ingestor.settleMessage(taskCtx, func(ctx context.Context) bool {
+			panic("boom")
+		})
+		panicked = false
+	}()
+
+	if !panicked {
+		t.Fatal("expected panic to propagate, got none")
+	}
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("body=panic: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestAckOrNack_AckOnTerminal: terminal=true -> Ack called, Nack not called.
+func TestAckOrNack_AckOnTerminal(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{}
+	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+
+	ingestor.ackOrNack(taskCtx, true)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("terminal=true: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestAckOrNack_NackOnNonTerminal: terminal=false -> Nack called, Ack not called.
+func TestAckOrNack_NackOnNonTerminal(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{}
+	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+
+	ingestor.ackOrNack(taskCtx, false)
+
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("terminal=false: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestAckOrNack_NoOpWhenNoHandle: nil handle -> no ack/nack, no panic.
+func TestAckOrNack_NoOpWhenNoHandle(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	taskCtx := taskpkg.NewTaskContextForScheduling(
+		context.Background(),
+		&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING},
+	)
+	// taskCtx.Handle is nil
+	// Must not panic
+	ingestor.ackOrNack(taskCtx, true)
+	ingestor.ackOrNack(taskCtx, false)
 }

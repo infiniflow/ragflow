@@ -463,3 +463,147 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 		t.Fatal("task should be removed")
 	}
 }
+
+func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.UpdateComponentTotal("task-1", 4); err != nil {
+		t.Fatalf("UpdateComponentTotal failed: %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.ComponentTotal != 4 {
+		t.Fatalf("component_total = %d, want 4", task.ComponentTotal)
+	}
+}
+
+func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+		t.Fatalf("RecordComponentProgress failed: %v", err)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID("task-1")
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log row, got %d", len(logs))
+	}
+	row := logs[0]
+	if row.Component != "Parser" || row.ComponentIndex != 0 || row.Phase != 1 || row.Message != "Parser Done" {
+		t.Fatalf("unexpected log row: %+v", row)
+	}
+	if len(row.Checkpoint) != 0 {
+		t.Fatalf("component progress row must have empty checkpoint, got %v", row.Checkpoint)
+	}
+}
+
+func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+		t.Fatalf("record Parser: %v", err)
+	}
+	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, 0, "Chunker Started"); err != nil {
+		t.Fatalf("record Chunker: %v", err)
+	}
+	agg, err := svc.AggregateTaskProgress("task-1", 2)
+	if err != nil {
+		t.Fatalf("AggregateTaskProgress failed: %v", err)
+	}
+	if agg.Done != 1 || agg.Running != 1 || agg.Failed != 0 {
+		t.Fatalf("aggregate = %+v, want Done=1 Running=1 Failed=0", agg)
+	}
+	if agg.Percent != 50 {
+		t.Fatalf("percent = %v, want 50", agg.Percent)
+	}
+}
+
+func TestIngestionTaskServiceAdvanceStepCheckpointInitializesAndBumps(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.AdvanceStepCheckpoint("task-1"); err != nil {
+		t.Fatalf("AdvanceStepCheckpoint (first call) failed: %v", err)
+	}
+	latest, err := dao.NewIngestionTaskLogDAO().LatestLogByTaskID("task-1")
+	if err != nil {
+		t.Fatalf("load latest log: %v", err)
+	}
+	step, ok := common.GetInt(latest.Checkpoint[checkpointKeyCurrentStep])
+	if !ok || step != 2 {
+		t.Fatalf("current_step = %v (ok=%v), want 2", latest.Checkpoint[checkpointKeyCurrentStep], ok)
+	}
+	total, ok := common.GetInt(latest.Checkpoint[checkpointKeyTotalStep])
+	if !ok || total != 5 {
+		t.Fatalf("total_step = %v (ok=%v), want 5", latest.Checkpoint[checkpointKeyTotalStep], ok)
+	}
+
+	// Second call bumps the existing row to 3.
+	if err := svc.AdvanceStepCheckpoint("task-1"); err != nil {
+		t.Fatalf("AdvanceStepCheckpoint (second call) failed: %v", err)
+	}
+	latest, err = dao.NewIngestionTaskLogDAO().LatestLogByTaskID("task-1")
+	if err != nil {
+		t.Fatalf("reload latest log: %v", err)
+	}
+	step, _ = common.GetInt(latest.Checkpoint[checkpointKeyCurrentStep])
+	if step != 3 {
+		t.Fatalf("current_step after second bump = %v, want 3", step)
+	}
+}
+
+func TestIngestionTaskServiceAdvanceStepCheckpointParseFailureReturnsError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Create(&entity.IngestionTaskLog{
+		TaskID:     "task-1",
+		Checkpoint: entity.JSONMap{"current_step": "not-a-number", "total_step": 5},
+	}).Error; err != nil {
+		t.Fatalf("insert bad task log: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.AdvanceStepCheckpoint("task-1"); err == nil {
+		t.Fatal("expected error when current_step cannot be parsed, got nil")
+	}
+}
+
+func TestDocumentServiceUpdateRunProgressMirrorsFields(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	if err := svc.UpdateRunProgress("doc-1", 0.5, "1", "halfway"); err != nil {
+		t.Fatalf("UpdateRunProgress failed: %v", err)
+	}
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if doc.Progress != 0.5 {
+		t.Fatalf("progress = %v, want 0.5", doc.Progress)
+	}
+	if doc.Run == nil || *doc.Run != "1" {
+		t.Fatalf("run = %v, want 1", doc.Run)
+	}
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
+		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
+	}
+}

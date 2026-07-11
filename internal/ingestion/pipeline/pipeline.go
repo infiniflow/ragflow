@@ -28,9 +28,7 @@ import (
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	redis2 "ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 
 	"github.com/cloudwego/eino/compose"
@@ -53,6 +51,7 @@ type Pipeline struct {
 	// distinguishable error so the caller knows resume is unavailable.
 	requireResume bool
 	factory       runtime.ComponentFactory // optional instance-scoped component factory
+	sink          ProgressSink             // optional progress sink; nil -> drop events (DB-independent)
 }
 
 // ErrResumeUnavailable is returned by Run when WithRequireResume is set but no
@@ -97,6 +96,38 @@ func WithRequireResume() PipelineOption {
 // the document row is not materialized).
 func WithDocumentID(docID string) PipelineOption {
 	return func(p *Pipeline) { p.documentID = docID }
+}
+
+// ProgressEvent is a structured component lifecycle event emitted by the
+// pipeline to a ProgressSink. The pipeline fills every field - including the
+// ingestion-proprietary Index (from its componentIndexMap) and the Total
+// denominator - so the sink needs no canvas knowledge to persist it.
+type ProgressEvent struct {
+	TaskID     string
+	DocumentID string
+	Component  string
+	Message    string
+	Index      int
+	Phase      int
+	Total      int
+}
+
+// ProgressSink receives pipeline progress for durable persistence. It is the
+// single channel through which the pipeline reports component lifecycle
+// events and the component-total denominator; the pipeline itself never
+// touches the DAO layer. Implementations live in the orchestration layer
+// (internal/ingestion/service). A nil sink is valid: events are dropped and
+// the pipeline stays DB-independent (unit tests, headless runs).
+type ProgressSink interface {
+	OnComponentTotal(taskID string, total int)
+	OnComponentProgress(ev ProgressEvent)
+}
+
+// WithProgressSink injects a sink that receives component progress events
+// and the component-total denominator. When unset, the pipeline drops
+// progress events and stays DB-independent.
+func WithProgressSink(s ProgressSink) PipelineOption {
+	return func(p *Pipeline) { p.sink = s }
 }
 
 // NewPipelineFromDSL compiles the canonical ingestion canvas DSL.
@@ -256,11 +287,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 	// Record the component count as the authoritative denominator for
 	// progress percentage. Best-effort: a DB failure (or headless run
 	// with no DB) must not abort the pipeline — progress is observability.
-	if dao.DB != nil {
-		total := len(p.canvas.Components)
-		if err := dao.NewIngestionTaskDAO().UpdateComponentTotal(p.taskID, total); err != nil {
-			common.Error(fmt.Sprintf("pipeline: update component_total for task %s failed: %v", p.taskID, err), err)
-		}
+	if p.sink != nil {
+		p.sink.OnComponentTotal(p.taskID, len(p.canvas.Components))
 	}
 
 	runState := canvas.NewCanvasState("", p.taskID)
@@ -438,22 +466,11 @@ func finalizeResult(current, out map[string]any, runState *canvas.CanvasState) m
 	return merged
 }
 
-// taskLogProgressCallback returns a runtime.ProgressCallback that appends
-// an ingestion_task_log row for every component progress event emitted by
-// the canvas framework (component start = 0, done = 1, fail = -1). Progress
-// is a framework-level concern owned by realComponentBody; this callback is
-// the ingestion-specific sink that turns those events into durable task
-// logs that the API can later read back (dao.IngestionTaskLogDAO).
-//
-// The write is best-effort: a DB failure is logged and never aborts the
-// pipeline. When the DAO/DB has not been initialized (unit tests, headless
-// runs) the callback is nil, so TrackProgress becomes a no-op and the
-// pipeline stays DB-independent.
 // componentIndexMap builds a deterministic cpnID → 0-based-index map for
 // the task's canvas. Map iteration order is non-deterministic in Go, so
 // the cpnIDs are sorted to keep the index stable across runs. The index is
-// ingestion-proprietary (plan §5.1 M1) and computed here at the sink,
-// never carried on the shared runtime.ProgressEvent.
+// ingestion-proprietary and computed here, then carried on the pipeline-local
+// ProgressEvent so the sink needs no canvas knowledge.
 func (p *Pipeline) componentIndexMap() map[string]int {
 	ids := make([]string, 0, len(p.canvas.Components))
 	for id := range p.canvas.Components {
@@ -467,33 +484,18 @@ func (p *Pipeline) componentIndexMap() map[string]int {
 	return m
 }
 
-// taskLogProgressCallback returns a runtime.ProgressCallback that appends
-// an ingestion_task_log row for every component progress event emitted by
-// the canvas framework. Progress is a framework-level concern owned by
-// realComponentBody; this callback is the ingestion-specific sink that
-// turns those events into durable task logs the API can read back
-// (dao.IngestionTaskLogDAO).
-//
-// The event carries the node id (cpnID) and phase. The sink derives:
-//   - ComponentIndex from the task's ComponentIndexMap (ingestion-only);
-//   - Message from the phase + cpnID (+ error), mirroring the legacy
-//     "cpnID Started/Done" / "cpnID: <err>" strings the frontend expects.
-//
-// The write is best-effort: a DB failure is logged and never aborts the
-// pipeline. When the DAO/DB has not been initialized (unit tests, headless
-// runs) the callback is nil, so TrackProgress becomes a no-op and the
-// pipeline stays DB-independent.
+// taskLogProgressCallback returns a runtime.ProgressCallback that forwards
+// every component lifecycle event (start/done/fail) to the pipeline's
+// ProgressSink. The sink owns all persistence; this callback only shapes the
+// event - deriving the message string the frontend expects and the
+// ingestion-proprietary component index - so the pipeline never touches the
+// DAO layer. Returns nil when no sink is attached, leaving TrackProgress a
+// no-op and the pipeline DB-independent (unit tests, headless runs).
 func (p *Pipeline) taskLogProgressCallback() runtime.ProgressCallback {
-	if dao.DB == nil {
+	if p.sink == nil {
 		return nil
 	}
-	logDAO := dao.NewIngestionTaskLogDAO()
-	docDAO := dao.NewDocumentDAO()
 	indexMap := p.componentIndexMap()
-	// total is the authoritative denominator (plan §8). After the
-	// UserFillUp/legacy-no-op guard in Compile, every component in the canvas
-	// reports progress, so len(Components) == component_total and the
-	// aggregate percent can reach 100%.
 	total := len(p.canvas.Components)
 	return func(ev runtime.ProgressEvent) {
 		var msg string
@@ -509,54 +511,14 @@ func (p *Pipeline) taskLogProgressCallback() runtime.ProgressCallback {
 				msg = ev.Component + " Error"
 			}
 		}
-		entry := &entity.IngestionTaskLog{
-			TaskID:         p.taskID,
-			Checkpoint:     entity.JSONMap{},
-			ComponentIndex: indexMap[ev.Component],
-			Phase:          int(ev.Phase),
-			Component:      ev.Component,
-			Message:        msg,
-		}
-		if err := logDAO.Create(entry); err != nil {
-			common.Error(fmt.Sprintf("pipeline: write ingestion_task_log for task %s failed: %v", p.taskID, err), err)
-		}
-		// Mirror progress into the document table so the existing
-		// GET /api/v1/datasets/{dataset_id}/documents endpoint (which reads
-		// document.progress/run/progress_msg) reflects live Go pipeline
-		// progress. Best-effort: a DB failure is logged and never aborts the
-		// pipeline. Skipped when no owning document is bound (headless runs).
-		if p.documentID == "" {
-			return
-		}
-		progress, run := p.deriveDocumentProgress(logDAO, total)
-		updates := map[string]interface{}{
-			"progress":     progress,
-			"run":          run,
-			"progress_msg": msg,
-		}
-		if err := docDAO.UpdateByID(p.documentID, updates); err != nil {
-			common.Error(fmt.Sprintf("pipeline: mirror progress to document %s for task %s failed: %v", p.documentID, p.taskID, err), err)
-		}
+		p.sink.OnComponentProgress(ProgressEvent{
+			TaskID:     p.taskID,
+			DocumentID: p.documentID,
+			Component:  ev.Component,
+			Message:    msg,
+			Index:      indexMap[ev.Component],
+			Phase:      int(ev.Phase),
+			Total:      total,
+		})
 	}
-}
-
-// deriveDocumentProgress computes the document-level progress (0~1) and run
-// label ("0".."4", matching Python's document.run enum) from the aggregated
-// ingestion_task_log. It reads the freshly-written log row back so the value
-// is correct across resume rounds and crash recovery (plan §8).
-func (p *Pipeline) deriveDocumentProgress(logDAO *dao.IngestionTaskLogDAO, total int) (float64, string) {
-	agg, err := logDAO.AggregateProgress(p.taskID, total)
-	if err != nil || agg == nil || total <= 0 {
-		return 0, "0"
-	}
-	run := "0" // UNSTART
-	switch {
-	case agg.Failed > 0:
-		run = "4" // FAIL
-	case agg.Done == total:
-		run = "3" // DONE
-	case agg.Done > 0 || agg.Running > 0:
-		run = "1" // RUNNING
-	}
-	return agg.Percent / 100, run
 }
