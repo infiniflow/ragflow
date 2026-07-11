@@ -34,8 +34,10 @@ func NewRouter(handler *Handler) *Router {
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-	// Health check
-	engine.GET("/health", r.handler.Health)
+	// Healthz to get system health
+	engine.GET("/healthz", r.handler.Healthz)
+	engine.GET("/", r.handler.Live)
+	engine.GET("/live", r.handler.Live)
 
 	// Admin API routes with prefix /api/v1/admin
 	admin := engine.Group("/api/v1/admin")
