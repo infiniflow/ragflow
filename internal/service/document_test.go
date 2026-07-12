@@ -2505,3 +2505,105 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
 	}
 }
+
+// Regression tests for issue #16831: the Go UpdateDocument handler
+// must reject attempts to overwrite ingestion-managed fields
+// (progress, chunk_num, token_num) with arbitrary values from an
+// external caller. The Python PATCH handler enforces this via
+// validate_immutable_fields; this test pins the same contract for
+// the Go service.
+
+func int64Ptr(v int64) *int64 { return &v }
+func float64Ptr(v float64) *float64 { return &v }
+
+func makeDocForValidator(progress float64, chunkNum, tokenNum int64) entity.Document {
+	return entity.Document{
+		ID:         "doc-test",
+		Progress:   progress,
+		ChunkNum:   chunkNum,
+		TokenNum:   tokenNum,
+	}
+}
+
+func TestValidateImmutableDocumentFields_NilRequest(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	code, err := validateImmutableDocumentFields(&current, nil)
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("expected CodeDataError + err on nil request, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_NilFields(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("expected CodeSuccess for nil fields, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsMatchingValues(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{
+		ChunkNum: int64Ptr(10),
+		TokenNum: int64Ptr(200),
+		Progress: float64Ptr(0.5),
+	}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("matching values should be accepted, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsChunkNumMismatch(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{ChunkNum: int64Ptr(99)}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("chunk_num mismatch should be rejected, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsTokenNumMismatch(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{TokenNum: int64Ptr(99)}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("token_num mismatch should be rejected, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsProgressMismatch(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{Progress: float64Ptr(0.9)}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("progress mismatch should be rejected, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsProgressWithinTolerance(t *testing.T) {
+	current := makeDocForValidator(0.5, 10, 200)
+	// 0.5 + 1e-10 is well within the 1e-9 tolerance the validator uses,
+	// matching Python's math.isclose default.
+	req := &UpdateDocumentRequest{Progress: float64Ptr(0.5 + 1e-10)}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("progress within tolerance should be accepted, got code=%v err=%v", code, err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsZeroOverrides(t *testing.T) {
+	// Zero values are treated as "no change" (mirrors the existing Go
+	// PATCH validator validateDatasetDocumentUpdate: `*req.X != 0`).
+	current := makeDocForValidator(0.5, 10, 200)
+	req := &UpdateDocumentRequest{
+		ChunkNum: int64Ptr(0),
+		TokenNum: int64Ptr(0),
+		Progress: float64Ptr(0),
+	}
+	code, err := validateImmutableDocumentFields(&current, req)
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("zero overrides should be accepted, got code=%v err=%v", code, err)
+	}
+}

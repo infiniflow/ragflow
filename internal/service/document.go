@@ -600,6 +600,15 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 	if err != nil {
 		return err
 	}
+	// Reject attempts to overwrite ingestion-managed fields. The Python
+	// PATCH handler enforces the same set via validate_immutable_fields
+	// (api/utils/validation_utils.py:1059). Keep parity: any caller that
+	// wants to mutate run / token_num / chunk_num / progress /
+	// progress_msg must go through the actual pipeline (ProgressSink,
+	// docStateUpdater) rather than PUT.
+	if code, err := validateImmutableDocumentFields(document, req); err != nil {
+		return common.NewCodeError(code, err.Error())
+	}
 
 	if req.Name != nil {
 		document.Name = req.Name
@@ -621,6 +630,30 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 	}
 
 	return s.documentDAO.Update(document)
+}
+
+// validateImmutableDocumentFields returns CodeDataError when the request
+// attempts to overwrite a field the ingestion pipeline owns. Mirrors
+// Python's validate_immutable_fields (api/utils/validation_utils.py:1059)
+// and the existing Go PATCH validator validateDatasetDocumentUpdate
+// (line below). The progress check uses math.Abs(... - current) > 1e-9
+// to match the tolerance Python's math.isclose applies by default.
+// `name` is intentionally not validated — it's a user-mutable
+// metadata field, not an ingestion-managed one.
+func validateImmutableDocumentFields(current *entity.Document, req *UpdateDocumentRequest) (common.ErrorCode, error) {
+	if req == nil {
+		return common.CodeDataError, errors.New("Invalid request payload")
+	}
+	if req.ChunkNum != nil && *req.ChunkNum != 0 && *req.ChunkNum != current.ChunkNum {
+		return common.CodeDataError, errors.New("Can't change `chunk_num`.")
+	}
+	if req.TokenNum != nil && *req.TokenNum != 0 && *req.TokenNum != current.TokenNum {
+		return common.CodeDataError, errors.New("Can't change `token_num`.")
+	}
+	if req.Progress != nil && *req.Progress != 0 && math.Abs(*req.Progress-current.Progress) > 1e-9 {
+		return common.CodeDataError, errors.New("Can't change `progress`.")
+	}
+	return common.CodeSuccess, nil
 }
 
 // IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction
