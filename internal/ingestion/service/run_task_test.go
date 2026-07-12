@@ -172,6 +172,38 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 	}
 }
 
+// TestRunTask_ComponentTimeoutMarksFailed: when runDocumentTask returns
+// context.DeadlineExceeded (component Invoke hit its per-class timeout),
+// runTask marks the task FAILED, not STOPPED. A component timeout is a
+// system resource exhaustion, not a user-initiated cancellation.
+func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
+		return context.DeadlineExceeded
+	}
+
+	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+
+	if !terminal {
+		t.Fatal("expected true (terminal: durably marked FAILED)")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %s, want FAILED (DeadlineExceeded is a failure, not a cancel)", task.Status)
+	}
+}
+
 // TestRunTask_MarkCompletedFailure: when runDocumentTask succeeds but
 // MarkCompleted fails (status conflict), runTask returns false (non-terminal)
 // so the message is Nacked for retry.

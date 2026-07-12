@@ -205,12 +205,6 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 	return out
 }
 
-func stageTimeout() time.Duration {
-	return defaultStageTimeout
-}
-
-var defaultStageTimeout = 60 * time.Second
-
 // defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
@@ -293,7 +287,6 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 
 	runState := canvas.NewCanvasState("", p.taskID)
 	runCtx := canvas.WithState(ctx, runState)
-	runCtx = canvas.WithComponentTimeoutOverride(runCtx, stageTimeout())
 	// Framework-level progress fan-out: the canvas framework
 	// (realComponentBody) pulls this callback from ctx via
 	// runtime.ProgressCallbackFromContext and records every component

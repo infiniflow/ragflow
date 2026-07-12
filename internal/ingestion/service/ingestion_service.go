@@ -317,10 +317,15 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
 			return e.markStopped(task.ID)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
+			e.markTimeoutProgress(task)
+			return e.markFailed(task.ID)
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		return e.markFailed(task.ID)
@@ -431,6 +436,24 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 		existingMsg = *doc.ProgressMsg
 	}
 	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+}
+
+// markTimeoutProgress writes the timeout-progress markers to the document
+// row. Unlike cancellation (markCancelProgress), this records a TIMEOUT
+// failure rather than a user-initiated stop.
+func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
+	svc := servicepkg.NewDocumentService()
+	doc, err := svc.GetDocumentByID(task.DocumentID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
+		return
+	}
+	timeoutMsg := fmt.Sprintf("\n%s Task timed out.", time.Now().Format("15:04:05"))
+	existingMsg := ""
+	if doc.ProgressMsg != nil {
+		existingMsg = *doc.ProgressMsg
+	}
+	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another
