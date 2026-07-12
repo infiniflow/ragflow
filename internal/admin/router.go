@@ -34,8 +34,10 @@ func NewRouter(handler *Handler) *Router {
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-	// Health check
-	engine.GET("/health", r.handler.Health)
+	// Healthz to get system health
+	engine.GET("/healthz", r.handler.Healthz)
+	engine.GET("/", r.handler.Live)
+	engine.GET("/live", r.handler.Live)
 
 	// Admin API routes with prefix /api/v1/admin
 	admin := engine.Group("/api/v1/admin")
@@ -174,6 +176,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
 			protected.GET("/roles/resource", r.handler.ListResources)
+			protected.GET("/roles/permission", r.handler.ListRolesWithPermission)
 			protected.GET("/roles/:role_name/default-models", r.handler.ShowRoleDefaultModels)
 			protected.PATCH("/roles/:role_name/default-models", r.handler.SetRoleDefaultModel)
 			protected.DELETE("/roles/:role_name/default-models", r.handler.ResetRoleDefaultModel)
@@ -206,6 +209,27 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/all-models", r.handler.ListAllModels)
 			protected.GET("/all-models/:model_name", r.handler.ShowModel)
 
+			// Sensitive words, EE
+			protected.GET("/sensitive-words", r.handler.DownloadSensitiveWords)
+			protected.POST("/sensitive-words", r.handler.UploadSensitiveWords)
+
+			// Verification email, EE
+			protected.POST("/email/verification", r.handler.BindVerificationEmail)
+			protected.GET("/email/verification", r.handler.ShowVerificationEmail)
+
+			// White list, EE
+			protected.GET("/white-list", r.handler.ShowWhiteList)
+			protected.POST("/white-list", r.handler.AddWhiteList)
+			protected.POST("/white-list/batch", r.handler.BatchAddWhiteList)
+			protected.PUT("/white-list/:id", r.handler.UpdateWhiteList)
+			protected.DELETE("/white-list/:id", r.handler.DeleteWhiteList)
+			protected.DELETE("/white-list/batch", r.handler.BatchDeleteWhiteList)
+
+			// Ingestion tasks
+			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
+			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 			// License
 			protected.GET("/system/fingerprint", r.handler.GetSystemFingerprint)
 			protected.POST("/system/license", r.handler.SetSystemLicense)
@@ -218,11 +242,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/license", r.handler.SetLicense)
 			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
-
-			// Ingestion tasks
-			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
-			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
-			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 		}
 	}
 

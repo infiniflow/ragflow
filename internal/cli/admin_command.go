@@ -87,6 +87,24 @@ func (c *CLI) AdminPingCacheCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, fmt.Sprintf("ping cache"))
 }
 
+// AdminLiveServerCommand GET /live
+func (c *CLI) AdminLiveServerCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/live", "none", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show live server: %w", err)
+	}
+	return HandleSimpleResponse(resp, fmt.Sprintf("show live server"))
+}
+
+// AdminHealthServerCommand GET /healthz
+func (c *CLI) AdminHealthServerCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/healthz", "none", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show health server: %w", err)
+	}
+	return HandleCommonDataResponse(resp, fmt.Sprintf("show health server"))
+}
+
 // AdminShowVersionCommand show RAGFlow admin version
 func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.AdminServerClient.Request("GET", "/admin/version", "web", nil, nil)
