@@ -217,6 +217,17 @@ func (h *Handler) ListResources(c *gin.Context) {
 	common.SuccessWithData(c, resources, "")
 }
 
+// ListRolesWithPermission handle list roles with permission
+func (h *Handler) ListRolesWithPermission(c *gin.Context) {
+	roles, err := h.service.ListRolesWithPermission()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, roles, "")
+}
+
 func (h *Handler) ShowRoleDefaultModels(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
@@ -1275,10 +1286,6 @@ func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 func (h *Handler) ShowUsersSummary(c *gin.Context) {
 	usersSummary, err := h.service.ShowUsersSummary()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1301,10 +1308,6 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 	}
 	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1349,10 +1352,6 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 
 	usersReports, err := h.service.ListUsersReports(pageIndex, pageSize, req.Status, req.Plan, req.Days)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1393,10 +1392,6 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 
 	usersStorage, err := h.service.ListUsersStorage(pageIndex, pageSize, top)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1437,10 +1432,6 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 
 	usersDocuments, err := h.service.ListUsersDocuments(pageIndex, pageSize, top)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1481,10 +1472,6 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 
 	usersIndex, err := h.service.ListUsersIndex(pageIndex, pageSize, top)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1537,10 +1524,6 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 
 	usersQuota, err := h.service.ListUsersQuota(pageIndex, pageSize, top, request.QuotaThreshold, request.Plan, request.Days)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1552,10 +1535,6 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 func (h *Handler) ShowUsersPlanSummary(c *gin.Context) {
 	usersPlanSummary, err := h.service.ShowUsersPlanSummary()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1577,10 +1556,6 @@ func (h *Handler) ShowUsersPlan(c *gin.Context) {
 	}
 	usersPlanQuota, err := h.service.ShowUsersPlanQuota(quota)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1592,10 +1567,6 @@ func (h *Handler) ShowUsersPlan(c *gin.Context) {
 func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1607,10 +1578,6 @@ func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 	ingestionTasksSummary, err := h.service.ShowIngestionTasksSummary()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1622,10 +1589,6 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 func (h *Handler) ShowDataSummary(c *gin.Context) {
 	dataSummary, err := h.service.ShowDataSummary()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1637,10 +1600,6 @@ func (h *Handler) ShowDataSummary(c *gin.Context) {
 func (h *Handler) ShowDataOrphan(c *gin.Context) {
 	dataOrphan, err := h.service.ShowDataOrphan()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1652,10 +1611,6 @@ func (h *Handler) ShowDataOrphan(c *gin.Context) {
 func (h *Handler) ShowDataStorage(c *gin.Context) {
 	dataStorage, err := h.service.ShowDataStorage()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1667,10 +1622,6 @@ func (h *Handler) ShowDataStorage(c *gin.Context) {
 func (h *Handler) ShowDataIndex(c *gin.Context) {
 	dataIndex, err := h.service.ShowDataIndex()
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1692,10 +1643,6 @@ func (h *Handler) PurgeOrphanData(c *gin.Context) {
 	}
 	result, err := h.service.PurgeOrphanData(request.Preview)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1829,4 +1776,216 @@ func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "API keys listed successfully")
+}
+
+// DownloadSensitiveWords handle download sensitive words
+func (h *Handler) DownloadSensitiveWords(c *gin.Context) {
+	result, err := h.service.DownloadSensitiveWords()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Sensitive words downloaded successfully")
+}
+
+// UploadSensitiveWords handle upload sensitive words
+func (h *Handler) UploadSensitiveWords(c *gin.Context) {
+	form, err := c.MultipartForm()
+	if err != nil || form == nil || len(form.File["file"]) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
+		return
+	}
+	files := form.File["file"]
+	for _, fh := range files {
+		if fh == nil || fh.Filename == "" {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file or filename is empty")
+			return
+		}
+	}
+	if len(files) != 1 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Only one file is allowed")
+		return
+	}
+	file := files[0]
+	result, err := h.service.UploadSensitiveWords(file)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Sensitive words uploaded successfully")
+}
+
+type BindVerificationEmailRequest struct {
+	Email    string `json:"email"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	UseTLS   bool   `json:"use_tls"`
+	UseSSL   bool   `json:"use_ssl"`
+}
+
+// BindVerificationEmail handle bind verification email
+func (h *Handler) BindVerificationEmail(c *gin.Context) {
+	var request BindVerificationEmailRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if request.Email == "" || request.Host == "" || request.Username == "" || request.Password == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Email, host, username, and password are required")
+		return
+	}
+
+	result, err := h.service.BindVerificationEmail(request.Email, request.Host, request.Port, request.Username, request.Password, request.UseTLS, request.UseSSL)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Verification email bound successfully")
+}
+
+// ShowVerificationEmail handle show verification email
+func (h *Handler) ShowVerificationEmail(c *gin.Context) {
+	result, err := h.service.ShowVerificationEmail()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Verification email shown successfully")
+}
+
+// ShowWhiteList handle show white list
+func (h *Handler) ShowWhiteList(c *gin.Context) {
+	result, err := h.service.ShowWhiteList()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "White list shown successfully")
+}
+
+type AddWhiteListRequest struct {
+	Email string `json:"email"`
+}
+
+// AddWhiteList handle add white list
+func (h *Handler) AddWhiteList(c *gin.Context) {
+	var request AddWhiteListRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if request.Email == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Email is required")
+		return
+	}
+
+	result, err := h.service.AddWhiteList(request.Email)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "White list added successfully")
+}
+
+// BatchAddWhiteList handle batch add white list
+func (h *Handler) BatchAddWhiteList(c *gin.Context) {
+	form, err := c.MultipartForm()
+	if err != nil || form == nil || len(form.File["file"]) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
+		return
+	}
+	files := form.File["file"]
+	for _, fh := range files {
+		if fh == nil || fh.Filename == "" {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file or filename is empty")
+			return
+		}
+	}
+	if len(files) != 1 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Only one file is allowed")
+		return
+	}
+	file := files[0]
+	result, err := h.service.BatchAddWhiteList(file)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Batch add white list successfully")
+}
+
+// UpdateWhiteList handle update white list
+func (h *Handler) UpdateWhiteList(c *gin.Context) {
+	id := c.Param("id")
+
+	var request AddWhiteListRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if request.Email == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Email is required")
+		return
+	}
+
+	result, err := h.service.UpdateWhiteList(id, request.Email)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "White list updated successfully")
+}
+
+// DeleteWhiteList handle delete white list
+func (h *Handler) DeleteWhiteList(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid id")
+		return
+	}
+
+	result, err := h.service.DeleteWhiteList(id)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "White list updated successfully")
+}
+
+type BatchDeleteWhiteListRequest struct {
+	Ids []int `json:"ids"`
+}
+
+// BatchDeleteWhiteList handle batch delete white list
+func (h *Handler) BatchDeleteWhiteList(c *gin.Context) {
+	var request BatchDeleteWhiteListRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if len(request.Ids) == 0 {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Ids are required")
+		return
+	}
+
+	result, err := h.service.BatchDeleteWhiteList(request.Ids)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "Batch delete white list successfully")
 }
