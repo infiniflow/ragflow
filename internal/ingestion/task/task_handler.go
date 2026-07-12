@@ -52,10 +52,6 @@ func (h *TaskHandler) Handle() (*PipelineResult, error) {
 	return h.handlePipeline()
 }
 
-func (h *TaskHandler) handleMemory() error {
-	return nil // stub
-}
-
 func (h *TaskHandler) handlePipeline() (*PipelineResult, error) {
 	svc, err := h.newPipelineExecutor(h.ctx, strings.TrimSpace(h.ctx.PipelineID))
 	if err != nil {

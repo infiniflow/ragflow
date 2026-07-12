@@ -1,27 +1,21 @@
-//go:build manual
-// +build manual
+//go:build integration
 
 package service
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/nats"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 )
 
 func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
-	natsEngine := nats.NewNatsEngine("localhost", 4222)
-	if err := natsEngine.Init(); err != nil {
-		t.Fatalf("NATS Init: %v", err)
-	}
+	natsEngine := testutil.SetupNatsEngine(t)
 	if err := natsEngine.InitConsumer("tasks.>"); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
@@ -85,12 +79,13 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	task, err := ingestionTaskDAO.SetRunningByIngestor(taskMsg.TaskID)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
-		if errors.Is(err, common.ErrTaskNotFound) {
-			t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
-		}
 		t.Fatalf("SetRunningByIngestor: %v", err)
+	}
+	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	if err != nil || task == nil {
+		t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
 	}
 	if task.Status != common.RUNNING {
 		t.Fatalf("task status after SetRunningByIngestor = %s, want %s", task.Status, common.RUNNING)
@@ -98,20 +93,12 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 
 	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
 	var routedToPipeline bool
-	var progressEvents []string
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		task,
 	)
-	var finalProgress float64
-	taskCtx.ProgressFunc = func(prog float64, msg string) {
-		finalProgress = prog
-		progressEvents = append(progressEvents, msg)
-	}
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 		routedToPipeline = true
-		taskCtx.ProgressFunc(0.82, "mock queue pipeline start")
-		taskCtx.ProgressFunc(1.0, "mock queue pipeline done")
 		return nil
 	}
 
@@ -119,12 +106,6 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 
 	if !routedToPipeline {
 		t.Fatal("expected executeTask to route queue-consumed pipeline task to runDocumentTask")
-	}
-	if finalProgress != 1.0 {
-		t.Fatalf("finalProgress = %v, want 1.0", finalProgress)
-	}
-	if len(progressEvents) != 2 {
-		t.Fatalf("progressEvents = %v, want 2 events", progressEvents)
 	}
 	if err := taskHandle.Ack(); err != nil {
 		t.Fatalf("Ack: %v", err)

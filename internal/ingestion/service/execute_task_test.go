@@ -25,12 +25,11 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	// Create a task log with invalid checkpoint (current_step is a string instead of number)
+	// Create a task log with invalid checkpoint (run_count is a string instead of number)
 	err := db.Create(&entity.IngestionTaskLog{
 		TaskID: taskID,
 		Checkpoint: entity.JSONMap{
-			"current_step": "not-a-number", // intentionally wrong type
-			"total_step":   5,
+			"run_count": "not-a-number", // intentionally wrong type
 		},
 	}).Error
 	if err != nil {
@@ -53,18 +52,19 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
 	ingestor.executeTask(taskCtx)
 
-	// Verify runDocumentTask was not called (we returned early due to checkpoint parse failure)
-	if runDocumentTaskCalled {
-		t.Fatal("expected runDocumentTask to not be called due to checkpoint parse failure")
+	// Corrupted run_count values are skipped by IncrementRunCount, so the task
+	// proceeds to runDocumentTask and completes normally.
+	if !runDocumentTaskCalled {
+		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
 	}
 
-	// Verify task status was set to FAILED
+	// Verify task status was set to COMPLETED
 	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 	if err != nil {
 		t.Fatalf("load final ingestion task: %v", err)
 	}
-	if finalTask.Status != common.FAILED {
-		t.Fatalf("final status = %s, want %s", finalTask.Status, common.FAILED)
+	if finalTask.Status != common.COMPLETED {
+		t.Fatalf("final status = %s, want %s", finalTask.Status, common.COMPLETED)
 	}
 }
 
@@ -147,5 +147,53 @@ func TestExecuteTask_PipelineRoutesToTaskHandler(t *testing.T) {
 	}
 	if len(gotMsgs) != 2 || gotMsgs[1] != "mock pipeline done" {
 		t.Fatalf("gotMsgs = %v, want final message %q", gotMsgs, "mock pipeline done")
+	}
+}
+
+// TestExecuteTask_CancelBeforePipeline verifies that when cancelCheck returns
+// true at task start, the task is cancelled before AdvanceStep,
+// runDocumentTask is never called, and document progress is set to -1 with a
+// cancel marker. Mirrors Python's cancel flow where has_canceled() returns
+// true in Pipeline.callback().
+func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db,
+		testutil.WithPipelineID("flow-1"),
+		testutil.WithTenantID("tenant-1"),
+	)
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.cancelCheck = func(taskID string) bool { return true }
+
+	var runDocumentTaskCalled bool
+	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
+		runDocumentTaskCalled = true
+		return nil
+	}
+
+	taskCtx := taskpkg.NewTaskContextForScheduling(
+		context.Background(),
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+	)
+	ingestor.executeTask(taskCtx)
+
+	if runDocumentTaskCalled {
+		t.Fatal("expected runDocumentTask to NOT be called when cancel is detected before pipeline")
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if doc.Progress != -1 {
+		t.Fatalf("document.progress = %v, want -1 (cancelled)", doc.Progress)
+	}
+	if doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("document.run = %v, want %s (CANCEL)", doc.Run, entity.TaskStatusCancel)
+	}
+	if doc.ProgressMsg == nil || *doc.ProgressMsg == "" {
+		t.Fatal("document.progress_msg should contain cancel marker, got empty")
 	}
 }

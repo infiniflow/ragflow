@@ -31,8 +31,6 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
-type ProgressFunc func(prog float64, msg string)
-
 // PipelineResult is the outcome of a pipeline run: chunks have been
 // indexed, and these bookkeeping inputs remain for the caller to apply to
 // document state (metadata merge + chunk/token counter bumps).
@@ -45,16 +43,15 @@ type PipelineResult struct {
 }
 
 type PipelineExecutor struct {
-	taskCtx      *TaskContext
-	canvasID     string
-	docBulkSize  int
-	progressFunc ProgressFunc
+	taskCtx     *TaskContext
+	canvasID    string
+	docBulkSize int
 
-	insertChunksFunc func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error)
-	logCreateFunc    func(log *entity.PipelineOperationLog) error
-	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
-	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
-	progressSink     pipelinepkg.ProgressSink
+	indexWriter     *chunkIndexWriter
+	logCreateFunc   func(log *entity.PipelineOperationLog) error
+	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
+	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
+	progressSink    pipelinepkg.ProgressSink
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -90,18 +87,18 @@ func NewPipelineExecutor(
 	if strings.TrimSpace(canvasID) == "" {
 		return nil, fmt.Errorf("pipeline executor: empty canvas id")
 	}
-	progressFn := func(prog float64, msg string) {}
-	if taskCtx.ProgressFunc != nil {
-		progressFn = taskCtx.ProgressFunc
-	}
 	svc := &PipelineExecutor{
-		taskCtx:      taskCtx,
-		canvasID:     canvasID,
-		docBulkSize:  docBulkSize,
-		progressFunc: progressFn,
-		insertChunksFunc: func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-			return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
-		},
+		taskCtx:     taskCtx,
+		canvasID:    canvasID,
+		docBulkSize: docBulkSize,
+		indexWriter: newChunkIndexWriter(
+			func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
+			},
+			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
+			taskCtx.Doc.KbID,
+			docBulkSize,
+		),
 		logCreateFunc: dao.NewPipelineOperationLogDAO().Create,
 	}
 	svc.loadDSLFunc = svc.defaultLoadDSL
@@ -109,13 +106,8 @@ func NewPipelineExecutor(
 	return svc, nil
 }
 
-func (s *PipelineExecutor) WithProgressFunc(fn ProgressFunc) *PipelineExecutor {
-	s.progressFunc = fn
-	return s
-}
-
-func (s *PipelineExecutor) WithInsertChunksFunc(f func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error)) *PipelineExecutor {
-	s.insertChunksFunc = f
+func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
+	s.indexWriter.insertFunc = f
 	return s
 }
 
@@ -189,22 +181,26 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	chunks := s.normalizeChunks(pipelineOutput)
+	chunks := NormalizeChunks(pipelineOutput)
 	if chunks == nil {
 		return nil, nil
 	}
 
 	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
-	metadata := s.processChunks(chunks)
+	metadata := ProcessChunksForPipeline(
+		chunks,
+		s.taskCtx.Doc.ID,
+		s.taskCtx.Doc.KbID,
+		*s.taskCtx.Doc.Name,
+		time.Now(),
+	)
 
 	indexStart := time.Now()
-	s.progress(0.82, "[DOC Engine]:\nStart to index...")
-	if err := s.insertChunks(ctx, chunks); err != nil {
+	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
-	indexDuration := time.Since(indexStart).Seconds()
-	taskDuration := time.Since(taskStart).Seconds()
-	s.progress(1.0, fmt.Sprintf("Indexing done (%.2fs). Task done (%.2fs)", indexDuration, taskDuration))
+	_ = time.Since(indexStart)
+	_ = time.Since(taskStart)
 
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
@@ -213,45 +209,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		ChunkCount:       len(chunks),
 		TokenConsumption: embeddingTokenConsumption,
 	}, nil
-}
-
-func (s *PipelineExecutor) normalizeChunks(output map[string]any) []map[string]any {
-	return NormalizeChunks(output)
-}
-
-func (s *PipelineExecutor) processChunks(chunks []map[string]any) map[string]any {
-	return ProcessChunksForPipeline(
-		chunks,
-		s.taskCtx.Doc.ID,
-		s.taskCtx.Doc.KbID,
-		*s.taskCtx.Doc.Name,
-		time.Now(),
-	)
-}
-
-func (s *PipelineExecutor) insertChunks(ctx context.Context, chunks []map[string]any) error {
-	baseName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
-	if len(chunks) == 0 {
-		_, err := s.insertChunksFunc(ctx, chunks, baseName, s.taskCtx.Doc.KbID)
-		return err
-	}
-	bulkSize := s.docBulkSize
-	if bulkSize <= 0 {
-		bulkSize = len(chunks)
-	}
-	for b := 0; b < len(chunks); b += bulkSize {
-		end := b + bulkSize
-		if end > len(chunks) {
-			end = len(chunks)
-		}
-		if _, err := s.insertChunksFunc(ctx, chunks[b:end], baseName, s.taskCtx.Doc.KbID); err != nil {
-			return err
-		}
-		if (b/bulkSize)%128 == 0 {
-			s.progress(0.8+0.1*float64(b+1)/float64(len(chunks)), "")
-		}
-	}
-	return nil
 }
 
 func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
@@ -276,11 +233,5 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 	}
 	if err := s.logCreateFunc(log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
-	}
-}
-
-func (s *PipelineExecutor) progress(prog float64, msg string) {
-	if s.progressFunc != nil {
-		s.progressFunc(prog, msg)
 	}
 }

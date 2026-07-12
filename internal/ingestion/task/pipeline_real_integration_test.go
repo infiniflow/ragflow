@@ -36,7 +36,6 @@ import (
 )
 
 func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
-	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
 	cfg := mustLoadTaskRealIntegrationConfig(t)
@@ -123,13 +122,12 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 			TenantID: tenantID,
 			EmbdID:   "embd-1",
 		},
-		Tenant:       entity.Tenant{ID: tenantID},
-		ProgressFunc: func(prog float64, msg string) {},
+		Tenant: entity.Tenant{ID: tenantID},
 	}
 
 	var inserted [][]map[string]any
 	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
 		})
@@ -154,7 +152,6 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 }
 
 func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *testing.T) {
-	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
 	cfg := mustLoadTaskRealIntegrationConfig(t)
@@ -260,8 +257,7 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 			TenantID: tenantID,
 			EmbdID:   "embd-1",
 		},
-		Tenant:       entity.Tenant{ID: tenantID},
-		ProgressFunc: func(prog float64, msg string) {},
+		Tenant: entity.Tenant{ID: tenantID},
 	}
 
 	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0)
@@ -301,7 +297,6 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 }
 
 func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
-	prepareTokenizerResourceForTaskIntegration(t)
 	requireTokenizerPool(t)
 
 	cfg := mustLoadTaskRealIntegrationConfig(t)
@@ -381,13 +376,12 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			TenantID: tenantID,
 			EmbdID:   "embd-1",
 		},
-		Tenant:       entity.Tenant{ID: tenantID},
-		ProgressFunc: func(prog float64, msg string) {},
+		Tenant: entity.Tenant{ID: tenantID},
 	}
 
 	var inserted [][]map[string]any
 	svc := mustNewPipelineExecutor(t, taskCtx, "flow-real-1", 0).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
 		})
@@ -511,23 +505,6 @@ func disableTokenizerEmbeddingForTaskTemplate(t *testing.T, raw []byte) []byte {
 	return out
 }
 
-func prepareTokenizerResourceForTaskIntegration(t *testing.T) {
-	t.Helper()
-	if common.GetEnv(common.EnvRAGFlowDictPath) != "" {
-		return
-	}
-	const systemDictPath = "/usr/share/infinity/resource"
-	if _, err := os.Stat(filepath.Join(systemDictPath, "rag", "huqie.txt")); err != nil {
-		t.Skipf("system tokenizer resource not found at %s: %v", systemDictPath, err)
-	}
-	if err := os.Setenv(common.EnvRAGFlowDictPath, systemDictPath); err != nil {
-		t.Fatalf("set RAGFLOW_DICT_PATH=%s: %v", systemDictPath, err)
-	}
-	t.Cleanup(func() {
-		_ = os.Unsetenv(common.EnvRAGFlowDictPath)
-	})
-}
-
 func taskMustSymlink(t *testing.T, src, dst string) {
 	t.Helper()
 	if err := os.Symlink(src, dst); err != nil {
@@ -616,20 +593,13 @@ func taskMustPrepareTokenizerOpenCC(t *testing.T, root string) {
 
 func requireTokenizerPool(t *testing.T) {
 	t.Helper()
-	if tokenizer.IsInitialized() {
-		return
-	}
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	if err := tokenizer.Init(cfg); err != nil {
+	}); err != nil {
 		t.Skipf("tokenizer pool init failed: %v", err)
 	}
 }

@@ -3,19 +3,21 @@ package service
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
 )
 
-// Step-checkpoint keys for IngestionTaskLog.Checkpoint, consumed by
-// ListAllForAdmin to render the task's current step.
+// Run-count key for IngestionTaskLog.Checkpoint, consumed by
+// ListAllForAdmin and IncrementRunCount to track how many times
+// the task has been picked up by a worker.
 const (
-	checkpointKeyCurrentStep = "current_step"
-	checkpointKeyTotalStep   = "total_step"
+	stepKeyRunCount = "run_count"
 )
 
 type InvalidTaskTransitionError struct {
@@ -123,7 +125,7 @@ func (s *IngestionTaskService) RequestStopMany(tasks []string, ownerUserID *stri
 	taskResponses := make([]*entity.IngestionTask, 0, len(tasks))
 	for _, taskID := range tasks {
 		if ownerUserID != nil {
-			task, err := s.getTask(taskID)
+			task, err := s.GetTask(taskID)
 			if err != nil {
 				return nil, err
 			}
@@ -175,11 +177,20 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 			"status":      task.Status,
 		}
 
-		latestLog, err := s.ingestionTaskLogDAO.LatestLogByTaskID(task.ID)
-		if err == nil && latestLog != nil && latestLog.Checkpoint != nil {
-			if step, ok := latestLog.Checkpoint["current_step"].(float64); ok {
-				showTask["step"] = int(step)
+		if count, ok := s.lastRunCount(task.ID); ok {
+			showTask["run_count"] = count
+		}
+
+		showTask["component_total"] = task.ComponentTotal
+		if task.ComponentTotal > 0 {
+			progress, err := s.ingestionTaskLogDAO.AggregateProgress(task.ID, task.ComponentTotal)
+			if err == nil {
+				showTask["component_done"] = progress.Done
+			} else {
+				showTask["component_done"] = 0
 			}
+		} else {
+			showTask["component_done"] = 0
 		}
 
 		showTasks = append(showTasks, showTask)
@@ -188,7 +199,7 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 }
 
 func (s *IngestionTaskService) StartRunning(taskID string) (*entity.IngestionTask, error) {
-	task, err := s.getTask(taskID)
+	task, err := s.GetTask(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +216,7 @@ func (s *IngestionTaskService) StartRunning(taskID string) (*entity.IngestionTas
 }
 
 func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask, error) {
-	task, err := s.getTask(taskID)
+	task, err := s.GetTask(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +224,17 @@ func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask
 	case common.CREATED:
 		return s.transition(taskID, common.STOPPED)
 	case common.RUNNING:
-		return s.transition(taskID, common.STOPPING)
+		task, err := s.transition(taskID, common.STOPPING)
+		if err != nil {
+			return nil, err
+		}
+		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
+		// running worker's pollCancel detects the stop immediately rather
+		// than waiting for the next DB poll (up to 3s).
+		if rc := redis2.Get(); rc != nil {
+			rc.Set(fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
+		}
+		return task, nil
 	default:
 		return task, nil
 	}
@@ -229,11 +250,26 @@ func (s *IngestionTaskService) MarkFailed(taskID string) error {
 	return err
 }
 
+// MarkStopped transitions the task from STOPPING to STOPPED (terminal).
+// Idempotent: returns nil if the task is already in a terminal state
+// (STOPPED, COMPLETED, or FAILED).
+func (s *IngestionTaskService) MarkStopped(taskID string) error {
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
+		return nil
+	}
+	_, err = s.transition(taskID, common.STOPPED)
+	return err
+}
+
 func (s *IngestionTaskService) Remove(taskID string, userID *string) (*dao.TaskInfo, error) {
 	return s.ingestionTaskDAO.Delete(taskID, userID)
 }
 
-func (s *IngestionTaskService) getTask(taskID string) (*entity.IngestionTask, error) {
+func (s *IngestionTaskService) GetTask(taskID string) (*entity.IngestionTask, error) {
 	task, err := s.ingestionTaskDAO.GetByID(taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -267,7 +303,7 @@ func validateTransition(from, to string) error {
 }
 
 func (s *IngestionTaskService) newTaskStatusConflictError(taskID, expectedFrom, attemptedTo string) error {
-	current, err := s.getTask(taskID)
+	current, err := s.GetTask(taskID)
 	if err != nil {
 		return err
 	}
@@ -280,7 +316,7 @@ func (s *IngestionTaskService) newTaskStatusConflictError(taskID, expectedFrom, 
 }
 
 func (s *IngestionTaskService) transition(taskID string, to string) (*entity.IngestionTask, error) {
-	task, err := s.getTask(taskID)
+	task, err := s.GetTask(taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -391,42 +427,41 @@ func (s *IngestionTaskService) AggregateTaskProgress(taskID string, total int) (
 	return s.ingestionTaskLogDAO.AggregateProgress(taskID, total)
 }
 
-// AdvanceStepCheckpoint loads the task's latest step-checkpoint row,
-// initializing one (current_step=1, total_step=5) when none exists, then
-// bumps current_step by one to signal processing started. ListAllForAdmin
-// reads current_step back to render the task's step.
-//
-// Returns an error when the checkpoint cannot be parsed or the initial
-// load/create fails; the caller should mark the task FAILED. A failure to
-// persist the bumped value is best-effort (logged) and does not return an
-// error, matching the legacy semantics where the run proceeds even if the
-// checkpoint write fails.
-func (s *IngestionTaskService) AdvanceStepCheckpoint(taskID string) error {
-	latestLog, err := s.ingestionTaskLogDAO.LatestLogByTaskID(taskID)
+// lastRunCount scans all task logs (newest first) for a run_count entry,
+// skipping component-progress rows whose Checkpoint is empty. It returns
+// the counter and whether one was found.
+func (s *IngestionTaskService) lastRunCount(taskID string) (int, bool) {
+	logs, err := s.ingestionTaskLogDAO.ListLogsByTaskID(taskID)
 	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("load latest task log for task %s: %w", taskID, err)
-		}
-		latestLog = &entity.IngestionTaskLog{
-			TaskID: taskID,
-			Checkpoint: entity.JSONMap{
-				checkpointKeyCurrentStep: 1,
-				checkpointKeyTotalStep:   5,
-			},
-		}
-		if err := s.ingestionTaskLogDAO.Create(latestLog); err != nil {
-			return fmt.Errorf("create task log for task %s: %w", taskID, err)
+		return 0, false
+	}
+	for i := len(logs) - 1; i >= 0; i-- {
+		if count, ok := common.GetInt(logs[i].Checkpoint[stepKeyRunCount]); ok {
+			return count, true
 		}
 	}
-	checkpointMap := latestLog.Checkpoint
-	currentStep, ok := common.GetInt(checkpointMap[checkpointKeyCurrentStep])
-	if !ok {
-		return fmt.Errorf("parse current_step from task log for task %s", taskID)
+	return 0, false
+}
+
+// IncrementRunCount scans existing task logs for the previous run_count
+// (skipping component-progress rows that have no run_count), then INSERTS a
+// new row with the bumped counter. This avoids the race where the latest log
+// is a component-progress row whose empty Checkpoint would cause a parse
+// failure. ListAllForAdmin reads run_count back to render the attempt number.
+//
+// A corrupted run_count value in an existing row is skipped (the row is
+// ignored). A failure to persist the new row is best-effort (logged) and
+// does not return an error — matching the legacy semantics that the run
+// proceeds even if the counter write fails.
+func (s *IngestionTaskService) IncrementRunCount(taskID string) error {
+	prevCount, _ := s.lastRunCount(taskID)
+
+	entry := &entity.IngestionTaskLog{
+		TaskID:     taskID,
+		Checkpoint: entity.JSONMap{stepKeyRunCount: prevCount + 1},
 	}
-	checkpointMap[checkpointKeyCurrentStep] = currentStep + 1
-	latestLog.Checkpoint = checkpointMap
-	if err := s.ingestionTaskLogDAO.Update(latestLog); err != nil {
-		common.Error(fmt.Sprintf("Failed to persist checkpoint for task %s", taskID), err)
+	if err := s.ingestionTaskLogDAO.Create(entry); err != nil {
+		common.Error(fmt.Sprintf("Failed to persist run_count for task %s", taskID), err)
 	}
 	return nil
 }

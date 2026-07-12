@@ -39,8 +39,6 @@ type TaskContext struct {
 	PipelineID string
 	File       any
 
-	ProgressFunc ProgressFunc
-
 	// Handle is the message-queue ack handle for the task message that scheduled
 	// this context. The scheduler sets it before queueing; the worker acks on a
 	// durably-persisted terminal status and nacks otherwise (e.g. shutdown

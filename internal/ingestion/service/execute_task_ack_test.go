@@ -106,10 +106,11 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 	}
 }
 
-// TestExecuteTask_NacksMessageOnContextCancel: a task cancelled mid-flight
-// (e.g. shutdown) is left non-terminal and must be Nacked so it is redelivered
-// and resumed after restart, rather than silently dropped.
-func TestExecuteTask_NacksMessageOnContextCancel(t *testing.T) {
+// TestExecuteTask_AcksMessageOnContextCancel: a task with a cancelled context
+// (e.g. Redis cancel flag or Ingestor shutdown) is now terminal — the cancel
+// is durably recorded (progress=-1, run=CANCEL) and the message is Acked to
+// prevent indefinite redeliveries of an already-cancelled task.
+func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -135,8 +136,8 @@ func TestExecuteTask_NacksMessageOnContextCancel(t *testing.T) {
 	if runCalled {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
-	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
-		t.Fatalf("expected 1 Nack / 0 Ack on cancel, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack / 0 Nack on cancel, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

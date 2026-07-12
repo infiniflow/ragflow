@@ -1953,43 +1953,20 @@ func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID strin
 	return docs, nil
 }
 
-// cancelDocParse sets Redis cancel signals for the document's active tasks and
-// marks the document run status as CANCEL. Returns an error if the document is
-// not in a cancellable state or the status update fails.
+// cancelDocParse stops the ingestion task for the document by calling
+// RequestStop (which sets Redis {taskID}-cancel + DB STOPPING), then marks
+// the document run status as CANCEL.
 func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
-	tasks, taskErr := s.taskDAO.GetByDocID(doc.ID)
-	if taskErr != nil {
-		common.Error(fmt.Sprintf("error when load task %s", doc.ID), taskErr)
-		return fmt.Errorf("failed to get tasks for %s: %v", doc.ID, taskErr)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(doc.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
+	}
+	if task == nil {
+		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
 	}
 
-	hasUnfinishedTask := false
-	for _, t := range tasks {
-		if t.Progress < 1 {
-			hasUnfinishedTask = true
-			break
-		}
-	}
-
-	canCancel := false
-	if doc.Run != nil {
-		if *doc.Run == string(entity.TaskStatusRunning) || *doc.Run == string(entity.TaskStatusCancel) {
-			canCancel = true
-		}
-	}
-	if hasUnfinishedTask {
-		canCancel = true
-	}
-	if !canCancel {
-		return fmt.Errorf("can't stop parsing document that has not started or already completed")
-	}
-
-	// Set Redis cancel signal for each task (best-effort)
-	redisClient := redis.Get()
-	for _, t := range tasks {
-		if redisClient != nil {
-			redisClient.Set(fmt.Sprintf("%s-cancel", t.ID), "x", 0)
-		}
+	if _, err := s.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
 	}
 
 	if upErr := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {

@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
@@ -64,6 +65,13 @@ type Ingestor struct {
 	// Tests may override this to verify branch routing without invoking
 	// the full downstream stack.
 	runDocumentTask func(ctx context.Context, ingestionTask *entity.IngestionTask) error
+
+	// cancelCheck is polled periodically (every 3s) during task execution.
+	// When it returns true the task's context is cancelled, which causes the
+	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
+	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
+	// override this to simulate cancel without Redis.
+	cancelCheck func(taskID string) bool
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -81,10 +89,11 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
-		docState:          &docStateUpdater{},
+		docState:          newDocStateUpdater(),
 		heartbeatInterval: 10 * time.Second,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
+	ingestor.cancelCheck = ingestor.defaultCancelCheck
 	return ingestor
 }
 
@@ -232,9 +241,43 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	// redelivery (after restart) can re-claim the task.
 	defer e.releaseTask(task.ID)
 
+	// Derive a per-task cancelable context so that an external cancel
+	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
+	// can stop only this task without affecting the whole Ingestor.
+	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
+	taskCtx.Ctx = perTaskCtx
+	cancelDone := make(chan struct{})
+	go e.pollCancel(task.ID, perTaskCancel, cancelDone)
+	defer func() { close(cancelDone); perTaskCancel() }()
+
+	// Synchronous check: if already cancelled (e.g. flag set between MQ
+	// delivery and worker claim), stop before the pipeline even starts.
+	if e.cancelCheck(task.ID) {
+		common.Info(fmt.Sprintf("Task %s cancel flag detected before pipeline start, cancelling", task.ID))
+		perTaskCancel()
+	}
+
 	e.settleMessage(taskCtx, func(ctx context.Context) bool {
 		return e.runTask(ctx, task)
 	})
+}
+
+// markStopped transitions the task to STOPPED (terminal). It first calls
+// RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
+// STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
+// so that a future retry of the same task does not immediately re-cancel.
+func (e *Ingestor) markStopped(taskID string) bool {
+	if _, err := e.ingestionTaskSvc.RequestStop(taskID); err != nil {
+		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+	}
+	if err := e.ingestionTaskSvc.MarkStopped(taskID); err != nil {
+		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
+		return false
+	}
+	if rc := redis2.Get(); rc != nil {
+		rc.Delete(fmt.Sprintf("%s-cancel", taskID))
+	}
+	return true
 }
 
 // markFailed persists FAILED status for the task and reports whether the
@@ -247,25 +290,30 @@ func (e *Ingestor) markFailed(taskID string) bool {
 	return true
 }
 
-// runTask executes the task's business logic — checkpoint advance, document
+// runTask executes the task's business logic — run-count advance, document
 // pipeline, and completion — behind the heartbeat. It returns whether the
-// task reached a durably-persisted terminal status. The ctx check runs
-// before AdvanceStepCheckpoint (problem 4) so a cancelled task does not
-// bump the checkpoint and inflate the step counter on redelivery.
+// task reached a durably-persisted terminal status.
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		return false
+		e.markCancelProgress(task)
+		e.markStopped(task.ID)
+		return true
 	default:
 	}
 
-	if err := e.ingestionTaskSvc.AdvanceStepCheckpoint(task.ID); err != nil {
-		common.Error(fmt.Sprintf("Failed to advance step checkpoint for task %s", task.ID), err)
+	if err := e.ingestionTaskSvc.IncrementRunCount(task.ID); err != nil {
+		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		return e.markFailed(task.ID)
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
+			e.markCancelProgress(task)
+			return e.markStopped(task.ID)
+		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		return e.markFailed(task.ID)
 	}
@@ -312,6 +360,69 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 	if err := taskCtx.Handle.Nack(); err != nil {
 		common.Error(fmt.Sprintf("nack task %s", taskCtx.IngestionTask.ID), err)
 	}
+}
+
+// defaultCancelCheck reads the Redis cancel flag that Python sets via
+// REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
+// task status in DB when Redis is unavailable — a STOPPING status
+// (set by RequestStop) is treated as a cancel signal.
+func (e *Ingestor) defaultCancelCheck(taskID string) bool {
+	rc := redis2.Get()
+	if rc != nil {
+		if ok, _ := rc.Exist(fmt.Sprintf("%s-cancel", taskID)); ok {
+			return true
+		}
+	}
+	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	if err != nil {
+		return false
+	}
+	return task.Status == common.STOPPING
+}
+
+// pollCancel ticks every 3s to check the cancel flag. When cancelCheck
+// returns true it cancels the per-task context, which causes the pipeline's
+// next ctx.Err() check to abort and runTask to record progress=-1. The
+// goroutine exits when done is closed (executeTask returns).
+func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-chan struct{}) {
+	// Check immediately so the test path (which sets cancelCheck to a func
+	// that returns true) does not need to wait for the first tick.
+	if e.cancelCheck(taskID) {
+		common.Info(fmt.Sprintf("Task %s cancel flag detected during polling, cancelling pipeline", taskID))
+		cancel()
+		return
+	}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if e.cancelCheck(taskID) {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+// markCancelProgress writes the cancelled-progress markers to the document
+// row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
+// appended timestamped cancel message (progress_msg += cancelMsg).
+func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
+	svc := servicepkg.NewDocumentService()
+	doc, err := svc.GetDocumentByID(task.DocumentID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
+		return
+	}
+	cancelMsg := fmt.Sprintf("\n%s Task stopped by user.", time.Now().Format("15:04:05"))
+	existingMsg := ""
+	if doc.ProgressMsg != nil {
+		existingMsg = *doc.ProgressMsg
+	}
+	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another

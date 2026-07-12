@@ -23,11 +23,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"math"
-	"os"
-	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -39,42 +36,16 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-var tokenizerPoolInitErr error
-
-// TestMain initializes the tokenizer pool before any test runs.
-// The tokenizer package needs the C++ RAGAnalyzer dictionaries
-// (see internal/tokenizer.Init) for `Tokenize` /
-// `FineGrainedTokenize`; without it, `tokenizeChunks` errors out
-// with "tokenizer pool not initialized". Tests in other packages
-// initialize the pool at startup; this package must do the same
-// because the Tokenizer component touches tokenizer.Tokenize.
-//
-// If Init fails (e.g., dict path missing in some CI sandboxes),
-// we log the failure but still run the tests. Cases that exercise
-// tokenizeChunks will fail rather than skip when the pool is not
-// initialized.
-func TestMain(m *testing.M) {
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
+func requireTokenizerPool(t *testing.T) {
+	t.Helper()
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerPoolInitErr = tokenizer.Init(cfg)
-	if tokenizerPoolInitErr != nil {
-		fmt.Fprintf(os.Stderr, "tokenizer pool init failed (tests will skip tokenize-dependent cases): %v\n", tokenizerPoolInitErr)
-	}
-	os.Exit(m.Run())
-}
-
-func requireTokenizerPool(t *testing.T) {
-	t.Helper()
-	if tokenizerPoolInitErr != nil {
-		t.Skipf("tokenizer pool unavailable: %v", tokenizerPoolInitErr)
+	}); err != nil {
+		t.Skipf("tokenizer pool unavailable: %v", err)
 	}
 }
 

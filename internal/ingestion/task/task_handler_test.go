@@ -33,7 +33,6 @@ func makeTaskHandlerTestContext(pipelineID string) *TaskContext {
 			ID:    "tenant-1",
 			LLMID: "gpt-4",
 		},
-		ProgressFunc: func(prog float64, msg string) {},
 	}
 }
 
@@ -57,7 +56,7 @@ func newNoopPipelineExecutor(ctx *TaskContext, canvasID string) (*PipelineExecut
 				}},
 			}, dsl, nil
 		}).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
 		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
@@ -84,17 +83,10 @@ func TestTaskHandler_HandleRequiresPipelineID(t *testing.T) {
 	}
 }
 
-func TestTaskHandler_DefaultPipelineExecutorInjectsProgress(t *testing.T) {
+func TestTaskHandler_HandleRunWithFactory(t *testing.T) {
 	ctx := makeTaskHandlerTestContext("flow-1")
 	ctx.Ctx = context.Background()
 	handler := NewTaskHandler(ctx).WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
-		svc, err := NewPipelineExecutor(ctx, canvasID, 0)
-		if err != nil {
-			t.Fatalf("NewPipelineExecutor: %v", err)
-		}
-		if svc.progressFunc == nil {
-			t.Fatal("expected default progress func to be injected")
-		}
 		return newNoopPipelineExecutor(ctx, canvasID)
 	})
 	if _, err := handler.Handle(); err != nil {
@@ -119,7 +111,7 @@ func TestTaskHandler_Pipeline_UsesTaskContext(t *testing.T) {
 				}
 				return map[string]any{"chunks": []map[string]any{{"text": "stub", "q_2_vec": []float64{0.1, 0.2}}}}, dsl, nil
 			}).
-			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 				return nil, nil
 			}).
 			WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }), nil
@@ -139,13 +131,6 @@ func TestTaskHandler_Pipeline_ShowsProgressAndPipelineLog(t *testing.T) {
 	var insertCalled bool
 	var logCreateCalls int
 	var insertedChunkCount int
-	var progressProgs []float64
-	var progressMsgs []string
-
-	ctx.ProgressFunc = func(prog float64, msg string) {
-		progressProgs = append(progressProgs, prog)
-		progressMsgs = append(progressMsgs, msg)
-	}
 
 	handler := NewTaskHandler(ctx).WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
 		svc := mustNewPipelineExecutor(t, ctx, canvasID, 0).
@@ -161,7 +146,7 @@ func TestTaskHandler_Pipeline_ShowsProgressAndPipelineLog(t *testing.T) {
 					}},
 				}, dsl, nil
 			}).
-			WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 				insertCalled = true
 				insertedChunkCount = len(chunks)
 				return nil, nil
@@ -185,29 +170,6 @@ func TestTaskHandler_Pipeline_ShowsProgressAndPipelineLog(t *testing.T) {
 	}
 	if insertedChunkCount != 1 {
 		t.Fatalf("insertedChunkCount = %d, want 1", insertedChunkCount)
-	}
-	if len(progressProgs) == 0 {
-		t.Fatal("expected progress callbacks, got none")
-	}
-
-	foundStartIndex := false
-	for _, msg := range progressMsgs {
-		if strings.Contains(msg, "Start to index") {
-			foundStartIndex = true
-			break
-		}
-	}
-	if !foundStartIndex {
-		t.Fatalf("expected progress message containing %q, got %v", "Start to index", progressMsgs)
-	}
-
-	if got := progressProgs[len(progressProgs)-1]; got != 1.0 {
-		t.Fatalf("final progress = %v, want 1.0", got)
-	}
-
-	lastMsg := progressMsgs[len(progressMsgs)-1]
-	if !strings.Contains(lastMsg, "Indexing done") {
-		t.Fatalf("final progress msg = %q, want substring %q", lastMsg, "Indexing done")
 	}
 
 	if logCreateCalls != 1 {

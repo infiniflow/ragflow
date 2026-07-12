@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
@@ -201,5 +202,80 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	}
 	if stub.calls != 0 {
 		t.Fatalf("UpdateRunProgress calls = %d, want 0 (no document bound)", stub.calls)
+	}
+}
+
+// TestDeriveDocumentProgress exercises every branch of the run-label derivation
+// logic. The function is called from OnComponentProgress with a non-nil agg
+// (guarded by the caller), so the nil case is documented as a known panic.
+func TestDeriveDocumentProgress(t *testing.T) {
+	tests := []struct {
+		name     string
+		agg      *dao.TaskProgress
+		total    int
+		wantRun  string
+		wantProg float64
+	}{
+		{
+			name:     "failed component → fail",
+			agg:      &dao.TaskProgress{Failed: 1, Done: 0, Running: 0, Percent: 0},
+			total:    5,
+			wantRun:  string(entity.TaskStatusFail),
+			wantProg: 0.0,
+		},
+		{
+			name:     "all done → done",
+			agg:      &dao.TaskProgress{Failed: 0, Done: 5, Running: 0, Percent: 100},
+			total:    5,
+			wantRun:  string(entity.TaskStatusDone),
+			wantProg: 1.0,
+		},
+		{
+			name:     "partial done → running",
+			agg:      &dao.TaskProgress{Failed: 0, Done: 3, Running: 0, Percent: 60},
+			total:    5,
+			wantRun:  string(entity.TaskStatusRunning),
+			wantProg: 0.6,
+		},
+		{
+			name:     "running only → running",
+			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 2, Percent: 0},
+			total:    5,
+			wantRun:  string(entity.TaskStatusRunning),
+			wantProg: 0.0,
+		},
+		{
+			name:     "nothing started → unstart",
+			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 0, Percent: 0},
+			total:    5,
+			wantRun:  string(entity.TaskStatusUnstart),
+			wantProg: 0.0,
+		},
+		{
+			name:     "total zero, nothing done → done (0==0)",
+			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 0, Percent: 0},
+			total:    0,
+			wantRun:  string(entity.TaskStatusDone),
+			wantProg: 0.0,
+		},
+		{
+			name:     "failed overrides done=total",
+			agg:      &dao.TaskProgress{Failed: 1, Done: 5, Running: 0, Percent: 100},
+			total:    5,
+			wantRun:  string(entity.TaskStatusFail),
+			wantProg: 1.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, run := deriveDocumentProgress(tt.agg, tt.total)
+			if prog != tt.wantProg {
+				t.Errorf("progress = %v, want %v", prog, tt.wantProg)
+			}
+			if run != tt.wantRun {
+				t.Errorf("run = %q, want %q", run, tt.wantRun)
+			}
+		})
 	}
 }

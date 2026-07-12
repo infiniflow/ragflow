@@ -1148,7 +1148,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
-	insertTestTask(t, "task-1", "doc-1")
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -1182,7 +1182,7 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	// Doc is already in CANCEL state — should still be accepted
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
-	insertTestTask(t, "task-1", "doc-1")
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -1227,9 +1227,9 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc with Run="0" but has an unfinished task (progress < 1) → can cancel
+	// Doc with Run="0" → cancelDocParse calls RequestStop on the ingestion task.
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
-	insertTestTaskWithProgress(t, "task-1", "doc-1", 0.0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 
@@ -1294,7 +1294,7 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
-	insertTestTask(t, "task-1", "doc-1")
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
 

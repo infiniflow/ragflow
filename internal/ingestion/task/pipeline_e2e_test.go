@@ -251,7 +251,7 @@ func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 				})
 
 				// Use the injected DocEngine for insertChunks!
-				svc.WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+				svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 					insertChunksCalled = true
 					t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
 					ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
@@ -264,19 +264,6 @@ func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 
 				return svc, nil
 			})
-
-			// Also set progress callback
-			var progressEvents []struct {
-				prog float64
-				msg  string
-			}
-			taskCtx.ProgressFunc = func(prog float64, msg string) {
-				t.Logf("PROGRESS: %.2f %s", prog, msg)
-				progressEvents = append(progressEvents, struct {
-					prog float64
-					msg  string
-				}{prog, msg})
-			}
 
 			// Execute the task handler!
 			t.Logf("Calling TaskHandler.Handle()...")
@@ -328,20 +315,6 @@ func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 						}
 					}
 				}
-			}
-
-			// Verify progress reported
-			if len(progressEvents) == 0 {
-				t.Fatal("Expected at least one progress event")
-			}
-			foundDone := false
-			for _, ev := range progressEvents {
-				if ev.prog == 1.0 {
-					foundDone = true
-				}
-			}
-			if !foundDone {
-				t.Fatal("Expected progress to reach 1.0")
 			}
 
 			// Verify final task status can be marked completed

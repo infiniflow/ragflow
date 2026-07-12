@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"math"
 	"path/filepath"
-	"ragflow/internal/common"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -38,20 +37,13 @@ func repoRootFromPipelineTest(t *testing.T) string {
 
 func RequireTokenizerPool(t *testing.T) {
 	t.Helper()
-	if tokenizer.IsInitialized() {
-		return
-	}
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	if err := tokenizer.Init(cfg); err != nil {
+	}); err != nil {
 		t.Skipf("tokenizer pool init failed: %v", err)
 	}
 }

@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,7 +43,6 @@ func makeTaskCtx() *TaskContext {
 		Tenant: entity.Tenant{
 			ID: "tenant-1",
 		},
-		ProgressFunc: func(prog float64, msg string) {},
 	}
 }
 
@@ -86,7 +84,7 @@ func TestNewPipelineExecutor_Basic(t *testing.T) {
 	if svc.taskCtx == nil {
 		t.Error("taskCtx should not be nil")
 	}
-	if svc.insertChunksFunc == nil || svc.logCreateFunc == nil || svc.loadDSLFunc == nil || svc.runPipelineFunc == nil {
+	if svc.indexWriter == nil || svc.logCreateFunc == nil || svc.loadDSLFunc == nil || svc.runPipelineFunc == nil {
 		t.Fatal("expected production dependencies to be fully initialized")
 	}
 }
@@ -136,13 +134,6 @@ func TestNewPipelineExecutor_DocBulkSize(t *testing.T) {
 	}
 }
 
-func TestNewPipelineExecutor_WithProgressFunc(t *testing.T) {
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithProgressFunc(func(prog float64, msg string) {})
-	if svc.progressFunc == nil {
-		t.Error("progressFunc should be set via WithProgressFunc")
-	}
-}
-
 func TestNewPipelineExecutor_CanvasID(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "my-flow-id", 0)
 	if svc.canvasID != "my-flow-id" {
@@ -170,7 +161,7 @@ func TestKB_Doc_Tenant_Accessors(t *testing.T) {
 func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
 	chunks := []map[string]any{{"text": "hello world"}}
-	meta := svc.processChunks(chunks)
+	meta := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
 
 	// Verify the wrapper method works correctly and chunks are processed
 	if chunks[0]["doc_id"] != "doc-1" {
@@ -182,49 +173,16 @@ func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing
 }
 
 // =============================================================================
-// progress
-// =============================================================================
-
-func TestProgress_CallsCallback(t *testing.T) {
-	var called bool
-	var lastProg float64
-	var lastMsg string
-
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
-	svc.WithProgressFunc(func(prog float64, msg string) {
-		called = true
-		lastProg = prog
-		lastMsg = msg
-	})
-	svc.progress(0.82, "Start to embedding...")
-
-	if !called {
-		t.Error("progress callback was not called")
-	}
-	if lastProg != 0.82 {
-		t.Errorf("prog = %f, want 0.82", lastProg)
-	}
-	if lastMsg != "Start to embedding..." {
-		t.Errorf("msg = %q, want \"Start to embedding...\"", lastMsg)
-	}
-}
-
-func TestProgress_NilCallbackDoesNotPanic(t *testing.T) {
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
-	svc.progress(0.5, "test")
-}
-
-// =============================================================================
 // insertChunks
 // =============================================================================
 
 func TestInsertChunks_EmptyChunks(t *testing.T) {
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertChunksFunc(
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertFunc(
 		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		},
 	)
-	err := svc.insertChunks(context.Background(), nil)
+	err := svc.indexWriter.Write(context.Background(), nil)
 	if err != nil {
 		t.Errorf("expected no error for nil chunks, got %v", err)
 	}
@@ -232,7 +190,7 @@ func TestInsertChunks_EmptyChunks(t *testing.T) {
 
 func TestInsertChunks_BaseNameAndDatasetID(t *testing.T) {
 	var capturedBaseName, capturedDatasetID string
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertChunksFunc(
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertFunc(
 		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			capturedBaseName = baseName
 			capturedDatasetID = datasetID
@@ -240,7 +198,7 @@ func TestInsertChunks_BaseNameAndDatasetID(t *testing.T) {
 		},
 	)
 	chunks := []map[string]any{{"text": "hello"}}
-	err := svc.insertChunks(context.Background(), chunks)
+	err := svc.indexWriter.Write(context.Background(), chunks)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,6 +215,41 @@ func TestRecordPipelineLog(t *testing.T) {
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
 	svc.recordPipelineLog("doc-1", `{"components": {}}`, "done")
+}
+
+func TestRecordPipelineLog_InvalidJSONFallback(t *testing.T) {
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
+		func(log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog("doc-1", "not-valid-json", "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	raw, ok := captured.DSL["raw"].(string)
+	if !ok || raw != "not-valid-json" {
+		t.Fatalf("DSL = %v, want {\"raw\": \"not-valid-json\"}", captured.DSL)
+	}
+}
+
+func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
+		func(log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog("doc-1", `{"components": {"a": {"obj": {"component_name": "Parser", "params": {}}}}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.DSL["raw"] != nil {
+		t.Fatalf("DSL should be parsed JSON, not fallback raw; got %v", captured.DSL)
+	}
 }
 
 // =============================================================================
@@ -292,18 +285,11 @@ func TestRunPipeline_NormalizedEmpty(t *testing.T) {
 }
 
 func TestRunPipeline_FullFlow(t *testing.T) {
-	var progressCalls []float64
-	var progressMsgs []string
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-			progressMsgs = append(progressMsgs, msg)
-		})
-
+		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
 	output := map[string]any{
 		"chunks": []map[string]any{
 			{"text": "hello"},
@@ -314,25 +300,14 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if len(progressCalls) < 2 {
-		t.Fatalf("expected multiple progress calls, got %v", progressCalls)
-	}
-	if progressCalls[len(progressCalls)-1] != 1.0 {
-		t.Fatalf("final progress = %v, want 1.0", progressCalls[len(progressCalls)-1])
-	}
-	lastMsg := progressMsgs[len(progressMsgs)-1]
-	if !strings.Contains(lastMsg, "Indexing done (") || !strings.Contains(lastMsg, "Task done (") {
-		t.Fatalf("final progress msg = %q, want indexing/task timing message", lastMsg)
-	}
 }
 
 func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil }).
-		WithProgressFunc(func(prog float64, msg string) {})
+		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
 
 	output := map[string]any{
 		"chunks": []map[string]any{
@@ -361,8 +336,6 @@ func TestRunPipeline_ContextCanceled(t *testing.T) {
 func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	logged := false
 	inserted := false
-	var progressCalls []float64
-	var progressMsgs []string
 
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
 		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
@@ -375,13 +348,9 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 				},
 			}, dsl, nil
 		}).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = true
 			return nil, nil
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-			progressMsgs = append(progressMsgs, msg)
 		}).
 		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
 			logged = true
@@ -400,36 +369,6 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	}
 	if !logged {
 		t.Fatal("expected pipeline log to be created")
-	}
-	if len(progressCalls) == 0 || progressCalls[len(progressCalls)-1] != 1.0 {
-		t.Fatalf("expected final progress 1.0, got %v", progressCalls)
-	}
-	lastMsg := progressMsgs[len(progressMsgs)-1]
-	if !strings.Contains(lastMsg, "Indexing done (") || !strings.Contains(lastMsg, "Task done (") {
-		t.Fatalf("final progress msg = %q, want indexing/task timing message", lastMsg)
-	}
-}
-
-func TestInsertChunks_ReportsBatchProgress(t *testing.T) {
-	var progressCalls []float64
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 1).
-		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
-			time.Sleep(5 * time.Millisecond)
-			return nil, nil
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		})
-
-	chunks := []map[string]any{
-		{"text": "a"},
-		{"text": "b"},
-	}
-	if err := svc.insertChunks(context.Background(), chunks); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(progressCalls) == 0 {
-		t.Fatal("expected indexing progress callbacks")
 	}
 }
 

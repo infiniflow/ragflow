@@ -44,7 +44,10 @@ func TruncateTexts(texts []string, maxLength int) []string {
 	}
 	enc, err := tiktoken.GetEncoding("cl100k_base")
 	if err != nil {
-		// Fallback: if tiktoken fails, return as-is
+		// Fallback: if tiktoken fails, return as-is.
+		// NOTE: this path cannot be triggered in unit tests because
+		// tiktoken.GetEncoding always succeeds in normal environments.
+		// The fallback is simple (make+copy) and verified by code review.
 		result := make([]string, len(texts))
 		copy(result, texts)
 		return result

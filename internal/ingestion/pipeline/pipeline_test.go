@@ -22,8 +22,13 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 type mockCanvasStage struct {
@@ -169,8 +174,9 @@ func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) 
 // memCheckpointStore is a thread-safe in-memory canvas.CheckPointStore used
 // to exercise the resumable run path without Redis.
 type memCheckpointStore struct {
-	mu   sync.Mutex
-	data map[string][]byte
+	mu      sync.Mutex
+	data    map[string][]byte
+	deleted int // number of times Delete was called
 }
 
 func newMemCheckpointStore() *memCheckpointStore {
@@ -197,7 +203,14 @@ func (s *memCheckpointStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.data, id)
+	s.deleted++
 	return nil
+}
+
+func (s *memCheckpointStore) deleteCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleted
 }
 
 // TestPipelineRun_InstanceFactoryOverridesDefaultFactory verifies that a
@@ -462,5 +475,105 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 		if !seen[want] {
 			t.Fatalf("expected progress event for component %q, seen=%v", want, seen)
 		}
+	}
+}
+
+// =============================================================================
+// cleanupCheckpoint — direct unit test
+// =============================================================================
+
+func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+
+	store := newMemCheckpointStore()
+	if err := store.Set(context.Background(), "cp-1", []byte("data")); err != nil {
+		t.Fatalf("store.Set: %v", err)
+	}
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+	if err := tracker.AttachInterrupt(context.Background(), "cp-1", "interrupt-1"); err != nil {
+		t.Fatalf("AttachInterrupt: %v", err)
+	}
+
+	p := &Pipeline{}
+	p.cleanupCheckpoint(context.Background(), store, tracker, "cp-1")
+
+	if store.deleteCount() != 1 {
+		t.Fatalf("store.Delete was not called")
+	}
+	id, ok, err := tracker.GetInterruptID(context.Background(), "cp-1")
+	if err != nil {
+		t.Fatalf("GetInterruptID: %v", err)
+	}
+	if ok && id != "" {
+		t.Fatalf("interrupt id should be cleared, got %q", id)
+	}
+}
+
+// =============================================================================
+// runPlain — tracker integration with miniredis
+// =============================================================================
+
+func TestRunPlain_WithTracker_Success(t *testing.T) {
+	stage := &mockCanvasStage{output: map[string]any{"result": "ok"}}
+	const name = "p.RunPlainSuccess"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "a"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-tracker-ok", WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunPlain_WithTracker_Error(t *testing.T) {
+	const name = "p.RunPlainErr"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return &errCanvasStage{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["err"]},
+				"err": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "err"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-tracker-err", WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	if err == nil {
+		t.Fatal("expected stage error, got nil")
 	}
 }

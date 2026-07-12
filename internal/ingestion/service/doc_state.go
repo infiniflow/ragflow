@@ -38,27 +38,28 @@ type docStateSvc interface {
 // merges the pipeline-produced metadata (filling only keys not already present)
 // and bumps the document/dataset chunk and token counters. Both steps are
 // best-effort; failures are logged and do not fail the task.
-//
-// DocumentService is constructed lazily on first apply because it depends on
-// server config that is only available in the running process, not in tests.
 type docStateUpdater struct {
 	docSvc docStateSvc
+}
+
+// newDocStateUpdater creates a docStateUpdater with the real DocumentService
+// injected at construction time. Tests inject stubs via the docSvc field.
+func newDocStateUpdater() *docStateUpdater {
+	return &docStateUpdater{
+		docSvc: servicepkg.NewDocumentService(),
+	}
 }
 
 func (u *docStateUpdater) apply(r *taskpkg.PipelineResult) {
 	if r == nil {
 		return
 	}
-	svc := u.docSvc
-	if svc == nil {
-		svc = servicepkg.NewDocumentService()
-	}
 	if len(r.Metadata) > 0 {
-		if err := mergeDocMetadata(svc, r.DocID, r.Metadata); err != nil {
+		if err := mergeDocMetadata(u.docSvc, r.DocID, r.Metadata); err != nil {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := svc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, 0); err != nil {
+	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, 0); err != nil {
 		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
 	}
 }
