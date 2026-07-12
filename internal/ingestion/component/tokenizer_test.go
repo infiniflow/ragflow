@@ -987,3 +987,60 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
 	}
 }
+
+func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T) {
+	// Simulates a chunk whose Text is a symbol/punctuation character that
+	// the C++ RAGAnalyzer tokenizer cannot produce tokens for (e.g. "·", ")", "(").
+	// After tokenizeChunks runs, ContentLtks and ContentSmLtks remain empty,
+	// and validateTokenizerOutputs must detect this as a failure.
+	ck := schema.ChunkDoc{
+		Text:          ")",
+		ContentLtks:   "",
+		ContentSmLtks: "",
+	}
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"})
+	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
+		t.Fatalf("err = %v, want missing full_text tokens", err)
+	}
+}
+
+func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Text: "·"}, // middle dot · — seen in production chunk[15]
+		{Text: ")"},
+		{Text: "("},
+		{Text: "*"},
+	}
+	err := tokenizeChunks(chunks, "test")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	for i, ck := range chunks {
+		t.Logf("chunk[%d]: text=%q content_ltks=%q content_sm_ltks=%q",
+			i, ck.Text, ck.ContentLtks, ck.ContentSmLtks)
+		// After fix: Tokenize returns empty for symbol-only text,
+		// but the fallback sets ContentLtks = raw text.
+		if strings.TrimSpace(ck.ContentLtks) == "" {
+			t.Errorf("chunk[%d]: expected non-empty ContentLtks (raw text fallback) for %q, got empty",
+				i, ck.Text)
+		}
+	}
+}
+
+func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Summary: "   ", Text: "real content here"},
+	}
+	err := tokenizeChunks(chunks, "test")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	// After fix: TrimSpace("   ") is empty, so the Summary branch is skipped.
+	// The Text branch is entered and "real content here" is tokenized normally.
+	if strings.TrimSpace(chunks[0].ContentLtks) == "" {
+		t.Errorf("whitespace Summary should be skipped, Text %q should be tokenized, but ContentLtks is empty",
+			chunks[0].Text)
+	}
+}

@@ -247,8 +247,16 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
 	cancelDone := make(chan struct{})
-	go e.pollCancel(task.ID, perTaskCancel, cancelDone)
-	defer func() { close(cancelDone); perTaskCancel() }()
+	pollExited := make(chan struct{})
+	go func() {
+		defer close(pollExited)
+		e.pollCancel(task.ID, perTaskCancel, cancelDone)
+	}()
+	defer func() {
+		close(cancelDone)
+		<-pollExited
+		perTaskCancel()
+	}()
 
 	// Synchronous check: if already cancelled (e.g. flag set between MQ
 	// delivery and worker claim), stop before the pipeline even starts.
