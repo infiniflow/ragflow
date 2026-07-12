@@ -45,6 +45,8 @@ const (
 	TokenServer
 	TokenAPI
 	TokenAdd
+	TokenLive
+	TokenHealth
 	TokenHost
 	TokenDelete
 	TokenPassword
