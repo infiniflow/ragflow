@@ -151,6 +151,7 @@ type AsyncChatResult struct {
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -188,7 +189,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -244,7 +245,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 4: Bind Models (embedding, rerank, chat, TTS) + ToolCall ===
 		common.Info("Phase 4: Bind Models (embedding, rerank, chat, TTS)")
 		timer.Enter(common.PhaseBindModels)
-		kbs, embModel, rerankModel, chatModel, ttsModel := s.getModels(ctx, chat)
+		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
+		if err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
+			}
+			return
+		}
 
 		// Toolcall binding
 		if toolcallSession, hasSession := kwargs["toolcall_session"]; hasSession && toolcallSession != nil {
@@ -324,9 +332,9 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(files, false)
+				textAttachmentsList, imageAttachments = splitFileAttachments(userID, files, false)
 			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(files, true)
+				textAttachmentsList, imageFiles = splitFileAttachments(userID, files, true)
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
@@ -1278,6 +1286,7 @@ func (s *ChatPipelineService) AsyncChat(
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -1321,11 +1330,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(files)
+				attachmentsStr = s.processFileAttachments(userID, files)
 				if isImage2Text {
 					imageFiles = s.extractRawImageURLs(files)
 				} else {
-					imageFiles = s.extractImageFiles(files)
+					imageFiles = s.extractImageFiles(userID, files)
 				}
 			}
 		}
@@ -1581,12 +1590,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 // extractImageFiles extracts data-URI image attachments from the files list.
 // Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(files interface{}) []string {
+func (s *ChatPipelineService) extractImageFiles(userID string, files interface{}) []string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
 		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(fileDicts, false)
+		_, images, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in extractImageFiles",
 				zap.Error(err))
@@ -1857,7 +1866,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 	// when the LLM is registered as such, otherwise CHAT.
 	modelType := entity.ModelTypeChat
 	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.GetModelTypeByName(chat.TenantID, chat.LLMID); mtErr == nil {
+	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(chat.TenantID, chat.LLMID); mtErr == nil {
 		for _, mt := range modelTypes {
 			if mt == entity.ModelTypeImage2Text {
 				modelType = entity.ModelTypeImage2Text
@@ -1867,7 +1876,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 		}
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.GetModelConfigFromProviderInstance(chat.TenantID, modelType, chat.LLMID),
+		s.ModelProviderSvc.ResolveModelConfig(chat.TenantID, modelType, chat.LLMID),
 	)
 	if err != nil {
 		return nil, "", "", "", err
@@ -1916,6 +1925,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
 	*modelModule.ChatModel, // TTS model
+	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
 
@@ -1940,27 +1950,22 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		// All KBs must share the same embedding model.
-		embdIDs := make(map[string]bool)
-		for _, kb := range kbs {
-			if kb.EmbdID != "" {
-				embdIDs[kb.EmbdID] = true
-			}
+		if err := validateDatasetEmbeddingModels(kbs); err != nil {
+			return nil, nil, nil, nil, nil, err
 		}
-		if len(embdIDs) > 1 {
-			// Multiple embedding models across KBs — error.
-			common.Warn("Knowledge bases use different embedding models")
-		}
-		if len(embdIDs) == 1 {
-			for embdID := range embdIDs {
-				embdTenantID := kbs[0].TenantID
-				driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-					embdTenantID, entity.ModelTypeEmbedding, embdID,
-				)
-				if err == nil {
-					embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-				}
+		if kbs[0].EmbdID != "" {
+			embdTenantID := kbs[0].TenantID
+			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
+				embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
+			)
+			if err != nil {
+				common.Warn("Failed to get embedding model for chat retrieval",
+					zap.String("embdID", kbs[0].EmbdID),
+					zap.String("tenantID", embdTenantID),
+					zap.Error(err))
+				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
+			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 		}
 	}
 
@@ -1974,7 +1979,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
+		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
 			chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
@@ -1995,7 +2000,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 	}
 
-	return kbs, embModel, rerankModel, chatModel, ttsModel
+	return kbs, embModel, rerankModel, chatModel, ttsModel, nil
 }
 
 // lastUserQuestion returns the content of the most recent user message in
@@ -2045,11 +2050,11 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 //
 // When files are file dicts (Python-compatible format), calls
 // FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
+func (s *ChatPipelineService) processFileAttachments(userID string, files interface{}) string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
-		texts, _, err := fileSvc.GetFileContents(fileDicts, false)
+		texts, _, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in processFileAttachments",
 				zap.Error(err))
@@ -2100,11 +2105,11 @@ func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		fileSvc := NewFileService()
-		texts, images, err := fileSvc.GetFileContents(fileDicts, raw)
+		texts, images, err := fileSvc.GetFileContents(userID, fileDicts, raw)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))

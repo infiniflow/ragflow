@@ -628,7 +628,7 @@ async def has_any_wiki(tenant_id, dataset_id):
 async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
@@ -636,7 +636,8 @@ async def list_wiki_pages(tenant_id, dataset_id):
         page_size = int(request.args.get("page_size", 200) or 200)
     except (TypeError, ValueError):
         return get_error_argument_result("page and page_size must be integers")
-    page_type = request.args.get("page_type") or None
+    page_type = (request.args.get("page_type") or "").strip() or None
+    topic = (request.args.get("topic") or "").strip() or None
 
     try:
         success, result = await dataset_api_service.list_wiki_pages(
@@ -645,6 +646,37 @@ async def list_wiki_pages(tenant_id, dataset_id):
             page=page,
             page_size=page_size,
             page_type=page_type,
+            topic=topic,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/artifacts_topics", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_wiki_topics(tenant_id, dataset_id):
+    """List wiki topics for the dataset Artifact tab.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts_topics?page=1&page_size=200
+    Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
+    """
+    try:
+        page = int(request.args.get("page", 1) or 1)
+        page_size = int(request.args.get("page_size", 200) or 200)
+    except (TypeError, ValueError):
+        return get_error_argument_result("page and page_size must be integers")
+
+    try:
+        success, result = await dataset_api_service.list_wiki_topics(
+            dataset_id,
+            tenant_id,
+            page=page,
+            page_size=page_size,
         )
         if success:
             return get_result(data=result)
@@ -692,8 +724,8 @@ async def clear_wiki(tenant_id, dataset_id):
     """Wipe every artifact-related row from ES for this KB.
 
     DELETE /api/v1/datasets/<dataset_id>/artifacts
-    Removes the five ``compile_kwd`` row types written by the artifact
-    pipeline (MAP extracts / REDUCE results / PLAN / page drafts / pages).
+    Removes the artifact ``compile_kwd`` row types written by the artifact
+    pipeline (MAP extracts / REDUCE results / PLAN / drafts / pages / topics / graph rows).
     Success: {"code": 0, "data": {"deleted": {kwd: result}}}
     """
     try:

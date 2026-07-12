@@ -428,15 +428,36 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     total_tokens = prompt_tokens + completion_tokens
 
     if stream:
+        usage = None
+        if finish_reason is not None:
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                },
+            }
         return {
             "id": f"{id}",
             "object": "chat.completion.chunk",
+            "created": created if created is not None else int(time.time()),
             "model": model,
+            "system_fingerprint": "",
+            "usage": usage,
             "choices": [
                 {
-                    "delta": {"content": content},
+                    "delta": {
+                        "content": content,
+                        "role": "assistant",
+                        "function_call": None,
+                        "tool_calls": None,
+                    },
                     "finish_reason": finish_reason,
                     "index": 0,
+                    "logprobs": None,
                 }
             ],
         }
@@ -444,7 +465,7 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     return {
         "id": f"{id}",
         "object": object,
-        "created": int(time.time()) if created else None,
+        "created": created if created is not None else int(time.time()),
         "model": model,
         "param": param,
         "usage": {
@@ -498,7 +519,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+    from api.db.joint_services.tenant_model_service import resolve_model_config
 
     """
     Verifies availability of an embedding model for a specific tenant.
@@ -534,7 +555,7 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
         (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
     """
     try:
-        get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_id)
+        resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_id)
     except LookupError as e:
         return False, str(e)
     except OperationalError as e:

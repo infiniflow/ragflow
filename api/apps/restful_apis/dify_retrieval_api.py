@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from common.metadata_utils import convert_conditions
 from common.temporal_retrieval import resolve_temporal_retrieval_context
 from api.apps import login_required
@@ -286,7 +286,7 @@ async def retrieval(tenant_id):
                 kb_id,
             )
             return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-        model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         temporal_ctx = await resolve_temporal_retrieval_context(
             raw_query=question,

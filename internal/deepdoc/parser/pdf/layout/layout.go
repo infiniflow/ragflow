@@ -19,114 +19,142 @@ import (
 // with silhouette score selection, matching Python's _assign_column().
 //
 // Python: pdf_parser.py:739 _assign_column()
-func AssignColumn(boxes []pdf.TextBox, zoom float64) []pdf.TextBox {
+func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
 
-	pageGroups := make(map[int][]int)
-	for i, b := range boxes {
-		pageGroups[b.PageNumber] = append(pageGroups[b.PageNumber], i)
-	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
 
 	result := make([]pdf.TextBox, len(boxes))
 	copy(result, boxes)
 
 	// Step A: per-page best k using silhouette score.
 	pageCols := make(map[int]int)
-	for pg, indices := range pageGroups {
-		n := len(indices)
-		if n < 2 {
-			pageCols[pg] = 1
-			for _, idx := range indices {
-				result[idx].ColID = 0
-			}
-			continue
-		}
-
-		// Extract x0 values and apply indent tolerance (12% of page width).
-		x0s := make([]float64, n)
-		minX0 := math.MaxFloat64
-		maxX1 := 0.0
-		for i, idx := range indices {
-			x0s[i] = boxes[idx].X0
-			if x0s[i] < minX0 {
-				minX0 = x0s[i]
-			}
-			if boxes[idx].X1 > maxX1 {
-				maxX1 = boxes[idx].X1
-			}
-		}
-		pageWidth := maxX1 - minX0
-		indentTol := pageWidth * 0.12
-
-		for i := range x0s {
-			if math.Abs(x0s[i]-minX0) < indentTol {
-				x0s[i] = minX0
-			}
-		}
-
-		// Try k = 1 .. min(4, n), pick best by silhouette.
-		maxTry := min(4, n)
-		if maxTry < 2 {
-			maxTry = 1
-		}
-		bestK, bestScore := 1, -1.0
-
-		for k := 1; k <= maxTry; k++ {
-			labels, _ := util.KMeans1D(x0s, k)
-			var score float64
-			if k > 1 {
-				score = util.Silhouette1D(x0s, labels)
-			}
-			// score = 0 for k=1; score = -1 if silhouette undefined.
-			if score > bestScore {
-				bestScore = score
-				bestK = k
-			}
-		}
-		pageCols[pg] = bestK
+	for _, pg := range sortedPages {
+		indices := pageGroups[pg]
+		determineBestKForPage(boxes, result, indices, pg, pageCols)
 	}
 
 	// Step B: assign col_id per page using per-page best k.
 	// Labels are remapped by centroid x-order: leftmost column → 0.
-	for pg, indices := range pageGroups {
-		if len(indices) == 0 {
-			continue
-		}
-		k := pageCols[pg]
-		if len(indices) < k {
-			k = 1
-		}
-
-		x0s := make([]float64, len(indices))
-		for i, idx := range indices {
-			x0s[i] = boxes[idx].X0
-		}
-
-		labels, centroids := util.KMeans1D(x0s, k)
-
-		// Sort centroids by x position, remap labels left→right.
-		type clPair struct {
-			center float64
-			label  int
-		}
-		var pairs []clPair
-		for lbl, c := range centroids {
-			pairs = append(pairs, clPair{c, lbl})
-		}
-		sort.Slice(pairs, func(i, j int) bool { return pairs[i].center < pairs[j].center })
-		remap := make(map[int]int, k)
-		for newL, p := range pairs {
-			remap[p.label] = newL
-		}
-
-		for i, idx := range indices {
-			result[idx].ColID = remap[labels[i]]
-		}
+	for _, pg := range sortedPages {
+		indices := pageGroups[pg]
+		assignColIDsForPage(boxes, result, indices, pg, pageCols)
 	}
 
 	return result
+}
+
+// determineBestKForPage finds the best number of clusters (k) for a page using silhouette score
+func determineBestKForPage(boxes, result []pdf.TextBox, indices []int, pg int, pageCols map[int]int) {
+	n := len(indices)
+	if n < 2 {
+		pageCols[pg] = 1
+		for _, idx := range indices {
+			result[idx].ColID = 0
+		}
+		return
+	}
+
+	x0s, minX0, maxX1 := extractX0Values(boxes, indices)
+	pageWidth := maxX1 - minX0
+	indentTol := pageWidth * 0.12
+	applyIndentTolerance(x0s, minX0, indentTol)
+
+	bestK, _ := findBestK(x0s, n)
+	pageCols[pg] = bestK
+}
+
+// extractX0Values extracts x0 coordinates from boxes on a page and finds minX0 and maxX1
+func extractX0Values(boxes []pdf.TextBox, indices []int) (x0s []float64, minX0 float64, maxX1 float64) {
+	n := len(indices)
+	x0s = make([]float64, n)
+	minX0 = math.MaxFloat64
+	maxX1 = 0.0
+	for i, idx := range indices {
+		x0s[i] = boxes[idx].X0
+		if x0s[i] < minX0 {
+			minX0 = x0s[i]
+		}
+		if boxes[idx].X1 > maxX1 {
+			maxX1 = boxes[idx].X1
+		}
+	}
+	return x0s, minX0, maxX1
+}
+
+// applyIndentTolerance adjusts x0 values that are close to minX0 to improve clustering
+func applyIndentTolerance(x0s []float64, minX0, indentTol float64) {
+	for i := range x0s {
+		if math.Abs(x0s[i]-minX0) < indentTol {
+			x0s[i] = minX0
+		}
+	}
+}
+
+// findBestK tries k from 1 to min(4, n) and returns the k with the best silhouette score
+func findBestK(x0s []float64, n int) (bestK int, bestScore float64) {
+	maxTry := min(4, n)
+	if maxTry < 2 {
+		maxTry = 1
+	}
+	bestK, bestScore = 1, -1.0
+
+	for k := 1; k <= maxTry; k++ {
+		labels, _ := util.KMeans1D(x0s, k)
+		var score float64
+		if k > 1 {
+			score = util.Silhouette1D(x0s, labels)
+		}
+		// score = 0 for k=1; score = -1 if silhouette undefined.
+		if score > bestScore {
+			bestScore = score
+			bestK = k
+		}
+	}
+	return bestK, bestScore
+}
+
+// assignColIDsForPage assigns column IDs to boxes on a page using the best k
+func assignColIDsForPage(boxes, result []pdf.TextBox, indices []int, pg int, pageCols map[int]int) {
+	if len(indices) == 0 {
+		return
+	}
+	k := pageCols[pg]
+	if len(indices) < k {
+		k = 1
+	}
+
+	x0s := make([]float64, len(indices))
+	for i, idx := range indices {
+		x0s[i] = boxes[idx].X0
+	}
+
+	labels, centroids := util.KMeans1D(x0s, k)
+	remap := remapLabelsByCentroidOrder(centroids)
+
+	for i, idx := range indices {
+		result[idx].ColID = remap[labels[i]]
+	}
+}
+
+// remapLabelsByCentroidOrder remaps cluster labels so leftmost column = 0
+func remapLabelsByCentroidOrder(centroids []float64) map[int]int {
+	type clPair struct {
+		center float64
+		label  int
+	}
+	var pairs []clPair
+	for lbl, c := range centroids {
+		pairs = append(pairs, clPair{c, lbl})
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].center < pairs[j].center })
+	remap := make(map[int]int, len(centroids))
+	for newL, p := range pairs {
+		remap[p.label] = newL
+	}
+	return remap
 }
 
 // ---- Text merge (horizontal) ----
@@ -134,7 +162,7 @@ func AssignColumn(boxes []pdf.TextBox, zoom float64) []pdf.TextBox {
 // TextMerge horizontally merges adjacent boxes at similar vertical positions.
 //
 // Python: pdf_parser.py:888 _text_merge()
-func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64, zoom float64) []pdf.TextBox {
+func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
@@ -179,35 +207,18 @@ func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64, zoom float64)
 // NaiveVerticalMerge vertically merges boxes on the same page/column.
 //
 // Python: pdf_parser.py:926 _naive_vertical_merge()
-func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medianWidths map[int]float64, isEnglish bool) []pdf.TextBox {
+func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medianWidths map[int]float64, pageEnglish map[int]bool) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
-	// Group by page only — matches Python's _naive_vertical_merge which
-	// hardcodes col="x" (pdf_parser.py:868), ignoring column assignment.
-	// Cross-column merges are prevented by the 30% horizontal overlap check.
-	groups := make(map[int][]int)
-	for i, b := range boxes {
-		groups[b.PageNumber] = append(groups[b.PageNumber], i)
-	}
-	// Sort page keys for deterministic output order (Python dict preserves
-	// insertion order since 3.7, Go map iteration is random).
-	pageKeys := make([]int, 0, len(groups))
-	for pg := range groups {
-		pageKeys = append(pageKeys, pg)
-	}
-	sort.Ints(pageKeys)
+
+	// Group boxes by page
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
 
 	var result []pdf.TextBox
-	for _, pg := range pageKeys {
-		indices := groups[pg]
-		sort.Slice(indices, func(i, j int) bool {
-			bi, bj := boxes[indices[i]], boxes[indices[j]]
-			if bi.Top != bj.Top {
-				return bi.Top < bj.Top
-			}
-			return bi.X0 < bj.X0
-		})
+	for _, pg := range sortedPages {
+		// Collect all boxes for this page
+		indices := pageGroups[pg]
 		bxs := make([]pdf.TextBox, len(indices))
 		for i, idx := range indices {
 			bxs[i] = boxes[idx]
@@ -222,85 +233,9 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 			mw = 8 // Python fallback: np.median([...]) if chars else 8 (pdf_parser.py:1465)
 		}
 
-		// Collect pattern: build output slice, merging into last element when appropriate.
-		out := make([]pdf.TextBox, 0, len(bxs))
-		for i := 0; i < len(bxs); i++ {
-			b := bxs[i]
-			// Cross-page suffix (e.g. page number on previous page): skip.
-			if i > 0 && bxs[i-1].PageNumber < b.PageNumber && pageNumSuffixPattern.MatchString(bxs[i-1].Text) {
-				continue
-			}
-			if strings.TrimSpace(b.Text) == "" {
-				// Whitespace gap bridge: absorb into prev box if gap/xov pass,
-				// extending prev.Bottom.  This matches Python's while/pop which
-				// keeps whitespace inline and lets it extend the previous box.
-				if len(out) > 0 {
-					prev := &out[len(out)-1]
-					if b.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &b) >= 0.3 {
-						// TODO: prev.Bottom = math.Max(prev.Bottom, b.Bottom) — direct assignment
-						// can shrink a tall merged box when a short whitespace box overlaps.
-						// Matches Python behavior (also direct assignment). Defer fix until
-						// pipeline alignment is shipped. See TestNaiveVerticalMerge_BottomShrink.
-						prev.Bottom = b.Bottom
-					}
-				}
-				continue
-			}
-			if len(out) == 0 {
-				out = append(out, b)
-				continue
-			}
-			prev := &out[len(out)-1]
-			if prev.LayoutNo != b.LayoutNo || strings.TrimSpace(b.Text) == "" {
-				slog.Debug("vm reject", "reason", "layout_no", "prevLayout", prev.LayoutNo, "bLayout", b.LayoutNo)
-				out = append(out, b)
-				continue
-			}
-			gap := b.Top - prev.Bottom
-			if gap > mh*1.5 {
-				slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
-				out = append(out, b)
-				continue
-			}
-			ov := util.OverlapX(prev, &b)
-			if ov < 0.3 {
-				slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
-				out = append(out, b)
-				continue
-			}
-
-			// Strip text before checking first/last characters (matching Python's
-			// b["text"].strip()[-1] / b_["text"].strip()[0]).
-			prevText := strings.TrimSpace(prev.Text)
-			bText := strings.TrimSpace(b.Text)
-
-			concatting := []bool{
-				endsWithOneOf(prevText, ",;:\"，、‘“；：-"),
-				endsSecondLastOneOf(prevText, ",;:\"，、‘“；："),
-				startsWithOneOf(bText, "。；？！”）),，、："),
-			}
-			anti := []bool{
-				endsWithOneOf(prevText, "。？！?"),
-				isEnglish && endsWithOneOf(prevText, ".!?"),
-				prev.PageNumber == b.PageNumber && b.Top-prev.Bottom > mh*1.5,
-				prev.PageNumber < b.PageNumber && math.Abs(prev.X0-b.X0) > mw*4,
-			}
-			detach := []bool{prev.X1 < b.X0, prev.X0 > b.X1}
-			if (slices.Contains(anti, true) && !slices.Contains(concatting, true)) || slices.Contains(detach, true) {
-				out = append(out, b)
-				continue
-			}
-
-			slog.Debug("vm merge", "gap", gap, "ovX", ov, "mh", mh, "prev", prevText[:min(40, len(prevText))], "next", bText[:min(40, len(bText))])
-			// Python: (b["text"].rstrip() + " " + b_["text"].lstrip()).strip()
-			prev.Text = strings.TrimSpace(strings.TrimRight(prevText, " \t") + " " + strings.TrimLeft(bText, " \t"))
-			// Preserve the taller bottom when merging (prev.Bottom may already
-			// extend beyond b.Bottom from a previous merge step).
-			prev.Bottom = math.Max(prev.Bottom, b.Bottom)
-			prev.X0 = math.Min(prev.X0, b.X0)
-			prev.X1 = math.Max(prev.X1, b.X1)
-		}
-		result = append(result, out...)
+		// Process boxes for this page
+		processed := processPageBoxes(bxs, mh, mw, pageEnglish[pg])
+		result = append(result, processed...)
 	}
 	slog.Debug("vm result", "in", len(boxes), "out", len(result))
 	return result
@@ -332,6 +267,182 @@ func FinalReadingOrderMerge(boxes []pdf.TextBox) []pdf.TextBox {
 }
 
 var pageNumSuffixPattern = regexp.MustCompile(`[0-9  •一—-]+$`)
+
+// groupBoxesByPage groups text boxes by page, returning a map from page number to index list and sorted page number list
+func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
+	if len(boxes) == 0 {
+		return map[int][]int{}, []int{}
+	}
+
+	pageGroups := make(map[int][]int)
+	for i, b := range boxes {
+		pageGroups[b.PageNumber] = append(pageGroups[b.PageNumber], i)
+	}
+
+	// Sort page numbers
+	pageKeys := make([]int, 0, len(pageGroups))
+	for pg := range pageGroups {
+		pageKeys = append(pageKeys, pg)
+	}
+	sort.Ints(pageKeys)
+
+	return pageGroups, pageKeys
+}
+
+// shouldMergeBoxes determines whether two boxes should be merged
+func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
+	// Check layout number
+	if prev.LayoutNo != curr.LayoutNo {
+		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
+		return false
+	}
+
+	// Check vertical gap
+	gap := curr.Top - prev.Bottom
+	if gap > mh*1.5 {
+		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
+		return false
+	}
+
+	// Check horizontal overlap
+	ov := util.OverlapX(prev, curr)
+	if ov < 0.3 {
+		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
+		return false
+	}
+
+	// Check merge/block conditions
+	prevText := strings.TrimSpace(prev.Text)
+	currText := strings.TrimSpace(curr.Text)
+
+	concatting := []bool{
+		endsWithOneOf(prevText, ",;:\"，、‘“；：-"),
+		endsSecondLastOneOf(prevText, ",;:\"，、‘“；："),
+		startsWithOneOf(currText, "。；？！?\"）),，、："),
+	}
+	anti := []bool{
+		endsWithOneOf(prevText, "。？！?"),
+		isEnglish && endsWithOneOf(prevText, ".!?"),
+		prev.PageNumber < curr.PageNumber && math.Abs(prev.X0-curr.X0) > mw*4,
+	}
+	detach := []bool{prev.X1 < curr.X0, prev.X0 > curr.X1}
+
+	if (slices.Contains(anti, true) && !slices.Contains(concatting, true)) || slices.Contains(detach, true) {
+		return false
+	}
+
+	return true
+}
+
+// mergeTwoBoxes merges two text boxes
+func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
+	prevText := strings.TrimSpace(prev.Text)
+	currText := strings.TrimSpace(curr.Text)
+
+	prev.Text = strings.TrimSpace(strings.TrimRight(prevText, " \t") + " " + strings.TrimLeft(currText, " \t"))
+	prev.Bottom = math.Max(prev.Bottom, curr.Bottom)
+	prev.X0 = math.Min(prev.X0, curr.X0)
+	prev.X1 = math.Max(prev.X1, curr.X1)
+
+	prevTrunc, currTrunc := prevText, currText
+	if r := []rune(prevTrunc); len(r) > 40 {
+		prevTrunc = string(r[:40])
+	}
+	if r := []rune(currTrunc); len(r) > 40 {
+		currTrunc = string(r[:40])
+	}
+	slog.Debug("vm merge", "prev", prevTrunc, "curr", currTrunc)
+
+	return prev
+}
+
+// processPageBoxes vertically merges the boxes of a single page. Boxes are
+// bucketed by column (ColID) first so the merge never crosses columns; within
+// a column the merge runs top→bottom, and columns are emitted in ascending
+// ColID order (leftmost first). This preserves the column-major reading order
+// established by FinalReadingOrderMerge (page → ColID → top → x0).
+func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+
+	colGroups, sortedCols := groupBoxesByCol(boxes)
+
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, col := range sortedCols {
+		indices := colGroups[col]
+		bxs := make([]pdf.TextBox, len(indices))
+		for i, idx := range indices {
+			bxs[i] = boxes[idx]
+		}
+		// Sort within the column by Top, X0.
+		sort.Slice(bxs, func(i, j int) bool {
+			if bxs[i].Top != bxs[j].Top {
+				return bxs[i].Top < bxs[j].Top
+			}
+			return bxs[i].X0 < bxs[j].X0
+		})
+		out = append(out, mergeColumnBoxes(bxs, mh, mw, isEnglish)...)
+	}
+	return out
+}
+
+// groupBoxesByCol groups boxes by column id and returns the groups plus the
+// column ids in ascending order (leftmost column first).
+func groupBoxesByCol(boxes []pdf.TextBox) (map[int][]int, []int) {
+	colGroups := make(map[int][]int)
+	for i, b := range boxes {
+		colGroups[b.ColID] = append(colGroups[b.ColID], i)
+	}
+	colKeys := make([]int, 0, len(colGroups))
+	for c := range colGroups {
+		colKeys = append(colKeys, c)
+	}
+	sort.Ints(colKeys)
+	return colGroups, colKeys
+}
+
+// mergeColumnBoxes vertically merges boxes that already belong to one column
+// and are sorted top→bottom. It skips cross-page number suffixes and merges
+// vertically adjacent text.
+func mergeColumnBoxes(sortedBoxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
+	out := make([]pdf.TextBox, 0, len(sortedBoxes))
+	for i := 0; i < len(sortedBoxes); i++ {
+		curr := sortedBoxes[i]
+
+		// Skip cross-page suffixes (like previous page number)
+		if i > 0 && sortedBoxes[i-1].PageNumber < curr.PageNumber && pageNumSuffixPattern.MatchString(sortedBoxes[i-1].Text) {
+			continue
+		}
+
+		// Handle empty boxes
+		if strings.TrimSpace(curr.Text) == "" {
+			if len(out) > 0 {
+				prev := &out[len(out)-1]
+				if curr.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &curr) >= 0.3 {
+					// TODO: prev.Bottom = math.Max(prev.Bottom, curr.Bottom) — direct assignment might shrink tall merged boxes
+					// Matches Python behavior (also direct assignment). Defer fix until pipeline alignment release.
+					prev.Bottom = curr.Bottom
+				}
+			}
+			continue
+		}
+
+		if len(out) == 0 {
+			out = append(out, curr)
+			continue
+		}
+
+		prev := &out[len(out)-1]
+		if shouldMergeBoxes(prev, &curr, mh, mw, isEnglish) {
+			out[len(out)-1] = mergeTwoBoxes(*prev, curr)
+		} else {
+			out = append(out, curr)
+		}
+	}
+
+	return out
+}
 
 // ---- rune-based text helpers (CJK-safe) ----
 

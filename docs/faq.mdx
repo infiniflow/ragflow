@@ -147,12 +147,12 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ---
 
-### Get a `Request error 404: undefined` when upgrading to v0.26.3
+### Get a `Request error 404: undefined` when upgrading to v0.26.4
 
 To resolve this issue, do either of the following:
 
-- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.3 image.
-- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.3` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.4 image.
+- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.4` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
 
 ### How to build the RAGFlow image from scratch?
 
@@ -218,7 +218,7 @@ This error is almost always caused by Java not being installed or not accessible
 
 ### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
 
-To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows:
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
@@ -395,7 +395,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
-   cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   cd29bcb254bc   pgsty/minio:RELEASE.2026-03-25T00-00-00Z               "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
 2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
@@ -470,7 +470,7 @@ Yes, we do. See the Python files under the **rag/app** folder.
    *The status of a healthy Elasticsearch component should look as follows:*
 
    ```bash
-   cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   cd29bcb254bc   pgsty/minio:RELEASE.2026-03-25T00-00-00Z               "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
 2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.

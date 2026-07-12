@@ -65,8 +65,10 @@ type daoInterface interface {
 	GetByID(id string) (*entity.UserCanvasVersion, error)
 	ListByCanvasID(canvasID string) ([]*entity.UserCanvasVersion, error)
 	GetLatest(canvasID string) (*entity.UserCanvasVersion, error)
+	SaveOrReplaceLatest(opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error)
 	Delete(id string) error
 	DeleteByCanvasID(canvasID string) (int64, error)
+	DeleteAllUnpublishedExcess(canvasID string, keep int) error
 }
 
 var _ daoInterface = (*UserCanvasVersionDAO)(nil)

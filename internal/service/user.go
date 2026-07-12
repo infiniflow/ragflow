@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -202,7 +201,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		RerankID:  rerankID,
 		TTSID:     ttsID,
 		OCRID:     ocrID,
-		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()
@@ -270,11 +269,11 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	}
 
 	modelConfigs := map[string]server.ModelConfig{
-		string(entity.ModelTypeChat):        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		string(entity.ModelTypeEmbedding):   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		string(entity.ModelTypeSpeech2Text): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		string(entity.ModelTypeImage2Text):  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		string(entity.ModelTypeRerank):      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
 	}
 
 	seenFactories := make(map[string]bool)
@@ -605,7 +604,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 func defaultUserLanguage() string {
-	if strings.Contains(os.Getenv("LANG"), "zh_CN") {
+	if strings.Contains(common.GetEnv(common.EnvLang), "zh_CN") {
 		return "Chinese"
 	}
 	return "English"

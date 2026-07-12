@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build cgo
+
 package rag_analyzer
 
 /*

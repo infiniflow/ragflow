@@ -32,11 +32,13 @@ from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
+from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
+from rag.utils.url_utils import ensure_v1
 
 
 class LLMErrorCode(StrEnum):
@@ -217,8 +219,9 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
-        self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url, timeout=timeout)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
         self.model_name = model_name
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
@@ -782,7 +785,6 @@ class XinferenceChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
 
 
@@ -792,7 +794,6 @@ class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
 
 
@@ -802,7 +803,6 @@ class ModelScopeChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
 
 
@@ -893,8 +893,7 @@ class LocalAIChat(Base):
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key="empty", base_url=base_url)
+        self.client = OpenAI(api_key="empty", base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
 
 
@@ -1031,9 +1030,8 @@ class LmStudioChat(Base):
     def __init__(self, key, model_name, base_url, **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
-        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -2181,6 +2179,15 @@ class LiteLLMBase(ABC):
             "num_retries": self.max_retries,
             **kwargs,
         }
+        # Forward the originating session/user as the OpenAI-standard `user` field so
+        # providers (OpenAI, OpenRouter, ...) receive it in the request body and
+        # upstream activity can be correlated back to the session. An explicit
+        # caller-supplied `user` (including an empty string to suppress it) wins, so
+        # check key presence rather than truthiness.
+        if "user" not in completion_args:
+            request_user = current_llm_user()
+            if request_user:
+                completion_args["user"] = request_user
         if stream:
             completion_args.update(
                 {

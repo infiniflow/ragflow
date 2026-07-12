@@ -50,7 +50,7 @@ func (g *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (g *GiteeModel) Name() string {
-	return "gitee"
+	return "GiteeAI"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response

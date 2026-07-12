@@ -44,6 +44,7 @@ export enum PromptRole {
 }
 
 import {
+  Braces,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -735,6 +736,7 @@ export const RestrictedUpstreamMap = {
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.Compilation]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
@@ -785,6 +787,7 @@ export const NodeMap = {
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
+  [Operator.Compilation]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
@@ -804,6 +807,7 @@ export enum BeginQueryType {
   File = 'file',
   Integer = 'integer',
   Boolean = 'boolean',
+  Object = 'object',
 }
 
 export const BeginQueryTypeIconMap = {
@@ -813,6 +817,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.File]: CloudUpload,
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
+  [BeginQueryType.Object]: Braces,
 };
 
 export const NoDebugOperatorsList = [
@@ -829,6 +834,7 @@ export const NoDebugOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compilation,
   Operator.Tool,
   Operator.Loop,
 ];
@@ -840,6 +846,7 @@ export const NoCopyOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compilation,
 ];
 
 export enum NodeHandleId {
@@ -1091,6 +1098,7 @@ export enum WebhookRequestParameters {
   String = TypesWithArray.String,
   Number = TypesWithArray.Number,
   Boolean = TypesWithArray.Boolean,
+  Object = TypesWithArray.Object,
 }
 
 export enum WebhookStatus {
@@ -1107,6 +1115,7 @@ export const BeginQueryTypeMap = {
   [BeginQueryType.File]: 'File',
   [BeginQueryType.Integer]: TypesWithArray.Number,
   [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+  [BeginQueryType.Object]: TypesWithArray.Object,
 };
 
 export const VariableRegex = /{([^{}]*)}/g;

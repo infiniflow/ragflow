@@ -30,6 +30,10 @@ When fixing CSS/layout issues (especially flex truncation, ellipsis, or element 
 
 - Before editing, explain: (1) the full flex/container hierarchy from the target element up to the nearest non-flex ancestor, (2) what constraint is actually causing the bug, and (3) how the proposed fix addresses that root cause.
 
+### Color Tokens
+
+When writing or modifying styles, **use the project-defined color tokens from `src/tailwind.css`** (e.g., `bg-bg-base`, `text-text-primary`, `text-text-secondary`, `text-text-disabled`, `border-border-button`, `bg-bg-card`). Do not use arbitrary hex/RGB values or Tailwind's default palette colors (e.g., `emerald-500`, `blue-400`) directly in component class names. These tokens are defined for both light and dark modes and keep the UI consistent with the design system.
+
 ### Scope and Boundaries
 
 Respect explicit boundaries from the user. If the user says **"only fix the selected line"** or **"do not touch shared types/files"**, follow that instruction exactly. Do not investigate unrelated errors, modify shared schemas (e.g., `LlmSettingFieldSchema`), or refactor other files without confirmation. If a change outside the described scope seems necessary, ask for permission first.
@@ -103,10 +107,14 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 
 ### React Patterns and Conventions
 
+- **Avoid inline event handlers.** Do not define arrow functions directly on JSX event props like `onClick={() => ...}` or `onChange={(e) => ...}`. Instead, extract the handler and reference it by name (e.g., `onClick={handleClick}`). Inline handlers are recreated on every render, which can break `React.memo` optimizations and make stack traces harder to read.
 - **Prefer `requestAnimationFrame` or `useLayoutEffect`** over `setTimeout(..., 0)` for focus or DOM measurement operations.
 - **Prefer `useTranslation` from `react-i18next`** over project-wrapped utilities like `useTranslate`.
 - Extract complex logic into hooks or utils; keep components lean.
-- Use `PascalCase` for constants and component names.
+- Use **PascalCase** for constants and component names.
+  - Components: `EditableTextarea`, `RAGFlowFormItem`
+  - Constants: `InitialMockData`, `DefaultPlaceholder`
+- Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse

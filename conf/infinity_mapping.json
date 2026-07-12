@@ -58,6 +58,7 @@
 	"doc_ids_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"slug_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"title_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"topic_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"page_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"entity_names_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"outlinks_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
@@ -71,6 +72,7 @@
 	"superseded_by_chunk_id": {"type": "varchar", "default": ""},
 	"doc_count_int": {"type": "integer", "default": 0},
 	"depth_int": {"type": "integer", "default": 0},
+	"parent_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"outlinks_int": {"type": "integer", "default": 0},
 	"token_num": {"type": "integer", "default": 0}
 }

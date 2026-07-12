@@ -237,3 +237,69 @@ export interface IKnowledgeGraph {
   graph: Record<string, any>;
   mind_map: import('@antv/g6/lib/types').TreeData;
 }
+
+export interface IArtifact {
+  slug: string;
+  title: string;
+  page_type?: string;
+  summary?: string;
+}
+
+export interface IArtifactTopic {
+  topic: string;
+  title: string;
+  slug: string;
+}
+
+export interface IArtifactPage {
+  slug: string;
+  title: string;
+  page_type: string;
+  content_md_rendered: string;
+  summary: string;
+  entity_names: string[];
+  outlinks: string[];
+  related_kb_pages: string[];
+  source_chunk_ids: string[];
+  source_doc_ids: string[];
+}
+
+export interface IWikiCommit {
+  id: string;
+  title: string;
+  comments: string;
+  user_id: string;
+  create_time: number;
+  create_date: string;
+  user_nickname: string;
+}
+
+export interface IWikiCommitDetail extends IWikiCommit {
+  diff: string;
+  content_after: string;
+}
+
+export interface IWikiCommitListResponse {
+  total: number;
+  items: IWikiCommit[];
+}
+
+export interface IArtifactGraphEntity {
+  slug: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  type: string;
+  weight: number;
+  source_chunk_ids?: string[];
+}
+
+export interface IArtifactGraphRelation {
+  from: string;
+  to: string;
+}
+
+export interface IArtifactGraph {
+  entities: IArtifactGraphEntity[];
+  relations: IArtifactGraphRelation[];
+}

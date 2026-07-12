@@ -315,6 +315,10 @@ async def _run_workflow_session(
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
                         full_content += ans.get("data", {}).get("content", "")
+                        if ans.get("data", {}).get("start_to_think", False):
+                            full_content += "<think>"
+                        elif ans.get("data", {}).get("end_to_think", False):
+                            full_content += "</think>"
                     if ans.get("data", {}).get("reference", None):
                         reference.update(ans["data"]["reference"])
                     if ans.get("event") == "node_finished":
@@ -371,6 +375,10 @@ async def _run_workflow_session(
             ans["session_id"] = session_id
             if ans.get("event") == "message":
                 full_content += ans.get("data", {}).get("content", "")
+                if ans.get("data", {}).get("start_to_think", False):
+                    full_content += "<think>"
+                elif ans.get("data", {}).get("end_to_think", False):
+                    full_content += "</think>"
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
             if ans.get("event") == "node_finished":
@@ -1429,7 +1437,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_title=getattr(cvs, "title", ""),
             canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
             return_trace=bool(req.get("return_trace", False)),
-            stream=req.get("stream", True),
+            stream=req.get("stream", False),
             chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
@@ -1577,12 +1585,12 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_title=canvas_title,
             canvas_category=canvas_category,
             return_trace=bool(req.get("return_trace", False)),
-            stream=req.get("stream", True),
+            stream=req.get("stream", False),
             chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     return_trace = bool(req.get("return_trace", False))
-    if req.get("stream", True):
+    if req.get("stream", False):
 
         async def generate():
             emitted = False
@@ -2466,6 +2474,7 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
 
 def _attachment_request_metadata():
     ext = request.args.get("ext")

@@ -1,109 +1,109 @@
-# RAGFlow Project Instructions for GitHub Copilot
+# RAGFlow Instructions
 
-This file provides context, build instructions, and coding standards for the RAGFlow project.
-It is structured to follow GitHub Copilot's [customization guidelines](https://docs.github.com/en/copilot/concepts/prompting/response-customization).
+Use this file as the local operating guide for the current codebase. Prefer the code and the current CLAUDE.md over any older convention or remembered project shape.
 
-## 1. Project Overview
-RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It is a full-stack application with a Python backend and a React/TypeScript frontend.
+## Core stance
+- Treat legacy code as liability, not as a compatibility target.
+- Prefer deletion over shims, deprecated branches, wrapper APIs, and dual-track migration notes.
+- If old and new implementations coexist, converge to one path unless an external contract forces compatibility.
+- Remove dead tests, commented-out code, stale docs, and "move later" notes instead of preserving them.
+- Reduce public surface area when a helper can be made private or internal.
+- Keep refactors centered on the owning abstraction, not on adjacent compatibility layers.
 
-- **Backend**: Python 3.10+ (Flask/Quart)
-- **Frontend**: TypeScript, React, UmiJS
-- **Architecture**: Microservices based on Docker.
-  - `api/`: Backend API server.
-  - `rag/`: Core RAG logic (indexing, retrieval).
-  - `deepdoc/`: Document parsing and OCR.
-  - `web/`: Frontend application.
+## Current stack
+- Backend: Python 3.13+, Quart-based API server, Peewee ORM, async workers.
+- Frontend: React + TypeScript + Vite in `web/`.
+- Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
+- Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
-## 2. Directory Structure
-- `api/`: Backend API server (Flask/Quart).
-  - `apps/`: API Blueprints (Knowledge Base, Chat, etc.).
-  - `db/`: Database models and services.
-- `rag/`: Core RAG logic.
-  - `llm/`: LLM, Embedding, and Rerank model abstractions.
-- `deepdoc/`: Document parsing and OCR modules.
-- `agent/`: Agentic reasoning components.
-- `web/`: Frontend application (React + UmiJS).
-- `docker/`: Docker deployment configurations.
-- `sdk/`: Python SDK.
-- `test/`: Backend tests.
+## Code layout to expect
+- `api/`: Python API server entrypoints, blueprints, services, and database code.
+- `rag/`: ingestion, retrieval, LLM integration, and graph RAG logic.
+- `deepdoc/`: parsing and OCR.
+- `agent/`: workflow canvas, components, tools, and templates.
+- `cmd/`: Go entrypoints. `ragflow_main` is the main server/admin/ingestor binary surface; `ragflow-cli` is the CLI entrypoint.
+- `internal/`: main Go application code. Important subtrees:
+- `internal/agent/`: Go agent runtime, canvas execution, components, tool bindings, workflow helpers.
+- `internal/cli/`: CLI parsing, HTTP transport, command execution, response formatting.
+- `internal/dao/`: Go data-access layer and persistence-facing helpers.
+- `internal/deepdoc/`: Go DeepDOC integrations, especially native-backed PDF/DOCX parsing.
+- `internal/engine/`: search/index backends such as Elasticsearch and Infinity.
+- `internal/entity/`: shared Go entities and model definitions.
+- `internal/handler/`: HTTP handlers and route-facing request logic.
+- `internal/ingestion/`: Go ingestion pipeline, canvas adapter, components, wiring, service orchestration.
+- `internal/ingestion/component/`: stage implementations such as file/parser/chunker/tokenizer/extractor.
+- `internal/ingestion/pipeline/`: DSL translation, canvas-driven execution, checkpoints, resume/run logic.
+- `internal/parser/`: parser and chunk libraries used by ingestion and other Go paths.
+- `internal/parser/parser/`: typed parse-result parsers for markdown/html/pdf/docx/xlsx/text and related families.
+- `internal/parser/chunk/`: chunk operator library and DSL/typed execution helpers.
+- `internal/service/`: higher-level business services used by handlers and server flows.
+- `internal/storage/`: storage backends and in-memory test doubles.
+- `internal/router/`: HTTP route registration.
+- `internal/server/`: server bootstrap/config wiring.
+- `internal/cpp/`: C++ sources used by native-backed Go features.
+- `web/`: frontend application.
+- `docker/`: local and production compose files.
+- `sdk/` and `test/`: SDK and automated tests.
 
-## 3. Build Instructions
+## Go-specific rules
+- Treat `internal/ingestion`, `internal/parser`, and `internal/deepdoc` as actively refactored code. Prefer collapsing duplicate paths over preserving transitional wrappers.
+- Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
+- Remove commented-out Go code instead of leaving recovery notes in place.
+- Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
-### Backend (Python)
-The project uses **uv** for dependency management.
+## Working rules
+- Before editing, inspect the nearest code path that actually owns the behavior.
+- Keep changes small and local unless the task is explicitly a broader refactor.
+- Prefer one implementation path instead of preserving old and new versions side by side.
+- Preserve behavior with focused tests when the behavior is still valid; do not keep tests that protect obsolete behavior.
+- If a surface is only there for compatibility, remove it unless the user asks to keep it.
+- Do not add new compatibility wording in comments or docs.
+- When a maintainer takes over a community PR, a new commit generated by rewriting history (e.g. `merge`, `rebase -i`) must preserve the original author and add the maintainer as co-author (via a `Co-authored-by:` trailer) instead of overwriting the author with the maintainer alone.
 
-1. **Setup Environment**:
-   ```bash
-   uv sync --python 3.13 --all-extras
-   uv run python3 ragflow_deps/download_deps.py
-   ```
-
-2. **Run Server**:
-   - **Pre-requisite**: Start dependent services (MySQL, ES/Infinity, Redis, MinIO).
-     ```bash
-     docker compose -f docker/docker-compose-base.yml up -d
-     ```
-   - **Launch**:
-     ```bash
-     source .venv/bin/activate
-     export PYTHONPATH=$(pwd)
-     bash docker/launch_backend_service.sh
-     ```
-
-### Frontend (TypeScript/React)
-Located in `web/`.
-
-1. **Install Dependencies**:
-   ```bash
-   cd web
-   npm install
-   ```
-
-2. **Run Dev Server**:
-   ```bash
-   npm run dev
-   ```
-   Runs on port 8000 by default.
-
-### Docker Deployment
-To run the full stack using Docker:
+## Commands
+### Backend
 ```bash
-cd docker
-docker compose -f docker-compose.yml up -d
+uv sync --python 3.13 --all-extras
+uv run python3 ragflow_deps/download_deps.py
+docker compose -f docker/docker-compose-base.yml up -d
+source .venv/bin/activate
+export PYTHONPATH=$(pwd)
+bash docker/launch_backend_service.sh
+uv run pytest
+ruff check
+ruff format
 ```
 
-## 4. Testing Instructions
+### Frontend
+```bash
+cd web
+npm install
+npm run dev
+npm run build
+npm run lint
+npm run test
+npm run type-check
+```
 
-### Backend Tests
-- **Run All Tests**:
-  ```bash
-  uv run pytest
-  ```
-- **Run Specific Test**:
-  ```bash
-  uv run pytest test/test_api.py
-  ```
+### Go
+```bash
+uv run ragflow_deps/download_deps.py
+bash build.sh --test ./path/to/package/...
+bash build.sh --go
+# or build specific binaries:
+bash build.sh --all
+```
 
-### Frontend Tests
-- **Run Tests**:
-  ```bash
-  cd web
-  npm run test
-  ```
+## Validation preference
+- Run the narrowest relevant test, lint, or build command after a change.
+- For backend changes, prefer targeted pytest or ruff checks over full-suite runs.
+- For frontend changes, prefer the touched-package lint, type-check, or test command.
+- For Go changes, prefer package-scoped `bash build.sh --test ...` first.
+- Do not default to raw `go test`, `go build`, or IDE Run/Debug for Go in this repo. They often miss the required CGO flags and native static libraries (`office_oxide`, `pdfium-static`, `pdf_oxide`) that `build.sh` wires correctly.
+- If Go native builds fail, inspect `build.sh` and `internal/development.md` before changing code. Common environment issues are missing downloaded native deps and missing `lld` on Linux.
 
-## 5. Coding Standards & Guidelines
-- **Python Formatting**: Use `ruff` for linting and formatting.
-  ```bash
-  ruff check
-  ruff format
-  ```
-- **Frontend Linting**:
-  ```bash
-  cd web
-  npm run lint
-  ```
-- **Git Hooks**: Run this once after the first clone to enable local Git hooks.
-  ```bash
-  lefthook install
-  lefthook run pre-commit --all-files
-  ```
+## Default review checklist
+- Remove instead of retaining `deprecated`, `legacy`, or compatibility-only code.
+- Collapse duplicate implementations to one path.
+- Drop stale comments and documentation that describe a superseded design.
+- Keep exported APIs only when the current code actually needs them.

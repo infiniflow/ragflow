@@ -22,6 +22,7 @@ Cargo.lock
 .idea/
 .vscode/
 .cursor/settings.json
+.opencode/
 
 # Exclude Mac generated files
 .DS_Store
@@ -245,5 +246,16 @@ bin/*
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
 internal/deepdoc/parser/pdf/tools-py/
+
+# IDE tooling artifacts
+.codebuddy/
+
+# Local build output
+build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/
+
+# test data compare tool
+internal/ingestion/task/tool/generate_dataflow_golden.py
+internal/ingestion/task/tool/README.md
+internal/cpp/cmake-build-release

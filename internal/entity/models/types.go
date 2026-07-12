@@ -75,6 +75,8 @@ type ChatUsage struct {
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
+	// FIXME: add implementation
+	TokenCount int `json:"token_count"`
 }
 
 type RerankResult struct {
@@ -196,6 +198,7 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
+	Algorithm string
 }
 
 type ParseFileConfig struct {

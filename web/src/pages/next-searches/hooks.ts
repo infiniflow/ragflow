@@ -1,5 +1,6 @@
 // src/pages/next-searches/hooks.ts
 
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
@@ -91,7 +92,7 @@ export const useFetchSearchList = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -100,6 +101,7 @@ export const useFetchSearchList = () => {
       'searchList',
       {
         debouncedSearchString,
+        filterValue,
         ...pagination,
       },
     ],
@@ -110,7 +112,9 @@ export const useFetchSearchList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            owner_ids: filterValue.owner,
           },
+          paramsSerializer: { indexes: null },
         },
         true,
       );
@@ -130,6 +134,8 @@ export const useFetchSearchList = () => {
     handleInputChange,
     setPagination,
     refetch,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 

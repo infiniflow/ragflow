@@ -18,7 +18,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 	"time"
 
 	"ragflow/internal/common"
@@ -31,7 +30,7 @@ import (
 func (h *SystemHandler) GetStats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -54,16 +53,9 @@ func (h *SystemHandler) GetStats(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantNotFound) {
 			code = common.CodeDataError
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    stats,
-	})
+	common.SuccessWithData(c, stats, "success")
 }

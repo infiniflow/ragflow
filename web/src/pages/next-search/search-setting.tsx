@@ -135,7 +135,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           search_config?.vector_similarity_weight ?? 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
-        similarity_threshold: search_config?.similarity_threshold || 0.2,
+        similarity_threshold: search_config?.similarity_threshold ?? 0.2,
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,

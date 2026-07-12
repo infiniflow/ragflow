@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from io import BytesIO
+from datetime import datetime
 import logging
 import json
 import os
@@ -78,46 +79,19 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
-def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
-    """Read template-group ids from a doc's parser_config.
-
-    The doc now references compilation template groups via a list. A
-    legacy single string id is still accepted. Old
-    ``compilation_template_ids`` data is
-    intentionally ignored per the migration spec.
-    """
-
-    def _normalize(raw) -> list[str]:
-        if isinstance(raw, str):
-            raw = [raw]
-        if not isinstance(raw, list):
-            return []
-        ids: list[str] = []
-        seen: set[str] = set()
-        for gid in raw:
-            if not isinstance(gid, str):
-                continue
-            gid = gid.strip()
-            if gid and gid not in seen:
-                seen.add(gid)
-                ids.append(gid)
-        return ids
-
-    if not isinstance(parser_config, dict):
-        return []
-    if "compilation_template_group_id" in parser_config:
-        return _normalize(parser_config.get("compilation_template_group_id"))
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        return _normalize(ext.get("compilation_template_group_id"))
-    return []
-
-
 def _compilation_template_group_id_changed(old_config, new_config) -> bool:
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
     return _parser_config_compilation_template_group_ids(old_config) != _parser_config_compilation_template_group_ids(new_config)
 
 
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
     if not isinstance(parser_config, dict):
         return False
     if "compilation_template_group_id" not in parser_config and not (isinstance(parser_config.get("ext"), dict) and "compilation_template_group_id" in parser_config["ext"]):
@@ -298,19 +272,25 @@ async def update_document(tenant_id, dataset_id, document_id):
         parser_config_template_group_changed = parser_config_template_group_touched and _compilation_template_group_id_changed(old_parser_config, req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
-    # pipeline_id provided - reset document for reparse
-    if update_doc_req.pipeline_id:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id):
+    # A non-empty pipeline_id selects pipeline parsing; an explicitly empty
+    # value clears it and switches back to the direct parser path.
+    if "pipeline_id" in req:
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id or ""):
             return error
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
             return error
         if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
-            if error := reset_document_for_reparse(doc, tenant_id):
+            if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
                 return error
     elif parser_config_template_group_changed:
-        if error := reset_document_for_reparse(doc, tenant_id):
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
+            return error
+    else:
+        # Direct-parser updates do not carry a pipeline_id. Clear any stale
+        # pipeline selection and its generated document-store data.
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
             return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
@@ -1500,6 +1480,11 @@ def _run_sync(user_id: str, req):
             has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                 cancel_all_task_of(doc_id)
+                # Append a "stopped by user" marker so the history is preserved and
+                # the document no longer looks like it is still waiting in the queue.
+                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+                info["progress_msg"] = (doc.progress_msg or "") + cancel_doc_msg
+                logging.debug("Appended cancellation marker to progress_msg on cancel for doc %s", doc_id)
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
@@ -1725,14 +1710,17 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
+                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
                 DocumentService.update_by_id(
                     doc_id,
                     {
                         "run": str(TaskStatus.CANCEL.value),
                         "progress": 0,
                         "chunk_num": 0,
+                        "progress_msg": (doc.progress_msg or "") + cancel_doc_msg,
                     },
                 )
+                logging.debug("Appended cancellation marker to progress_msg on stop-parse for doc %s", doc_id)
                 index_name = search.index_name(tenant_id)
                 if settings.docStoreConn.index_exist(index_name, doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)

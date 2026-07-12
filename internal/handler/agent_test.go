@@ -332,31 +332,31 @@ type agentHandlerTestable struct {
 func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	templates, err := h.svc.ListTemplates()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
+	common.SuccessWithData(c, templates, "success")
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
@@ -555,7 +555,7 @@ func TestAgentHandler_NotFoundOnUnknownCanvas(t *testing.T) {
 	r2.Use(setUser())
 	g2 := r2.Group("/api/v1/agents")
 	g2.GET("/:canvas_id", func(c *gin.Context) {
-		jsonError(c, common.CodeNotFound, "agent unknown: not found")
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "agent unknown: not found")
 	})
 
 	w := httptest.NewRecorder()
@@ -770,12 +770,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DefaultBranchStreamsSSE covers the
-// scenario the user actually hit: `openai-compatible: false` with no
-// `stream` field on the body. The handler must still invoke the
-// canvas runner and stream the result as SSE — the SSE envelope is
-// the flat Python agent-canvas shape regardless of the stream flag.
-func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
+// TestAgentChatCompletions_DefaultBranchNonStreaming covers the
+// scenario where `stream` is omitted from the request body. When
+// `stream` is absent, the handler must return a plain JSON response
+// (non-streaming), matching the Python contract where
+// `req.get("stream", False)` defaults to non-streaming.
+func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -792,17 +792,20 @@ func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
-		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json (default branch must not stream)", got)
 	}
 	body := w.Body.String()
+	if !strings.Contains(body, `"code":0`) {
+		t.Errorf("body should contain success code, got %q", body)
+	}
 	if !strings.Contains(body, `"event":"message"`) ||
 		!strings.Contains(body, `"message_id":"msg-2"`) ||
-		!strings.Contains(body, `"content":"hello back"`) {
-		t.Errorf("body should contain flat agent event with content, got %q", body)
+		!strings.Contains(body, `"hello back"`) {
+		t.Errorf("body should contain agent event with content in data, got %q", body)
 	}
-	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
-		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	if strings.Contains(body, "data: [DONE]") {
+		t.Errorf("body should not contain [DONE] terminator in non-streaming mode, got %q", body)
 	}
 }
 
@@ -911,8 +914,12 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T)
 
 	var resp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if _, ok := resp["choices"]; !ok {
-		t.Errorf("response should contain top-level 'choices', got keys: %v", resp)
+	data, _ := resp["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatalf("response should contain 'data', got keys: %v", resp)
+	}
+	if _, ok := data["choices"]; !ok {
+		t.Errorf("response data should contain 'choices', got keys: %v", data)
 	}
 }
 
