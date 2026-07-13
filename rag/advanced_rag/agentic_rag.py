@@ -80,10 +80,12 @@ class RAGTools:
         meta_data_filter: dict | None = None,
         user_defined_prompts: dict | None = None,
         do_refer: bool | None = True,
+        thinking_mode: str = "medium",
     ):
         self.tenant_ids = tenant_ids
         self.chat_mdl = deepcopy(chat_mdl)
         self.embed_mdl = embed_mdl
+        self.thinking_mode = thinking_mode
         self.field_map = {}
         self.sql_kbs = []
         self.kbs = []
@@ -107,6 +109,7 @@ class RAGTools:
         self.tav = tav
         self.meta_data_filter = meta_data_filter
         self.user_defined_prompts = user_defined_prompts or {}
+        self.kbinfos = {"chunks": [], "doc_aggs": []}
         self.do_refer = do_refer
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
@@ -130,6 +133,16 @@ class RAGTools:
     def has_web(self) -> bool:
         return self.tav is not None
 
+    def has_llm(self) -> bool:
+        return self.chat_mdl is not None
+
+    async def _fit_messages(self, system: str, user: str) -> list:
+        """Fit system+user messages into the model's context window."""
+        from rag.prompts.generator import form_message, message_fit_in
+
+        _, msg = message_fit_in(form_message(system, user), self.chat_mdl.max_length)
+        return msg
+
     def get_citation_guidelines(self) -> str:
         """Return the citation guidelines the final answer must follow."""
         return citation_prompt(self.user_defined_prompts)
@@ -142,9 +155,7 @@ class RAGTools:
         and an explicit single-document summary (``summarize_document``).
         """
         summarize_line = (
-            "- Call `summarize_document` ONLY when the user explicitly asks to "
-            "summarise a specific document ('summarise the security audit', "
-            "'tldr the onboarding guide'). It needs a document ID.\n"
+            "- Call `summarize_document` ONLY when the user explicitly asks to summarise a specific document ('summarise the security audit', 'tldr the onboarding guide'). It needs a document ID.\n"
             if self.has_unstructured()
             else ""
         )
@@ -297,7 +308,7 @@ class RAGTools:
     async def retrieve(
         self,
         question: str,
-        keywords: str|list = "",
+        keywords: str | list = "",
         doc_scope: List[str] | None = None,
         top_n: int = 6,
         similarity_threshold: float = 0.2,
@@ -520,10 +531,7 @@ class RAGTools:
         blocks = kb_prompt(self.kbinfos, self.chat_mdl.max_length)
         if not self.do_refer:
             return blocks[start_idx:] if start_idx else blocks
-        header = (
-            "# Citation rules\nApply the following rules VERBATIM to your final "
-            "answer.\n\n" + citation_prompt(self.user_defined_prompts).strip() + "\n\n----\n\n"
-        )
+        header = "# Citation rules\nApply the following rules VERBATIM to your final answer.\n\n" + citation_prompt(self.user_defined_prompts).strip() + "\n\n----\n\n"
         return [header] + (blocks[start_idx:] if start_idx else blocks)
 
     # ------------------------------------------------------------------ #
@@ -551,17 +559,11 @@ class RAGTools:
     def _filter_known_doc_ids(self, candidate_ids: list[str]) -> set[str]:
         if not candidate_ids or not self.kb_ids:
             return set()
-        rows = Document.select(Document.id).where(
-            (Document.id.in_(list(candidate_ids))) & (Document.kb_id.in_(self.kb_ids))
-        )
+        rows = Document.select(Document.id).where((Document.id.in_(list(candidate_ids))) & (Document.kb_id.in_(self.kb_ids)))
         return {row.id for row in rows}
 
     def _resolve_doc_tenant(self, doc_id: str) -> tuple[str, str] | None:
-        rows = list(
-            Document.select(Document.kb_id).where(
-                (Document.id == doc_id) & (Document.kb_id.in_(self.kb_ids))
-            )
-        )
+        rows = list(Document.select(Document.kb_id).where((Document.id == doc_id) & (Document.kb_id.in_(self.kb_ids))))
         if not rows:
             return None
         kb_id = rows[0].kb_id
