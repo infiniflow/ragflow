@@ -115,13 +115,20 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
-	if method == "tcadp" {
+	switch method {
+	case "tcadp":
 		return parseSpreadsheetWithTCADP(
 			filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
 		)
+	case "", "csv":
+		// Continue with the local CSV parser.
+	default:
+		return ParseResult{
+			Err: fmt.Errorf("unsupported CSV parse method: %q", p.ParseMethod),
+		}
 	}
 
 	text := string(data)

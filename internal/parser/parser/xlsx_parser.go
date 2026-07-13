@@ -83,13 +83,20 @@ func normalizeXLSXParseMethod(raw string) string {
 
 func (p *XLSXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
-	if method == "tcadp" {
+	switch method {
+	case "tcadp":
 		return parseSpreadsheetWithTCADP(
 			filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
 		)
+	case "", "excelize":
+		// Continue with the local Excelize parser.
+	default:
+		return ParseResult{
+			Err: fmt.Errorf("unsupported XLSX parse method: %q", p.ParseMethod),
+		}
 	}
 
 	f, err := excelize.OpenReader(bytes.NewReader(data))
