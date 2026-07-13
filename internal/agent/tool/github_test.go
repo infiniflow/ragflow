@@ -172,6 +172,9 @@ func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
 	if github.defaults.TopN != 17 {
 		t.Errorf("defaults.TopN = %d, want 17", github.defaults.TopN)
 	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 100}); err != nil {
+		t.Errorf("BuildByName(github) rejected GitHub's maximum top_n: %v", err)
+	}
 	if _, err := BuildByName("github", map[string]any{"top_n": 0}); err == nil {
 		t.Fatal("BuildByName(github) accepted non-positive top_n")
 	}
@@ -180,6 +183,9 @@ func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
 	}
 	if _, err := BuildByName("github", map[string]any{"top_n": "10"}); err == nil {
 		t.Fatal("BuildByName(github) accepted string top_n")
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 101}); err == nil {
+		t.Fatal("BuildByName(github) accepted top_n above GitHub's per_page limit")
 	}
 	if _, err := BuildByName("github", map[string]any{"max_results": 5}); err == nil {
 		t.Fatal("BuildByName(github) accepted removed max_results parameter")

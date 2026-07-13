@@ -32,7 +32,10 @@ const githubToolName = "github_search"
 
 const githubToolDescription = "GitHub repository search finds repositories, projects, and codebases hosted on GitHub."
 
-const defaultGitHubTopN = 10
+const (
+	defaultGitHubTopN = 10
+	maxGitHubTopN     = 100
+)
 
 // githubParams mirrors Python GitHubParam. Info() exposes only Query to the
 // model, while TopN is a canvas-side configuration value merged with defaults.

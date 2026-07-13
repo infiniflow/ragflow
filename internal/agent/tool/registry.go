@@ -215,6 +215,9 @@ func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
 	if topN <= 0 {
 		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
 	}
+	if topN > maxGitHubTopN {
+		return nil, fmt.Errorf("agent tool: tool %q requires node-level param top_n to be at most %d", "github", maxGitHubTopN)
+	}
 	return NewGitHubToolWithDefaults(nil, githubParams{TopN: topN}), nil
 }
 
