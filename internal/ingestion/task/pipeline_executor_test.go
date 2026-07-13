@@ -372,6 +372,35 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	}
 }
 
+// TestPipelineExecutor_Execute_PropagatesContext verifies the ctx passed to
+// Execute is the ctx received by runPipelineFunc - the task context must flow
+// through to the pipeline run.
+func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
+	type ctxKey string
+	const key ctxKey = "trace"
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = context.WithValue(context.Background(), key, "task-ctx")
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			if got := runCtx.Value(key); got != "task-ctx" {
+				t.Fatalf("runCtx value = %v, want task-ctx", got)
+			}
+			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+		}).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // =============================================================================
 // Stub implementations for testing
 // =============================================================================

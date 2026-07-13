@@ -167,6 +167,7 @@ export interface IChunk {
   doc_id: string;
   doc_name: string;
   doc_type_kwd?: ChunkDocType;
+  document_url?: string;
   image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords

@@ -103,6 +103,7 @@ export default function ToolbarPlugin({ onToggleSource, showSource }: Props) {
           Source
         </button>
         <button
+          type="button"
           onClick={() => {
             setShowToc(!showToc);
           }}

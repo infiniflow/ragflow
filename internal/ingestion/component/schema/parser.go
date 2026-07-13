@@ -106,6 +106,7 @@ func (ParserParam) Defaults() ParserParam {
 			"audio":       {"json"},
 			"video":       {},
 			"epub":        {"text", "json"},
+			"json":        {"json"},
 		},
 		Setups: map[string]ParserSetup{
 			"pdf": {
@@ -191,6 +192,10 @@ func (ParserParam) Defaults() ParserParam {
 			},
 			"epub": {
 				"suffix":        []string{"epub"},
+				"output_format": "json",
+			},
+			"json": {
+				"suffix":        []string{"json", "jsonl", "ldjson"},
 				"output_format": "json",
 			},
 		},
