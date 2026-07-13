@@ -405,9 +405,26 @@ func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
 	if chunkValues == nil {
 		chunkValues = make([]any, 0, len(chunks))
 	}
+	seenChunkIDs := make(map[string]struct{}, len(chunkValues)+len(chunks))
+	for _, value := range chunkValues {
+		chunk, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := retrievalReferenceID(chunk); ok {
+			seenChunkIDs[id] = struct{}{}
+		}
+	}
 	for _, chunk := range chunks {
+		if id, ok := retrievalReferenceID(chunk); ok {
+			if _, exists := seenChunkIDs[id]; exists {
+				continue
+			}
+			seenChunkIDs[id] = struct{}{}
+		}
 		chunkValues = append(chunkValues, chunk)
 	}
+
 	docAggValues, _ := s.Retrieval["doc_aggs"].(map[string]any)
 	if docAggValues == nil {
 		docAggValues = make(map[string]any, len(docAggs))
@@ -425,6 +442,35 @@ func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
 	}
 	s.Retrieval["chunks"] = chunkValues
 	s.Retrieval["doc_aggs"] = docAggValues
+}
+
+func retrievalReferenceID(chunk map[string]any) (string, bool) {
+	value, ok := chunk["id"]
+	if !ok || value == nil {
+		return "", false
+	}
+	id := fmt.Sprint(value)
+	return id, id != ""
+}
+
+// GetRetrievalDocAggs returns a shallow snapshot keyed by document name.
+func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if raw == nil {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(raw))
+	for name, item := range raw {
+		if agg, ok := item.(map[string]any); ok {
+			out[name] = agg
+		}
+	}
+	return out
 }
 
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or
