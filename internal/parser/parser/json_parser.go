@@ -94,12 +94,17 @@ func parseJSONContent(text string) []map[string]any {
 
 	// 2. Try single JSON object: {...}
 	if strings.HasPrefix(trimmed, "{") {
-		// Detect JSONL: if the second non-empty line starts with '{',
-		// treat as line-delimited JSON.
+		// Prefer parsing as a single JSON object first (matches
+		// Python's json.loads(txt) whole-document test). Only fall
+		// back to JSONL when that fails and the content still looks
+		// line-delimited.
+		if err := json.Unmarshal([]byte(trimmed), &map[string]any{}); err == nil {
+			return parseSingleJSONObject(trimmed)
+		}
 		if isJSONL(trimmed) {
 			return parseJSONLines(trimmed)
 		}
-		return parseSingleJSONObject(trimmed)
+		return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 	}
 
 	// 3. Fallback: treat as text.

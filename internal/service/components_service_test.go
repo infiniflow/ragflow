@@ -63,7 +63,7 @@ func TestComponentsService_List_FilterIngestion(t *testing.T) {
 	}
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertComponentNameSet(t, "ingestion", namesOf(got), wantNames)
 }
@@ -86,7 +86,7 @@ func TestComponentsService_List_FilterIngestionAndShared(t *testing.T) {
 	}
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertComponentNameSet(t, "ingestion+shared", namesOf(got), wantNames)
 }
@@ -105,7 +105,7 @@ func TestComponentsService_List_FilterDuplicates(t *testing.T) {
 	}
 	wantNames := []string{
 		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	if len(got) != len(wantNames) {
 		t.Errorf("duplicate category produced %d rows, want %d", len(got), len(wantNames))

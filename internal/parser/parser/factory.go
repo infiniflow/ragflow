@@ -80,7 +80,5 @@ func NewTableParser() *stubParser        { return &stubParser{name: "table"} }
 func NewResumePDFParser() *stubParser    { return &stubParser{name: "resume"} }
 func NewPicturePDFParser() *stubParser   { return &stubParser{name: "picture"} }
 func NewOnePDFParser() *stubParser       { return &stubParser{name: "one"} }
-func NewAudioParser() *stubParser        { return &stubParser{name: "audio"} }
-func NewEmailParser() *stubParser        { return &stubParser{name: "email"} }
 func NewTagPDFParser() *stubParser       { return &stubParser{name: "tag"} }
 func NewKGPDFParser() *stubParser        { return &stubParser{name: "knowledge_graph"} }

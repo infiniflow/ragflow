@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gomarkdown/markdown/ast"
@@ -215,7 +216,9 @@ func resolveMarkdownImage(leafText, rawFullText string) (string, bool) {
 
 // fetchImageAsBase64 fetches an HTTP(S) image URL and returns its
 // content as a base64-encoded string. Local/private addresses and
-// redirects to them are rejected (SSRF guard).
+// redirects to them are rejected (SSRF guard). Hostnames are resolved
+// once and the validated IP is pinned in a custom DialContext to
+// prevent DNS-rebinding TOCTOU attacks.
 func fetchImageAsBase64(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 
@@ -223,20 +226,56 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("markdown: invalid image URL: %w", err)
 	}
-	if err := validateImageURLHost(parsed.Host); err != nil {
+
+	// pinned maps hostname (without port) → validated IP. The hostname
+	// is resolved once per host, and the transport dials the pinned IP
+	// directly instead of re-resolving DNS.
+	var pinnedMu sync.Mutex
+	pinned := make(map[string]net.IP)
+
+	pinHost := func(host string) error {
+		ip, err := resolveAndValidateHost(host)
+		if err != nil {
+			return err
+		}
+		h, _, _ := net.SplitHostPort(host)
+		if h == "" {
+			h = host
+		}
+		pinnedMu.Lock()
+		pinned[h] = ip
+		pinnedMu.Unlock()
+		return nil
+	}
+
+	if err := pinHost(parsed.Host); err != nil {
 		return "", err
 	}
 
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			pinnedMu.Lock()
+			ip, ok := pinned[host]
+			pinnedMu.Unlock()
+			if ok {
+				return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Transport: transport,
+		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("markdown: too many redirects")
 			}
-			if err := validateImageURLHost(req.URL.Host); err != nil {
-				return err
-			}
-			return nil
+			return pinHost(req.URL.Host)
 		},
 	}
 
@@ -262,10 +301,10 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	return base64.StdEncoding.EncodeToString(body), nil
 }
 
-// validateImageURLHost rejects loopback, link-local, private, and
-// other internal addresses to prevent SSRF.
-func validateImageURLHost(host string) error {
-	// Strip port if present for IP checks.
+// resolveAndValidateHost resolves a host (which may include a port),
+// validates none of its IPs are internal/private, and returns the
+// first public IP for connection pinning.
+func resolveAndValidateHost(host string) (net.IP, error) {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
@@ -275,24 +314,26 @@ func validateImageURLHost(host string) error {
 	if ip != nil {
 		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 			ip.IsPrivate() || ip.IsUnspecified() {
-			return fmt.Errorf("markdown: rejected image URL to internal address: %s", host)
+			return nil, fmt.Errorf("markdown: rejected image URL to internal address: %s", host)
 		}
-		return nil
+		return ip, nil
 	}
 
-	// Reject hostnames that resolve to internal IPs.
 	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), hostname)
 	if err != nil {
-		return fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
+		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
 	for _, addr := range addrs {
 		ip := addr.IP
 		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 			ip.IsPrivate() || ip.IsUnspecified() {
-			return fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)
+			return nil, fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)
 		}
 	}
-	return nil
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("markdown: no addresses resolved for host: %s", hostname)
+	}
+	return addrs[0].IP, nil
 }
 
 // headingText returns the inline-text of a heading node by

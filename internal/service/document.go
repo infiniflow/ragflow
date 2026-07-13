@@ -68,7 +68,6 @@ type DocumentService struct {
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
-	canvasTemplateDAO   *dao.CanvasTemplateDAO
 	api4ConvDAO         *dao.API4ConversationDAO
 }
 
@@ -89,7 +88,6 @@ func NewDocumentService() *DocumentService {
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
-		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
 	}
 }

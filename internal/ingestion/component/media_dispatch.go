@@ -300,6 +300,11 @@ func maybeDispatchAudio(
 			fmt.Errorf("Parser: audio transcription: %w", err)
 	}
 
+	transcription := ""
+	if resp != nil {
+		transcription = resp.Text
+	}
+
 	outputFormat, _ := setup["output_format"].(string)
 	if outputFormat == "" {
 		outputFormat = "text"
@@ -307,7 +312,7 @@ func maybeDispatchAudio(
 	return parserDispatchResult{
 		OutputFormat: outputFormat,
 		DocType:      "audio",
-		Text:         resp.Text,
+		Text:         transcription,
 	}, true, nil
 }
 

@@ -41,7 +41,7 @@ import (
 // decoded image bytes rather than deferred-load blobs.
 func concatImg(img1, img2 []byte) []byte {
 	// Same-reference guard (Python: img1 is img2).
-	if len(img1) > 0 && &img1[0] == &img2[0] {
+	if len(img1) > 0 && len(img2) > 0 && &img1[0] == &img2[0] {
 		return img1
 	}
 	// Nil / empty guard (Python: img1 and not img2 → img1, etc.).
