@@ -1,0 +1,157 @@
+//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package parser
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestEmailParser_EmlJSON(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: recipient@example.com",
+		"Cc: cc@example.com",
+		"Date: Mon, 07 Jul 2025 10:00:00 +0000",
+		"Subject: Test Email",
+		"Content-Type: text/plain; charset=utf-8",
+		"X-Custom-Header: custom-value",
+		"",
+		"This is the body of the test email.",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
+	})
+
+	result := p.ParseWithResult("test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.OutputFormat != "json" {
+		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	}
+	if len(result.JSON) != 1 {
+		t.Fatalf("expected 1 JSON item, got %d", len(result.JSON))
+	}
+	item := result.JSON[0]
+
+	if v, ok := item["from"].(string); !ok || v != "sender@example.com" {
+		t.Errorf("from: got %q", v)
+	}
+	if v, ok := item["to"].(string); !ok || v != "recipient@example.com" {
+		t.Errorf("to: got %q", v)
+	}
+	if v, ok := item["subject"].(string); !ok || v != "Test Email" {
+		t.Errorf("subject: got %q", v)
+	}
+	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "body of the test email") {
+		t.Errorf("text: got %q", v)
+	}
+	if meta, ok := item["metadata"].(map[string]any); ok {
+		if v, ok := meta["x-custom-header"].(string); !ok || v != "custom-value" {
+			t.Errorf("metadata x-custom-header: got %q", v)
+		}
+	} else {
+		t.Error("metadata missing or wrong type")
+	}
+	if v, ok := item["doc_type_kwd"].(string); !ok || v != "text" {
+		t.Errorf("doc_type_kwd: got %q", v)
+	}
+}
+
+func TestEmailParser_EmlText(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: recipient@test.com",
+		"Subject: Hello",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello, world!",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "text",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+
+	result := p.ParseWithResult("test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.OutputFormat != "text" {
+		t.Fatalf("expected output_format text, got %q", result.OutputFormat)
+	}
+	if !strings.Contains(result.Text, "Hello, world!") {
+		t.Errorf("text missing body: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "sender@test.com") {
+		t.Errorf("text missing from: %q", result.Text)
+	}
+}
+
+func TestEmailParser_MsgNotSupported(t *testing.T) {
+	p := NewEmailParser()
+	result := p.ParseWithResult("test.msg", []byte{})
+	if result.Err == nil {
+		t.Fatal("expected error for .msg file")
+	}
+	if !strings.Contains(result.Err.Error(), ".msg") {
+		t.Errorf("error should mention .msg: %v", result.Err)
+	}
+}
+
+func TestEmailParser_Multipart(t *testing.T) {
+	boundary := "boundary123"
+	raw := strings.Join([]string{
+		"From: multipart@test.com",
+		"To: receiver@test.com",
+		"Subject: Multipart Test",
+		"Content-Type: multipart/alternative; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Plain text body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		"<p>HTML body.</p>",
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body"},
+	})
+
+	result := p.ParseWithResult("test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain text body") {
+		t.Errorf("text: got %q", v)
+	}
+	if v, ok := item["text_html"].(string); !ok || !strings.Contains(v, "HTML body") {
+		t.Errorf("text_html: got %q", v)
+	}
+}

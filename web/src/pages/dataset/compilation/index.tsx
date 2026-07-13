@@ -15,7 +15,6 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
-import { Routes } from '@/routes';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
@@ -83,10 +82,7 @@ export default function Compilation() {
   return (
     <section className="flex flex-col p-4 gap-4 h-full">
       <header className="space-y-5">
-        <BackButton
-          to={`${Routes.DatasetBase}${Routes.Files}/${id}`}
-          onClick={navigateToDataFile(id!)}
-        >
+        <BackButton onClick={navigateToDataFile(id!)}>
           {t('common.back')}
         </BackButton>
 

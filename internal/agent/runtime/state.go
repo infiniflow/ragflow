@@ -389,6 +389,44 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 	s.Retrieval["chunks"] = asAny
 }
 
+// SetRetrievalReferences records the chunks and document aggregates emitted by
+// a canvas search component. It is the lock-safe counterpart of Python
+// Graph.add_reference for components that produce externally sourced results.
+func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	chunkValues, _ := s.Retrieval["chunks"].([]any)
+	if chunkValues == nil {
+		chunkValues = make([]any, 0, len(chunks))
+	}
+	for _, chunk := range chunks {
+		chunkValues = append(chunkValues, chunk)
+	}
+	docAggValues, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if docAggValues == nil {
+		docAggValues = make(map[string]any, len(docAggs))
+	}
+	for _, docAgg := range docAggs {
+		docName, _ := docAgg["doc_name"].(string)
+		if docName == "" {
+			continue
+		}
+		// Match Python Graph.add_reference: retain the first aggregate for
+		// a document name across the run-level reference set.
+		if _, exists := docAggValues[docName]; !exists {
+			docAggValues[docName] = docAgg
+		}
+	}
+	s.Retrieval["chunks"] = chunkValues
+	s.Retrieval["doc_aggs"] = docAggValues
+}
+
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or
 // write) for the entire call.
 func getVarLocked(s *CanvasState, ref string) (any, error) {

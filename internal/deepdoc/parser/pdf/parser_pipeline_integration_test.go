@@ -1,4 +1,4 @@
-//go:build cgo && integration
+//go:build cgo && manual
 
 package pdf
 
@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -369,30 +370,6 @@ func TestIntegration_Idempotency(t *testing.T) {
 		}
 		checkOCRRecognizeIdempotent(t, all)
 	})
-}
-
-// cropImageRect crops a rectangular region from an image.
-func cropImageRect(img image.Image, x0, y0, x1, y1 int) image.Image {
-	b := img.Bounds()
-	if x0 < b.Min.X {
-		x0 = b.Min.X
-	}
-	if y0 < b.Min.Y {
-		y0 = b.Min.Y
-	}
-	if x1 > b.Max.X {
-		x1 = b.Max.X
-	}
-	if y1 > b.Max.Y {
-		y1 = b.Max.Y
-	}
-	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	for y := y0; y < y1; y++ {
-		for x := x0; x < x1; x++ {
-			out.Set(x-x0, y-y0, img.At(x, y))
-		}
-	}
-	return out
 }
 
 const coordEpsilon = 1.0 // pixels

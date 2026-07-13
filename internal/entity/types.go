@@ -141,3 +141,11 @@ func ModelTypeFromStrings(types []string) ModelType {
 	}
 	return result
 }
+
+// ModelVerifyStatus mirrors Python's ModelVerifyStatusEnum
+// (common/constants.py).
+const (
+	ModelVerifySuccess = "success"
+	ModelVerifyFail    = "fail"
+	ModelVerifyUnknown = "unknown"
+)

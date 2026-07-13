@@ -6,21 +6,22 @@ import {
 } from '@/hooks/use-compilation-template-group-request';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { useCompilationTemplateGroupForm } from '@/pages/user-setting/compilation-templates/edit-template/hooks/use-compilation-template-group-form';
-import { useCompilationTemplateGroupSubmit } from '@/pages/user-setting/compilation-templates/edit-template/hooks/use-compilation-template-group-submit';
+import { formatKindLabel } from '@/utils/compilation-template-util';
+
+import { useCompilationTemplateGroupForm } from '@/pages/user-setting/compilation-templates/create-next/hooks/use-compilation-template-group-form';
+import { useCompilationTemplateGroupSubmit } from '@/pages/user-setting/compilation-templates/create-next/hooks/use-compilation-template-group-submit';
 
 export const useCreateNextCompilationTemplateGroup = () => {
-  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { navigateToCompilationTemplates } = useNavigatePage();
 
-  const isCreate = !id || id === 'create';
+  const isCreate = isCreateCompilationTemplateGroup(id);
 
-  const { data: detail } = useFetchCompilationTemplateGroup(id);
+  const { data: detail } = useFetchCompilationTemplateGroup();
   const { data: builtins, kindOptions: builtinKindOptions } =
     useFetchBuiltinCompilationTemplates();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
@@ -34,9 +35,9 @@ export const useCreateNextCompilationTemplateGroup = () => {
     () =>
       builtinKindOptions.map((option) => ({
         ...option,
-        label: t(`knowledgeCompilation.kind.${option.value}`),
+        label: formatKindLabel(option.value),
       })),
-    [builtinKindOptions, t],
+    [builtinKindOptions],
   );
 
   const { form } = useCompilationTemplateGroupForm({

@@ -97,6 +97,18 @@ func (p *Parser) parseAdminPingServer() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminLiveServer() (*Command, error) {
+	p.nextToken() // consume LIVE
+	cmd := NewCommand("admin_live_server")
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminHealthServer() (*Command, error) {
+	p.nextToken() // consume HEALTH
+	cmd := NewCommand("admin_health_server")
+	return cmd, nil
+}
+
 // endregion
 
 // region LIST commands

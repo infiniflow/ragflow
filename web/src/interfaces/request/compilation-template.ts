@@ -27,6 +27,7 @@ export interface ICompilationTemplateConfigRequest {
   [section: string]:
     | ICompilationTemplateSectionRequest
     | ICompilationTemplateRaptorConfigRequest
+    | Record<string, unknown>
     | string
     | boolean
     | undefined;
@@ -47,6 +48,7 @@ export interface ICreateCompilationTemplateGroupRequestBody {
   description?: string;
   avatar?: string;
   templates: Array<{
+    id?: string;
     name?: string;
     description?: string;
     kind: string;

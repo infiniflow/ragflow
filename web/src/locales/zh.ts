@@ -463,7 +463,7 @@ export default {
       graphPlaceholder: '图谱视图占位',
       llmWiki: 'LLM Wiki',
       skills: '技能',
-      contents: '目录',
+      contents: '导航',
       topics: '主题',
       concept: '概念',
       createDirectoryFolder: '创建目录',
@@ -1353,6 +1353,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '从左侧的 Blueprint 库中选择或自定义特定结构，以定义您的 Wiki 内容框架和视觉呈现。',
       blueprintsPlaceholderSkip:
         '如果您没有特殊要求，可以跳过此步骤，系统将自动应用默认结构。',
+      useBlueprint: '使用此蓝图',
       channelEmptyTip: '暂未添加任何聊天渠道，请从下方选择一个进行连接。',
       availableChannels: '可用渠道',
       availableChannelsDescription: '选择要添加的聊天渠道',
@@ -1717,15 +1718,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
     },
     knowledgeCompilation: {
       builtinTemplates: '内置模板',
-      kind: {
-        knowledge_graph: '知识图谱',
-        artifacts: 'Artifacts',
-        timeline: 'Timeline',
-        page_index: 'Page index',
-        tree: '树',
-        mind_map: '思维导图',
-        empty: '空',
-      },
     },
     datasetSkill: {
       folders: '技能',

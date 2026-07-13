@@ -168,7 +168,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// /auth/login/channels to GetLoginChannels and other values to
 		// OAuthLogin without conflict.
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
-		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
+
+		// For EE
+		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
+		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
+		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
+		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
+		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
+		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
+		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
+		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -257,6 +268,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me/models", r.tenantHandler.TenantInfo)
 				// User set tenant info endpoint
 				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
+
+				// For EE
+				users.GET("/me/admin", r.userHandler.IsAdmin)
+				users.GET("/me/meta", r.userHandler.GetMeta)
+			}
+
+			user := v1.Group("/settings")
+			{
+				user.GET("/enable-admin", r.systemHandler.GetEnableAdmin)
 			}
 
 			tenants := v1.Group("/tenants")

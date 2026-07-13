@@ -59,6 +59,16 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [onNodeClick, mapNodeToValue],
   );
 
+  const getLinkColor = useCallback(() => {
+    if (typeof window === 'undefined' || !containerRef.current) {
+      return '#b2b5b7';
+    }
+    return window
+      .getComputedStyle(containerRef.current)
+      .getPropertyValue('--text-disabled')
+      .trim();
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -77,6 +87,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           onNodeClick={handleNodeClick}
           nodeCanvasObject={renderNodeLabel}
           nodeCanvasObjectMode={() => 'after'}
+          linkColor={getLinkColor}
         />
       )}
     </div>

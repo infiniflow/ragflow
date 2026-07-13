@@ -45,7 +45,6 @@ import (
 	"ragflow/internal/engine/redis"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
-	"ragflow/internal/server"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -62,40 +61,34 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	ingestionTaskSvc    *IngestionTaskService
 	docEngine           engine.DocEngine
-	engineType          server.EngineType
 	metadataSvc         *MetadataService
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConvDAO         *dao.API4ConversationDAO
-	publishTask         func(subject string, payload []byte) error
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
-	cfg := server.GetConfig()
+	publisher := NewMessageQueueTaskPublisher()
+	ingestionTaskSvc := NewIngestionTaskService()
+	ingestionTaskSvc.SetTaskPublisher(publisher)
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
-		engineType:          cfg.DocEngine.Type,
 		metadataSvc:         NewMetadataService(),
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
-		publishTask: func(subject string, payload []byte) error {
-			msgQueueEngine := engine.GetMessageQueueEngine()
-			if msgQueueEngine == nil {
-				return fmt.Errorf("message queue engine is not initialized")
-			}
-			return msgQueueEngine.PublishTask(subject, payload)
-		},
 	}
 }
 
@@ -654,6 +647,18 @@ func (s *DocumentService) IncrementChunkNum(docID, kbID string, chunkNum, tokenN
 	})
 }
 
+// UpdateRunProgress mirrors a pipeline run's live progress into the document
+// row so the document-list endpoint (which reads document.progress/run/
+// progress_msg) reflects in-flight Go pipeline progress. Best-effort by
+// design; callers log and continue on error.
+func (s *DocumentService) UpdateRunProgress(docID string, progress float64, run, progressMsg string) error {
+	return s.documentDAO.UpdateByID(docID, map[string]interface{}{
+		"progress":     progress,
+		"run":          run,
+		"progress_msg": progressMsg,
+	})
+}
+
 // DeleteDocument delete document — delegates to full cleanup logic.
 func (s *DocumentService) DeleteDocument(id string) error {
 	return s.deleteDocumentFull(id)
@@ -720,7 +725,7 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 		return err
 	}
 	if ingestionTask != nil {
-		taskInfo, err := s.ingestionTaskDAO.Delete(ingestionTask.ID, &ingestionTask.UserID)
+		taskInfo, err := s.ingestionTaskSvc.Remove(ingestionTask.ID, &ingestionTask.UserID)
 		if err != nil {
 			return err
 		}
@@ -1163,21 +1168,7 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 }
 
 func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	offset := (page - 1) * pageSize
-
-	var tasks []*entity.IngestionTask
-	var err error
-	if datasetID == nil {
-		tasks, err = s.ingestionTaskDAO.ListByUserID(userID, offset, pageSize)
-	} else {
-		tasks, err = s.ingestionTaskDAO.ListByUserIDAndDatasetID(userID, *datasetID, offset, pageSize)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return tasks, nil
+	return s.ingestionTaskSvc.ListByUser(userID, datasetID, page, pageSize)
 }
 
 type ParseDocumentResponse struct {
@@ -1186,112 +1177,20 @@ type ParseDocumentResponse struct {
 }
 
 func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
-	// deduplicate the document id
-	uniqueDocIDs := common.Deduplicate(docIDs)
-	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
-		return nil, fmt.Errorf("no documents to parse")
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(datasetID, userID, docIDs)
+	if err != nil {
+		return nil, err
 	}
-
-	var responses []*ParseDocumentResponse
-
-	// query database, if the document ids are valid
-	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(docID)
-
-		if err != nil {
-			errorMessage := err.Error()
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     errorMessage,
-			})
-			continue
-		}
-
-		if doc == nil {
-			errorMessage := "no such document"
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     errorMessage,
-			})
-			continue
-		}
-
-		task := &entity.IngestionTask{
-			DocumentID: docID,
-			UserID:     userID,
-			DatasetID:  datasetID,
-			Schema:     nil,
-			Status:     common.CREATED,
-		}
-
-		// save the task to database
-		task, err = s.ingestionTaskDAO.CheckAndCreate(task)
-		if err != nil {
-			errorMessage := err.Error()
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     errorMessage,
-			})
-			continue
-		}
-
-		msgQueueEngine := engine.GetMessageQueueEngine()
-
-		taskMessage := common.TaskMessage{
-			TaskID:   task.ID,
-			TaskType: common.TaskTypeIngestionTask,
-		}
-
-		// convert task
-		taskMessageStr, err := json.Marshal(taskMessage)
-		if err != nil {
-			return nil, err
-		}
-
-		err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
-		if err != nil {
-			return nil, err
-		}
-
-		responses = append(responses, &ParseDocumentResponse{
-			DocumentID: docID,
-			Result:     fmt.Sprintf("task_id: %s", task.ID),
-		})
-	}
-
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return responses, nil
 }
 
 func (s *DocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
-
-	var taskResponses []*entity.IngestionTask
-	for _, taskID := range tasks {
-		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
-		if err != nil {
-			return nil, err
-		}
-		taskResponses = append(taskResponses, task)
-	}
-	return taskResponses, nil
+	return s.ingestionTaskSvc.RequestStopMany(tasks, &userID)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
-
-	var deletedTasks []map[string]string
-	for _, taskID := range tasks {
-		taskRecord := map[string]string{
-			"task_id": taskID,
-		}
-		_, err := s.ingestionTaskDAO.Delete(taskID, &userID)
-		if err != nil {
-			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
-		} else {
-			taskRecord["remove"] = "success"
-		}
-		deletedTasks = append(deletedTasks, taskRecord)
-	}
-	return deletedTasks, nil
+	return s.ingestionTaskSvc.RemoveMany(tasks, &userID)
 }
 
 type IngestDocumentRequest struct {
@@ -1563,26 +1462,14 @@ func (s *DocumentService) queueDocumentDataflowTask(kb *entity.Knowledgebase, do
 	if err := s.beginDocumentParse(doc.ID); err != nil {
 		return err
 	}
-	task := &entity.IngestionTask{
+	_, err := s.ingestionTaskSvc.CreateAndEnqueue(&entity.IngestionTask{
 		DocumentID: doc.ID,
 		UserID:     userID,
 		DatasetID:  kb.ID,
 		Schema:     nil,
 		Status:     common.CREATED,
-	}
-	task, err := s.ingestionTaskDAO.CheckAndCreate(task)
-	if err != nil {
-		return err
-	}
-	taskMessage := common.TaskMessage{
-		TaskID:   task.ID,
-		TaskType: common.TaskTypeIngestionTask,
-	}
-	payload, err := json.Marshal(taskMessage)
-	if err != nil {
-		return err
-	}
-	return s.publishTask("tasks.RAGFLOW", payload)
+	})
+	return err
 }
 
 func (s *DocumentService) newDocumentParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
@@ -1629,7 +1516,6 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 			pageSize = int64(documentParserConfigInt(doc.ParserConfig, "task_page_size", 22))
 		}
 		if doc.ParserID == string(entity.ParserTypeOne) ||
-			doc.ParserID == string(entity.ParserTypeKG) ||
 			documentParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 			pageSize = maximumTaskPageNumber
 		}
@@ -2066,43 +1952,20 @@ func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID strin
 	return docs, nil
 }
 
-// cancelDocParse sets Redis cancel signals for the document's active tasks and
-// marks the document run status as CANCEL. Returns an error if the document is
-// not in a cancellable state or the status update fails.
+// cancelDocParse stops the ingestion task for the document by calling
+// RequestStop (which sets Redis {taskID}-cancel + DB STOPPING), then marks
+// the document run status as CANCEL.
 func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
-	tasks, taskErr := s.taskDAO.GetByDocID(doc.ID)
-	if taskErr != nil {
-		common.Error(fmt.Sprintf("error when load task %s", doc.ID), taskErr)
-		return fmt.Errorf("failed to get tasks for %s: %v", doc.ID, taskErr)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(doc.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
+	}
+	if task == nil {
+		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
 	}
 
-	hasUnfinishedTask := false
-	for _, t := range tasks {
-		if t.Progress < 1 {
-			hasUnfinishedTask = true
-			break
-		}
-	}
-
-	canCancel := false
-	if doc.Run != nil {
-		if *doc.Run == string(entity.TaskStatusRunning) || *doc.Run == string(entity.TaskStatusCancel) {
-			canCancel = true
-		}
-	}
-	if hasUnfinishedTask {
-		canCancel = true
-	}
-	if !canCancel {
-		return fmt.Errorf("can't stop parsing document that has not started or already completed")
-	}
-
-	// Set Redis cancel signal for each task (best-effort)
-	redisClient := redis.Get()
-	for _, t := range tasks {
-		if redisClient != nil {
-			redisClient.Set(fmt.Sprintf("%s-cancel", t.ID), "x", 0)
-		}
+	if _, err := s.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
 	}
 
 	if upErr := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {

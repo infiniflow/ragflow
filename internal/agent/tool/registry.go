@@ -18,6 +18,7 @@ package tool
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -30,7 +31,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
 	"akshare":               buildAkShareTool,
-	"arxiv":                 noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"arxiv":                 buildArxivTool,
 	"bgpt":                  noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
@@ -39,13 +40,13 @@ var registry = map[string]Factory{
 	"email":                 noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
 	"execute_sql":           buildExeSQLTool,
 	"exesql":                buildExeSQLTool,
-	"github":                noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
+	"github":                buildGitHubTool,
 	"google":                buildGoogleTool,
 	"google_scholar":        buildGoogleScholarTool,
 	"google_scholar_search": buildGoogleScholarTool,
 	"jin10":                 noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":              buildKeenableTool,
-	"pubmed":                noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
+	"pubmed":                buildPubMedTool,
 	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
@@ -128,6 +129,31 @@ func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewAkShareToolWithTopN(nil, topN), nil
 }
 
+func buildArxivTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultArxivTopN
+	sortBy := defaultArxivSortBy
+	for key := range params {
+		switch key {
+		case "top_n", "sort_by":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "arxiv", key)
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "arxiv")
+	}
+	if v, ok := stringParam(params, "sort_by"); ok {
+		sortBy = v
+	}
+	if !ArxivSortBySupported(sortBy) {
+		return nil, fmt.Errorf("agent tool: tool %q has unsupported sort_by %q", "arxiv", sortBy)
+	}
+	return NewArxivToolWithParams(nil, topN, sortBy), nil
+}
+
 func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
 	conn, err := decodeExeSQLConnParams(params)
 	if err != nil {
@@ -169,6 +195,32 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewGoogleToolWithDefaults(nil, defaults), nil
 }
 
+func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultGitHubTopN
+	for key := range params {
+		if key != "top_n" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
+		}
+	}
+	if raw, exists := params["top_n"]; exists {
+		value, ok := intParam(params, "top_n")
+		if !ok {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		if decimal, ok := raw.(float64); ok && math.Trunc(decimal) != decimal {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		topN = value
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+	}
+	if topN > maxGitHubTopN {
+		return nil, fmt.Errorf("agent tool: tool %q requires node-level param top_n to be at most %d", "github", maxGitHubTopN)
+	}
+	return NewGitHubToolWithDefaults(nil, githubParams{TopN: topN}), nil
+}
+
 func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
 	if len(params) == 0 {
 		return NewGoogleScholarTool(), nil
@@ -200,6 +252,30 @@ func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Patents = &v
 	}
 	return NewGoogleScholarToolWithDefaults(nil, defaults), nil
+}
+
+func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := pubmedParams{}
+	for key := range params {
+		switch key {
+		case "top_n", "email":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "pubmed", key)
+		}
+	}
+	if topN, ok := intParam(params, "top_n"); ok {
+		if topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "pubmed")
+		}
+		defaults.TopN = topN
+	}
+	if email, ok := stringParam(params, "email"); ok {
+		if strings.TrimSpace(email) == "" {
+			return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param email", "pubmed")
+		}
+		defaults.Email = email
+	}
+	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
