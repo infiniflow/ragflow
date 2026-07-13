@@ -2505,3 +2505,108 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
 	}
 }
+
+// Regression tests for the immutable-field validator added in PR #16836
+// (chunk_num / token_num / progress) and the follow-up fix for #16838
+// (run / progress_msg). All checks should reject the call with a
+// non-nil error so UpdateDocument can short-circuit.
+
+func int64Ptr16838(v int64) *int64       { return &v }
+func float64Ptr16838(v float64) *float64 { return &v }
+func stringPtr16838(v string) *string    { return &v }
+
+func makeDoc16838(progress float64, chunkNum, tokenNum int64, run, progressMsg string) entity.Document {
+	return entity.Document{
+		ID:          "doc-test-16838",
+		Progress:    progress,
+		ChunkNum:    chunkNum,
+		TokenNum:    tokenNum,
+		Run:         run,
+		ProgressMsg: progressMsg,
+	}
+}
+
+func TestValidateImmutableDocumentFields_NilRequest(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	if err := validateImmutableDocumentFields(&current, nil); err == nil {
+		t.Fatalf("expected error on nil request, got nil")
+	}
+}
+
+func TestValidateImmutableDocumentFields_NilFields(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{}
+	if err := validateImmutableDocumentFields(&current, req); err != nil {
+		t.Fatalf("expected nil error for empty request, got %v", err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsMatchingValues(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{
+		ChunkNum:    int64Ptr16838(10),
+		TokenNum:    int64Ptr16838(200),
+		Progress:    float64Ptr16838(0.5),
+		Run:         stringPtr16838("0"),
+		ProgressMsg: stringPtr16838("running"),
+	}
+	if err := validateImmutableDocumentFields(&current, req); err != nil {
+		t.Fatalf("expected nil error for matching values, got %v", err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsChunkNumMismatch(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{ChunkNum: int64Ptr16838(99)}
+	if err := validateImmutableDocumentFields(&current, req); err == nil {
+		t.Fatalf("expected chunk_num mismatch to be rejected")
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsTokenNumMismatch(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{TokenNum: int64Ptr16838(99)}
+	if err := validateImmutableDocumentFields(&current, req); err == nil {
+		t.Fatalf("expected token_num mismatch to be rejected")
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsProgressMismatch(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{Progress: float64Ptr16838(0.9)}
+	if err := validateImmutableDocumentFields(&current, req); err == nil {
+		t.Fatalf("expected progress mismatch to be rejected")
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsRunMismatch(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{Run: stringPtr16838("99")}
+	if err := validateImmutableDocumentFields(&current, req); err == nil {
+		t.Fatalf("expected run mismatch to be rejected")
+	}
+}
+
+func TestValidateImmutableDocumentFields_RejectsProgressMsgMismatch(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{ProgressMsg: stringPtr16838("fake")}
+	if err := validateImmutableDocumentFields(&current, req); err == nil {
+		t.Fatalf("expected progress_msg mismatch to be rejected")
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsNilRunOrProgressMsg(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{} // all fields nil
+	if err := validateImmutableDocumentFields(&current, req); err != nil {
+		t.Fatalf("expected nil error when all fields are nil, got %v", err)
+	}
+}
+
+func TestValidateImmutableDocumentFields_AcceptsProgressWithinTolerance(t *testing.T) {
+	current := makeDoc16838(0.5, 10, 200, "0", "running")
+	req := &UpdateDocumentRequest{Progress: float64Ptr16838(0.5 + 1e-10)}
+	if err := validateImmutableDocumentFields(&current, req); err != nil {
+		t.Fatalf("expected progress within 1e-9 tolerance to be accepted, got %v", err)
+	}
+}
