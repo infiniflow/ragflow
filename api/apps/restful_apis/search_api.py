@@ -25,8 +25,9 @@ from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import TenantService, UserTenantService, KnowledgebaseService
+from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
