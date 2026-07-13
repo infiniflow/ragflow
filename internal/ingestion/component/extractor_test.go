@@ -33,7 +33,7 @@ import (
 // stubExtractorChatInvoker is the test seam for the package-level
 // extractorChatInvoker. It records every call (for assertions) and
 // returns canned responses configured per-test. Concurrent-safe so
-// it can backstop future Parallelism>1 cases without rewriting.
+// it can backstop concurrent test cases without rewriting.
 type stubExtractorChatInvoker struct {
 	mu sync.Mutex
 
@@ -523,16 +523,6 @@ func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 	if _, ok := outs["output_format"]; !ok {
 		t.Errorf("Outputs() missing %q", "output_format")
-	}
-}
-
-// TestExtractorComponent_Parallelism asserts the fan-out is
-// locked to 1 per plan §AD-5a ("Extractor: 1 (LLM call is
-// inherently serial)").
-func TestExtractorComponent_Parallelism(t *testing.T) {
-	c := &ExtractorComponent{}
-	if got := c.Parallelism(); got != 1 {
-		t.Errorf("Parallelism() = %d, want 1", got)
 	}
 }
 

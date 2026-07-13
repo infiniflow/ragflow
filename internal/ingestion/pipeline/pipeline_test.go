@@ -46,8 +46,6 @@ func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[
 	}
 	return out, nil
 }
-
-func (m *mockCanvasStage) Parallelism() int           { return 1 }
 func (m *mockCanvasStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
 func (m *mockCanvasStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
 
@@ -157,7 +155,6 @@ type errCanvasStage struct{}
 func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
-func (e *errCanvasStage) Parallelism() int           { return 1 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
 func (e *errCanvasStage) Outputs() map[string]string { return nil }
 

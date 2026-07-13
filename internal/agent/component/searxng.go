@@ -128,7 +128,7 @@ func (c *searxngComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 
 	chunks, docAggs := buildSearXNGReferences(results)
 	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
-		state.AddRetrievalReferences(chunks, docAggs)
+		state.SetRetrievalReferences(chunks, docAggs)
 	}
 	return map[string]any{
 		"formalized_content": renderSearXNGReferences(chunks, searxngPromptTokenLimit),
@@ -162,11 +162,15 @@ func buildSearXNGReferences(results []any) ([]map[string]any, []map[string]any) 
 		}
 
 		documentID := strconv.Itoa(hashSearXNGString(content, 100000000))
+		displayID := strconv.Itoa(hashSearXNGString(documentID, 500))
 		title := searxngText(item["title"])
 		resultURL := searxngText(item["url"])
 		chunks = append(chunks, map[string]any{
-			"id":                documentID,
+			"id":                displayID,
+			"chunk_id":          documentID,
 			"content":           content,
+			"doc_id":            documentID,
+			"docnm_kwd":         title,
 			"document_id":       documentID,
 			"document_name":     title,
 			"dataset_id":        nil,
@@ -203,8 +207,7 @@ func renderSearXNGReferences(chunks []map[string]any, maxTokens int) string {
 		}
 		usedTokens += tokenizer.NumTokensFromString(content)
 		var block strings.Builder
-		displayID := hashSearXNGString(searxngText(chunk["id"]), 500)
-		fmt.Fprintf(&block, "\nID: %d", displayID)
+		fmt.Fprintf(&block, "\nID: %s", searxngText(chunk["id"]))
 		if title := searxngPromptField(chunk["document_name"]); title != "" {
 			fmt.Fprintf(&block, "\n├── Title: %s", title)
 		}

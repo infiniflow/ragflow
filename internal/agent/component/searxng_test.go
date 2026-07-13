@@ -139,8 +139,11 @@ func TestSearXNGInvokePreservesRawJSONPromptAndReferences(t *testing.T) {
 	if chunks[0]["document_id"] != strconv.Itoa(documentID) || chunks[0]["content"] != cleaned {
 		t.Fatalf("retrieval chunk = %#v", chunks[0])
 	}
-	if chunks[0]["id"] != strconv.Itoa(documentID) {
-		t.Fatalf("chunk id = %#v, want Python content hash", chunks[0]["id"])
+	if chunks[0]["id"] != strconv.Itoa(referenceID) {
+		t.Fatalf("chunk id = %#v, want displayed reference ID", chunks[0]["id"])
+	}
+	if chunks[0]["chunk_id"] != strconv.Itoa(documentID) || chunks[0]["doc_id"] != strconv.Itoa(documentID) {
+		t.Fatalf("raw document IDs = %#v, want Python content hash", chunks[0])
 	}
 	if chunks[0]["similarity"] != 1 {
 		t.Fatalf("similarity = %#v, want 1", chunks[0]["similarity"])
@@ -202,11 +205,10 @@ func TestSearXNGPromptBoundaryMatchesPython(t *testing.T) {
 	firstTokens := tokenizer.NumTokensFromString(first)
 	maxTokens := int(math.Ceil(float64(firstTokens)/0.97)) + 1
 	rendered := renderSearXNGReferences(chunks, maxTokens)
-	if !strings.Contains(rendered, "ID: "+strconv.Itoa(hashSearXNGString("1", 500))) ||
-		!strings.Contains(rendered, "ID: "+strconv.Itoa(hashSearXNGString("2", 500))) {
+	if !strings.Contains(rendered, "ID: 1") || !strings.Contains(rendered, "ID: 2") {
 		t.Fatalf("crossing chunk must be included like Python: %s", rendered)
 	}
-	if strings.Contains(rendered, "ID: "+strconv.Itoa(hashSearXNGString("3", 500))) {
+	if strings.Contains(rendered, "ID: 3") {
 		t.Fatalf("chunk after budget crossing must be excluded: %s", rendered)
 	}
 }

@@ -40,7 +40,7 @@ var registry = map[string]Factory{
 	"email":                 noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
 	"execute_sql":           buildExeSQLTool,
 	"exesql":                buildExeSQLTool,
-	"github":                noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
+	"github":                buildGitHubTool,
 	"google":                buildGoogleTool,
 	"google_scholar":        buildGoogleScholarTool,
 	"google_scholar_search": buildGoogleScholarTool,
@@ -193,6 +193,32 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Num = v
 	}
 	return NewGoogleToolWithDefaults(nil, defaults), nil
+}
+
+func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultGitHubTopN
+	for key := range params {
+		if key != "top_n" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
+		}
+	}
+	if raw, exists := params["top_n"]; exists {
+		value, ok := intParam(params, "top_n")
+		if !ok {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		if decimal, ok := raw.(float64); ok && math.Trunc(decimal) != decimal {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		topN = value
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+	}
+	if topN > maxGitHubTopN {
+		return nil, fmt.Errorf("agent tool: tool %q requires node-level param top_n to be at most %d", "github", maxGitHubTopN)
+	}
+	return NewGitHubToolWithDefaults(nil, githubParams{TopN: topN}), nil
 }
 
 func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
