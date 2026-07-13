@@ -1,5 +1,5 @@
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 
 export const useTemplateAddButton = (

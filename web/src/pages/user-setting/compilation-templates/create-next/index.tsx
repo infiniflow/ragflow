@@ -12,6 +12,7 @@ import { useCallback, useState } from 'react';
 import { useFieldArray, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { BasicInfoStep } from './components/basic-info-step';
 import { BlueprintsStep } from './components/blueprints-step';
 import { TemplateConfiguration } from './components/template-configuration';
@@ -26,6 +27,7 @@ export default function CreateNextCompilationTemplate() {
 
   const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
     useCreateNextCompilationTemplateGroup();
+  const { data: group } = useFetchCompilationTemplateGroup();
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -77,7 +79,7 @@ export default function CreateNextCompilationTemplate() {
         <h2 className="font-medium text-text-secondary">
           {isCreate
             ? t('setting.addTemplateGroup')
-            : t('setting.editTemplateGroup')}
+            : group?.name || t('setting.editTemplateGroup')}
         </h2>
       </header>
 

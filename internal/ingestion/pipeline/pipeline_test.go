@@ -46,8 +46,6 @@ func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[
 	}
 	return out, nil
 }
-
-func (m *mockCanvasStage) Parallelism() int           { return 1 }
 func (m *mockCanvasStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
 func (m *mockCanvasStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
 
@@ -157,7 +155,6 @@ type errCanvasStage struct{}
 func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
-func (e *errCanvasStage) Parallelism() int           { return 1 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
 func (e *errCanvasStage) Outputs() map[string]string { return nil }
 
@@ -414,9 +411,8 @@ func (r *recordingSink) OnComponentProgress(ev ProgressEvent) {
 }
 
 // TestPipelineRunForwardsProgressToSink verifies the pipeline reports the
-// component-total denominator and each component lifecycle event to the
-// injected ProgressSink, and carries task/document/total context on every
-// event so the sink needs no canvas knowledge.
+// component-total denominator once via OnComponentTotal and each component
+// lifecycle event to the injected ProgressSink.
 func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
 	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
@@ -465,9 +461,6 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 		}
 		if ev.DocumentID != "doc-sink" {
 			t.Fatalf("event DocumentID = %q, want doc-sink", ev.DocumentID)
-		}
-		if ev.Total != 3 {
-			t.Fatalf("event Total = %d, want 3", ev.Total)
 		}
 		seen[ev.Component] = true
 	}

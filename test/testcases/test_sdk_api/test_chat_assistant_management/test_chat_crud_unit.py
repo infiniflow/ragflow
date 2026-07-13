@@ -15,6 +15,7 @@
 #
 
 import pytest
+from configs import HOST_ADDRESS
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.chat import Chat
 from ragflow_sdk.modules.session import Session
@@ -40,7 +41,7 @@ def set_tenant_info():
 
 @pytest.mark.p2
 def test_chat_create_session_raises_server_error_message(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat = Chat(client, {"id": "chat-1"})
 
     monkeypatch.setattr(
@@ -56,7 +57,7 @@ def test_chat_create_session_raises_server_error_message(monkeypatch):
 
 @pytest.mark.p2
 def test_chat_list_sessions_forwards_restful_query_params(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat = Chat(client, {"id": "chat-1"})
     calls = []
 

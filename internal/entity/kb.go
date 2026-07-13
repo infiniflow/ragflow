@@ -58,7 +58,6 @@ const (
 	ParserTypeOne          ParserType = "one"
 	ParserTypeAudio        ParserType = "audio"
 	ParserTypeEmail        ParserType = "email"
-	ParserTypeKG           ParserType = "knowledge_graph"
 	ParserTypeTag          ParserType = "tag"
 )
 

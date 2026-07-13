@@ -33,6 +33,7 @@ require (
 	github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a
 	github.com/json-iterator/go v1.1.12
 	github.com/kaptinlin/jsonrepair v0.4.8
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.0.99
 	github.com/nats-io/nats-server/v2 v2.14.3
