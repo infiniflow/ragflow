@@ -120,9 +120,6 @@ func (c *FileComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is fixed at 1 — File is metadata-only.
-func (c *FileComponent) Parallelism() int { return 1 }
-
 // Invoke resolves document/file metadata for downstream Parser use.
 //
 // The implementation mirrors the python flow's two paths:
@@ -158,9 +155,7 @@ func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 	// re-emitting it. The Go runtime forwards only this explicit output
 	// to the next node, so shared fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	return runtime.TrackElapsed("File", func() (map[string]any, error) {
-		return out, nil
-	})
+	return out, nil
 }
 
 // fileInputs is the post-Validation view of the upstream input

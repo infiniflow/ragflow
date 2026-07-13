@@ -31,10 +31,9 @@
 //     response. We DO NOT panic: errors are surfaced as a clean
 //     "no driver for %q" wrap that callers can log and route.
 //
-//   - LLM CALL SHAPE: one chat call per chunk (no batching). Plan
-//     §AD-5a locks Parallelism at 1 because "LLM call is inherently
-//     serial"; sequential per-chunk processing keeps test ordering
-//     deterministic under -race.
+//   - LLM CALL SHAPE: one chat call per chunk (no batching). LLM
+//     calls are inherently serial; sequential per-chunk processing
+//     keeps test ordering deterministic under -race.
 //
 //   - TIMEOUT / ELAPSED: the call is wrapped in
 //     runtime.WithTimeout(60s) and runtime.TrackElapsed so the
@@ -169,12 +168,6 @@ func (c *ExtractorComponent) Outputs() map[string]string {
 		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
 	}
 }
-
-// Parallelism is locked at 1 (plan §AD-5a: "Extractor: 1 (LLM call
-// is inherently serial)"). The pipeline runner uses this to decide
-// fan-out degree; sequential per-chunk processing keeps test
-// ordering deterministic under -race.
-func (c *ExtractorComponent) Parallelism() int { return 1 }
 
 // extractorChatInvoker is the seam the Extractor uses to dispatch
 // its chat call. The production implementation

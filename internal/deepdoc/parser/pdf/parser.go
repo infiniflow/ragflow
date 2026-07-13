@@ -187,7 +187,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		// render to an unsafe DPI and spike memory on large pages.
 		const maxRetryZoom = 9.0
 		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
-		slog.Info("per-page zoom retry", "page", pg, "zoom", retryZoom)
+		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer)
