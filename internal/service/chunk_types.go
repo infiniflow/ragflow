@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"ragflow/internal/server"
 	"strings"
 
 	"ragflow/internal/dao"
@@ -48,7 +47,6 @@ var (
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
-	engineType     server.EngineType
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
 	taskDAO        *dao.TaskDAO

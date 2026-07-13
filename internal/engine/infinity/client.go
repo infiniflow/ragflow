@@ -191,6 +191,11 @@ func (e *infinityEngine) GetType() string {
 	return "infinity"
 }
 
+// SupportsPageRank returns false because Infinity does not support pagerank.
+func (e *infinityEngine) SupportsPageRank() bool {
+	return false
+}
+
 // Ping checks if Infinity is accessible
 func (e *infinityEngine) Ping(ctx context.Context) error {
 	if e.client == nil || e.client.conn == nil {

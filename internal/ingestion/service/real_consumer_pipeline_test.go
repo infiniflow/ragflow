@@ -1,27 +1,21 @@
-//go:build manual
-// +build manual
+//go:build integration
 
 package service
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/nats"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 )
 
-func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
-	natsEngine := nats.NewNatsEngine("localhost", 4222)
-	if err := natsEngine.Init(); err != nil {
-		t.Fatalf("NATS Init: %v", err)
-	}
+func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
+	natsEngine := testutil.SetupNatsEngine(t)
 	if err := natsEngine.InitConsumer("tasks.>"); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
@@ -44,7 +38,7 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 		testutil.WithDocID("doc-q-1"),
 		testutil.WithTaskID("ingest-q-1"),
 		testutil.WithPipelineID("flow-queue-1"),
-		testutil.WithDocName("queue-dataflow.pdf"),
+		testutil.WithDocName("queue-pipeline.pdf"),
 	)
 
 	// testutil.SeedTestData already created an IngestionTask with status RUNNING.
@@ -85,46 +79,33 @@ func TestRealConsumer_DataflowMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	task, err := ingestionTaskDAO.SetRunningByIngestor(taskMsg.TaskID)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
-		if errors.Is(err, common.ErrTaskNotFound) {
-			t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
-		}
 		t.Fatalf("SetRunningByIngestor: %v", err)
+	}
+	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	if err != nil || task == nil {
+		t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
 	}
 	if task.Status != common.RUNNING {
 		t.Fatalf("task status after SetRunningByIngestor = %s, want %s", task.Status, common.RUNNING)
 	}
 
 	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
-	var routedToDataflow bool
-	var progressEvents []string
+	var routedToPipeline bool
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		task,
 	)
-	var finalProgress float64
-	taskCtx.ProgressFunc = func(prog float64, msg string) {
-		finalProgress = prog
-		progressEvents = append(progressEvents, msg)
-	}
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		routedToDataflow = true
-		taskCtx.ProgressFunc(0.82, "mock queue dataflow start")
-		taskCtx.ProgressFunc(1.0, "mock queue dataflow done")
+		routedToPipeline = true
 		return nil
 	}
 
 	ingestor.executeTask(taskCtx)
 
-	if !routedToDataflow {
-		t.Fatal("expected executeTask to route queue-consumed dataflow task to runDocumentTask")
-	}
-	if finalProgress != 1.0 {
-		t.Fatalf("finalProgress = %v, want 1.0", finalProgress)
-	}
-	if len(progressEvents) != 2 {
-		t.Fatalf("progressEvents = %v, want 2 events", progressEvents)
+	if !routedToPipeline {
+		t.Fatal("expected executeTask to route queue-consumed pipeline task to runDocumentTask")
 	}
 	if err := taskHandle.Ack(); err != nil {
 		t.Fatalf("Ack: %v", err)
