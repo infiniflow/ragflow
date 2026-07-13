@@ -117,7 +117,7 @@ def test_openai_compatible_invalid_chat(rest_client):
     assert expected_message in payload["message"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     chat_id = create_chat("restful_openai_nonstream_chat")
     res = rest_client.post(

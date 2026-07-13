@@ -247,3 +247,12 @@ def ensure_parsed_document(rest_client, create_document):
         return dataset_id, document_id
 
     return _ensure
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    import time
+    start = time.perf_counter()
+    yield
+    duration = time.perf_counter() - start
+    print(f"  [{duration:.3f}s]")
