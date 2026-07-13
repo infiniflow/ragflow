@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	_ "ragflow/internal/agent/component"
@@ -706,7 +707,7 @@ func startServer(config *server.Config) {
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
-	systemHandler := handler.NewSystemHandler(systemService)
+	systemHandler := handler.NewSystemHandler(systemService, otel.Tracer("ragflow"))
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)

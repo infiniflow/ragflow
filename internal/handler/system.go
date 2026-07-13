@@ -23,17 +23,21 @@ import (
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // SystemHandler system handler
 type SystemHandler struct {
 	systemService *service.SystemService
+	tracer        trace.Tracer
 }
 
 // NewSystemHandler create system handler
-func NewSystemHandler(systemService *service.SystemService) *SystemHandler {
+func NewSystemHandler(systemService *service.SystemService, tracer trace.Tracer) *SystemHandler {
 	return &SystemHandler{
 		systemService: systemService,
+		tracer:        tracer,
 	}
 }
 
@@ -45,6 +49,14 @@ func NewSystemHandler(systemService *service.SystemService) *SystemHandler {
 // @Success 200 {string} string "pong"
 // @Router /v1/system/ping [get]
 func (h *SystemHandler) Ping(c *gin.Context) {
+	_, span := h.tracer.Start(c.Request.Context(), "SystemHandler.Ping")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("http.method", c.Request.Method),
+		attribute.String("http.path", c.Request.URL.Path),
+	)
+
 	c.String(http.StatusOK, "pong")
 }
 
