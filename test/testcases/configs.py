@@ -13,11 +13,46 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
+from pathlib import Path
 
 import pytest
 
-HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
+
+_DOCKER_ENV = Path(__file__).resolve().parents[2] / "docker" / ".env"
+
+
+def _docker_env_value(name: str) -> str | None:
+    if not _DOCKER_ENV.exists():
+        return None
+    for line in _DOCKER_ENV.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == name:
+            return value.split("#", 1)[0].strip().strip('"').strip("'")
+    return None
+
+
+def _config_value(name: str, default: str | None = None) -> str | None:
+    return os.getenv(name) or _docker_env_value(name) or default
+
+
+API_PROXY_SCHEME = _config_value("API_PROXY_SCHEME", "python")
+IS_GO_PROXY = API_PROXY_SCHEME == "go"
+SDK_UNAUTHORIZED_ERROR_MESSAGE = "Invalid access token" if IS_GO_PROXY else "<Unauthorized '401: Unauthorized'>"
+
+
+def _default_host_address() -> str:
+    if API_PROXY_SCHEME == "go":
+        return f"http://127.0.0.1:{_config_value('GO_HTTP_PORT', '9384')}"
+    return "http://127.0.0.1:9380"
+
+
+HOST_ADDRESS = os.getenv("HOST_ADDRESS") or _default_host_address()
+logging.info("Resolved API proxy configuration: scheme=%s, is_go_proxy=%s, host_address=%s", API_PROXY_SCHEME, IS_GO_PROXY, HOST_ADDRESS)
 VERSION = "v1"
 ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
 if ZHIPU_AI_API_KEY is None:

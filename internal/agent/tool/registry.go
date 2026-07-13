@@ -18,6 +18,7 @@ package tool
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -30,7 +31,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
 	"akshare":               buildAkShareTool,
-	"arxiv":                 noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"arxiv":                 buildArxivTool,
 	"bgpt":                  noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
@@ -39,7 +40,7 @@ var registry = map[string]Factory{
 	"email":                 noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
 	"execute_sql":           buildExeSQLTool,
 	"exesql":                buildExeSQLTool,
-	"github":                noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
+	"github":                buildGitHubTool,
 	"google":                buildGoogleTool,
 	"google_scholar":        buildGoogleScholarTool,
 	"google_scholar_search": buildGoogleScholarTool,
@@ -50,11 +51,11 @@ var registry = map[string]Factory{
 	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dateset":     noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"searxng":               noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
+	"searxng":               buildSearXNGTool,
 	"tavily":                noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
 	"tavily_extract":        noConfig("tavily_extract", func() einotool.BaseTool { return NewTavilyExtractTool() }),
 	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":                noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
+	"wencai":                buildWencaiTool,
 	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":             buildWikipediaTool,
 	"wikipedia_search":      buildWikipediaTool,
@@ -128,6 +129,31 @@ func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewAkShareToolWithTopN(nil, topN), nil
 }
 
+func buildArxivTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultArxivTopN
+	sortBy := defaultArxivSortBy
+	for key := range params {
+		switch key {
+		case "top_n", "sort_by":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "arxiv", key)
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "arxiv")
+	}
+	if v, ok := stringParam(params, "sort_by"); ok {
+		sortBy = v
+	}
+	if !ArxivSortBySupported(sortBy) {
+		return nil, fmt.Errorf("agent tool: tool %q has unsupported sort_by %q", "arxiv", sortBy)
+	}
+	return NewArxivToolWithParams(nil, topN, sortBy), nil
+}
+
 func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
 	conn, err := decodeExeSQLConnParams(params)
 	if err != nil {
@@ -167,6 +193,32 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Num = v
 	}
 	return NewGoogleToolWithDefaults(nil, defaults), nil
+}
+
+func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultGitHubTopN
+	for key := range params {
+		if key != "top_n" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
+		}
+	}
+	if raw, exists := params["top_n"]; exists {
+		value, ok := intParam(params, "top_n")
+		if !ok {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		if decimal, ok := raw.(float64); ok && math.Trunc(decimal) != decimal {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+		}
+		topN = value
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
+	}
+	if topN > maxGitHubTopN {
+		return nil, fmt.Errorf("agent tool: tool %q requires node-level param top_n to be at most %d", "github", maxGitHubTopN)
+	}
+	return NewGitHubToolWithDefaults(nil, githubParams{TopN: topN}), nil
 }
 
 func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
@@ -224,6 +276,58 @@ func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Email = email
 	}
 	return NewPubMedToolWithDefaults(nil, defaults), nil
+}
+
+func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := defaultSearXNGParams()
+	for key := range params {
+		switch key {
+		case "top_n", "searxng_url":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "searxng", key)
+		}
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := parseSearXNGTopN(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "searxng")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["searxng_url"]; ok {
+		searxngURL, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param searxng_url", "searxng")
+		}
+		defaults.SearXNGURL = searxngURL
+	}
+	return newSearXNGToolWithDefaults(nil, defaults), nil
+}
+
+func buildWencaiTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := wencaiParams{}
+	for key := range params {
+		switch key {
+		case "top_n", "query_type":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "wencai", key)
+		}
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "wencai")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["query_type"]; ok {
+		queryType, valid := value.(string)
+		if !valid || !isWencaiQueryTypeSupported(queryType) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported query_type %q", "wencai", queryType)
+		}
+		defaults.QueryType = queryType
+	}
+	return newWencaiTool(defaults), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
@@ -325,6 +429,29 @@ func intParam(params map[string]any, key string) (int, bool) {
 	case int64:
 		return int(x), true
 	case float64:
+		return int(x), true
+	default:
+		return 0, false
+	}
+}
+
+func strictInt(value any) (int, bool) {
+	switch x := value.(type) {
+	case int:
+		return x, true
+	case int32:
+		return int(x), true
+	case int64:
+		if int64(int(x)) != x {
+			return 0, false
+		}
+		return int(x), true
+	case float64:
+		maxInt := int(^uint(0) >> 1)
+		minInt := -maxInt - 1
+		if math.Trunc(x) != x || x >= float64(maxInt) || x <= float64(minInt) {
+			return 0, false
+		}
 		return int(x), true
 	default:
 		return 0, false

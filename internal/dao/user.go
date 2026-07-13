@@ -97,7 +97,7 @@ func (dao *UserDAO) UpdateAccessToken(user *entity.User, token string) error {
 }
 
 // List list users (only active users with status != "0")
-func (dao *UserDAO) List(offset, limit int) ([]*entity.User, int64, error) {
+func (dao *UserDAO) List(offset, limit int, name, status, sort, orderBy string) ([]*entity.User, int64, error) {
 	var users []*entity.User
 	var total int64
 

@@ -21,36 +21,39 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/utility"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
 
-	"google.golang.org/grpc"
-	"gorm.io/gorm"
+	"github.com/cenkalti/backoff/v5"
 )
 
+const defaultHeartbeatInterval = 10 * time.Second
+
 type Ingestor struct {
-	id          string
-	name        string
-	serverAddr  string
-	conn        *grpc.ClientConn
-	ctx         context.Context
-	cancel      context.CancelFunc
-	reconnectMu sync.Mutex
+	id     string
+	name   string
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// Configuration
 	maxConcurrency    int32
 	supportedDocTypes []string
 	version           string
+	heartbeatInterval time.Duration
 
 	// Runtime state
-	currentTasks map[string]*taskpkg.TaskContext
-	tasksMu      sync.RWMutex
+	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
+	tasksMu       sync.RWMutex
+	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -60,41 +63,53 @@ type Ingestor struct {
 	workerWg  sync.WaitGroup
 	startOnce sync.Once
 
-	ingestionTaskDAO    *dao.IngestionTaskDAO
-	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
-	ingestionTaskSvc    *servicepkg.IngestionTaskService
+	ingestionTaskSvc *servicepkg.IngestionTaskService
+	docState         *docStateUpdater
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
 	// the full downstream stack.
 	runDocumentTask func(ctx context.Context, ingestionTask *entity.IngestionTask) error
+
+	// cancelCheck is polled periodically (every 3s) during task execution.
+	// When it returns true the task's context is cancelled, which causes the
+	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
+	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
+	// override this to simulate cancel without Redis.
+	cancelCheck func(taskID string) bool
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	ctx, cancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
-		id:                  id,
-		name:                name,
-		ctx:                 ctx,
-		cancel:              cancel,
-		maxConcurrency:      maxConcurrency,
-		supportedDocTypes:   supportedTypes,
-		version:             "1.0.0",
-		currentTasks:        make(map[string]*taskpkg.TaskContext),
-		taskChan:            make(chan *taskpkg.TaskContext, maxConcurrency*2),
-		ShutdownCh:          make(chan struct{}, 1),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
-		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+		id:                id,
+		name:              name,
+		ctx:               ctx,
+		cancel:            cancel,
+		maxConcurrency:    maxConcurrency,
+		supportedDocTypes: supportedTypes,
+		version:           "1.0.0",
+		currentTasks:      make(map[string]struct{}),
+		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
+		ShutdownCh:        make(chan struct{}, 1),
+		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
+		docState:          newDocStateUpdater(),
+		heartbeatInterval: defaultHeartbeatInterval,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
+	ingestor.cancelCheck = ingestor.defaultCancelCheck
 	return ingestor
 }
 
 func (e *Ingestor) ID() string {
 	return e.id
 }
+
+// consumeErrorBackoff paces the consume loop when GetMessages returns an
+// error, so a persistent MQ failure does not pin a CPU. The backoff is
+// cancellable so a shutdown during backoff returns promptly.
+const consumeErrorBackoff = 1 * time.Second
 
 func (e *Ingestor) Start() error {
 	common.Info(fmt.Sprintf("Ingestor %s initialized", e.id))
@@ -108,80 +123,131 @@ func (e *Ingestor) Start() error {
 	go e.startWorkerPool()
 
 	for {
-		var taskHandles []common.TaskHandle
-		taskHandles, err = msgQueueEngine.GetMessages(4)
+		// Graceful shutdown is the only condition under which the consume
+		// loop exits. Per-message processing failures never terminate the
+		// consumer: processMessage settles (ack/nack) each message itself.
+		if err := e.ctx.Err(); err != nil {
+			return nil
+		}
+		taskHandles, err := msgQueueEngine.GetMessages(4)
 		if err != nil {
 			common.Error("error consuming message", err)
+			select {
+			case <-time.After(consumeErrorBackoff):
+			case <-e.ctx.Done():
+				return nil
+			}
 			continue
 		}
 		for _, taskHandle := range taskHandles {
-			taskMessage := taskHandle.GetMessage()
-			common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType))
-			if taskMessage.TaskType != common.TaskTypeIngestionTask {
-				common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
-				err = taskHandle.Ack()
-				if err != nil {
-					common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
-					return err
-				}
-				continue
-			}
-			var task *entity.IngestionTask
-			task, err = e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
-			if err != nil {
-				if errors.Is(err, common.ErrTaskNotFound) {
-					common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
-					err = taskHandle.Ack()
-					if err != nil {
-						common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
-						return err
-					}
-					continue
-				} else {
-					common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
-					return err
-				}
-			}
-			if task == nil {
-				common.Info(fmt.Sprintf("task %s is already removed", taskMessage.TaskID))
-				err = taskHandle.Ack()
-				if err != nil {
-					return err
-				}
-				continue
-			}
+			e.processMessage(taskHandle)
+		}
+	}
+}
 
-			switch task.Status {
-			case common.COMPLETED, common.STOPPED, common.FAILED:
-				common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
-				err = taskHandle.Ack()
-				if err != nil {
-					common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
-					return err
-				}
-				continue
-			case common.STOPPING, common.CREATED:
-				err = fmt.Errorf("task %s is in unexpected status %s", taskMessage.TaskID, task.Status)
-				return err
-			case common.RUNNING:
+// processMessage handles a single incoming MQ message: filter by type,
+// activate the task (state transition), guard against duplicate execution
+// (claim), and enqueue to the worker pool (or backpressure-reject). It
+// settles (ack/nack) every message itself and never returns an error: a
+// single message can never terminate the consume loop. Only ctx cancellation
+// (graceful shutdown) stops the consumer - see Start.
+func (e *Ingestor) processMessage(handle common.TaskHandle) {
+	taskMessage := handle.GetMessage()
+	common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType))
+
+	// Deferred claim release: if this function claims a task but the task
+	// is not successfully enqueued to the worker pool (e.g. backpressure,
+	// or a future error path added between claim and enqueue), the defer
+	// cleans up so the task can be reclaimed on MQ redelivery. When the
+	// task IS enqueued, claimedTaskID is cleared and executeTask's own
+	// defer takes ownership of the release.
+	var claimedTaskID string
+	defer func() {
+		if claimedTaskID != "" {
+			e.releaseTask(claimedTaskID)
+		}
+	}()
+
+	if taskMessage.TaskType != common.TaskTypeIngestionTask {
+		common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
+		if err := handle.Ack(); err != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
+		}
+		return
+	}
+
+	task, err := e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
+	if err != nil {
+		if errors.Is(err, common.ErrTaskNotFound) {
+			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
+			if ackErr := handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
 			}
+			return
+		}
+		// Recoverable activation failure (e.g. a DB blip): nack for
+		// redelivery instead of dropping the message or killing the
+		// consumer.
+		common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
+		if nackErr := handle.Nack(); nackErr != nil {
+			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
+		}
+		return
+	}
+	if task == nil {
+		common.Info(fmt.Sprintf("task %s is already removed", taskMessage.TaskID))
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
+		}
+		return
+	}
 
-			// Construct TaskContext with parent context
-			taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
-
-			// Push to task channel; if full, reject the task (backpressure)
-			select {
-			case e.taskChan <- taskCtx:
-				common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
-			default:
-				common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-
-				err = taskHandle.Nack()
-				if err != nil {
-					common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), err)
-					return err
-				}
+	switch task.Status {
+	case common.COMPLETED, common.STOPPED, common.FAILED:
+		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
+		}
+		return
+	case common.RUNNING:
+		// Guard against MQ redelivery: if another worker in this
+		// process is already processing this task, ack the redelivered
+		// message and skip instead of scheduling it again.
+		if !e.claimTask(task.ID) {
+			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
+				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
+			if ackErr := handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
 			}
+			return
+		}
+		claimedTaskID = task.ID
+	default:
+		// Unreachable given StartRunning normalizes every status to
+		// RUNNING/COMPLETED/STOPPED/FAILED, but defensive: ack-skip an
+		// unknown status instead of enqueuing it for execution.
+		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
+		}
+		return
+	}
+
+	// Construct TaskContext and carry the MQ handle so the worker can
+	// Ack/Nack when the task reaches a terminal status.
+	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
+	taskCtx.Handle = handle
+
+	// Push to task channel; if full, reject the task (backpressure).
+	select {
+	case e.taskChan <- taskCtx:
+		claimedTaskID = "" // executeTask owns the release now
+		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
+	default:
+		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
+		// claimedTaskID is still set; defer will call releaseTask.
+		if nackErr := handle.Nack(); nackErr != nil {
+			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
 		}
 	}
 }
@@ -198,6 +264,8 @@ func (e *Ingestor) startWorkerPool() {
 
 func (e *Ingestor) workerLoop(id int32) {
 	defer e.workerWg.Done()
+	defer e.activeWorkers.Add(-1)
+	e.activeWorkers.Add(1)
 	common.Info(fmt.Sprintf("Worker %d started", id))
 	for {
 		select {
@@ -211,84 +279,340 @@ func (e *Ingestor) workerLoop(id int32) {
 }
 
 func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
-	ctx := taskCtx.Ctx
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
-	latestLog, err := e.ingestionTaskLogDAO.LatestLogByTaskID(task.ID)
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			common.Error(fmt.Sprintf("Failed to get latest task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-			}
-			return
-		}
-		latestLog = &entity.IngestionTaskLog{
-			ID:     0,
-			TaskID: task.ID,
-			Checkpoint: entity.JSONMap{
-				"current_step": 1,
-				"total_step":   5,
-			},
-		}
-		err = e.ingestionTaskLogDAO.Create(latestLog)
-		if err != nil {
-			common.Error(fmt.Sprintf("Failed to create task log for task %s", task.ID), err)
-			if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-				common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-			}
-			return
-		}
+	// Release the claim when executeTask returns so that a future
+	// redelivery (after restart) can re-claim the task.
+	defer e.releaseTask(task.ID)
+
+	// Derive a per-task cancelable context so that an external cancel
+	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
+	// can stop only this task without affecting the whole Ingestor.
+	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
+	taskCtx.Ctx = perTaskCtx
+	cancelDone := make(chan struct{})
+	pollExited := make(chan struct{})
+	go func() {
+		defer close(pollExited)
+		e.pollCancel(task.ID, perTaskCancel, cancelDone)
+	}()
+	defer func() {
+		close(cancelDone)
+		<-pollExited
+		perTaskCancel()
+	}()
+
+	// Synchronous check: if already cancelled (e.g. flag set between MQ
+	// delivery and worker claim), stop before the pipeline even starts.
+	if e.cancelCheck(task.ID) {
+		common.Info(fmt.Sprintf("Task %s cancel flag detected before pipeline start, cancelling", task.ID))
+		perTaskCancel()
 	}
 
-	var checkpointMap map[string]interface{}
-	checkpointMap = latestLog.Checkpoint
-	currentStep, ok := common.GetInt(checkpointMap["current_step"])
-	if !ok {
-		common.Error(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
-		return
-	}
-	totalStep, ok := common.GetInt(checkpointMap["total_step"])
-	if !ok {
-		common.Error(fmt.Sprintf("Failed to get total step from task log for task %s", task.ID), nil)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
-		return
-	}
-	// Bump checkpoint to signal we started processing
-	checkpointMap["current_step"] = currentStep + 1
-	latestLog.Checkpoint = checkpointMap
-	if err := e.ingestionTaskLogDAO.Update(latestLog); err != nil {
-		common.Error(fmt.Sprintf("Failed to persist checkpoint for task %s", task.ID), err)
-	}
-	_ = totalStep // unused in this temporary integration
+	e.settleMessage(taskCtx, func(ctx context.Context) bool {
+		return e.runTask(ctx, task)
+	})
+}
 
+// markStopped transitions the task to STOPPED (terminal). It first calls
+// RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
+// STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
+// so that a future retry of the same task does not immediately re-cancel.
+func (e *Ingestor) markStopped(taskID string) bool {
+	if _, err := e.ingestionTaskSvc.RequestStop(taskID); err != nil {
+		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+	}
+	if err := e.ingestionTaskSvc.MarkStopped(taskID); err != nil {
+		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
+		return false
+	}
+	if rc := redis2.Get(); rc != nil {
+		rc.Delete(fmt.Sprintf("%s-cancel", taskID))
+	}
+	return true
+}
+
+// markFailed persists FAILED status for the task and reports whether the
+// terminal status was durably written, so the caller can decide Ack vs Nack.
+func (e *Ingestor) markFailed(taskID string) bool {
+	if uErr := e.ingestionTaskSvc.MarkFailed(taskID); uErr != nil {
+		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
+		return false
+	}
+	return true
+}
+
+// runTask executes the task's business logic — run-count advance, document
+// pipeline, and completion — behind the heartbeat. It returns whether the
+// task reached a durably-persisted terminal status.
+func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		return
+		e.markCancelProgress(task)
+		e.markStopped(task.ID)
+		return true
 	default:
 	}
-	if err := e.runDocumentTask(ctx, task); err != nil {
-		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		if uErr := e.ingestionTaskSvc.MarkFailed(task.ID); uErr != nil {
-			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", task.ID), uErr)
-		}
-		return
+
+	if err := e.ingestionTaskSvc.IncrementRunCount(task.ID); err != nil {
+		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
+		return e.markFailed(task.ID)
 	}
 
-	err = e.ingestionTaskSvc.MarkCompleted(task.ID)
-	if err != nil {
+	if err := e.runDocumentTask(ctx, task); err != nil {
+		if errors.Is(err, context.Canceled) {
+			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
+			e.markCancelProgress(task)
+			return e.markStopped(task.ID)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
+			e.markTimeoutProgress(task)
+			return e.markFailed(task.ID)
+		}
+		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
+		return e.markFailed(task.ID)
+	}
+
+	if err := e.completeTask(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
-		return
+		return false
 	}
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
+	return true
+}
+
+// completeTask persists the task's terminal status after a successful pipeline.
+// MarkCompleted is retried with backoff for transient (DB) failures only. A
+// terminal transition failure - the task is no longer RUNNING because a
+// concurrent stop (or another worker) moved it - is NOT retried: the pipeline
+// already did the work, so completeOrSettle settles the task to its actual
+// terminal state and the caller Acks instead of redelivering.
+func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
+	_, err := backoff.Retry(ctx, func() (struct{}, error) {
+		return struct{}{}, e.completeOrSettle(taskID)
+	}, backoff.WithMaxTries(3))
+	return err
+}
+
+// completeOrSettle marks the task COMPLETED, or - if the transition is
+// terminally invalid because the task is no longer RUNNING - settles it to its
+// actual terminal state. Returns nil once the task is in any terminal state;
+// returns a non-terminal (transient) error only for retry-worthy DB failures.
+func (e *Ingestor) completeOrSettle(taskID string) error {
+	if err := e.ingestionTaskSvc.MarkCompleted(taskID); err != nil {
+		if isTerminalTransitionError(err) {
+			return e.settleToTerminal(taskID)
+		}
+		return err
+	}
+	return nil
+}
+
+// isTerminalTransitionError reports whether err is a state-machine transition
+// failure - an invalid transition or a lost optimistic CAS - meaning the task's
+// status moved on and MarkCompleted will never succeed as-is. Not retry-worthy;
+// the caller settles by the task's current status.
+func isTerminalTransitionError(err error) bool {
+	var ite *servicepkg.InvalidTaskTransitionError
+	var tce *servicepkg.TaskStatusConflictError
+	return errors.As(err, &ite) || errors.As(err, &tce)
+}
+
+// settleToTerminal finalizes a task whose MarkCompleted failed because it was
+// no longer RUNNING. STOPPING is moved to STOPPED via markStopped (which also
+// clears the Redis cancel flag so a future retry does not immediately
+// re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
+// action. An unexpected status returns an error so the caller nacks and
+// redelivery settles it.
+func (e *Ingestor) settleToTerminal(taskID string) error {
+	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	switch task.Status {
+	case common.STOPPING:
+		if !e.markStopped(taskID) {
+			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
+		}
+		return nil
+	case common.COMPLETED, common.STOPPED, common.FAILED:
+		return nil
+	default:
+		return fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
+	}
+}
+
+// settleMessage runs body under a heartbeat, then settles the MQ message. The
+// heartbeat is stopped (and waited on) before ack/nack — see startHeartbeat.
+// terminal is derived from body's return value; on panic terminal defaults to
+// false (non-terminal → Nack) so the broker redelivers after restart.
+func (e *Ingestor) settleMessage(taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
+	stop := e.startHeartbeat(taskCtx)
+	defer func() {
+		stop() // stop heartbeat (and wait) before ack/nack
+		e.ackOrNack(taskCtx, terminal)
+	}()
+	terminal = body(taskCtx.Ctx)
+	return
+}
+
+// ackOrNack settles the MQ message according to the terminal flag: Ack if the
+// task reached a durably-persisted terminal status, Nack otherwise so the
+// broker redelivers and resumes. A nil handle (standalone/test path) is a no-op.
+func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
+	if taskCtx.Handle == nil {
+		return
+	}
+	if terminal {
+		if err := taskCtx.Handle.Ack(); err != nil {
+			common.Error(fmt.Sprintf("ack task %s", taskCtx.IngestionTask.ID), err)
+		}
+		return
+	}
+	if err := taskCtx.Handle.Nack(); err != nil {
+		common.Error(fmt.Sprintf("nack task %s", taskCtx.IngestionTask.ID), err)
+	}
+}
+
+// defaultCancelCheck reads the Redis cancel flag that Python sets via
+// REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
+// task status in DB when Redis is unavailable — a STOPPING status
+// (set by RequestStop) is treated as a cancel signal.
+func (e *Ingestor) defaultCancelCheck(taskID string) bool {
+	rc := redis2.Get()
+	if rc != nil {
+		if ok, _ := rc.Exist(fmt.Sprintf("%s-cancel", taskID)); ok {
+			return true
+		}
+	}
+	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	if err != nil {
+		return false
+	}
+	return task.Status == common.STOPPING
+}
+
+// pollCancel ticks every 3s to check the cancel flag. When cancelCheck
+// returns true it cancels the per-task context, which causes the pipeline's
+// next ctx.Err() check to abort and runTask to record progress=-1. The
+// goroutine exits when done is closed (executeTask returns).
+func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-chan struct{}) {
+	// Check immediately so the test path (which sets cancelCheck to a func
+	// that returns true) does not need to wait for the first tick.
+	if e.cancelCheck(taskID) {
+		common.Info(fmt.Sprintf("Task %s cancel flag detected during polling, cancelling pipeline", taskID))
+		cancel()
+		return
+	}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if e.cancelCheck(taskID) {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+// markCancelProgress writes the cancelled-progress markers to the document
+// row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
+// appended timestamped cancel message (progress_msg += cancelMsg).
+func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
+	svc := servicepkg.NewDocumentService()
+	doc, err := svc.GetDocumentByID(task.DocumentID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
+		return
+	}
+	cancelMsg := fmt.Sprintf("\n%s Task stopped by user.", time.Now().Format("15:04:05"))
+	existingMsg := ""
+	if doc.ProgressMsg != nil {
+		existingMsg = *doc.ProgressMsg
+	}
+	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+}
+
+// markTimeoutProgress writes the timeout-progress markers to the document
+// row. Unlike cancellation (markCancelProgress), this records a TIMEOUT
+// failure rather than a user-initiated stop.
+func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
+	svc := servicepkg.NewDocumentService()
+	doc, err := svc.GetDocumentByID(task.DocumentID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
+		return
+	}
+	timeoutMsg := fmt.Sprintf("\n%s Task timed out.", time.Now().Format("15:04:05"))
+	existingMsg := ""
+	if doc.ProgressMsg != nil {
+		existingMsg = *doc.ProgressMsg
+	}
+	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+}
+
+// claimTask registers a worker claim on a task ID. Returns false if another
+// worker has already claimed it (e.g. MQ redelivery), true on first claim.
+// startHeartbeat launches a goroutine that calls Handle.InProgress every
+// heartbeatInterval to keep the broker AckWait timer fresh during long tasks.
+// It returns a stop function that signals the goroutine to exit and BLOCKS
+// until it has, so the caller can ack/nack with no in-flight InProgress on the
+// same message. Returns a no-op stop when there is no handle or no interval
+// (standalone/test path).
+func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
+	if taskCtx.Handle == nil || e.heartbeatInterval <= 0 {
+		return func() {}
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(e.heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := taskCtx.Handle.InProgress(); err != nil {
+					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+				}
+			case <-done:
+				return
+			case <-taskCtx.Ctx.Done():
+				return
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		wg.Wait()
+	}
+}
+
+func (e *Ingestor) claimTask(taskID string) bool {
+	e.tasksMu.Lock()
+	defer e.tasksMu.Unlock()
+	if _, ok := e.currentTasks[taskID]; ok {
+		return false
+	}
+	e.currentTasks[taskID] = struct{}{}
+	return true
+}
+
+// releaseTask removes the claim so a future redelivery (after process restart)
+// can re-claim the task.
+func (e *Ingestor) releaseTask(taskID string) {
+	e.tasksMu.Lock()
+	delete(e.currentTasks, taskID)
+	e.tasksMu.Unlock()
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -300,15 +624,48 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		return fmt.Errorf("ingestion task %s: no pipeline_id configured for document %s or dataset %s", ingestionTask.ID, docTaskCtx.Doc.ID, docTaskCtx.KB.ID)
 	}
 	docTaskCtx.Ctx = ctx
-	return taskpkg.NewTaskHandler(docTaskCtx).Handle()
+	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
+	// writes for this run; inject it into the executor so the pipeline reports
+	// progress to the service layer instead of touching the DAO directly.
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, strings.TrimSpace(docTaskCtx.PipelineID), 0)
+	if err != nil {
+		return err
+	}
+	result, err := executor.WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	if err != nil {
+		return err
+	}
+	e.docState.apply(result)
+	return nil
 }
 
-// Stop gracefully shuts down the ingestor
-func (e *Ingestor) Stop() {
+// Stop gracefully shuts down the ingestor. It cancels the root context so
+// idle workers exit immediately and in-flight pipelines abort at their next
+// ctx.Err() check, then waits for workers to return. The wait is bounded by
+// ctx: a stage that does not honor cancellation (e.g. a native CGO parse)
+// would otherwise block workerWg.Wait() indefinitely; when ctx expires Stop
+// returns and leaves the broker to redeliver any in-flight messages
+// (at-least-once). Callers must pass a deadline-bearing context.
+func (e *Ingestor) Stop(ctx context.Context) {
 	common.Info(fmt.Sprintf("Stopping ingestor %s", e.id))
 	e.cancel()
 
-	// Wait for all workers to finish (they exit on ctx.Done())
-	e.workerWg.Wait()
-	common.Info("All tasks completed")
+	waitDone := make(chan struct{})
+	go func() {
+		e.workerWg.Wait()
+		close(waitDone)
+	}()
+
+	select {
+	case <-waitDone:
+		common.Info("All tasks completed")
+	case <-ctx.Done():
+		e.tasksMu.RLock()
+		ids := make([]string, 0, len(e.currentTasks))
+		for id := range e.currentTasks {
+			ids = append(ids, id)
+		}
+		e.tasksMu.RUnlock()
+		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
+	}
 }
