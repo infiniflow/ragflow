@@ -93,7 +93,11 @@ class RAGFlowJsonParser:
                     self._json_split(value, new_path, chunks)
         else:
             # handle single item
-            self._set_nested_dict(chunks[-1], current_path, data)
+            if not current_path:
+                # top-level scalar (number/string/bool/null) has no key to nest under
+                chunks[-1] = data
+            else:
+                self._set_nested_dict(chunks[-1], current_path, data)
         return chunks
 
     def split_json(
