@@ -148,11 +148,7 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
         timeout=60,
     )
     assert res.status_code == 200
-    content_type = res.headers.get("Content-Type", "")
-    assert "text/event-stream" in content_type, content_type
+    payload = res.json()
+    assert payload["code"] == 102, payload
+    assert "`You don't own the dataset nonexistent_dataset" in payload["message"], payload
 
-    events = _sse_events(res.text)
-    assert events, res.text
-    parsed = [json.loads(evt) for evt in events]
-    assert isinstance(parsed[0], dict), parsed
-    assert parsed[-1].get("data") is True, parsed[-1]
