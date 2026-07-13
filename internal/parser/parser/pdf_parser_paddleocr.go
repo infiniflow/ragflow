@@ -2,7 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -14,21 +14,21 @@ func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) Pars
 	}
 	baseURL := strings.TrimSpace(parser.PaddleOCRBaseURL)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("PADDLEOCR_BASE_URL"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
 	}
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("PADDLEOCR_API_URL"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRApiURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR requires paddleocr_base_url or PADDLEOCR_BASE_URL")}
 	}
 	apiKey := parser.PaddleOCRAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(os.Getenv("PADDLEOCR_ACCESS_TOKEN"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAccessToken))
 	}
 	algorithm := strings.TrimSpace(parser.PaddleOCRAlgorithm)
 	if algorithm == "" {
-		algorithm = strings.TrimSpace(os.Getenv("PADDLEOCR_ALGORITHM"))
+		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
 	}
 	if algorithm == "" {
 		algorithm = "PaddleOCR-VL"

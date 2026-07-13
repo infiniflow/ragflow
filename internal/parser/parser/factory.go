@@ -52,7 +52,7 @@ func GetParserByID(parserID string) (ParseResultProducer, error) {
 	case "resume":
 		return NewResumePDFParser(), nil
 	case "picture":
-		return NewPicturePDFParser(), nil
+		return NewPictureParser(), nil
 	case "one":
 		return NewOnePDFParser(), nil
 	case "audio":
@@ -69,18 +69,16 @@ func GetParserByID(parserID string) (ParseResultProducer, error) {
 }
 
 // Stub constructors for each parser type.
-func NewNaivePDFParser() *stubParser    { return &stubParser{name: "naive"} }
-func NewPaperPDFParser() *stubParser    { return &stubParser{name: "paper"} }
-func NewBookPDFParser() *stubParser     { return &stubParser{name: "book"} }
-func NewPresentationParser() *stubParser  { return &stubParser{name: "presentation"} }
-func NewManualPDFParser() *stubParser   { return &stubParser{name: "manual"} }
-func NewLawsPDFParser() *stubParser     { return &stubParser{name: "laws"} }
-func NewQAPDFParser() *stubParser       { return &stubParser{name: "qa"} }
-func NewTableParser() *stubParser       { return &stubParser{name: "table"} }
-func NewResumePDFParser() *stubParser   { return &stubParser{name: "resume"} }
-func NewPicturePDFParser() *stubParser  { return &stubParser{name: "picture"} }
-func NewOnePDFParser() *stubParser      { return &stubParser{name: "one"} }
-func NewAudioParser() *stubParser       { return &stubParser{name: "audio"} }
-func NewEmailParser() *stubParser       { return &stubParser{name: "email"} }
-func NewTagPDFParser() *stubParser      { return &stubParser{name: "tag"} }
-func NewKGPDFParser() *stubParser       { return &stubParser{name: "knowledge_graph"} }
+func NewNaivePDFParser() *stubParser     { return &stubParser{name: "naive"} }
+func NewPaperPDFParser() *stubParser     { return &stubParser{name: "paper"} }
+func NewBookPDFParser() *stubParser      { return &stubParser{name: "book"} }
+func NewPresentationParser() *stubParser { return &stubParser{name: "presentation"} }
+func NewManualPDFParser() *stubParser    { return &stubParser{name: "manual"} }
+func NewLawsPDFParser() *stubParser      { return &stubParser{name: "laws"} }
+func NewQAPDFParser() *stubParser        { return &stubParser{name: "qa"} }
+func NewTableParser() *stubParser        { return &stubParser{name: "table"} }
+func NewResumePDFParser() *stubParser    { return &stubParser{name: "resume"} }
+func NewPicturePDFParser() *stubParser   { return &stubParser{name: "picture"} }
+func NewOnePDFParser() *stubParser       { return &stubParser{name: "one"} }
+func NewTagPDFParser() *stubParser       { return &stubParser{name: "tag"} }
+func NewKGPDFParser() *stubParser        { return &stubParser{name: "knowledge_graph"} }

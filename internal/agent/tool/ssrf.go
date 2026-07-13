@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	"ragflow/internal/utility"
@@ -154,7 +154,7 @@ func isPrivateOrLoopback(ip net.IP) bool {
 }
 
 func allowAnyHost() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
+	switch strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvAllowAnyHost))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

@@ -1497,10 +1497,12 @@ def _load_chat_routes_unit_module(monkeypatch):
             "get_by_id": staticmethod(lambda _id: (True, _KB())),
         },
     )
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_provider_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
 
     def _split_model_name(model_name):
@@ -1530,7 +1532,7 @@ def _load_chat_routes_unit_module(monkeypatch):
         "TenantService",
         (),
         {
-            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4"))),
+            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id"))),
             "get_joined_tenants_by_user_id": staticmethod(lambda _user_id: [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]),
         },
     )
@@ -1597,7 +1599,7 @@ def test_create_chat_uses_tenant_default_llm_when_llm_id_is_null_unit(monkeypatc
 
     res = _run(module.create.__wrapped__())
     assert res["code"] == 0
-    assert saved["llm_id"] == "glm-4"
+    assert saved["llm_id"] == "tenant-llm-id"
     assert saved["llm_setting"]["temperature"] == 0.8
 
 

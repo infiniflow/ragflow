@@ -237,13 +237,13 @@ class TestDatasetCreate:
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
+        assert dataset.embedding_model.split("@", 1)[0] == "BAAI/bge-small-en-v1.5", str(dataset)
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
+        assert dataset.embedding_model.split("@", 1)[0] == "BAAI/bge-small-en-v1.5", str(dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

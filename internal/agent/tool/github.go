@@ -22,42 +22,39 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
-const githubToolName = "github"
+const githubToolName = "github_search"
 
-const githubToolDescription = "Search GitHub repositories. Returns items[].{full_name, html_url, description, stargazers_count}."
+const githubToolDescription = "GitHub repository search finds repositories, projects, and codebases hosted on GitHub."
 
-// githubParams is the JSON shape the model sends into InvokableRun. token
-// is optional — anonymous requests succeed but are heavily rate-limited
-// (60/hr vs 5000/hr with a PAT).
+const (
+	defaultGitHubTopN = 10
+	maxGitHubTopN     = 100
+)
+
+// githubParams mirrors Python GitHubParam. Info() exposes only Query to the
+// model, while TopN is a canvas-side configuration value merged with defaults.
 type githubParams struct {
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
-	Token      string `json:"token"`
+	Query string `json:"query"`
+	TopN  int    `json:"top_n"`
 }
 
-// githubResult mirrors one element of the upstream `items` array.
-type githubResult struct {
-	FullName        string `json:"full_name"`
-	HTMLURL         string `json:"html_url"`
-	Description     string `json:"description"`
-	StargazersCount int    `json:"stargazers_count"`
-}
-
-// githubResponse is the upstream GitHub Search envelope.
+// githubResponse keeps GitHub's raw repository objects intact. The Python
+// component stores response["items"] in its json output, so narrowing this to
+// selected fields would change downstream DSL behaviour.
 type githubResponse struct {
-	Items []githubResult `json:"items"`
+	Items []map[string]any `json:"items"`
 }
 
-// githubEnvelope is what the model sees.
+// githubEnvelope is the shared tool-to-component transport shape.
 type githubEnvelope struct {
-	Results []githubResult `json:"results"`
-	Error   string         `json:"_ERROR,omitempty"`
+	Results []map[string]any `json:"results"`
+	Error   string           `json:"_ERROR,omitempty"`
 }
 
 // GitHubTool is the GitHub
@@ -65,21 +62,35 @@ type githubEnvelope struct {
 // GETs the GitHub Search API via the shared HTTPHelper and returns the
 // top N repository matches.
 type GitHubTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults githubParams
 }
 
 // NewGitHubTool returns a GitHubTool using the default HTTPHelper.
 func NewGitHubTool() *GitHubTool {
-	return NewGitHubToolWith(NewHTTPHelper())
+	return NewGitHubToolWithDefaults(nil, githubParams{})
 }
 
 // NewGitHubToolWith returns a GitHubTool that uses the provided
 // HTTPHelper. Useful for tests.
 func NewGitHubToolWith(h *HTTPHelper) *GitHubTool {
+	return NewGitHubToolWithDefaults(h, githubParams{})
+}
+
+// NewGitHubToolWithDefaults returns a GitHubTool with component-level
+// defaults. It follows NewPubMedToolWithDefaults: the constructor owns
+// defaults while Info() exposes only the model-call input schema.
+func NewGitHubToolWithDefaults(h *HTTPHelper, defaults githubParams) *GitHubTool {
 	if h == nil {
-		h = NewHTTPHelper()
+		// Python uses DEFAULT_TIMEOUT (15 seconds) and ToolParamBase starts
+		// with max_retries=0, so a default GitHub component makes one request.
+		h = NewHTTPHelperWithRetry(RetryConfig{MaxAttempts: 1})
+		h.client.Timeout = 15 * time.Second
 	}
-	return &GitHubTool{helper: h}
+	if defaults.TopN == 0 {
+		defaults.TopN = defaultGitHubTopN
+	}
+	return &GitHubTool{helper: h, defaults: defaults}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -90,35 +101,24 @@ func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "Search query (GitHub search syntax).",
+				Desc:     "The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request.",
 				Required: true,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5 (max 30 per page).",
-				Required: false,
-			},
-			"token": {
-				Type:     schema.String,
-				Desc:     "Optional GitHub personal access token. Increases rate limit from 60 to 5000 req/hr.",
-				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// buildGitHubURL constructs the GitHub repository search URL. Centralized
-// so the test suite can verify URL encoding without spinning up a server.
-func buildGitHubURL(query string, maxResults int) string {
-	if maxResults <= 0 {
-		maxResults = 5
-	}
-	if maxResults > 30 {
-		maxResults = 30
+// buildGitHubURL constructs the repository search URL used by the Python
+// GitHub component: most-starred repositories first, with per_page=top_n.
+func buildGitHubURL(query string, topN int) string {
+	if topN <= 0 {
+		topN = defaultGitHubTopN
 	}
 	q := url.Values{}
 	q.Set("q", query)
-	q.Set("per_page", fmt.Sprintf("%d", maxResults))
+	q.Set("sort", "stars")
+	q.Set("order", "desc")
+	q.Set("per_page", fmt.Sprintf("%d", topN))
 	return "https://api.github.com/search/repositories?" + q.Encode()
 }
 
@@ -129,17 +129,16 @@ func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return githubErrJSON(fmt.Errorf("github: parse arguments: %w", err)),
 			fmt.Errorf("github: parse arguments: %w", err)
 	}
-	if strings.TrimSpace(p.Query) == "" {
+	if p.Query == "" {
 		return githubErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("github: query is required")
 	}
+	p = mergeGitHubDefaults(g.defaults, p)
 
-	endpoint := buildGitHubURL(p.Query, p.MaxResults)
+	endpoint := buildGitHubURL(p.Query, p.TopN)
 	headers := map[string]string{
-		"Accept": "application/vnd.github+json",
-	}
-	if p.Token != "" {
-		headers["Authorization"] = "Bearer " + p.Token
+		"Content-Type":         "application/vnd.github+json",
+		"X-GitHub-Api-Version": "2022-11-28",
 	}
 
 	resp, err := g.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
@@ -159,6 +158,13 @@ func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			fmt.Errorf("github: decode response: %w", err)
 	}
 	return githubJSON(githubEnvelope{Results: raw.Items}), nil
+}
+
+func mergeGitHubDefaults(defaults, params githubParams) githubParams {
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	return params
 }
 
 func githubJSON(env githubEnvelope) string {

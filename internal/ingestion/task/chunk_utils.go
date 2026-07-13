@@ -102,10 +102,10 @@ func deepCopyChunks(chunks []map[string]any) []map[string]any {
 	return out
 }
 
-// PrepareTextsForDataflowEmbedding extracts texts for embedding from chunks.
+// PrepareTextsForPipelineEmbedding extracts texts for embedding from chunks.
 // Priority: questions > summary > text.
 // Mirrors Python: EmbeddingUtils.prepare_texts_for_dataflow_embedding()
-func PrepareTextsForDataflowEmbedding(chunks []map[string]any) []string {
+func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 	if chunks == nil {
 		return nil
 	}
@@ -116,49 +116,34 @@ func PrepareTextsForDataflowEmbedding(chunks []map[string]any) []string {
 			text, _ = chunk["summary"].(string)
 		}
 		if text == "" {
-			text = MustGetChunkTextString(chunk, "PrepareTextsForDataflowEmbedding")
+			chunkText, err := MustGetChunkTextString(chunk)
+			if err != nil {
+				common.Error("chunk[text] is not string", err)
+			} else {
+				text = chunkText
+			}
 		}
-		texts = append(texts, text)
+		if text != "" {
+			texts = append(texts, text)
+		}
 	}
 	return texts
 }
 
 // MustGetChunkTextString returns chunk["text"] when it is a string.
 // Missing text is allowed and returns empty string.
-// FIXME: remove panic before production; current panic is intentional for dev/test
-// so list-shaped text payloads are surfaced immediately instead of being written
-// as silent bad data.
-func MustGetChunkTextString(chunk map[string]any, where string) string {
+func MustGetChunkTextString(chunk map[string]any) (string, error) {
 	val, exists := chunk["text"]
 	if !exists || val == nil {
-		return ""
+		return "", nil
 	}
 	text, ok := val.(string)
 	if ok {
-		return text
+		return text, nil
 	}
 
-	msg := fmt.Sprintf("%s: invalid chunk text type %T, expected string, chunk=%v", where, val, chunk)
-	common.Error(msg, nil)
-	panic(msg)
-}
-
-// AttachVectors attaches embedding vectors to chunks in-place.
-// Each chunk gets a key like "q_{dim}_vec" with the vector as []float64.
-// Mirrors Python: EmbeddingUtils.attach_vectors()
-func AttachVectors(chunks []map[string]any, vectors [][]float64) int {
-	if len(chunks) == 0 && len(vectors) == 0 {
-		return 0
-	}
-	if len(vectors) != len(chunks) {
-		panic(fmt.Sprintf("vectors/chunks length mismatch: %d != %d", len(vectors), len(chunks)))
-	}
-	vectorSize := 0
-	for i, doc := range chunks {
-		vec := vectors[i]
-		vectorSize = len(vec)
-		key := fmt.Sprintf("q_%d_vec", vectorSize)
-		doc[key] = vec
-	}
-	return vectorSize
+	msg := fmt.Sprintf("invalid chunk text type %T, expected string, chunk=%v", val, chunk)
+	err := fmt.Errorf("unexpected chunk text type - not string")
+	common.Error(msg, err)
+	return "", err
 }

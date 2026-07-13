@@ -19,6 +19,7 @@ package admin
 import (
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -130,6 +131,16 @@ func (s *Service) ListResources() (map[string]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+// ListRolesWithPermission list roles with permission
+func (s *Service) ListRolesWithPermission() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_roles_with_permission",
+			"error":   "'list roles with permission' is not supported",
+		},
+	}, nil
 }
 
 func (s *Service) ShowRoleDefaultModels(roleName string) ([]map[string]interface{}, error) {
@@ -915,6 +926,18 @@ func (s *Service) ShowUsersPlanSummary() (map[string]interface{}, error) {
 	return result, nil
 }
 
+// ShowUsersPlanQuota show users plan quota for enterprise edition
+func (s *Service) ShowUsersPlanQuota(quota int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"quota":   quota,
+		"command": "show_users_plan_quota",
+		"error":   "'Show users plan quota' is not supported",
+	}
+
+	return result, nil
+}
+
 // ShowUsersQuotaSummary show users quota summary for enterprise edition
 func (s *Service) ShowUsersQuotaSummary() (map[string]interface{}, error) {
 
@@ -1156,4 +1179,118 @@ func (s *Service) RemoveIngestionTasksByCondition(tasks []string, email, status 
 	}
 
 	return []map[string]interface{}{element}, nil
+}
+
+func CheckLicense() (common.ErrorCode, string) {
+	return common.CodeLicenseValid, ""
+}
+
+// DownloadSensitiveWords download sensitive words
+func (s *Service) DownloadSensitiveWords() ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command": "download_sensitive_words",
+			"error":   "'Download sensitive words' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// UploadSensitiveWords upload sensitive words
+func (s *Service) UploadSensitiveWords(file *multipart.FileHeader) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":  "upload_sensitive_words",
+			"filename": file.Filename,
+			"error":    "'Upload sensitive words' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// BindVerificationEmail bind verification email
+func (s *Service) BindVerificationEmail(email, host string, port int, username, password string, useTLS, useSSL bool) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":  "bind_verification_email",
+		"email":    email,
+		"host":     host,
+		"port":     port,
+		"username": username,
+		"password": password,
+		"use_tls":  useTLS,
+		"use_ssl":  useSSL,
+		"error":    "'Bind verification email' is not supported",
+	}
+	return result, nil
+}
+
+// ShowVerificationEmail show verification email
+func (s *Service) ShowVerificationEmail() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "show_verification_email",
+		"error":   "'Show verification email' is not supported",
+	}
+	return result, nil
+}
+
+// ShowWhiteList show white list
+func (s *Service) ShowWhiteList() ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command": "show_white_list",
+			"error":   "'Show white list' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// AddWhiteList add white list
+func (s *Service) AddWhiteList(email string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "add_white_list",
+		"email":   email,
+		"error":   "'Add white list' is not supported",
+	}
+	return result, nil
+}
+
+// BatchAddWhiteList batch add white list
+func (s *Service) BatchAddWhiteList(file *multipart.FileHeader) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":  "batch_add_white_list",
+		"filename": file.Filename,
+		"error":    "'Batch add white list' is not supported",
+	}
+	return result, nil
+}
+
+// UpdateWhiteList update white list
+func (s *Service) UpdateWhiteList(id, email string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "update_white_list",
+		"id":      id,
+		"email":   email,
+		"error":   "'Update white list' is not supported",
+	}
+	return result, nil
+}
+
+// DeleteWhiteList delete white list
+func (s *Service) DeleteWhiteList(id int) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "delete_white_list",
+		"id":      id,
+		"error":   "'Delete white list' is not supported",
+	}
+	return result, nil
+}
+
+// BatchDeleteWhiteList batch delete white list
+func (s *Service) BatchDeleteWhiteList(ids []int) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "batch_delete_white_list",
+		"ids":     ids,
+		"error":   "'Batch delete white list' is not supported",
+	}
+	return result, nil
 }

@@ -304,6 +304,35 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	b[bucket] = payload
 }
 
+// GetGlobal returns a value from the workflow-wide Globals bag. Globals is a
+// generic, cross-component scratch space owned by CanvasState; the set of
+// keys an ingestion pipeline elects to store there is ingestion-specific and
+// therefore lives in the ingestion component package, not here.
+func (s *CanvasState) GetGlobal(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.Globals[key]
+	return v, ok
+}
+
+// SetGlobal writes a value into the workflow-wide Globals bag. It is the
+// single, lock-safe mutation point for Globals so callers never touch the map
+// field directly.
+func (s *CanvasState) SetGlobal(key string, val any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
+	s.Globals[key] = val
+}
+
 // GetRetrievalChunks returns a snapshot of the chunks recorded in
 // state.Retrieval["chunks"]. The Retrieval map is the canvas-level
 // aggregate that the Retrieval tool populates during the ReAct loop;
@@ -358,6 +387,44 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 		asAny = append(asAny, c)
 	}
 	s.Retrieval["chunks"] = asAny
+}
+
+// SetRetrievalReferences records the chunks and document aggregates emitted by
+// a canvas search component. It is the lock-safe counterpart of Python
+// Graph.add_reference for components that produce externally sourced results.
+func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	chunkValues, _ := s.Retrieval["chunks"].([]any)
+	if chunkValues == nil {
+		chunkValues = make([]any, 0, len(chunks))
+	}
+	for _, chunk := range chunks {
+		chunkValues = append(chunkValues, chunk)
+	}
+	docAggValues, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if docAggValues == nil {
+		docAggValues = make(map[string]any, len(docAggs))
+	}
+	for _, docAgg := range docAggs {
+		docName, _ := docAgg["doc_name"].(string)
+		if docName == "" {
+			continue
+		}
+		// Match Python Graph.add_reference: retain the first aggregate for
+		// a document name across the run-level reference set.
+		if _, exists := docAggValues[docName]; !exists {
+			docAggValues[docName] = docAgg
+		}
+	}
+	s.Retrieval["chunks"] = chunkValues
+	s.Retrieval["doc_aggs"] = docAggValues
 }
 
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or

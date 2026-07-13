@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildModelValue, parseModelValue } from '@/utils/llm-util';
+import { parseModelValue } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -105,15 +105,21 @@ export const useFetchAddedProviders = () => {
   return { data, loading };
 };
 
-export const useFetchAllAddedModels = (modelType?: string) => {
+export const useFetchAllAddedModels = (
+  modelType?: string,
+  ownerTenantId?: string,
+) => {
   const { data, isFetching: loading } = useQuery<IAddedModel[]>({
-    queryKey: LlmKeys.allModels(modelType),
+    queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
       if (modelType) {
         params.type = modelType;
+      }
+      if (ownerTenantId) {
+        params.owner_tenant_id = ownerTenantId;
       }
       const { data } = await llmService.listAllAddedModels({ params }, true);
 
@@ -275,6 +281,19 @@ export const useAddProviderInstance = () => {
         true,
       );
       if (data.code === 0 && !params.verify) {
+        // Invalidate `addedProviders` so `has_instance` flips to `true`
+        // for providers that just gained their first instance. Without
+        // this, the parent page keeps `providerQueryName === ''` (the
+        // `has_instance` gate in index.tsx) and the `providerInstances`
+        // query stays disabled, so the newly-saved instance never
+        // appears. `exact: true` avoids cascading into every
+        // providerInstances / instanceModels query (they share the
+        // `['AddedProviders', ...]` prefix) - the dedicated invalidation
+        // below handles those.
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
@@ -610,7 +629,7 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     const dict: Record<string, string> = {};
     Object.entries(ModelTypeToField).forEach(([key, field]) => {
       const model = defaultModels.find((m) => m.model_type === key);
-      dict[field] = model && model.enable ? buildModelValue(model) : '';
+      dict[field] = model && model.enable ? model.model_id : '';
     });
     return dict;
   }, [defaultModels]);

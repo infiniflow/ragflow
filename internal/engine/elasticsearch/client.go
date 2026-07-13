@@ -105,6 +105,11 @@ func (e *elasticsearchEngine) GetType() string {
 	return "elasticsearch"
 }
 
+// SupportsPageRank returns true because Elasticsearch supports pagerank.
+func (e *elasticsearchEngine) SupportsPageRank() bool {
+	return true
+}
+
 // Ping health check
 func (e *elasticsearchEngine) Ping(ctx context.Context) error {
 	req := esapi.InfoRequest{}

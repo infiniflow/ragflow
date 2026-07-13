@@ -51,6 +51,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPingCacheCommand(cmd)
 	case "admin_ping_server":
 		return c.PingServerByCommand(cmd)
+	case "admin_live_server":
+		return c.AdminLiveServerCommand(cmd)
+	case "admin_health_server":
+		return c.AdminHealthServerCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "admin_list_services":
@@ -199,8 +203,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersSummaryCommand(cmd)
 	case "admin_show_users_activity_command":
 		return c.AdminShowUsersActivityCommand(cmd)
-	case "admin_show_users_plan_command":
-		return c.AdminShowUsersPlanCommand(cmd)
+	case "admin_show_users_plan_summary":
+		return c.AdminShowUsersPlanSummaryCommand(cmd)
+	case "admin_show_users_plan_quota":
+		return c.AdminShowUsersPlanQuotaCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
