@@ -29,7 +29,7 @@ import (
 func TestArxiv_BuildURL(t *testing.T) {
 	t.Parallel()
 
-	got := buildArxivURL("transformer", 3)
+	got := buildArxivURL("transformer", 3, "lastUpdatedDate")
 	u, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("url.Parse(%q): %v", got, err)
@@ -46,6 +46,9 @@ func TestArxiv_BuildURL(t *testing.T) {
 	}
 	if q.Get("max_results") != "3" {
 		t.Errorf("max_results = %q, want 3", q.Get("max_results"))
+	}
+	if q.Get("sortBy") != "lastUpdatedDate" {
+		t.Errorf("sortBy = %q, want lastUpdatedDate", q.Get("sortBy"))
 	}
 }
 
@@ -131,6 +134,14 @@ func TestArxiv_Info(t *testing.T) {
 	if !strings.Contains(meta.Description, "arXiv") {
 		t.Errorf("Desc = %q, want to mention arXiv", meta.Description)
 	}
+	paramsJSON, _ := json.Marshal(meta.Parameters)
+	params := string(paramsJSON)
+	if !strings.Contains(params, `"query"`) {
+		t.Errorf("schema must expose query: %s", params)
+	}
+	if strings.Contains(params, `"top_n"`) {
+		t.Errorf("schema must not expose node config top_n: %s", params)
+	}
 }
 
 func TestArxiv_RequiresQuery(t *testing.T) {
@@ -173,7 +184,7 @@ func TestArxiv_FullRoundtrip(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewArxivToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"rag","max_results":5}`)
+	out, err := tool.InvokableRun(context.Background(), `{"query":"rag"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}

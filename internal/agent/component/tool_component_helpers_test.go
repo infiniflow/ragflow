@@ -82,15 +82,6 @@ func newDuckDuckGoComponentWithInvoker(tool tool.Tool) Component {
 	return simpleToolComponent("DuckDuckGo", tool)
 }
 
-// newGoogleScholarComponentWithInvoker creates a GoogleScholar component.
-func newGoogleScholarComponentWithInvoker(tool tool.Tool, params map[string]any) Component {
-	return &testToolDelegateWithSetup{
-		name:   "GoogleScholar",
-		inner:  tool,
-		setups: params,
-	}
-}
-
 // testToolDelegateWithSetup is like testToolDelegate but merges
 // stored setup values into the input before passing to the tool.
 type testToolDelegateWithSetup struct {
@@ -132,10 +123,4 @@ func (d *testToolDelegateWithSetup) GetInputForm() map[string]any {
 }
 
 // anySlice attempts a type assertion to []any and returns the result
-// or nil on failure.
-func anySlice(v any) []any {
-	if s, ok := v.([]any); ok {
-		return s
-	}
-	return nil
-}
+// or nil on failure. Prefer the production version in universe_a_wrappers.go.

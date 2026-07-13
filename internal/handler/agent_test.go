@@ -93,22 +93,22 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		Title:  sptr("Test Agent"),
 	})
 
-	// Insert 2 versions with staggered timestamps
-	now := time.Now()
-	db.Create(&entity.UserCanvasVersion{
-		ID:           "v2",
-		UserCanvasID: "canvas-1",
-		Title:        sptr("v2"),
-		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.UnixMilli()),
-		},
-	})
+	// Insert 2 versions with staggered timestamps.
+	// v2 has a more recent create_time so create_time DESC puts it first.
 	db.Create(&entity.UserCanvasVersion{
 		ID:           "v1",
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v1"),
 		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+			CreateTime: ptr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()),
+		},
+	})
+	db.Create(&entity.UserCanvasVersion{
+		ID:           "v2",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("v2"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC).UnixMilli()),
 		},
 	})
 

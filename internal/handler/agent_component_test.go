@@ -205,8 +205,8 @@ func TestGetComponentInputForm_BrowserDynamicInputForm(t *testing.T) {
 	if prompts["name"] != "Prompts" {
 		t.Errorf("data.prompts.name = %v, want Prompts", prompts["name"])
 	}
-	if prompts["type"] != "text" {
-		t.Errorf("data.prompts.type = %v, want text", prompts["type"])
+	if prompts["type"] != "paragraph" {
+		t.Errorf("data.prompts.type = %v, want paragraph", prompts["type"])
 	}
 	uploadSources, ok := env.Data["upload_sources"].(map[string]interface{})
 	if !ok {

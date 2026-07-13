@@ -51,6 +51,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPingCacheCommand(cmd)
 	case "admin_ping_server":
 		return c.PingServerByCommand(cmd)
+	case "admin_live_server":
+		return c.AdminLiveServerCommand(cmd)
+	case "admin_health_server":
+		return c.AdminHealthServerCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "admin_list_services":

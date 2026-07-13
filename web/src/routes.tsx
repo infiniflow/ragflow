@@ -44,7 +44,6 @@ export enum Routes {
   Model = '/model',
   Prompt = '/prompt',
   CompilationTemplates = '/compilation-templates',
-  CompilationTemplate = `${CompilationTemplates}/:id`,
   CompilationTemplatesCreateNext = '/compilation-templates/create-next',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
@@ -317,12 +316,6 @@ const routeConfigOptions = [
           import('@/pages/user-setting/data-source/data-source-detail-page'),
       },
     ],
-  },
-  {
-    path: Routes.CompilationTemplate,
-    layout: false,
-    Component: () =>
-      import('@/pages/user-setting/compilation-templates/edit-template'),
   },
   {
     path: Routes.CompilationTemplatesCreateNext,

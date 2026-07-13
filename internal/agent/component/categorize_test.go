@@ -340,6 +340,7 @@ func setupComponentTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantLLM{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

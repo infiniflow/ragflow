@@ -32,10 +32,16 @@ const arxivToolName = "arxiv"
 
 const arxivToolDescription = "Search arXiv and return matching preprints as {title, authors, summary, pdf_url, entry_id}."
 
-// arxivParams is the JSON shape the model sends into InvokableRun.
+const defaultArxivTopN = 12
+
+const defaultArxivSortBy = "submittedDate"
+
+// arxivParams carries the query and ArXiv search settings. Info exposes only
+// query to match Python's tool meta; top_n and sort_by come from node params.
 type arxivParams struct {
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
+	Query  string `json:"query"`
+	TopN   int    `json:"top_n"`
+	SortBy string `json:"sort_by"`
 }
 
 // arxivResult is one entry in the model-facing result list.
@@ -85,7 +91,8 @@ type arxivLink struct {
 // against the public ArXiv API and parses the Atom XML response
 // using the stdlib encoding/xml package.
 type ArxivTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults arxivParams
 }
 
 // NewArxivTool returns an ArxivTool using the default HTTPHelper.
@@ -96,13 +103,25 @@ func NewArxivTool() *ArxivTool {
 // NewArxivToolWith returns an ArxivTool that uses the provided
 // HTTPHelper. Useful for tests.
 func NewArxivToolWith(h *HTTPHelper) *ArxivTool {
+	return NewArxivToolWithParams(h, defaultArxivTopN, defaultArxivSortBy)
+}
+
+// NewArxivToolWithParams returns an ArxivTool with node-level search
+// settings. Query remains the only model-provided argument.
+func NewArxivToolWithParams(h *HTTPHelper, topN int, sortBy string) *ArxivTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &ArxivTool{helper: h}
+	if topN <= 0 {
+		topN = defaultArxivTopN
+	}
+	if sortBy == "" {
+		sortBy = defaultArxivSortBy
+	}
+	return &ArxivTool{helper: h, defaults: arxivParams{TopN: topN, SortBy: sortBy}}
 }
 
-// Info returns the tool's metadata for the chat model.
+// ToolMeta returns the tool's metadata for the chat model.
 func (a *ArxivTool) ToolMeta() ToolMeta {
 	return ToolMeta{
 		Name:        arxivToolName,
@@ -110,7 +129,7 @@ func (a *ArxivTool) ToolMeta() ToolMeta {
 		Parameters: map[string]ParameterInfo{
 			"query": {
 				Type:        ParamTypeString,
-				Description: "Search query (matches the arXiv `all:` field).",
+				Description: "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
 				Required:    true,
 			},
 			"max_results": {
@@ -118,18 +137,62 @@ func (a *ArxivTool) ToolMeta() ToolMeta {
 				Description: "Maximum number of results to return. Defaults to 5.",
 				Required:    false,
 			},
+			"start_date": {
+				Type:        ParamTypeString,
+				Description: "Filter results by start date (YYYYMMDD format).",
+				Required:    false,
+			},
+			"end_date": {
+				Type:        ParamTypeString,
+				Description: "Filter results by end date (YYYYMMDD format).",
+				Required:    false,
+			},
+			"authors": {
+				Type:        ParamTypeString,
+				Description: "Filter results by author name(s).",
+				Required:    false,
+			},
+			"journal": {
+				Type:        ParamTypeString,
+				Description: "Filter results by journal name.",
+				Required:    false,
+			},
+			"categories": {
+				Type:        ParamTypeString,
+				Description: "Filter results by arXiv categories (e.g., cs.AI, math.ST).",
+				Required:    false,
+			},
+			"id_list": {
+				Type:        ParamTypeString,
+				Description: "Comma-separated list of arXiv IDs to retrieve.",
+				Required:    false,
+			},
+			"sort_by": {
+				Type:        ParamTypeString,
+				Description: "Sort results by field: 'relevance', 'lastUpdatedDate', or 'submittedDate'.",
+				Required:    false,
+			},
+			"sort_order": {
+				Type:        ParamTypeString,
+				Description: "Sort order: 'ascending' or 'descending'.",
+				Required:    false,
+			},
 		},
 	}
 }
 
 // buildArxivURL constructs the ArXiv /api/query URL.
-func buildArxivURL(query string, maxResults int) string {
-	if maxResults <= 0 {
-		maxResults = 5
+func buildArxivURL(query string, topN int, sortBy string) string {
+	if topN <= 0 {
+		topN = defaultArxivTopN
+	}
+	if sortBy == "" {
+		sortBy = defaultArxivSortBy
 	}
 	q := url.Values{}
 	q.Set("search_query", "all:"+query)
-	q.Set("max_results", fmt.Sprintf("%d", maxResults))
+	q.Set("max_results", fmt.Sprintf("%d", topN))
+	q.Set("sortBy", sortBy)
 	return "http://export.arxiv.org/api/query?" + q.Encode()
 }
 
@@ -206,12 +269,21 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string) (string, 
 		return arxivErrJSON(fmt.Errorf("arxiv: parse arguments: %w", err)),
 			fmt.Errorf("arxiv: parse arguments: %w", err)
 	}
-	if p.Query == "" {
+	p = mergeArxivDefaults(a.defaults, p)
+	if strings.TrimSpace(p.Query) == "" {
 		return arxivErrJSON(fmt.Errorf("query is required")),
 			fmt.Errorf("arxiv: query is required")
 	}
+	if p.TopN <= 0 {
+		return arxivErrJSON(fmt.Errorf("top_n must be a positive integer")),
+			fmt.Errorf("arxiv: top_n must be a positive integer")
+	}
+	if !ArxivSortBySupported(p.SortBy) {
+		return arxivErrJSON(fmt.Errorf("unsupported sort_by %q", p.SortBy)),
+			fmt.Errorf("arxiv: unsupported sort_by %q", p.SortBy)
+	}
 
-	endpoint := buildArxivURL(p.Query, p.MaxResults)
+	endpoint := buildArxivURL(strings.TrimSpace(p.Query), p.TopN, p.SortBy)
 	resp, err := a.helper.Do(ctx, http.MethodGet, endpoint, "", "", nil)
 	if err != nil {
 		return arxivErrJSON(err), err
@@ -234,6 +306,26 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string) (string, 
 		return arxivErrJSON(err), err
 	}
 	return arxivJSON(arxivEnvelope{Results: results}), nil
+}
+
+func mergeArxivDefaults(defaults, p arxivParams) arxivParams {
+	if p.TopN == 0 {
+		p.TopN = defaults.TopN
+	}
+	if p.SortBy == "" {
+		p.SortBy = defaults.SortBy
+	}
+	return p
+}
+
+// ArxivSortBySupported reports whether sortBy is accepted by the ArXiv API.
+func ArxivSortBySupported(sortBy string) bool {
+	switch sortBy {
+	case "submittedDate", "lastUpdatedDate", "relevance":
+		return true
+	default:
+		return false
+	}
 }
 
 func arxivJSON(env arxivEnvelope) string {

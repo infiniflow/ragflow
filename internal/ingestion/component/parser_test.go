@@ -354,7 +354,7 @@ func TestBuildPagesFromBytes_FormatAgnostic(t *testing.T) {
 	got, err := buildPagesFromBytes(context.Background(), [][]byte{
 		[]byte("first page from dispatch"),
 		[]byte("<table>second page from html dispatch</table>"),
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("buildPagesFromBytes: %v", err)
 	}

@@ -526,10 +526,13 @@ func init() {
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
 	Register("BGPT", newBGPTComponent)
+	Register("GitHub", newGitHubComponent)
 	Register("Wikipedia", newWikipediaComponent)
 	Register("DuckDuckGo", newDuckDuckGoComponent)
 	Register("Google", newGoogleComponent)
 	Register("GoogleScholar", newGoogleScholarComponent)
+	Register("ArXiv", newArxivComponent)
+	Register("PubMed", newPubMedComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }
 
@@ -549,10 +552,6 @@ func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
 
 func newGoogleComponent(_ map[string]any) (Component, error) {
 	return &simpleToolDelegate{name: "Google", inner: agenttool.NewGoogleTool()}, nil
-}
-
-func newGoogleScholarComponent(_ map[string]any) (Component, error) {
-	return &simpleToolDelegate{name: "GoogleScholar", inner: agenttool.NewGoogleScholarTool()}, nil
 }
 
 func newTavilyExtractComponent(_ map[string]any) (Component, error) {
