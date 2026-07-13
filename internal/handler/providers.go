@@ -203,14 +203,14 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	if req.APIKey == "" && req.BaseURL == "" && req.Region == "" && len(req.ModelInfo) == 0 {
 		code, err := h.modelProviderService.CreateNameOnlyProviderInstance(providerName, req.InstanceName, userID)
 		if err != nil {
-			common.ErrorWithCode(c, int(code), err.Error())
+			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
 		common.SuccessWithMessage(c, "success")
 		return
 	}
 
-	code, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
