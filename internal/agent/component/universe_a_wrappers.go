@@ -1501,6 +1501,112 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
+// arxivComponent delegates to internal/agent/tool/ArxivTool. Query is the
+// runtime input; top_n and sort_by are validated node parameters.
+type arxivComponent struct {
+	inner *agenttool.ArxivTool
+}
+
+func newArxivComponent(params map[string]any) (Component, error) {
+	topN := 12
+	if v, ok := params["top_n"]; ok {
+		topN = toIntParam(v)
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: ArXiv: top_n must be a positive integer")
+	}
+	sortBy := "submittedDate"
+	if v, ok := params["sort_by"].(string); ok && strings.TrimSpace(v) != "" {
+		sortBy = strings.TrimSpace(v)
+	}
+	if !agenttool.ArxivSortBySupported(sortBy) {
+		return nil, fmt.Errorf("canvas: ArXiv: unsupported sort_by %q", sortBy)
+	}
+	return &arxivComponent{inner: agenttool.NewArxivToolWithParams(nil, topN, sortBy)}, nil
+}
+
+func (c *arxivComponent) Name() string { return "ArXiv" }
+
+func (c *arxivComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "Search query.",
+	}
+}
+
+func (c *arxivComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered arXiv papers for downstream LLM prompts.",
+		"json":               "Raw arXiv paper list.",
+	}
+}
+
+func (c *arxivComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *arxivComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"query": query})
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: ArXiv: %w", err)
+	}
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderArxivResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *arxivComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderArxivResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		paper, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		summary := strings.TrimSpace(stringParam(paper["summary"]))
+		if summary == "" {
+			continue
+		}
+		title := strings.TrimSpace(stringParam(paper["title"]))
+		url := strings.TrimSpace(stringParam(paper["pdf_url"]))
+		lines := make([]string, 0, 3)
+		if title != "" {
+			lines = append(lines, fmt.Sprintf("Title: %s", title))
+		}
+		if url != "" {
+			lines = append(lines, fmt.Sprintf("URL: %s", url))
+		}
+		lines = append(lines, summary)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 // googleScholarComponent delegates to internal/agent/tool/GoogleScholarTool.
 type googleScholarComponent struct {
 	inner  googleScholarInvoker
@@ -1781,6 +1887,7 @@ var (
 	_ Component = (*duckDuckGoComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*arxivComponent)(nil)
 	_ Component = (*wikipediaComponent)(nil)
 	_ Component = (*googleScholarComponent)(nil)
 	_ Component = (*pubMedComponent)(nil)

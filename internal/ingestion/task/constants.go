@@ -18,7 +18,7 @@ package task
 
 // Special doc_id values used in task messages (mirrors Python constants).
 const (
-	// CANVAS_DEBUG_DOC_ID marks a canvas debug dataflow task — no persistence.
+	// CANVAS_DEBUG_DOC_ID marks a canvas debug pipeline task — no persistence.
 	CANVAS_DEBUG_DOC_ID = "dataflow_x"
 
 	// GRAPH_RAPTOR_FAKE_DOC_ID is the fake doc_id used for RAPTOR-generated chunks.
