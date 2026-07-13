@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/httputil"
 	"ragflow/internal/utility"
 	"strconv"
 	"strings"
@@ -1408,7 +1409,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 	parseResult, err = h.documentService.ListIngestionTasks(userID, req.DatasetID, 0, 0)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 
@@ -1458,7 +1459,7 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 
 	parseResult, err := h.documentService.StopIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, parseResult, "success")
@@ -1484,7 +1485,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, deletedTasks, "success")

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -38,7 +39,11 @@ type TaskContext struct {
 	PipelineID string
 	File       any
 
-	ProgressFunc ProgressFunc
+	// Handle is the message-queue ack handle for the task message that scheduled
+	// this context. The scheduler sets it before queueing; the worker acks on a
+	// durably-persisted terminal status and nacks otherwise (e.g. shutdown
+	// mid-task) so the message is redelivered and resumed after restart.
+	Handle common.TaskHandle
 }
 
 // NewTaskContextForScheduling creates a lightweight TaskContext for queue scheduling.

@@ -19,7 +19,7 @@ package entity
 type IngestionTask struct {
 	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	UserID     string  `gorm:"column:user_id;size:32;not null" json:"user_id"`
-	DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
+	DocumentID string  `gorm:"column:document_id;size:32;not null;uniqueIndex:idx_ingestion_task_document_id" json:"document_id"`
 	DatasetID  string  `gorm:"column:dataset_id;size:32;not null" json:"dataset_id"`
 	Schema     JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
 	Status     string  `gorm:"column:status;size:32;not null;" json:"status"`

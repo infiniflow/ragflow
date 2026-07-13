@@ -37,7 +37,6 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/server"
 	"regexp"
 	"sort"
 	"strconv"
@@ -91,7 +90,6 @@ func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
-	engineType     server.EngineType
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
@@ -117,10 +115,8 @@ type ChunkService struct {
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
-	cfg := server.GetConfig()
 	return &ChunkService{
 		docEngine:      engine.Get(),
-		engineType:     cfg.DocEngine.Type,
 		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),

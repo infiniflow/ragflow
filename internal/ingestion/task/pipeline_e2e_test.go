@@ -20,16 +20,17 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"ragflow/internal/common"
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/server"
+	"ragflow/internal/service"
 )
 
 // =============================================================================
@@ -160,7 +161,7 @@ func isPortOpen(host string, port int) bool {
 // Main E2E Test with Subtests for Elasticsearch and Infinity
 // =============================================================================
 
-func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
+func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 	testCases := []struct {
 		name       string
 		engineType engine.EngineType
@@ -177,22 +178,22 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Logf("Running Dataflow E2E test with engine: %s", tc.name)
+			t.Logf("Running Pipeline E2E test with engine: %s", tc.name)
 
 			// Setup test database
 			db := testutil.SetupTestDB(t)
 			cleanupDB := testutil.ReplaceDBForTest(t, db)
 			defer cleanupDB()
 
-			// Seed test data (lowercase for ES index compatibility)
+			// Seed test data (lowercase for ES index compatibility, no hyphens for Infinity)
 			lowerName := toLowerSnakeCase(tc.name)
 			tenantID, kbID, _, taskID := testutil.SeedTestData(t, db,
-				testutil.WithTenantID(fmt.Sprintf("tenant-e2e-%s", lowerName)),
-				testutil.WithKBID(fmt.Sprintf("kb-e2e-%s", lowerName)),
-				testutil.WithDocID(fmt.Sprintf("doc-e2e-%s", lowerName)),
-				testutil.WithTaskID(fmt.Sprintf("task-e2e-%s", lowerName)),
-				testutil.WithPipelineID(fmt.Sprintf("pipeline-e2e-%s", lowerName)),
-				testutil.WithDocName(fmt.Sprintf("e2e-test-%s.pdf", lowerName)),
+				testutil.WithTenantID(fmt.Sprintf("tenant_e2e_%s", lowerName)),
+				testutil.WithKBID(fmt.Sprintf("kb_e2e_%s", lowerName)),
+				testutil.WithDocID(fmt.Sprintf("doc_e2e_%s", lowerName)),
+				testutil.WithTaskID(fmt.Sprintf("task_e2e_%s", lowerName)),
+				testutil.WithPipelineID(fmt.Sprintf("pipeline_e2e_%s", lowerName)),
+				testutil.WithDocName(fmt.Sprintf("e2e_test_%s.pdf", lowerName)),
 			)
 
 			// Setup DocEngine for this test
@@ -208,6 +209,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
+			taskCtx.Ctx = context.Background()
 
 			// Track what was called
 			var (
@@ -219,13 +221,13 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 
 			// Create TaskHandler with mocked DataflowService factory
 			handler := NewTaskHandler(taskCtx)
-			handler.WithDataflowServiceFactory(func(ctx *TaskContext, dataflowID string) (*PipelineExecutor, error) {
-				svc := mustNewDataflowService(t, ctx, dataflowID, 0, 0)
+			handler.WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
+				svc := mustNewPipelineExecutor(t, ctx, canvasID, 0)
 
 				// Mock loadDSLFunc
-				svc.WithLoadDSLFunc(func(ctx context.Context, dataflowID string) (string, string, error) {
+				svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
 					loadDSLCalled = true
-					return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, dataflowID, nil
+					return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
 				})
 
 				// Mock runPipelineFunc - returns test chunks (with vectors to skip embedding)
@@ -235,12 +237,12 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 						"chunks": []map[string]any{
 							{
 								"text":    fmt.Sprintf("Hello world from E2E test with %s", tc.name),
-								"id":      fmt.Sprintf("chunk-e2e-%s-1", tc.name),
+								"id":      fmt.Sprintf("chunk_e2e_%s_1", lowerName),
 								"q_2_vec": []float64{0.1, 0.2}, // Pre-vectorized to skip embedding
 							},
 							{
 								"text":    fmt.Sprintf("Second chunk from E2E test with %s", tc.name),
-								"id":      fmt.Sprintf("chunk-e2e-%s-2", tc.name),
+								"id":      fmt.Sprintf("chunk_e2e_%s_2", lowerName),
 								"q_2_vec": []float64{0.3, 0.4}, // Pre-vectorized to skip embedding
 							},
 						},
@@ -249,7 +251,7 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 				})
 
 				// Use the injected DocEngine for insertChunks!
-				svc.WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+				svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 					insertChunksCalled = true
 					t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
 					ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
@@ -260,26 +262,12 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 					return ids, err
 				})
 
-				svc.WithChunkCounter(&stubChunkCounter{})
 				return svc, nil
 			})
 
-			// Also set progress callback
-			var progressEvents []struct {
-				prog float64
-				msg  string
-			}
-			taskCtx.ProgressFunc = func(prog float64, msg string) {
-				t.Logf("PROGRESS: %.2f %s", prog, msg)
-				progressEvents = append(progressEvents, struct {
-					prog float64
-					msg  string
-				}{prog, msg})
-			}
-
 			// Execute the task handler!
 			t.Logf("Calling TaskHandler.Handle()...")
-			err = handler.Handle()
+			_, err = handler.Handle()
 			if err != nil {
 				t.Fatalf("TaskHandler.Handle failed: %v", err)
 			}
@@ -329,35 +317,21 @@ func TestDataflowE2E_TaskHandlerToDataflowService(t *testing.T) {
 				}
 			}
 
-			// Verify progress reported
-			if len(progressEvents) == 0 {
-				t.Fatal("Expected at least one progress event")
-			}
-			foundDone := false
-			for _, ev := range progressEvents {
-				if ev.prog == 1.0 {
-					foundDone = true
-				}
-			}
-			if !foundDone {
-				t.Fatal("Expected progress to reach 1.0")
+			// Verify final task status can be marked completed
+			ingestSvc := service.NewIngestionTaskService()
+			if err := ingestSvc.MarkCompleted(taskID); err != nil {
+				t.Fatalf("MarkCompleted failed: %v", err)
 			}
 
-			// Verify final task status can be updated to success
-			ingestionTaskDAO := dao.NewIngestionTaskDAO()
-			if err = ingestionTaskDAO.UpdateStatus(taskID, "success"); err != nil {
-				t.Fatalf("UpdateStatus failed: %v", err)
-			}
-
-			finalTask, err := ingestionTaskDAO.GetByID(taskID)
+			finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
-			if finalTask.Status != "success" {
-				t.Errorf("Final task status = %q, want %q", finalTask.Status, "success")
+			if finalTask.Status != common.COMPLETED {
+				t.Errorf("Final task status = %q, want %q", finalTask.Status, common.COMPLETED)
 			}
 
-			t.Logf("SUCCESS: Dataflow E2E test passed with %s engine!", tc.name)
+			t.Logf("SUCCESS: Pipeline E2E test passed with %s engine!", tc.name)
 		})
 	}
 }
