@@ -87,6 +87,24 @@ func (c *CLI) AdminPingCacheCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, fmt.Sprintf("ping cache"))
 }
 
+// AdminLiveServerCommand GET /live
+func (c *CLI) AdminLiveServerCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/live", "none", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show live server: %w", err)
+	}
+	return HandleSimpleResponse(resp, fmt.Sprintf("show live server"))
+}
+
+// AdminHealthServerCommand GET /healthz
+func (c *CLI) AdminHealthServerCommand(cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request("GET", "/healthz", "none", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show health server: %w", err)
+	}
+	return HandleCommonDataResponse(resp, fmt.Sprintf("show health server"))
+}
+
 // AdminShowVersionCommand show RAGFlow admin version
 func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	resp, err := c.AdminServerClient.Request("GET", "/admin/version", "web", nil, nil)
@@ -1678,7 +1696,7 @@ func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get users activity")
 }
 
-func (c *CLI) AdminShowUsersPlanCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUsersPlanSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1692,6 +1710,27 @@ func (c *CLI) AdminShowUsersPlanCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, "get users plan")
+}
+
+func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	quota, ok := cmd.Params["quota"].(int)
+	if !ok {
+		return nil, fmt.Errorf("quota not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/plan?quota=%d", quota)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users plan quota: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get users plan quota")
 }
 
 // ListUsers lists all users (admin mode only)

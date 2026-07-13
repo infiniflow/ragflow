@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"testing"
