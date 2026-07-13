@@ -1,5 +1,5 @@
 {
-  "name": "Baidu",
+  "name": "BaiduYiyan",
   "url": {
     "default": "https://qianfan.baidubce.com/v2"
   },
@@ -44,7 +44,7 @@
     {
       "name": "qwen3-32b",
       "max_tokens": 30720,
-      "model_types":[
+      "model_types": [
         "chat"
       ]
     },

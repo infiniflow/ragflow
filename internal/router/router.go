@@ -51,7 +51,6 @@ type Router struct {
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
-	adminRuntimeHandler  *handler.AdminRuntimeHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
 }
@@ -84,7 +83,6 @@ func NewRouter(
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
 	fileCommitHandler *handler.FileCommitHandler,
-	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
@@ -117,7 +115,6 @@ func NewRouter(
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
-		adminRuntimeHandler:  adminRuntimeHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
 	}
@@ -171,7 +168,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// /auth/login/channels to GetLoginChannels and other values to
 		// OAuthLogin without conflict.
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
-		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
+
+		// For EE
+		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
+		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
+		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
+		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
+		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
+		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
+		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
+		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -197,11 +205,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth := engine.Group("/api/v1")
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
-		searchbotGroup := apiBetaAuth.Group("/searchbots")
-		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
-		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
-		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
+		searchBotGroup := apiBetaAuth.Group("/searchbots")
+		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")
@@ -260,6 +268,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me/models", r.tenantHandler.TenantInfo)
 				// User set tenant info endpoint
 				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
+
+				// For EE
+				users.GET("/me/admin", r.userHandler.IsAdmin)
+				users.GET("/me/meta", r.userHandler.GetMeta)
+			}
+
+			user := v1.Group("/settings")
+			{
+				user.GET("/enable-admin", r.systemHandler.GetEnableAdmin)
 			}
 
 			tenants := v1.Group("/tenants")
@@ -275,12 +292,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenant := v1.Group("/tenant")
 			{
 				tenant.GET("/list", r.tenantHandler.TenantList)
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
-				tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
-				tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
+				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                         // Internal API only for GO
+				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                       // Internal API only for GO
+				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)                   // Internal API only for GO
+				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)                 // Internal API only for GO
+				tenant.POST("/dev_insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+				tenant.POST("/dev_insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 			}
 
 			// Document routes
@@ -569,12 +586,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			if r.componentsHandler != nil {
 				v1.GET("/components", r.componentsHandler.Get)
 			}
-
-			// Admin routes — Phase 6 per-tenant canvas runtime override.
-			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
-			// handler is tolerated and yields a no-op registration.
-			admin := v1.Group("/admin")
-			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
 
 			connectors := v1.Group("/connectors")
 			{

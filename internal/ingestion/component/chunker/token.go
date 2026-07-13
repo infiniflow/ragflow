@@ -14,10 +14,10 @@
 //  limitations under the License.
 //
 
-// SCOPE (honest) for token.go (Phase 2.3a):
+// SCOPE (honest) for token.go:
 //
-//   - WHITELIST mirrors rag/flow/chunker/token_chunker.py:TokenChunkerParam.check
-//     exactly: delimiter_mode ∈ {"token_size","delimiter","one"},
+//   - WHITELIST: delimiter_mode ∈ {"token_size","delimiter"} (the
+//     single-chunk "one" behaviour moved to OneChunker in one.go).
 //     chunk_token_size > 0, overlapped_percent ∈ [0, 1), table_context_size ≥ 0,
 //     image_context_size ≥ 0. enum/range checks live in param.Check.
 //
@@ -30,24 +30,21 @@
 //     shared splitKeepingDelim helper; emitted chunks carry the parent
 //     ("mom") and the split child ("text") keys.
 //
-//   - MODE "delimiter" uses the regex-aware delimiter pattern; the
-//     token_size merge pass only runs when no working delimiter was
-//     detected — matching python at token_chunker.py:359-360.
+//   - MODE "delimiter" uses the regex-aware delimiter pattern to split
+//     text into segments; unlike token_size, these segments are NOT
+//     merged — they become standalone chunks.
 //
-//   - MODE "token_size" falls back to a chunk-engine merge plan. The
-//     python `naive_merge` algorithm uses a sentence-aware + stop-word
-//     strategy that the Go chunk_engine's "greedy" merge approximates;
-//     this is flagged as a TODO parity-gap and intentionally not
-//     machine-mirrored.
-//
-//   - MODE "one" emits a single chunk containing the entire payload.
+//   - MODE "token_size" implements Python's naive_merge split-then-
+//     merge: segments are split by the configured delimiter pattern
+//     (chunkFromItem), then greedily merged to chunk_token_size with
+//     optional overlap (mergeByTokenSizeFromJSON). The JSON and text
+//     payload paths share the same merge after splitting.
 //
 //   - JSON-STRUCTURED INPUT (output_format == "json", or the default
 //     parser-style branch when output_format is unset) is normalized
-//     into the same internal chunk shape via a parallel fan-out
-//     (Plan §4 Phase 2 row 2.3a, Parallelism=4).
+//     into the same internal chunk shape via a parallel fan-out.
 //     Media-context attachment is per-item sequential; merge is
-//     index-deterministic (Plan §8 R8).
+//     index-deterministic.
 //
 //   - No PDF/outline awareness (Python `restore_pdf_text_previews`).
 //     That depends on deepdoc/parser which is out of scope for this
@@ -59,13 +56,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/chunk"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
@@ -132,10 +131,6 @@ func NewTokenChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-// Parallelism is the configured intra-component fan-out (plan §4
-// Phase 2 row 2.3a).
-func (c *TokenChunkerComponent) Parallelism() int { return 4 }
-
 // Inputs is exposed so callers can introspect.
 func (c *TokenChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
@@ -144,24 +139,32 @@ func (c *TokenChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 
 // Invoke runs the chunker against the input payload.
 //
-// Concurrency: text payloads are fanned across Parallelism goroutines
-// by primary-delimiter segment; structured JSON/chunks payloads fan
+// Concurrency: text payloads are fanned across 4 goroutines by
+// primary-delimiter segment; structured JSON/chunks payloads fan
 // across items. Merge is by input index (plan §8 R8): the i-th
 // goroutine's output occupies slot i, regardless of completion order.
 //
 // Timeout: honours ctx cancellation only — there is no inner @timeout
 // decorator equivalent (plan §8 R1).
 func (c *TokenChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameTokenChunker, func() (map[string]any, error) {
-		return c.invoke(ctx, inputs)
-	})
+	return c.invoke(ctx, inputs)
 }
 
 func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
-	upstream, err := decodeChunkerFromUpstream(inputs)
+	// `name` lives in the workflow-wide Globals bag (seeded at pipeline
+	// start, published by the File component), not in the upstream output
+	// map. decodeChunkerFromUpstream validates it, so carry the resolved
+	// name into the decode input.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	decInputs := inputs
+	if name != "" {
+		decInputs = cloneInputs(inputs)
+		decInputs["name"] = name
+	}
+	upstream, err := decodeChunkerFromUpstream(decInputs)
 	if err != nil {
 		return map[string]any{
 			"output_format": "chunks",
@@ -190,7 +193,18 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		}
 		return c.invokeTextPayload(ctx, *upstream.HTMLResult, delimPattern, childrenPattern), nil
 	default:
-		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern), nil
+		// Re-acquire the source PDF (if the Parser forwarded storage
+		// refs) so image/table sections are cropped on demand rather
+		// than carried through the wire. Best-effort: a nil engine
+		// simply skips cropping.
+		engine, engErr := newPDFEngineFromUpstream(ctx, upstream)
+		if engErr != nil {
+			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
+		}
+		if engine != nil {
+			defer engine.Close()
+		}
+		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern, engine), nil
 	}
 }
 
@@ -227,13 +241,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return emptyOutputs()
 	}
 
-	mode := c.param.DelimiterMode
-	if mode == "one" {
-		return chunkOutputs([]schema.ChunkDoc{{Text: text}})
-	}
-
 	if !hasActiveDelimiter(delimPattern) {
-		// No primary delimiter hit — fall back to a token-size merge.
 		return c.mergeByTokenSize(text, childrenPattern)
 	}
 
@@ -249,62 +257,153 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return emptyOutputs()
 	}
 	docs := applyChildrenDelim(cleaned, childrenPattern)
-	return chunkOutputs(docs)
+
+	// Python's naive_merge: custom (backtick) delimiters produce one
+	// chunk per segment — no token-size merge (naive_merge:1194-1213).
+	if hasCustomDelim(c.param.Delimiters) {
+		return chunkOutputs(docs)
+	}
+
+	// Split-then-merge: split on delimiters, then greedily merge to
+	// chunk_token_size with optional overlap.
+	perItem := [][]schema.ChunkDoc{docs}
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+	return chunkOutputs(flatten(merged))
 }
 
-// mergeByTokenSize uses the chunk library's split + postprocess-merge
-// to combine the payload into chunks of approximately
-// chunk_token_size runes. Mirrors python's `naive_merge` fallback
-// (token_chunker.py:319-324) at the wire-shape level; the merge
-// strategy is the Go chunk library's "greedy" approximation.
-//
-// This caller uses the typed chunk.Run entry point directly:
-// same operator sequence, no DSL round-trip.
+// mergeByTokenSize implements exact token-based chunk merging that mirrors
+// Python's naive_merge (rag/nlp/__init__.py:1156). It uses
+// tokenizeStr (= tokenizer.NumTokensFromString, cl100k_base BPE) for
+// precise token counting, splits input into paragraph sections, further
+// subdivides oversized sections on sentence delimiters, and greedily
+// merges into chunks of approximately chunk_token_size tokens with
+// optional overlap from the previous chunk.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
-	result, err := chunk.Run(text, chunk.ChunkOptions{
-		StripWhitespace:  true,
-		RemoveEmptyLines: true,
-		SplitStrategy:    "sentence",
-		MergeTargetSize:  target,
-	})
-	if err != nil {
-		return chunkOutputs([]schema.ChunkDoc{{Text: text}})
+	overlapPct := c.param.OverlappedPercent
+
+	// Split into paragraph-aligned sections.
+	sections := splitIntoSections(text)
+	if len(sections) == 0 {
+		return emptyOutputs()
 	}
-	docs := make([]schema.ChunkDoc, 0, len(result.ResultChunks))
-	for _, ck := range result.ResultChunks {
-		content := strings.TrimSpace(ck.Content)
-		if content == "" {
+
+	// Sentence/clause-boundary regex for splitting oversized sections.
+	// Matches Python's default delimiter "\n。；！？" plus English ". " fallback.
+	sentenceDelim := regexp.MustCompile(`(\n|[。；！？]|\.\s)`)
+
+	var cks []string // chunk texts
+	var tkns []int   // token counts per chunk
+
+	// mergeOrNew mirrors Python add_chunk in naive_merge:
+	//   - If the current chunk is empty or would overflow the
+	//     threshold → start a new chunk (with optional overlap prefix).
+	//   - Otherwise → merge into the current chunk.
+	mergeOrNew := func(segment string, tokens int) {
+		threshold := float64(target) * (100 - overlapPct*100) / 100.0
+		if len(cks) == 0 || float64(tkns[len(tkns)-1]) > threshold {
+			seg := segment
+			segTokens := tokens
+			if overlapPct > 0 && len(cks) > 0 {
+				prev := cks[len(cks)-1]
+				// Take the last overlapped_percent of the previous chunk
+				// (in runes, matching Python's len(overlapped) * ratio).
+				prevRunes := []rune(prev)
+				cut := int(float64(len(prevRunes)) * (100 - overlapPct*100) / 100.0)
+				if cut < len(prevRunes) {
+					suffix := string(prevRunes[cut:])
+					seg = suffix + segment
+					segTokens = tokenizeStr(seg)
+				}
+			}
+			cks = append(cks, seg)
+			tkns = append(tkns, segTokens)
+		} else {
+			cks[len(cks)-1] += segment
+			tkns[len(tkns)-1] += tokens
+		}
+	}
+
+	for _, sec := range sections {
+		sec = strings.TrimSpace(sec)
+		if sec == "" {
 			continue
 		}
-		docs = append(docs, schema.ChunkDoc{Text: content})
+		t := "\n" + sec
+		tn := tokenizeStr(t)
+
+		if tn < 8 {
+			// Tiny section — always merge into the previous chunk.
+			if len(cks) > 0 {
+				cks[len(cks)-1] += t
+				tkns[len(tkns)-1] += tn
+			} else {
+				cks = append(cks, t)
+				tkns = append(tkns, tn)
+			}
+			continue
+		}
+
+		if tn <= target {
+			mergeOrNew(t, tn)
+			continue
+		}
+
+		// Oversized section: split on sentence delimiters, then merge.
+		parts := sentenceDelim.Split(sec, -1)
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			p := "\n" + part
+			pn := tokenizeStr(p)
+			if pn < 8 {
+				if len(cks) > 0 {
+					cks[len(cks)-1] += p
+					tkns[len(tkns)-1] += pn
+				} else {
+					cks = append(cks, p)
+					tkns = append(tkns, pn)
+				}
+				continue
+			}
+			mergeOrNew(p, pn)
+		}
+	}
+
+	docs := make([]schema.ChunkDoc, 0, len(cks))
+	for _, ch := range cks {
+		ch = strings.TrimSpace(ch)
+		if ch == "" {
+			continue
+		}
+		docs = append(docs, schema.ChunkDoc{Text: ch})
 	}
 	final := applyChildrenDelimText(docs, childrenPattern)
 	return chunkOutputs(final)
 }
 
+// splitIntoSections partitions text into paragraph-level sections by
+// splitting on double-newline boundaries. This mirrors the caller side
+// in Python's naive_merge where sections are pre-split before merging.
+func splitIntoSections(text string) []string {
+	if text == "" {
+		return nil
+	}
+	// Split on consecutive newlines (paragraph boundaries).
+	re := regexp.MustCompile(`\n\s*\n`)
+	parts := re.Split(text, -1)
+	return parts
+}
+
 // invokeJSONPayload handles structured upstream input. Items fan
-// across goroutines (Parallelism); merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
+// across 4 goroutines; merge is by input index.
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
-	mode := c.param.DelimiterMode
-	if mode == "one" {
-		var parts []string
-		for _, it := range items {
-			if t := itemTextOrFallback(it); t != "" {
-				parts = append(parts, t)
-			}
-		}
-		merged := strings.Join(parts, "\n")
-		if merged == "" {
-			return emptyOutputs()
-		}
-		return chunkOutputs([]schema.ChunkDoc{{Text: merged}})
-	}
-
-	workers := c.Parallelism()
+	workers := 4
 	if workers < 1 {
 		workers = 1
 	}
@@ -341,8 +440,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// Attach surrounding media context (token_chunker.py:358).
 	attached := attachMediaContext(perItem, c.param.TableContextSize, c.param.ImageContextSize)
 
-	// Optional token-size merge (only when no working delimiter).
-	if !hasActiveDelimiter(delimPattern) {
+	// Python's naive_merge: custom (backtick) delimiters produce one
+	// chunk per segment — no token-size merge (naive_merge:1194-1213).
+	// Otherwise split-then-merge: delimiter-split segments are greedily
+	// merged to chunk_token_size with optional overlap.
+	if !hasCustomDelim(c.param.Delimiters) {
 		attached = mergeByTokenSizeFromJSON(attached, c.param.ChunkTokenSize, c.param.OverlappedPercent)
 	}
 
@@ -350,6 +452,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	if childrenPattern != nil {
 		flat = splitByChildren(flat, childrenPattern)
 	}
+
+	// Crop image/table chunks on demand when a PDF engine is available.
+	flat = cropImageChunks(ctx, engine, flat)
 
 	out := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {
@@ -556,8 +661,8 @@ func takeFromStart(text string, tokens int) string {
 	return text[:bytes]
 }
 
-// mergeByTokenSizeFromJSON mirrors `_merge_text_chunks_by_token_size`
-// at token_chunker.py:212-243.
+// mergeByTokenSizeFromJSON mirrors `naive_merge` at
+// rag/nlp/__init__.py:1156.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
 	threshold := float64(chunkTokens) * (100 - overlappedPct*100) / 100.0
 	for idx := range perItem {
@@ -566,34 +671,42 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			continue
 		}
 		var merged []schema.ChunkDoc
-		prevTextIdx := -1
 		for _, ck := range chunks {
 			ckType := ck.CKType
 			if ckType != "text" {
 				merged = append(merged, cloneChunkDoc(ck))
-				prevTextIdx = -1
 				continue
 			}
 			tk := intValue(ck.TKNums)
-			if prevTextIdx < 0 || float64(tk) > threshold {
+			// Mirror Python's naive_merge.add_chunk: start a new chunk
+			// when either (a) this is the first text chunk, or
+			// (b) the currently accumulated chunk already exceeds the
+			// threshold (not the incoming segment).
+			if len(merged) == 0 || merged[len(merged)-1].CKType != "text" ||
+				float64(intValue(merged[len(merged)-1].TKNums)) > threshold {
 				cp := cloneChunkDoc(ck)
-				if prevTextIdx >= 0 && overlappedPct > 0 {
-					if prevText := merged[prevTextIdx].Text; prevText != "" {
-						cut := int(float64(len(prevText)) * (100 - overlappedPct*100) / 100.0)
-						if cut < len(prevText) {
-							cp.Text = prevText[cut:] + cp.Text
-							cp.TKNums = intPtr(tk + tokenizeStr(cp.Text))
+				// Overlap: prepend tail of previous chunk onto the new
+				// chunk, matching Python's
+				//   t = overlapped[overlap_cut:] + t
+				//   tnum = num_tokens_from_string(t)
+				if len(merged) > 0 && merged[len(merged)-1].CKType == "text" && overlappedPct > 0 {
+					if prevText := merged[len(merged)-1].Text; prevText != "" {
+						runes := []rune(prevText)
+						cut := int(float64(len(runes)) * (100 - overlappedPct*100) / 100.0)
+						if cut < len(runes) {
+							cp.Text = string(runes[cut:]) + cp.Text
+							cp.TKNums = intPtr(tokenizeStr(cp.Text))
 						}
 					}
 				}
 				merged = append(merged, cp)
-				prevTextIdx = len(merged) - 1
 				continue
 			}
-			// Merge into prev text chunk.
-			if pt := merged[prevTextIdx].Text; pt != "" {
-				merged[prevTextIdx].Text = pt + "\n" + ck.Text
-				merged[prevTextIdx].TKNums = intPtr(intValue(merged[prevTextIdx].TKNums) + intValue(ck.TKNums))
+			// Merge into the accumulated text chunk.
+			prev := &merged[len(merged)-1]
+			if prev.Text != "" {
+				prev.Text = prev.Text + "\n" + ck.Text
+				prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 			}
 		}
 		perItem[idx] = merged
@@ -667,6 +780,18 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 // viable as a check without re-walking the source slice.
 func hasActiveDelimiter(p *regexp.Regexp) bool {
 	return p != nil && p.String() != `\A(?!)`
+}
+
+// hasCustomDelim reports whether any delimiter uses backtick syntax
+// (`pattern`). Python's naive_merge skips token-size merging when
+// custom delimiters are present (naive_merge:1194-1213).
+func hasCustomDelim(delims []string) bool {
+	for _, d := range delims {
+		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // applyChildrenDelim mirrors token_chunker.py:325-334.

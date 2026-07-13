@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -21,14 +21,14 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	}
 	baseURL := strings.TrimSpace(parser.TCADPAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiServerURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.TCADPAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("TCADP_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiKey))
 	}
 	requestBody := map[string]any{
 		"file_type":              "PDF",

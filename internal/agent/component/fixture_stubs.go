@@ -17,9 +17,11 @@
 // Package component — e2e fixture stubs and compat shims.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// seven component names that are registered here: Retrieval,
+// fixture-backed component names that are registered here: Retrieval,
 // TavilySearch, ExeSQL, Generate, Answer, Iteration,
-// IterationItem. Their bodies are deliberately trivial — they
+// IterationItem. Some names (for example TavilySearch) now route to
+// production wrappers while their stubs remain available as direct test
+// constructors. The fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,
 // and produces outputs downstream templates can resolve", not
@@ -27,7 +29,7 @@
 // universe_a_wrappers.go and the real production bodies in
 // their own .go files replace these stubs in production paths.
 //
-// The seven names were chosen by enumerating the component_name
+// The fixture names were chosen by enumerating the component_name
 // values in the testdata fixtures (see the `examples` var in
 // internal/agent/canvas/dsl_examples_test.go). Keeping the list
 // in sync with the fixture set is a single-source-of-truth
@@ -153,6 +155,15 @@ func (t *TavilySearchStub) Inputs() map[string]string {
 func (t *TavilySearchStub) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered search results for downstream LLM prompts.",
+	}
+}
+
+func (t *TavilySearchStub) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
 	}
 }
 
@@ -498,7 +509,8 @@ func init() {
 	Register("SearchMyDataset", newRetrievalComponent)
 	Register("search_my_dataset", newRetrievalComponent)
 	Register("search_my_dateset", newRetrievalComponent)
-	Register(componentNameTavilySearch, NewTavilySearchStub)
+	Register(componentNameTavilySearch, newTavilySearchComponent)
+	Register("TavilyExtract", newTavilyExtractComponent)
 	Register(componentNameExeSQL, newExeSQLComponent)
 	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
@@ -506,5 +518,12 @@ func init() {
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
 	Register("BGPT", newBGPTComponent)
+	Register("GitHub", newGitHubComponent)
+	Register("Wikipedia", newWikipediaComponent)
+	Register("DuckDuckGo", newDuckDuckGoComponent)
+	Register("Google", newGoogleComponent)
+	Register("GoogleScholar", newGoogleScholarComponent)
+	Register("ArXiv", newArxivComponent)
+	Register("PubMed", newPubMedComponent)
 	Register("YahooFinance", newYahooFinanceComponent)
 }

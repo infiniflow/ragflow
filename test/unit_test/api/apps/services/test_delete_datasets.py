@@ -18,12 +18,23 @@
 import importlib.util
 import sys
 from pathlib import Path
+from enum import IntEnum
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = pytest.mark.p2
+
+
+class _StubModelTypeBinary(IntEnum):
+    CHAT = 1
+    EMBEDDING = 2
+    SPEECH2TEXT = 4
+    IMAGE2TEXT = 8
+    RERANK = 16
+    TTS = 32
+    OCR = 64
 
 
 def _stub(monkeypatch, name, **attrs):
@@ -74,6 +85,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
             delete_by_id=lambda kb_id: True,
             query=lambda **kwargs: [],
         ),
+        validate_dataset_embedding_models=lambda kbs: None,
     )
     _stub(
         monkeypatch,
@@ -102,6 +114,8 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
         get_model_config_from_provider_instance=MagicMock(),
+        resolve_model_config=MagicMock(),
+        resolve_model_id=MagicMock(),
     )
     _stub(
         monkeypatch,
@@ -119,6 +133,8 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
     _stub(
         monkeypatch,
         "api.db.db_models",
+        DB=SimpleNamespace(connection_context=lambda: lambda func: func),
+        TenantModel=SimpleNamespace(),
         File=SimpleNamespace(source_type="source_type", id="id", type="type", name="name"),
     )
     _stub(
@@ -127,8 +143,18 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         PAGERANK_FLD="pagerank",
         TAG_FLD="tag",
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
+        PipelineTaskType=SimpleNamespace(
+            PARSE="parse",
+            DOWNLOAD="download",
+            RAPTOR="raptor",
+            GRAPH_RAG="graph_rag",
+            MINDMAP="mindmap",
+            ARTIFACT="artifact",
+            SKILL="skill",
+        ),
         StatusEnum=SimpleNamespace(),
         LLMType=SimpleNamespace(),
+        ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
         monkeypatch,

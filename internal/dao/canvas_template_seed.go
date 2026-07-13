@@ -42,6 +42,15 @@ func SeedCanvasTemplates() error {
 		return nil
 	}
 
+	// The canvas_template table may have been created by the Python backend,
+	// which has no parser_ids column, and the Go server is often started with
+	// migration disabled so GORM AutoMigrate never adds it. Ensure the column
+	// exists before inserting, otherwise every INSERT below fails with
+	// "Unknown column 'parser_ids'" and the catalogue ends up empty.
+	if err := addColumnIfNotExists(DB, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
+		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("failed to read agent templates directory %s: %w", dir, err)

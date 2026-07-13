@@ -17,6 +17,8 @@
 package testutil
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -45,12 +47,18 @@ func StrPtr(s string) *string {
 // It auto-migrates the given tables (or all common tables if none provided).
 func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	if len(tables) == 0 {
 		tables = []any{

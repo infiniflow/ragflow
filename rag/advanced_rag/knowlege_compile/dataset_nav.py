@@ -14,134 +14,90 @@
 #  limitations under the License.
 #
 
-"""Dataset-level navigation markdown for tree-kind compilations.
+"""Incremental clustering for dataset-level navigation.
 
-After a doc finishes a ``tree``-kind compilation template the helper
-``upsert_dataset_nav_doc`` here appends (or refreshes) one line in the
-KB's nav markdown — one line per doc, each line carrying the doc id +
-a short summary lifted from the per-doc tree's root.
+Replaces the old 128-doc markdown with a hierarchy of nav_cluster and nav_doc
+ES rows.  Each new document is embedded and placed into the nearest cluster
+via layered KNN search + threshold-based merge/create.
 
-Storage: a single ES row per KB under ``compile_kwd="dataset_nav"``,
-``available_int=0`` (so retrievers never surface it). The markdown
-body lives in ``md_with_weight``; ``doc_count_int`` and ``doc_ids_kwd``
-mirror the markdown's order for fast cap-check and dedup.
-
-Concurrency: every write is wrapped in a ``RedisDistributedLock``
-keyed by ``f"dataset_nav:{kb_id}"`` — multiple task executors
-finishing tree templates for the same KB in parallel must not
-interleave their read-modify-writes.
-
-The router/retrieval side that *consumes* this markdown is
-intentionally out of scope here.
+Storage: one ES/Infinity row per nav_cluster or nav_doc node.
+Tree structure encoded via ``parent_kwd`` on each row — no full-tree JSON blob.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import re
-from typing import Any, Iterable
+from typing import Any
 
 import xxhash
 
-from common.token_utils import num_tokens_from_string
+from common.misc_utils import thread_pool_exec
 from rag.utils.redis_conn import RedisDistributedLock
 
+from ._common import encode as _encode
 
-# Hard cap on the number of docs we record in the nav markdown.
-# Beyond this we no-op on adds; the next doc to drop out of the KB
-# frees a slot via ``remove_dataset_nav_doc``.
-MAX_DATASET_NAV_DOCS = 4096
-
-# Hard cap on the per-doc summary length, in tokens. Long summaries
-# bloat the markdown and slow downstream LLM passes that ingest the
-# whole nav blob; 128 tokens is enough for 1-2 sentences in either
-# Chinese or English text.
-MAX_DOC_SUMMARY_TOKENS = 4096
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 _COMPILE_KWD = "dataset_nav"
 
-# Lock TTL — long enough that an ES round-trip can't expire it mid-write
-# but short enough that a crashed executor doesn't pin the KB.
+# Embedding dimension — inferred at runtime from the first encode() call.
+# None until _embed_dim is set.
+_EMBED_DIM: int | None = None
+
+# Similarity thresholds
+_MERGE_THRESHOLD = 0.80  # merge doc into cluster
+_RECURSE_THRESHOLD = 0.65  # continue descending into children
+_MIN_SIM = 0.50  # minimum similarity to be considered related
+
+# Max child count before triggering rebalance
+_MAX_FANOUT = 64
+
+# Max docs per leaf cluster before triggering split
+_MAX_DOCS_PER_CLUSTER = 50
+
+# Concurrency lock TTL
 _LOCK_TIMEOUT_S = 30
 _LOCK_BLOCKING_TIMEOUT_S = 5
 
+# Hard limit on how many sibling clusters we evaluate per KNN call
+_KNN_TOP_K = 5
 
-def _nav_row_id(kb_id: str) -> str:
-    """Stable per-KB row id. Mirrors the pattern used by ``skill_all``."""
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _nav_doc_id(doc_id: str) -> str:
+    """Stable row id for a nav_doc (deterministic by doc_id)."""
     return xxhash.xxh64(
-        f"dataset_nav:{kb_id}".encode("utf-8", "surrogatepass"),
+        f"dataset_nav:doc:{doc_id}".encode("utf-8", "surrogatepass"),
+    ).hexdigest()
+
+
+def _nav_cluster_id(kb_id: str, name: str) -> str:
+    """Stable row id for a nav_cluster (deterministic by kb_id + name)."""
+    return xxhash.xxh64(
+        f"dataset_nav:{kb_id}:cluster:{name}".encode("utf-8", "surrogatepass"),
     ).hexdigest()
 
 
 def _nav_lock_key(kb_id: str) -> str:
+    """Redis lock key for concurrency control on a KB's nav tree."""
     return f"dataset_nav:{kb_id}"
 
 
-# Each line of the markdown looks like ``- **<doc_id>**: <summary>``.
-# The ``doc_id`` part is anchored at the start of a bullet so a simple
-# regex can locate the line on remove without touching adjacent lines.
-_LINE_RE = re.compile(r"^- \*\*([^*]+)\*\*:.*$")
-
-
-def _format_line(doc_id: str, summary: str) -> str:
-    # Strip newlines from the summary so each doc stays on a single
-    # markdown line. Multi-line summaries break the dedup regex and
-    # confuse downstream consumers that split on ``\n``.
-    one_line = summary.replace("\n", " ").replace("\r", " ").strip()
-    return f"- **{doc_id}**: {one_line}"
-
-
-def _truncate_summary(text: str) -> str:
-    """Trim ``text`` to ``MAX_DOC_SUMMARY_TOKENS`` tokens.
-
-    Uses the project's tokenizer so the cap matches what the LLM will
-    see. Falls back to a generous character cap if tokenization is
-    unavailable.
-    """
-    if not text:
-        return ""
-    text = text.strip()
-    try:
-        n = num_tokens_from_string(text)
-    except Exception:
-        # Best-effort character cap — 4 chars per token is a safe lower
-        # bound for English; Chinese is closer to 1 char per token but
-        # 4x still keeps the row size sane.
-        return text[: MAX_DOC_SUMMARY_TOKENS * 4]
-    if n <= MAX_DOC_SUMMARY_TOKENS:
-        return text
-    # Binary-search the right character cut so we land at exactly the
-    # token budget. ``num_tokens_from_string`` is cheap enough that a
-    # handful of probes per call is fine.
-    lo, hi = 0, len(text)
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        try:
-            tn = num_tokens_from_string(text[:mid])
-        except Exception:
-            tn = mid // 4
-        if tn <= MAX_DOC_SUMMARY_TOKENS:
-            lo = mid
-        else:
-            hi = mid - 1
-    return text[:lo].rstrip()
-
-
 def _extract_root_summary_from_tree(tree: dict | None) -> str:
-    """Pull the doc-level abstract out of a RAPTOR-built tree.
-
-    Convention used by ``_raptor_tree_to_graph``: the root node's
-    ``title`` field carries the LLM summary at the highest layer.
-    Internal nodes lower in the tree carry their own per-cluster
-    summaries. We just take the root.
-    """
+    """Extract the doc-level summary from a RAPTOR tree (or bare string)."""
     if not isinstance(tree, dict):
         return ""
     title = tree.get("title") or ""
     if isinstance(title, str) and title.strip():
         return title.strip()
-    # Some RAPTOR shapes use ``summary`` or ``content`` instead.
     for alt in ("summary", "content_with_weight", "content"):
         v = tree.get(alt)
         if isinstance(v, str) and v.strip():
@@ -149,78 +105,130 @@ def _extract_root_summary_from_tree(tree: dict | None) -> str:
     return ""
 
 
-def _parse_existing_lines(md: str) -> list[tuple[str, str]]:
-    """Return ``(doc_id, raw_line)`` tuples in markdown order.
-
-    We keep the *raw* line so callers that just want to update one
-    doc's line don't have to re-derive the formatting. Lines that
-    don't match the per-doc shape (e.g. headers, blank lines) are
-    skipped — they're never written by this module, but a future
-    schema bump might add them and we shouldn't crash on it.
-    """
-    out: list[tuple[str, str]] = []
-    if not md:
-        return out
-    for line in md.splitlines():
-        m = _LINE_RE.match(line)
-        if not m:
-            continue
-        out.append((m.group(1), line))
-    return out
-
-
-def _render_md(entries: Iterable[tuple[str, str]]) -> str:
-    return "\n".join(line for _doc_id, line in entries)
-
-
-def _row_id_field(row: dict | None) -> dict:
-    if row and isinstance(row, dict):
-        return row
-    return {}
-
-
-async def _get_existing(tenant_id: str, kb_id: str) -> dict | None:
-    """Read the existing nav row, or ``None`` if it doesn't exist yet."""
-    from common import settings
-    from common.misc_utils import thread_pool_exec
+def _index_name(tenant_id: str) -> str:
     from rag.nlp import search as _rag_search
 
-    index = _rag_search.index_name(tenant_id)
-    if not settings.docStoreConn.index_exist(index, kb_id):
-        return None
+    return _rag_search.index_name(tenant_id)
+
+
+def _vec_field(dim: int) -> str:
+    return f"q_{dim}_vec"
+
+
+# ---------------------------------------------------------------------------
+# Doc store I/O — works with any engine (ES, Infinity, …) via docStoreConn
+# ---------------------------------------------------------------------------
+
+
+async def _store_get(tenant_id: str, kb_id: str, row_id: str) -> dict | None:
+    from common import settings
+
+    index = _index_name(tenant_id)
     try:
-        existing = await thread_pool_exec(
-            settings.docStoreConn.get,
-            _nav_row_id(kb_id),
-            index,
-            [kb_id],
+        return (
+            await thread_pool_exec(
+                settings.docStoreConn.get,
+                row_id,
+                index,
+                [kb_id],
+            )
+            or None
         )
     except Exception:
-        logging.exception(
-            "dataset_nav: read failed for kb=%s",
-            kb_id,
-        )
         return None
-    return _row_id_field(existing) or None
 
 
-async def _write_row(tenant_id: str, kb_id: str, payload: dict) -> None:
-    """Upsert the nav row in the doc store."""
+async def _store_search(
+    tenant_id: str,
+    kb_id: str,
+    condition: dict,
+    fields: list[str],
+    limit: int = 10000,
+) -> list[dict]:
     from common import settings
-    from common.misc_utils import thread_pool_exec
-    from rag.nlp import search as _rag_search
+    from common.doc_store.doc_store_base import OrderByExpr
 
-    index = _rag_search.index_name(tenant_id)
-    row_id = _nav_row_id(kb_id)
-    payload = {
-        "id": row_id,
-        "kb_id": kb_id,
-        "doc_id": kb_id,
-        "compile_kwd": _COMPILE_KWD,
-        "knowledge_graph_kwd": "graph",
-        "available_int": 0,
-        **payload,
-    }
+    index = _index_name(tenant_id)
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        condition,
+        [],
+        OrderByExpr(),
+        0,
+        limit,
+        index,
+        [kb_id],
+    )
+    rows = settings.docStoreConn.get_fields(res, fields) if res else {}
+    return list(rows.values())
+
+
+async def _store_knn(
+    tenant_id: str,
+    kb_id: str,
+    vec: list[float],
+    vec_dim: int,
+    filter_condition: dict,
+    top_k: int = _KNN_TOP_K,
+) -> list[dict]:
+    """KNN search with dense vector and filter, returning top_k hits."""
+    from common import settings
+
+    index = _index_name(tenant_id)
+    vf = _vec_field(vec_dim)
+    fields = [
+        "content_with_weight",
+        "name",
+        "parent_kwd",
+        "depth_int",
+        "doc_count_int",
+        "doc_ids_kwd",
+        vf,
+    ]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            filter_condition,
+            [],
+            None,
+            0,
+            top_k,
+            index,
+            [kb_id],
+            knn_vector=vec,
+            knn_vector_field=vf,
+        )
+    except TypeError:
+        # Fallback: some doc store connectors don't accept knn_* kwargs.
+        # Perform a plain search and lambda-rank in Python (slow-path).
+        rows = await _store_search(
+            tenant_id,
+            kb_id,
+            filter_condition,
+            fields,
+            limit=top_k * 10,
+        )
+        scoring = []
+        for r in rows:
+            stored = r.get(vf)
+            if stored and len(stored) == len(vec):
+                sim = sum(a * b for a, b in zip(stored, vec))
+                scoring.append((sim, r))
+        scoring.sort(key=lambda x: -x[0])
+        return [r for _, r in scoring[:top_k]]
+    results = settings.docStoreConn.get_fields(res, fields) if res else {}
+    return list(results.values())
+
+
+async def _store_upsert(tenant_id: str, kb_id: str, doc: dict) -> None:
+    from common import settings
+
+    index = _index_name(tenant_id)
+    row_id = doc.get("id", "")
     existing = await thread_pool_exec(
         settings.docStoreConn.get,
         row_id,
@@ -228,25 +236,264 @@ async def _write_row(tenant_id: str, kb_id: str, payload: dict) -> None:
         [kb_id],
     )
     if existing:
+        upd = {k: v for k, v in doc.items() if k != "id"}
         await thread_pool_exec(
             settings.docStoreConn.update,
             {"id": row_id},
-            {k: v for k, v in payload.items() if k != "id"},
+            upd,
             index,
             kb_id,
         )
     else:
         await thread_pool_exec(
             settings.docStoreConn.insert,
-            [payload],
+            [doc],
             index,
             kb_id,
         )
 
 
-# --------------------------------------------------------------------
+async def _store_delete(tenant_id: str, kb_id: str, row_id: str) -> None:
+    from common import settings
+
+    index = _index_name(tenant_id)
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"id": [row_id]},
+            index,
+            kb_id,
+        )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Embedding helpers
+# ---------------------------------------------------------------------------
+
+
+async def _embed(embd_mdl, text: str) -> list[float]:
+    """Encode a single text string and return its embedding vector."""
+    global _EMBED_DIM
+    vecs = await _encode(embd_mdl, [text])
+    if vecs and len(vecs[0]) > 0:
+        dim = len(vecs[0])
+        if _EMBED_DIM is None:
+            _EMBED_DIM = dim
+        return vecs[0]
+    return []
+
+
+def _cosine_sim(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(x * x for x in b) ** 0.5
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+# ---------------------------------------------------------------------------
+# Fabrication of nav rows
+# ---------------------------------------------------------------------------
+
+
+def _make_nav_doc_row(
+    kb_id: str,
+    doc_id: str,
+    summary: str,
+    parent_kwd: str,
+    depth_int: int,
+    embd_mdl=None,
+    embedding: list[float] | None = None,
+) -> dict:
+    """Build a nav_doc ES/Infinity row dict for a single document leaf node."""
+    row: dict = {
+        "id": _nav_doc_id(doc_id),
+        "kb_id": kb_id,
+        "doc_id": doc_id,
+        "compile_kwd": _COMPILE_KWD,
+        "knowledge_graph_kwd": "entity",
+        "type_kwd": "nav_doc",
+        "name": doc_id,
+        "parent_kwd": parent_kwd,
+        "depth_int": depth_int,
+        "available_int": 0,
+    }
+    payload = {"type": "nav_doc", "description": summary}
+    row["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
+    ltks = _tokenize(summary)
+    row["content_ltks"] = ltks
+    row["content_sm_ltks"] = _fine_tokenize(ltks)
+    if embedding:
+        dim = len(embedding)
+        row[_vec_field(dim)] = embedding
+    return row
+
+
+def _make_nav_cluster_row(
+    kb_id: str,
+    name: str,
+    description: str,
+    parent_kwd: str,
+    depth_int: int,
+    doc_ids: list[str],
+    embedding: list[float] | None = None,
+) -> dict:
+    """Build a nav_cluster ES/Infinity row dict for an internal tree node."""
+    cluster_id = _nav_cluster_id(kb_id, name)
+    row: dict = {
+        "id": cluster_id,
+        "kb_id": kb_id,
+        "doc_id": kb_id,
+        "compile_kwd": _COMPILE_KWD,
+        "knowledge_graph_kwd": "entity",
+        "type_kwd": "nav_cluster",
+        "name": name,
+        "parent_kwd": parent_kwd,
+        "depth_int": depth_int,
+        "doc_ids_kwd": doc_ids,
+        "doc_count_int": len(doc_ids),
+        "available_int": 0,
+    }
+    payload = {"type": "nav_cluster", "description": description}
+    row["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
+    ltks = _tokenize(description)
+    row["content_ltks"] = ltks
+    row["content_sm_ltks"] = _fine_tokenize(ltks)
+    if embedding:
+        dim = len(embedding)
+        row[_vec_field(dim)] = embedding
+    return row
+
+
+def _tokenize(text: str) -> str:
+    """Coarse-grained tokenization for ES/Infinity full-text search."""
+    from rag.nlp import rag_tokenizer
+
+    return rag_tokenizer.tokenize(text)
+
+
+def _fine_tokenize(text: str) -> str:
+    """Fine-grained tokenization for ES/Infinity sub-word search."""
+    from rag.nlp import rag_tokenizer
+
+    return rag_tokenizer.fine_grained_tokenize(text)
+
+
+# ---------------------------------------------------------------------------
+# Incremental clustering core
+# ---------------------------------------------------------------------------
+
+
+async def _find_best_cluster(
+    tenant_id: str,
+    kb_id: str,
+    doc_embedding: list[float],
+    vec_dim: int,
+) -> tuple[str | None, str | None, float]:
+    """Locate the nearest cluster for a document via layered KNN descent.
+
+    Starts from the root cluster (depth_int=0) and recursively descends into
+    the best-matching child as long as similarity stays above
+    ``_RECURSE_THRESHOLD``.  Returns the deepest cluster whose children are
+    all less similar, along with the similarity score.
+
+    Returns:
+        (best_cluster_name, best_cluster_parent_name, similarity)
+    """
+    # Step 1: find the root cluster (depth_int=0)
+    root_cond = {
+        "kb_id": [kb_id],
+        "compile_kwd": [_COMPILE_KWD],
+        "type_kwd": ["nav_cluster"],
+        "depth_int": [0],
+    }
+    roots = await _store_knn(tenant_id, kb_id, doc_embedding, vec_dim, root_cond, top_k=1)
+    if not roots:
+        return None, None, 0.0
+
+    best = roots[0]
+    best_name = best.get("name", "")
+    best_parent = best.get("parent_kwd", "")
+    # compute actual similarity to root
+    stored = best.get(_vec_field(vec_dim))
+    sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+
+    # Step 2: recursively descend into children
+    while sim >= _RECURSE_THRESHOLD:
+        child_cond = {
+            "kb_id": [kb_id],
+            "compile_kwd": [_COMPILE_KWD],
+            "type_kwd": ["nav_cluster"],
+            "parent_kwd": [best_name],
+        }
+        children = await _store_knn(tenant_id, kb_id, doc_embedding, vec_dim, child_cond, top_k=1)
+        if not children:
+            break
+        child = children[0]
+        stored = child.get(_vec_field(vec_dim))
+        child_sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+        if child_sim < _RECURSE_THRESHOLD:
+            break
+        best_name = child.get("name", best_name)
+        best_parent = best.get("parent_kwd", best_parent)
+        sim = child_sim
+        best = child
+
+    return best_name, best_parent, sim
+
+
+async def _llm_merge(chat_mdl, cluster_desc: str, doc_summary: str) -> str:
+    """LLM merge: fuse existing cluster description with new doc summary."""
+    if not chat_mdl:
+        return cluster_desc  # no LLM available, keep old summary
+    from rag.prompts.generator import gen_json
+
+    prompt = (
+        "Merge the following two descriptions of the same topic into "
+        "a single concise summary (1-3 sentences):\n\n"
+        f"Existing: {cluster_desc}\n\n"
+        f"New: {doc_summary}\n\n"
+        "Return ONLY the merged text, no commentary."
+    )
+    try:
+        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        if isinstance(resp, dict):
+            return str(resp.get("merged", resp.get("result", cluster_desc)))
+        if isinstance(resp, str) and resp.strip():
+            return resp.strip()
+    except Exception:
+        logging.exception("dataset_nav: LLM merge failed, keeping original")
+    return cluster_desc
+
+
+async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> str:
+    """LLM create a cluster summary from one or more doc summaries."""
+    if not chat_mdl:
+        return doc_summaries[0] if doc_summaries else ""
+    from rag.prompts.generator import gen_json
+
+    texts = "\n---\n".join(doc_summaries)
+    prompt = f"Summarize the common topic of the following document excerpts in 1-3 concise sentences:\n\n{texts}\n\nReturn ONLY the summary text, no commentary."
+    try:
+        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        if isinstance(resp, dict):
+            return str(resp.get("summary", resp.get("result", doc_summaries[0])))
+        if isinstance(resp, str) and resp.strip():
+            return resp.strip()
+    except Exception:
+        logging.exception("dataset_nav: LLM summary failed")
+    return doc_summaries[0] if doc_summaries else ""
+
+
+# ---------------------------------------------------------------------------
 # Public surface
-# --------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 async def upsert_dataset_nav_doc(
@@ -254,43 +501,46 @@ async def upsert_dataset_nav_doc(
     kb_id: str,
     doc_id: str,
     summary_or_tree: Any,
+    embd_mdl=None,
+    chat_mdl=None,
 ) -> None:
-    """Add or refresh a doc's line in the KB's nav markdown.
+    """Upsert a document into the nav clustering tree.
 
-    ``summary_or_tree`` can be:
-      - a plain string (taken as-is and truncated to ``MAX_DOC_SUMMARY_TOKENS``)
-      - a tree dict (the root summary is extracted via
-        ``_extract_root_summary_from_tree``)
-
-    The 128-doc cap is enforced here: if the doc isn't already in the
-    markdown and the row is full, the call is a no-op. Existing docs
-    always get their summary updated regardless of count.
-
-    Called from ``_run_tree_templates`` after each successful
-    ``_struct_upsert_graph_json``.
+    Args:
+        tenant_id: Tenant owning the KB.
+        kb_id: Knowledge base id.
+        doc_id: Document id.
+        summary_or_tree: A plain summary string, or a RAPTOR tree dict from
+            which the root summary is extracted.
+        embd_mdl: LLMBundle for embedding (required for clustering).
+        chat_mdl: LLMBundle for chat (required for LLM merge/summary).
     """
     if not doc_id or not kb_id:
         return
 
+    # 1. Extract summary
     if isinstance(summary_or_tree, dict):
         summary = _extract_root_summary_from_tree(summary_or_tree)
     elif isinstance(summary_or_tree, str):
         summary = summary_or_tree
     else:
         summary = ""
-    summary = _truncate_summary(summary)
     if not summary:
-        # Nothing to record — a tree with no root summary means the
-        # RAPTOR pass produced a degenerate result; safer to skip than
-        # to write an empty line.
-        logging.info(
-            "dataset_nav: skipping doc=%s (kb=%s) — no usable summary",
-            doc_id,
-            kb_id,
-        )
+        logging.info("dataset_nav: skipping doc=%s (kb=%s) — no summary", doc_id, kb_id)
         return
 
-    new_line = _format_line(doc_id, summary)
+    # 2. Check if this doc already has a nav_doc row
+    existing_doc = await _store_get(tenant_id, kb_id, _nav_doc_id(doc_id))
+    if existing_doc:
+        old_payload = json.loads(existing_doc.get("content_with_weight") or "{}")
+        if old_payload.get("description") == summary:
+            logging.info("dataset_nav: doc=%s unchanged, skipping", doc_id)
+            return
+
+    # 3. Embed doc summary
+    doc_embedding = await _embed(embd_mdl, summary) if embd_mdl else []
+    vec_dim = _EMBED_DIM or 0
+
     lock = RedisDistributedLock(
         _nav_lock_key(kb_id),
         timeout=_LOCK_TIMEOUT_S,
@@ -299,46 +549,133 @@ async def upsert_dataset_nav_doc(
     try:
         await lock.spin_acquire()
     except Exception:
-        logging.exception(
-            "dataset_nav: lock acquire failed for kb=%s; proceeding lock-free",
-            kb_id,
-        )
+        logging.exception("dataset_nav: lock acquire failed for kb=%s", kb_id)
+        return
 
     try:
-        existing = await _get_existing(tenant_id, kb_id)
-        md = (existing or {}).get("md_with_weight") or ""
-        entries = _parse_existing_lines(md)
+        # 4. Layered KNN search for nearest cluster
+        best_name, best_parent, sim = await _find_best_cluster(
+            tenant_id,
+            kb_id,
+            doc_embedding,
+            vec_dim,
+        )
 
-        replaced = False
-        for i, (existing_doc_id, _) in enumerate(entries):
-            if existing_doc_id == doc_id:
-                entries[i] = (doc_id, new_line)
-                replaced = True
-                break
-        if not replaced:
-            if len(entries) >= MAX_DATASET_NAV_DOCS:
-                logging.info(
-                    "dataset_nav: kb=%s already at cap (%d); skipping doc=%s",
-                    kb_id,
-                    MAX_DATASET_NAV_DOCS,
-                    doc_id,
-                )
-                return
-            entries.append((doc_id, new_line))
+        if best_name and sim >= _MERGE_THRESHOLD:
+            # ── Merge into best cluster ──
+            cluster_id = _nav_cluster_id(kb_id, best_name)
+            cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
+            if cluster_row:
+                payload = json.loads(cluster_row.get("content_with_weight") or "{}")
+                old_desc = payload.get("description", "")
+                new_desc = await _llm_merge(chat_mdl, old_desc, summary)
+                payload["description"] = new_desc
+                cluster_row["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
+                doc_ids = cluster_row.get("doc_ids_kwd") or []
+                if doc_id not in doc_ids:
+                    doc_ids.append(doc_id)
+                cluster_row["doc_ids_kwd"] = doc_ids
+                cluster_row["doc_count_int"] = len(doc_ids)
+                # Re-compute embedding for the new summary
+                if embd_mdl and new_desc != old_desc:
+                    new_emb = await _embed(embd_mdl, new_desc)
+                    if new_emb:
+                        cluster_row[_vec_field(len(new_emb))] = new_emb
+                await _store_upsert(tenant_id, kb_id, cluster_row)
 
-        payload = {
-            "md_with_weight": _render_md(entries),
-            "doc_count_int": len(entries),
-            "doc_ids_kwd": [doc_id for doc_id, _ in entries],
-        }
-        try:
-            await _write_row(tenant_id, kb_id, payload)
-        except Exception:
-            logging.exception(
-                "dataset_nav: write failed for kb=%s doc=%s",
+            # Upsert nav_doc under the cluster
+            depth = cluster_row.get("depth_int", 1) + 1 if cluster_row else 2
+            nav_doc_row = _make_nav_doc_row(
                 kb_id,
                 doc_id,
+                summary,
+                best_name,
+                depth,
+                embd_mdl,
+                doc_embedding,
             )
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
+
+            # Check fanout — if the cluster now has too many children, trigger split
+            await _maybe_split_cluster(
+                tenant_id,
+                kb_id,
+                best_name,
+                embd_mdl,
+                chat_mdl,
+            )
+
+        elif best_name and sim >= _MIN_SIM:
+            # ── Create new cluster as sibling/child ──
+            parent_for_new = best_parent if best_parent else best_name
+            depth_of_parent = 1  # default
+            parent_row = await _store_get(
+                tenant_id,
+                kb_id,
+                _nav_cluster_id(kb_id, parent_for_new),
+            )
+            if parent_row:
+                depth_of_parent = parent_row.get("depth_int", 1)
+            new_depth = depth_of_parent + 1
+            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
+            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_cluster = _make_nav_cluster_row(
+                kb_id,
+                new_name,
+                new_desc,
+                parent_for_new,
+                depth_of_parent,
+                [doc_id],
+                doc_embedding,
+            )
+            if embd_mdl and doc_embedding:
+                new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
+            await _store_upsert(tenant_id, kb_id, new_cluster)
+
+            nav_doc_row = _make_nav_doc_row(
+                kb_id,
+                doc_id,
+                summary,
+                new_name,
+                new_depth,
+                embd_mdl,
+                doc_embedding,
+            )
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
+        else:
+            # ── Create root-level new cluster ──
+            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
+            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_cluster = _make_nav_cluster_row(
+                kb_id,
+                new_name,
+                new_desc,
+                "root",
+                0,
+                [doc_id],
+                doc_embedding,
+            )
+            if embd_mdl and doc_embedding:
+                new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
+            await _store_upsert(tenant_id, kb_id, new_cluster)
+
+            nav_doc_row = _make_nav_doc_row(
+                kb_id,
+                doc_id,
+                summary,
+                new_name,
+                1,
+                embd_mdl,
+                doc_embedding,
+            )
+            await _store_upsert(tenant_id, kb_id, nav_doc_row)
+
+    except Exception:
+        logging.exception(
+            "dataset_nav: upsert failed for kb=%s doc=%s",
+            kb_id,
+            doc_id,
+        )
     finally:
         try:
             lock.release()
@@ -351,11 +688,10 @@ async def remove_dataset_nav_doc(
     kb_id: str,
     doc_id: str,
 ) -> None:
-    """Remove ``doc_id``'s line from the KB's nav markdown.
+    """Remove a document from the nav clustering tree.
 
-    Called from ``DocumentService.remove_document`` so the markdown
-    stays in sync with the KB's doc set. No-op if the row doesn't
-    exist or the doc isn't represented in it.
+    Cascades: if the parent cluster becomes empty after removal, the cluster
+    itself is also removed.
     """
     if not doc_id or not kb_id:
         return
@@ -368,35 +704,47 @@ async def remove_dataset_nav_doc(
     try:
         await lock.spin_acquire()
     except Exception:
-        logging.exception(
-            "dataset_nav: lock acquire failed for kb=%s; proceeding lock-free",
-            kb_id,
-        )
+        logging.exception("dataset_nav: lock acquire failed for kb=%s", kb_id)
+        return
 
     try:
-        existing = await _get_existing(tenant_id, kb_id)
-        if not existing:
+        # 1. Find and delete the nav_doc row
+        doc_row_id = _nav_doc_id(doc_id)
+        doc_row = await _store_get(tenant_id, kb_id, doc_row_id)
+        if not doc_row:
             return
-        md = existing.get("md_with_weight") or ""
-        entries = _parse_existing_lines(md)
-        before = len(entries)
-        entries = [(d, line) for (d, line) in entries if d != doc_id]
-        if len(entries) == before:
-            return
+        parent_name = doc_row.get("parent_kwd", "")
+        await _store_delete(tenant_id, kb_id, doc_row_id)
 
-        payload = {
-            "md_with_weight": _render_md(entries),
-            "doc_count_int": len(entries),
-            "doc_ids_kwd": [d for d, _ in entries],
-        }
-        try:
-            await _write_row(tenant_id, kb_id, payload)
-        except Exception:
-            logging.exception(
-                "dataset_nav: remove-write failed for kb=%s doc=%s",
-                kb_id,
-                doc_id,
-            )
+        # 2. Remove doc_id from the parent cluster's doc_ids_kwd
+        if parent_name and parent_name != "root":
+            cluster_id = _nav_cluster_id(kb_id, parent_name)
+            cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
+            if cluster_row:
+                doc_ids = cluster_row.get("doc_ids_kwd") or []
+                if doc_id in doc_ids:
+                    doc_ids.remove(doc_id)
+                if not doc_ids:
+                    # Cluster is empty — delete it
+                    await _store_delete(tenant_id, kb_id, cluster_id)
+                    # Recurse: check grandparent
+                    grandparent = cluster_row.get("parent_kwd", "")
+                    if grandparent and grandparent != "root":
+                        await _cleanup_empty_cluster(
+                            tenant_id,
+                            kb_id,
+                            grandparent,
+                        )
+                else:
+                    cluster_row["doc_ids_kwd"] = doc_ids
+                    cluster_row["doc_count_int"] = len(doc_ids)
+                    await _store_upsert(tenant_id, kb_id, cluster_row)
+    except Exception:
+        logging.exception(
+            "dataset_nav: remove failed for kb=%s doc=%s",
+            kb_id,
+            doc_id,
+        )
     finally:
         try:
             lock.release()
@@ -404,23 +752,186 @@ async def remove_dataset_nav_doc(
             logging.exception("dataset_nav: lock release failed for kb=%s", kb_id)
 
 
+async def _cleanup_empty_cluster(
+    tenant_id: str,
+    kb_id: str,
+    cluster_name: str,
+) -> None:
+    """Recursively remove a cluster if it has no doc children and no direct doc descendants."""
+    cluster_id = _nav_cluster_id(kb_id, cluster_name)
+    cluster = await _store_get(tenant_id, kb_id, cluster_id)
+    if not cluster:
+        return
+    # Check direct children (nav_cluster)
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _index_name(tenant_id)
+    child_cond = {
+        "kb_id": [kb_id],
+        "compile_kwd": [_COMPILE_KWD],
+        "parent_kwd": [cluster_name],
+    }
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        ["id"],
+        [],
+        child_cond,
+        [],
+        OrderByExpr(),
+        0,
+        100,
+        index,
+        [kb_id],
+    )
+    children = settings.docStoreConn.get_fields(res, ["id"]) if res else {}
+    if not children and not cluster.get("doc_ids_kwd"):
+        grandparent = cluster.get("parent_kwd", "")
+        await _store_delete(tenant_id, kb_id, cluster_id)
+        if grandparent and grandparent != "root":
+            await _cleanup_empty_cluster(tenant_id, kb_id, grandparent)
+
+
+async def _maybe_split_cluster(
+    tenant_id: str,
+    kb_id: str,
+    cluster_name: str,
+    embd_mdl,
+    chat_mdl,
+) -> None:
+    """If a cluster exceeds fanout or doc count, split children via AHC."""
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _index_name(tenant_id)
+
+    # Count children (nav_cluster)
+    child_cond = {
+        "kb_id": [kb_id],
+        "compile_kwd": [_COMPILE_KWD],
+        "parent_kwd": [cluster_name],
+    }
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        ["id", "name", "type_kwd"],
+        [],
+        child_cond,
+        [],
+        OrderByExpr(),
+        0,
+        200,
+        index,
+        [kb_id],
+    )
+    children = settings.docStoreConn.get_fields(res, ["id", "name", "type_kwd"]) if res else {}
+    if not children:
+        return
+
+    nav_cluster_kids = [c for c in children.values() if c.get("type_kwd") == "nav_cluster"]
+    nav_doc_kids = [c for c in children.values() if c.get("type_kwd") == "nav_doc"]
+
+    should_split = len(nav_cluster_kids) + len(nav_doc_kids) > _MAX_FANOUT or len(nav_doc_kids) > _MAX_DOCS_PER_CLUSTER
+    if not should_split:
+        return
+
+    # Load embeddings for all children
+    vf = _vec_field(_EMBED_DIM) if _EMBED_DIM else "q_768_vec"
+    child_details = await _store_search(
+        tenant_id,
+        kb_id,
+        child_cond,
+        ["id", "name", "type_kwd", "content_with_weight", vf],
+        limit=200,
+    )
+    embeddings = []
+    names = []
+    name_to_type: dict[str, str] = {}
+    for c in child_details:
+        stored = c.get(vf)
+        if stored:
+            embeddings.append(stored)
+            names.append(c.get("name", ""))
+        cn = c.get("name", "")
+        if cn:
+            name_to_type[cn] = c.get("type_kwd", "nav_cluster")
+
+    if len(embeddings) < 4:
+        return
+
+    # Simple k-means-like split into 2 groups (no scikit dependency at runtime)
+    # Use the first two embeddings as initial centroids
+    centroids = [embeddings[0][:], embeddings[len(embeddings) // 2][:]]
+    for _ in range(10):
+        groups = [[], []]
+        for emb in embeddings:
+            d0 = sum((a - b) ** 2 for a, b in zip(emb, centroids[0]))
+            d1 = sum((a - b) ** 2 for a, b in zip(emb, centroids[1]))
+            groups[0 if d0 < d1 else 1].append(emb)
+        for gi in (0, 1):
+            if groups[gi]:
+                avg = [sum(c) / len(groups[gi]) for c in zip(*groups[gi])]
+                centroids[gi] = avg
+
+    # Relabel
+    labels = []
+    for emb in embeddings:
+        d0 = sum((a - b) ** 2 for a, b in zip(emb, centroids[0]))
+        d1 = sum((a - b) ** 2 for a, b in zip(emb, centroids[1]))
+        labels.append(0 if d0 < d1 else 1)
+
+    # Create sub-clusters
+    cluster_row = await _store_get(tenant_id, kb_id, _nav_cluster_id(kb_id, cluster_name))
+    depth = (cluster_row.get("depth_int", 0) if cluster_row else 0) + 1
+
+    for gi in (0, 1):
+        kid_names = [names[i] for i in range(len(names)) if labels[i] == gi]
+        if not kid_names:
+            continue
+        # Collect doc_ids from all children
+        doc_ids: list[str] = []
+        descs: list[str] = []
+        for kn in kid_names:
+            is_doc = name_to_type.get(kn) == "nav_doc"
+            cid = _nav_doc_id(kn) if is_doc else _nav_cluster_id(kb_id, kn)
+            row = await _store_get(tenant_id, kb_id, cid)
+            if row:
+                payload = json.loads(row.get("content_with_weight") or "{}")
+                descs.append(payload.get("description", ""))
+                dids = row.get("doc_ids_kwd") or []
+                for d in dids:
+                    if d not in doc_ids:
+                        doc_ids.append(d)
+        group_desc = await _llm_create_summary(chat_mdl, descs) if descs else f"Group {gi + 1}"
+        group_name = f"navc_split_{xxhash.xxh64(group_desc.encode()).hexdigest()[:12]}"
+        group_emb = await _embed(embd_mdl, group_desc) if embd_mdl else []
+        new_cluster = _make_nav_cluster_row(
+            kb_id,
+            group_name,
+            group_desc,
+            cluster_name,
+            depth,
+            doc_ids,
+            group_emb,
+        )
+        await _store_upsert(tenant_id, kb_id, new_cluster)
+
+        # Reparent children to new split cluster
+        for kn in kid_names:
+            is_doc = name_to_type.get(kn) == "nav_doc"
+            cid = _nav_doc_id(kn) if is_doc else _nav_cluster_id(kb_id, kn)
+            row = await _store_get(tenant_id, kb_id, cid)
+            if row:
+                row["parent_kwd"] = group_name
+                row["depth_int"] = depth + 1
+                await _store_upsert(tenant_id, kb_id, row)
+
+
 def remove_dataset_nav_doc_sync(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
 ) -> None:
-    """Sync wrapper around ``remove_dataset_nav_doc``.
-
-    ``DocumentService.remove_document`` is synchronous (Peewee-driven)
-    and the doc-store helpers it calls are sync too. We need a sync
-    bridge so the delete path can invoke this without spinning up an
-    event loop.
-
-    Strategy: run the async helper on the current loop if one is
-    available; otherwise spin a fresh loop for the duration of the
-    call. Any failure is logged and swallowed — the doc-delete path
-    must never fail because of nav-md cleanup.
-    """
+    """Sync wrapper around ``remove_dataset_nav_doc``."""
     try:
         loop = asyncio.new_event_loop()
         try:

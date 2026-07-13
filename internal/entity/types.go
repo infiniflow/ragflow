@@ -119,6 +119,8 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeSpeech2Text
 	case "image2text":
 		return ModelTypeImage2Text
+	case "vision":
+		return ModelTypeImage2Text
 	case "rerank":
 		return ModelTypeRerank
 	case "tts":
@@ -139,3 +141,11 @@ func ModelTypeFromStrings(types []string) ModelType {
 	}
 	return result
 }
+
+// ModelVerifyStatus mirrors Python's ModelVerifyStatusEnum
+// (common/constants.py).
+const (
+	ModelVerifySuccess = "success"
+	ModelVerifyFail    = "fail"
+	ModelVerifyUnknown = "unknown"
+)
