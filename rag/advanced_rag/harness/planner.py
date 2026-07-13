@@ -4,6 +4,7 @@ import json
 import logging
 import re
 
+from rag.advanced_rag.agentic_rag_graph import _snip
 from rag.advanced_rag.harness.types import ClaimTarget, WorkflowPlan, RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.decompose_prompts import (
@@ -38,6 +39,7 @@ async def planner_node(state: dict, tools) -> dict:
         _LOG.warning("planner: no route found, using defaults")
         return _default_plan(state.get("question", ""))
 
+    _LOG.info("[Planner] IN | question=%s type=%s", _snip(route.question), route.question_type)
     if not route.requires_decomposition:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
@@ -62,10 +64,10 @@ async def planner_node(state: dict, tools) -> dict:
             max_claims=max_claims,
             detail_level=detail_level,
         )
-        system, user = prompt.split("输出格式", 1)
+        system, user = prompt.split("Output format", 1)
         system = system.strip()
-        user = "输出格式" + user
-        _, msg = tools._fit_messages(system, user)
+        user = "Output format" + user
+        msg = await tools._fit_messages(system, user)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
         if isinstance(ans, tuple):
             ans = ans[0]
@@ -101,6 +103,7 @@ async def planner_node(state: dict, tools) -> dict:
         claims=claims,
         max_iterations=mode.max_orchestrator_cycles,
     )
+    _LOG.info("[Planner] OUT | plan type=%s | claims=%d", plan_type, len(plan.claims))
 
     return {"plan": plan, "claims": plan.claims}
 

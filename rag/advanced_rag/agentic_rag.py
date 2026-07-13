@@ -171,42 +171,72 @@ class RAGTools:
     # ------------------------------------------------------------------ #
     # Graph node helpers (plain async methods — never exposed as tools)
     # ------------------------------------------------------------------ #
-    async def formalize(self, messages: List[Any]) -> str:
-        """Rewrite the latest user message into a standalone question.
+    async def formalize(self, messages: List[Any]) -> tuple[str, str]:
+        """Rewrite the latest user message into a standalone question AND derive
+        its search keywords (each with close synonyms), in one LLM call.
 
         ``messages`` may be a list of role dicts (``{"role", "content"}``) or
-        pre-formatted ``"Speaker: text"`` strings. Returns the last user
-        message unchanged when it is already self-contained.
+        pre-formatted ``"Speaker: text"`` strings.
+
+        Returns ``(question, keywords)`` where ``keywords`` is a comma-separated
+        string of the question's key terms plus 1-2 close synonyms / alternative
+        phrasings for each, in the same language as the question.
         """
         if not messages:
-            return ""
+            return "", ""
 
         lines: list[str] = []
+        last_user = ""
         for m in messages:
             if isinstance(m, str):
                 lines.append(m)
+                last_user = m
                 continue
             role = m.get("role", "user")
             content = m.get("content", "") or ""
+            if role == "user":
+                last_user = content
             prefix = "User" if role == "user" else ("Assistant" if role == "assistant" else str(role).capitalize())
             lines.append(f"{prefix}: {content}")
         transcript = "\n".join(lines)
 
         system = (
-            "You rewrite the LAST user message into a single, self-contained question "
-            "that can be understood without seeing the prior conversation. "
-            "Resolve pronouns, ellipses, and follow-up shortcuts using earlier turns. "
-            "Preserve the original language of the last user message. "
-            "Output ONLY the rewritten question — no preamble, no quotes, no explanation. "
-            "If the last user message is already a complete standalone question, return it unchanged."
+            "You are given a conversation. Do BOTH of the following and return JSON only:\n"
+            "1. Rewrite the LAST user message into a single, self-contained question that can be "
+            "understood without seeing the prior conversation — resolve pronouns, ellipses and "
+            "follow-up shortcuts using earlier turns. Preserve the original language of the last "
+            "user message. If it is already a complete standalone question, keep it unchanged.\n"
+            "2. Extract the key search terms of that question and, for each, add 1-2 close synonyms "
+            "or alternative phrasings. Output them ALL TOGETHER as one comma-separated list, in the "
+            "SAME language as the question.\n\n"
+            'Output ONLY JSON, no prose, no code fences: '
+            '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
         )
-        user = f"Conversation:\n{transcript}\n\nRewritten standalone question:"
+        user = f"Conversation:\n{transcript}\n\nOutput JSON:"
         _, msg = message_fit_in(form_message(system, user), self.chat_mdl.max_length)
         ans = await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.1})
         if isinstance(ans, tuple):
             ans = ans[0]
-        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-        return ans.strip().strip('"').strip("'")
+        cleaned = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", cleaned).strip()
+        try:
+            data = json_repair.loads(cleaned)
+        except Exception as e:
+            logging.warning(f"formalize could not parse LLM output: {e!r} raw={ans[:200]!r}")
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        question = str(data.get("question") or "").strip().strip('"').strip("'")
+        if not question:
+            # Fall back to the raw last user message rather than an empty question.
+            question = (last_user or "").strip()
+
+        keywords = data.get("keywords") or ""
+        if isinstance(keywords, list):
+            keywords = ", ".join(str(k).strip() for k in keywords if str(k).strip())
+        keywords = str(keywords).strip()
+        return question, keywords
 
     async def pick_documents(self, question: str) -> List[str] | None:
         """Narrow the search to a document subset for ``question``.

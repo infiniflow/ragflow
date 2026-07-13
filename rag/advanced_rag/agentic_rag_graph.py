@@ -57,6 +57,7 @@ def _snip(value: Any, limit: int = 240) -> str:
 class AgenticState(TypedDict, total=False):
     messages: list
     question: str
+    keywords: str  # search keywords + close synonyms for the formalized question
     route: dict  # RouteDecision serialized
     plan: dict  # WorkflowPlan serialized
     claims: list  # ClaimTarget[] serialized
@@ -135,11 +136,13 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     async def formalize_question(state: AgenticState) -> dict:
         msgs = state.get("messages") or []
         _LOG.info("[formalize_question] IN | %d msg(s)", len(msgs))
-        q = await tools.formalize(msgs)
+        q, kw = await tools.formalize(msgs)
         q = (q or "").strip()
-        _LOG.info("[formalize_question] OUT | question=%s", _snip(q))
+        kw = (kw or "").strip()
+        _LOG.info("[formalize_question] OUT | question=%s | keywords=%s", _snip(q), _snip(kw))
         return {
             "question": q,
+            "keywords": kw,
             "kbinfos": {"chunks": [], "doc_aggs": []},
             "loop": 0,
             "partial_answer": False,
@@ -213,7 +216,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         _, msg = message_fit_in(form_message(system, user_content), tools.chat_mdl.max_length)
         try:
-            async for tok in tools.chat_mdl.async_chat_stream(msg[0]["content"], msg[1:], answer_conf):
+            async for tok in tools.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], answer_conf):
                 token_queue.put_nowait(tok)
         except Exception:
             _LOG.exception("formalize_answer: stream failed")

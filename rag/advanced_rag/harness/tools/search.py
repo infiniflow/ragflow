@@ -6,27 +6,35 @@ from common import settings
 _LOG = logging.getLogger(__name__)
 
 
-def _normalize(kbinfos: dict) -> dict:
+def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
     if not kbinfos:
         return {"chunks": [], "doc_aggs": []}
+    if not tenant_ids:
+        _LOG.warning("search: skip child retrieval because tenant_ids is empty")
+        return kbinfos
+    if isinstance(tenant_ids, str):
+        tenant_ids = [tenant_ids]
     kbinfos["chunks"] = settings.retriever.retrieval_by_children(
         kbinfos.get("chunks", []),
-        getattr(kbinfos, "_tenant_ids", None),
+        tenant_ids,
     )
     return kbinfos
 
 
-async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6, doc_scope: list[str] | None = None) -> dict:
-    """向量+关键词混合检索。"""
+async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6, doc_scope: list[str] | None = None, keywords: str = "") -> dict:
     if not tools.kb_ids and not kb_ids:
         return {"chunks": [], "doc_aggs": []}
     target_ids = kb_ids or tools.kb_ids
+
+    # Query expansion: append the formalized-question keywords + close synonyms
+    # so hybrid/BM25 retrieval gets extra recall signal.
+    effective_query = f"{query} {keywords}".strip() if keywords else query
 
     embd_mdl = tools.embed_mdl
     vector_weight = 0.7 if embd_mdl else 0
 
     kbinfos = await settings.retriever.retrieval(
-        query,
+        effective_query,
         embd_mdl,
         tools.tenant_ids,
         target_ids,
@@ -38,11 +46,10 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         highlight=True,
         doc_ids=doc_scope,
     )
-    return _normalize(kbinfos)
+    return _normalize(kbinfos, tools.tenant_ids)
 
 
 async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6) -> dict:
-    """纯语义检索。"""
     if not tools.embed_mdl:
         _LOG.warning("vector_search: no embed_mdl available")
         return {"chunks": [], "doc_aggs": []}
@@ -59,7 +66,7 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=True,
         highlight=True,
     )
-    return _normalize(kbinfos)
+    return _normalize(kbinfos, tools.tenant_ids)
 
 
 async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6) -> dict:
@@ -77,7 +84,7 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         aggs=True,
         highlight=True,
     )
-    return _normalize(kbinfos)
+    return _normalize(kbinfos, tools.tenant_ids)
 
 
 async def web_search(tools, query: str) -> dict:

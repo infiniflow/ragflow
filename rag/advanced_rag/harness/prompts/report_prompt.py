@@ -13,4 +13,4 @@ If the evidence does not answer the question, reply with a clear statement that 
 """
 
 
-PARTIAL_ANSWER_PREAMBLE = "注意：以下答案基于部分信息得出，可能不完整。"
+PARTIAL_ANSWER_PREAMBLE = "Note: the following answer is based on partial information and may be incomplete."

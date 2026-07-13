@@ -18,6 +18,7 @@ _LOG = logging.getLogger(__name__)
 async def decompose_and_search(state: dict, tools) -> dict:
     """Decompose → parallel search → merge → sufficiency check → iterate."""
     question = state.get("question", "")
+    keywords = state.get("keywords", "")
     claims_raw = state.get("claims", [])
     mode_label = state.get("route", {}).thinking_mode if state.get("route") else "medium"
     mode = get_mode(mode_label)
@@ -34,7 +35,7 @@ async def decompose_and_search(state: dict, tools) -> dict:
         # Parallel search on unverified claims
         tasks = []
         for c in unverified:
-            tasks.append(hybrid_search(tools, query=c.description))
+            tasks.append(hybrid_search(tools, query=c.description, keywords=keywords))
         results = await asyncio.gather(*tasks)
 
         for c, result in zip(unverified, results):

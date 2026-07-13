@@ -679,7 +679,7 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Executing {tc.function.name} with args: {tc.function.arguments)}</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
@@ -2122,7 +2122,7 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Executing {tc.function.name} with args: {tc.function.arguments)}</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
                     history = self._append_history_batch(
                         history,

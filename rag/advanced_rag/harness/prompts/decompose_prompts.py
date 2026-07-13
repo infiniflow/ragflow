@@ -1,100 +1,100 @@
-"""Planner decompose prompts — one per question type."""
+"""Planner decompose prompts: one per question type."""
 
-DECOMPOSE_FACTUAL = """这是一个事实型问题。列出需要检索的所有原子事实。
-如果有多个事实，逐条列出；如果只有一个事实，只输出1条。
+DECOMPOSE_FACTUAL = """This is a factual question. List all atomic facts that need to be retrieved.
+If there are multiple facts, list them one by one. If there is only one fact, output exactly one item.
 
-问题: {question}
-最大声明数: {max_claims}
-详细程度: {detail_level}
+Question: {question}
+Maximum number of claims: {max_claims}
+Detail level: {detail_level}
 
-输出格式(JSON):
-{
+Output format (JSON):
+{{
     "claims": [
-        {
+        {{
             "claim_id": "c1",
-            "description": "苹果收购Beats的年份",
+            "description": "The year Apple acquired Beats",
             "priority": 1
-        }
+        }}
     ]
-}
+}}
 """
 
 
-DECOMPOSE_COMPARATIVE = """这是一个比较型问题。需要分解为:
-1. 实体A关于比较维度的信息
-2. 实体B关于比较维度的信息
-3. (可选) 直接比较两者的信息
+DECOMPOSE_COMPARATIVE = """This is a comparative question. It needs to be decomposed into:
+1. Information about entity A for the comparison dimension.
+2. Information about entity B for the comparison dimension.
+3. Optional information that directly compares the two entities.
 
-问题: {question}
-最大声明数: {max_claims}
-详细程度: {detail_level}
+Question: {question}
+Maximum number of claims: {max_claims}
+Detail level: {detail_level}
 
-输出格式(JSON):
-{
+Output format (JSON):
+{{
     "claims": [
-        {
+        {{
             "claim_id": "c1",
-            "description": "杭州到北京的距离",
+            "description": "The distance from Hangzhou to Beijing",
             "priority": 1
-        },
-        {
+        }},
+        {{
             "claim_id": "c2",
-            "description": "上海到北京的距离",
+            "description": "The distance from Shanghai to Beijing",
             "priority": 1
-        },
-        {
+        }},
+        {{
             "claim_id": "c3",
-            "description": "哪个城市离北京更近",
+            "description": "Which city is closer to Beijing",
             "priority": 2
-        }
+        }}
     ]
-}
+}}
 """
 
 
-DECOMPOSE_PROCEDURAL = """这是一个步骤型问题。请分解为完成此操作所需的每个步骤。
+DECOMPOSE_PROCEDURAL = """This is a procedural question. Decompose it into the information needed for each step required to complete the operation.
 
-问题: {question}
-最大声明数: {max_claims}
-详细程度: {detail_level}
+Question: {question}
+Maximum number of claims: {max_claims}
+Detail level: {detail_level}
 
-输出格式(JSON):
-{
+Output format (JSON):
+{{
     "claims": [
-        {
+        {{
             "claim_id": "c1",
-            "description": "第一步所需的信息",
+            "description": "Information needed for the first step",
             "priority": 1
-        },
-        {
+        }},
+        {{
             "claim_id": "c2",
-            "description": "第二步所需的信息",
+            "description": "Information needed for the second step",
             "priority": 2
-        }
+        }}
     ]
-}
+}}
 """
 
 
-DECOMPOSE_EXPLORATORY = """这是一个分析/探索型问题。请分解为需要研究的多个方面/维度。
+DECOMPOSE_EXPLORATORY = """This is an analytical or exploratory question. Decompose it into the main aspects or dimensions that need to be researched.
 
-问题: {question}
-最大声明数: {max_claims}
-详细程度: {detail_level}
+Question: {question}
+Maximum number of claims: {max_claims}
+Detail level: {detail_level}
 
-输出格式(JSON):
-{
+Output format (JSON):
+{{
     "claims": [
-        {
+        {{
             "claim_id": "c1",
-            "description": "需要研究的第一个方面",
+            "description": "The first aspect that needs to be researched",
             "priority": 1
-        },
-        {
+        }},
+        {{
             "claim_id": "c2",
-            "description": "需要研究的第二个方面",
+            "description": "The second aspect that needs to be researched",
             "priority": 2
-        }
+        }}
     ]
-}
+}}
 """

@@ -1,31 +1,31 @@
-"""Sufficiency judge prompt — 5-way verdict with claim-level assessment."""
+"""Sufficiency judge prompt: verdict with claim-level assessment."""
 
-SUFFICIENCY_JUDGE_PROMPT = """你是信息检索充分性判断专家。判断当前收集的证据是否足够回答问题。
+SUFFICIENCY_JUDGE_PROMPT = """You are an expert judge of information retrieval sufficiency. Decide whether the currently collected evidence is sufficient to answer the question.
 
-问题: {question}
+Question: {question}
 
-声明级证据:
+Claim-level evidence:
 {evidence_summary}
 
-判断:
-1. 逐条评估每个声明是否被充分验证
-2. 全局判断是否足够回答用户问题
-3. 如果不够，给出定向反馈
+Judgment tasks:
+1. Evaluate each claim one by one and decide whether it has been sufficiently verified.
+2. Make an overall judgment about whether the evidence is sufficient to answer the user's question.
+3. If it is not sufficient, provide targeted feedback.
 
-输出格式(JSON):
-{
+Output format (JSON):
+{{
     "status": "SUFFICIENT" | "USEFUL_BUT_INCOMPLETE" | "INSUFFICIENT" | "UNANSWERABLE",
     "score": 0.85,
     "claim_assessments": [
-        {
+        {{
             "claim_id": "c1",
             "is_verified": true,
             "confidence": 0.95,
-            "reason": "在3个chunk中找到一致数据"
-        }
+            "reason": "Consistent data was found in three chunks."
+        }}
     ],
-    "missing": ["c2部分数据未找到"],
-    "feedback": "建议对c2使用web_search补充最新数据",
-    "overall_reason": "主要事实已覆盖，部分细节需补充"
-}
+    "missing": ["Some data for c2 was not found."],
+    "feedback": "Use web_search for c2 to supplement the latest data.",
+    "overall_reason": "The main facts are covered, but some details still need supplementation."
+}}
 """

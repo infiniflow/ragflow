@@ -308,10 +308,10 @@ class FunctionToolSession:
     def schemas(self) -> list[dict[str, Any]]:
         return [fn.openai_schema for fn in self.tools_map.values()]
 
-    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> Any:
+    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 300) -> Any:
         return asyncio.run(self.tool_call_async(name, arguments, request_timeout=timeout))
 
-    async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> Any:
+    async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 300) -> Any:
         if name not in self.tools_map:
             raise KeyError(f"Tool {name!r} is not registered")
         if not isinstance(arguments, Mapping):

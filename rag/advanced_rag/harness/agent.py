@@ -64,7 +64,7 @@ async def research_agent_loop(
 
         tool_call = _parse_tool_call(ans)
         if not tool_call:
-            history.append({"role": "user", "content": "请调用工具，不要输出普通文本。"})
+            history.append({"role": "user", "content": "Please call a tool. Do not output plain text."})
             continue
 
         if tool_call.get("name") == "generate_report":
@@ -190,7 +190,7 @@ def _fmt_tool_list(defs: list[dict]) -> str:
         params_text = ", ".join(f"{k}: {v.get('description', '')}" for k, v in params.items())
         lines.append(f"- {name}: {desc}")
         if params_text:
-            lines.append(f"  参数: {params_text}")
+            lines.append(f"  Parameters: {params_text}")
     return "\n".join(lines)
 
 

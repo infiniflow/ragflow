@@ -38,7 +38,7 @@ async def route_node(state: dict, tools) -> dict:
 
     try:
         system = ROUTE_PROMPT.format(question=question)
-        _, msg = tools._fit_messages(system, question)
+        msg = await tools._fit_messages(system, question)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.1})
         if isinstance(ans, tuple):
             ans = ans[0]
