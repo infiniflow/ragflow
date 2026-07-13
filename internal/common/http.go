@@ -17,7 +17,9 @@
 package common
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -90,4 +92,22 @@ func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data
 		Data:    data,
 		Message: message,
 	})
+}
+
+func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, defaultValue int) (int, error) {
+	var parameterInt int
+	var err error
+	if parameter == "" {
+		parameterInt = defaultValue
+	} else {
+		parameterInt, err = strconv.Atoi(parameter)
+		if err != nil {
+			return defaultValue, fmt.Errorf("%w: %s must be an integer", err, parameterName)
+		}
+	}
+
+	if parameterInt < 0 {
+		return defaultValue, fmt.Errorf("%w: %s must be a positive integer or zero", err, parameterName)
+	}
+	return parameterInt, nil
 }

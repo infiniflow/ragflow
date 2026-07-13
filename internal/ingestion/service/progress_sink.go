@@ -18,6 +18,7 @@ package service
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -36,6 +37,11 @@ import (
 type progressSink struct {
 	taskSvc *servicepkg.IngestionTaskService
 	docSvc  docProgressSvc
+	// total is the component-count denominator cached from OnComponentTotal.
+	// It is Store-d once in the Run goroutine and Load-ed by OnComponentProgress,
+	// which eino fires from concurrent parallel-branch goroutines. Atomic because
+	// the two access paths share no other synchronization.
+	total atomic.Int64
 }
 
 // docProgressSvc is the subset of *service.DocumentService the sink needs to
@@ -49,40 +55,40 @@ type docProgressSvc interface {
 func newProgressSink(taskSvc *servicepkg.IngestionTaskService) *progressSink {
 	// Eagerly construct the DocumentService so docSvc is immutable after this
 	// point. eino's compose graph runs parallel branches concurrently, so
-	// OnComponentProgress (and thus docService) can fire from multiple
-	// goroutines; a lazy check-then-act here would be a data race. The sink
-	// owns no server-config dependency, so this is safe in any environment.
+	// OnComponentProgress (and thus docSvc) can fire from multiple goroutines;
+	// a lazy check-then-act here would be a data race. The sink owns no
+	// server-config dependency, so this is safe in any environment.
 	return &progressSink{
 		taskSvc: taskSvc,
 		docSvc:  servicepkg.NewDocumentService(),
 	}
 }
 
-// docService returns the DocumentService bound at sink construction. It is an
-// accessor (not lazy) so concurrent progress callbacks read a stable value.
-func (s *progressSink) docService() docProgressSvc {
-	return s.docSvc
-}
-
 func (s *progressSink) OnComponentTotal(taskID string, total int) {
+	s.total.Store(int64(total))
 	if err := s.taskSvc.UpdateComponentTotal(taskID, total); err != nil {
 		common.Error(fmt.Sprintf("progressSink: update component_total for task %s failed: %v", taskID, err), err)
 	}
 }
 
 func (s *progressSink) OnComponentProgress(ev pipeline.ProgressEvent) {
-	if err := s.taskSvc.RecordComponentProgress(ev.TaskID, ev.Component, ev.Index, ev.Phase, ev.Message); err != nil {
+	if err := s.taskSvc.RecordComponentProgress(ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: record component progress for task %s failed: %v", ev.TaskID, err), err)
 	}
 	if ev.DocumentID == "" {
 		return
 	}
-	agg, err := s.taskSvc.AggregateTaskProgress(ev.TaskID, ev.Total)
-	if err != nil || agg == nil || ev.Total <= 0 {
+	total := s.total.Load()
+	agg, err := s.taskSvc.AggregateTaskProgress(ev.TaskID, int(total))
+	if err != nil {
+		common.Error(fmt.Sprintf("progressSink: aggregate task progress for task %s failed: %v", ev.TaskID, err), err)
 		return
 	}
-	progress, run := deriveDocumentProgress(agg, ev.Total)
-	if err := s.docService().UpdateRunProgress(ev.DocumentID, progress, run, ev.Message); err != nil {
+	if agg == nil || total <= 0 {
+		return
+	}
+	progress, run := deriveDocumentProgress(agg, int(total))
+	if err := s.docSvc.UpdateRunProgress(ev.DocumentID, progress, run, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: mirror progress to document %s for task %s failed: %v", ev.DocumentID, ev.TaskID, err), err)
 	}
 }

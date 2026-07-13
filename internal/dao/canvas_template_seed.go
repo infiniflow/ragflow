@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/entity"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
@@ -56,15 +58,20 @@ func SeedCanvasTemplates() error {
 		return fmt.Errorf("failed to read agent templates directory %s: %w", dir, err)
 	}
 
-	// Match Python's filter_delete([1 == 1]): start from a clean slate so
-	// removed built-ins disappear and updated files take effect.
-	if err := DB.Exec("DELETE FROM canvas_template").Error; err != nil {
-		return fmt.Errorf("failed to clear canvas_template: %w", err)
-	}
-
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
-	var seeded int
+	seeded, err := seedCanvasTemplates(DB, dir, entries)
+	if err != nil {
+		return err
+	}
+
+	common.Info("Seeded canvas templates", zap.Int("count", seeded), zap.String("dir", dir))
+	return nil
+}
+
+func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
+	templates := make([]*entity.CanvasTemplate, 0, len(entries))
+	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -80,15 +87,35 @@ func SeedCanvasTemplates() error {
 			common.Warn("Failed to parse agent template", zap.String("file", path), zap.Error(err))
 			continue
 		}
-		if err := DB.Create(tmpl).Error; err != nil {
-			common.Warn("Failed to save agent template", zap.String("file", path), zap.Error(err))
-			continue
-		}
-		seeded++
+		templates = append(templates, tmpl)
+		ids = append(ids, tmpl.ID)
 	}
 
-	common.Info("Seeded canvas templates", zap.Int("count", seeded), zap.String("dir", dir))
-	return nil
+	if len(templates) == 0 {
+		return 0, nil
+	}
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, tmpl := range templates {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "id"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"avatar", "title", "description", "canvas_type", "canvas_types", "canvas_category", "dsl",
+				}),
+			}).Create(tmpl).Error; err != nil {
+				return fmt.Errorf("failed to save agent template %s: %w", tmpl.ID, err)
+			}
+		}
+
+		if err := tx.Where("id NOT IN ?", ids).Delete(&entity.CanvasTemplate{}).Error; err != nil {
+			return fmt.Errorf("failed to remove stale agent templates: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(templates), nil
 }
 
 func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {

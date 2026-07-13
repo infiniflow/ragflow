@@ -95,7 +95,7 @@ func TestDefaultRunDocumentTask_RequiresConfiguredPipelineID(t *testing.T) {
 	}
 }
 
-func TestExecuteTask_PipelineRoutesToTaskHandler(t *testing.T) {
+func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -106,12 +106,12 @@ func TestExecuteTask_PipelineRoutesToTaskHandler(t *testing.T) {
 	)
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	var routedToPipeline bool
+	var runDocumentTaskCalled bool
 	var gotTaskID string
 	var gotProgress []float64
 	var gotMsgs []string
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		routedToPipeline = true
+		runDocumentTaskCalled = true
 		gotTaskID = ingestionTask.ID
 		wrapped := func(prog float64, msg string) {
 			gotProgress = append(gotProgress, prog*100)
@@ -129,8 +129,8 @@ func TestExecuteTask_PipelineRoutesToTaskHandler(t *testing.T) {
 
 	ingestor.executeTask(taskCtx)
 
-	if !routedToPipeline {
-		t.Fatal("expected executeTask to route pipeline task to runDocumentTask")
+	if !runDocumentTaskCalled {
+		t.Fatal("expected executeTask to run runDocumentTask")
 	}
 	if gotTaskID != taskID {
 		t.Fatalf("runDocumentTask got task ID %q, want %q", gotTaskID, taskID)

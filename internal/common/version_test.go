@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package utility
+package common
 
 import (
 	"fmt"
