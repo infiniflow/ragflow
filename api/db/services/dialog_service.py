@@ -60,6 +60,23 @@ def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
 
 
+async def _has_lightgraph_data(kb_ids: list[str]) -> bool:
+    """Quick check: does any of the given KBs have lightgraph entity data?"""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        for kb_id in kb_ids:
+            res = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: settings.docStoreConn.search(["id"], [], {"compile_kwd": ["lightgraph"], "knowledge_graph_kwd": "entity", "kb_id": [kb_id]}, [], OrderByExpr(), 0, 1, None, [kb_id]),
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
     """
     Citation prep: on the ES backend the main retrieval call deliberately
@@ -786,6 +803,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 )
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
+            # ── LightGraph auto-retrieval ────────────────────────────
+            # Automatically includes LightGraph context when the KB has
+            # lightgraph entity data.  No separate config toggle needed.
+            if settings.lightgraph_retriever and await _has_lightgraph_data(dialog.kb_ids):
+                default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+                try:
+                    lg_ck = await settings.lightgraph_retriever.retrieval(
+                        " ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id)
+                    )
+                    if lg_ck and lg_ck.get("content_with_weight"):
+                        kbinfos["chunks"].insert(0, lg_ck)
+                except Exception:
+                    logging.exception("LightGraph retrieval failed")
 
     if include_reference_metadata:
         logging.debug(

@@ -863,6 +863,9 @@ export default {
       useGraphRag: '提取知识图谱',
       useGraphRagTip:
         '基于知识库内所有切好的文本块构建知识图谱，用以提升多跳和复杂问题回答的正确率。请注意：构建知识图谱将消耗大量 token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+      lightGraph: '轻量级知识图谱',
+      lightGraphTip:
+        '通过 spaCy NER 自动提取实体和关系，无需 LLM 调用。文档摄入时自动运行，支持 entity 级增量更新。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>

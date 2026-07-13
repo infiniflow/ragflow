@@ -1,4 +1,5 @@
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import LightGraphFormField from '@/components/parse-configuration/lightgraph-form-fields';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -309,6 +310,11 @@ export default function DatasetSettings() {
                       unbindFunc={unbindFunc}
                       handleAutoParse={handleAutoParse}
                     />
+                    <Divider />
+                    <div className="text-base font-medium text-text-primary">
+                      {t('knowledgeConfiguration.globalIndex')}
+                    </div>
+                    <LightGraphFormField />
                   </MainContainer>
                 </div>
 

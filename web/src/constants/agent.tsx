@@ -1,4 +1,3 @@
-import React from 'react';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 import {
   Circle,

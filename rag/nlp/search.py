@@ -586,6 +586,7 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
+            "must_not": {"exists": "compile_kwd"},
         }
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 

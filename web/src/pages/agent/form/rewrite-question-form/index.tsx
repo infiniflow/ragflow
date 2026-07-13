@@ -10,8 +10,8 @@ import {
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslation } from 'react-i18next';
-import { INextOperatorForm } from '../../interface';
 import { useOwnerTenantId } from '../../context';
+import { INextOperatorForm } from '../../interface';
 import { GoogleLanguageOptions } from '../../options';
 
 const RewriteQuestionForm = ({ form }: INextOperatorForm) => {

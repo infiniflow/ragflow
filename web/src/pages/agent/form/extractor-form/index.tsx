@@ -15,10 +15,10 @@ import {
   ContextGeneratorFieldName,
   initialExtractorValues,
 } from '../../constant/pipeline';
+import { useOwnerTenantId } from '../../context';
 import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
-import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -66,7 +66,9 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
+        <LargeModelFormField
+          ownerTenantId={ownerTenantId}
+        ></LargeModelFormField>
         <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch

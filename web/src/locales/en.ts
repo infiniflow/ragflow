@@ -948,6 +948,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       useGraphRag: 'Knowledge graph',
       useGraphRagTip:
         'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+      lightGraph: 'Lightweight knowledge graph',
+      lightGraphTip:
+        'Extract entities and relationships using spaCy NER (no LLM required). Runs automatically during document ingestion with entity-level incremental updates.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>

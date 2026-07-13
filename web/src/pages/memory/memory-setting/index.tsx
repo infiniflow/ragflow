@@ -78,36 +78,36 @@ export default function MemoryMessage() {
         <MemorySettingProvider data={data}>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
-            <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-              <MainContainer className="text-text-secondary !space-y-10">
-                <div className="text-base font-medium text-text-primary">
-                  {t('knowledgeConfiguration.baseInfo')}
-                </div>
-                <BasicInfo></BasicInfo>
-                <Divider />
-                <MemoryModelForm />
-                <AdvancedSettingsForm />
-              </MainContainer>
-            </div>
-            <div className="text-right items-center flex justify-end gap-3 w-[768px]">
-              <Button
-                type="reset"
-                className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                onClick={() => {
-                  form.reset();
-                }}
-              >
-                {t('knowledgeConfiguration.cancel')}
-              </Button>
-              <DynamicForm.SavingButton
-                submitLoading={loading}
-                submitFunc={(value) => {
-                  console.log('form-value', value);
-                  onSubmit(value as IMemory);
-                }}
-              ></DynamicForm.SavingButton>
-            </div>
-          </form>
+              <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
+                <MainContainer className="text-text-secondary !space-y-10">
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.baseInfo')}
+                  </div>
+                  <BasicInfo></BasicInfo>
+                  <Divider />
+                  <MemoryModelForm />
+                  <AdvancedSettingsForm />
+                </MainContainer>
+              </div>
+              <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+                <Button
+                  type="reset"
+                  className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+                  onClick={() => {
+                    form.reset();
+                  }}
+                >
+                  {t('knowledgeConfiguration.cancel')}
+                </Button>
+                <DynamicForm.SavingButton
+                  submitLoading={loading}
+                  submitFunc={(value) => {
+                    console.log('form-value', value);
+                    onSubmit(value as IMemory);
+                  }}
+                ></DynamicForm.SavingButton>
+              </div>
+            </form>
           </Form>
         </MemorySettingProvider>
       </div>

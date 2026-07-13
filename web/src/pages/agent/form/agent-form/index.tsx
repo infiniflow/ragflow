@@ -160,7 +160,10 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel ownerTenantId={ownerTenantId}></LargeModelFormField>
+          <LargeModelFormField
+            showSpeech2TextModel
+            ownerTenantId={ownerTenantId}
+          ></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type?.includes(
             LlmModelType.Image2text,
           ) && (
