@@ -322,8 +322,15 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
-          sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
+          mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          (
+            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
+            sudo docker pull ubuntu:24.04
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
         run: |
@@ -489,6 +496,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Infinity
+        if: env.API_PROXY_SCHEME == 'python'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -528,6 +536,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Infinity
+        if: env.API_PROXY_SCHEME == 'python'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -791,8 +800,15 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
-          sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
+          mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          (
+            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
+            sudo docker pull ubuntu:24.04
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
         run: |
@@ -958,6 +974,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Elasticsearch
+        if: env.API_PROXY_SCHEME == 'python'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -997,6 +1014,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Elasticsearch
+        if: env.API_PROXY_SCHEME == 'python'
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
