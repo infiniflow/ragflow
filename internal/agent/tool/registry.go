@@ -45,7 +45,7 @@ var registry = map[string]Factory{
 	"google_scholar_search": buildGoogleScholarTool,
 	"jin10":                 noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":              buildKeenableTool,
-	"pubmed":                noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
+	"pubmed":                buildPubMedTool,
 	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
@@ -200,6 +200,30 @@ func buildGoogleScholarTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Patents = &v
 	}
 	return NewGoogleScholarToolWithDefaults(nil, defaults), nil
+}
+
+func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := pubmedParams{}
+	for key := range params {
+		switch key {
+		case "top_n", "email":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "pubmed", key)
+		}
+	}
+	if topN, ok := intParam(params, "top_n"); ok {
+		if topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "pubmed")
+		}
+		defaults.TopN = topN
+	}
+	if email, ok := stringParam(params, "email"); ok {
+		if strings.TrimSpace(email) == "" {
+			return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param email", "pubmed")
+		}
+		defaults.Email = email
+	}
+	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {

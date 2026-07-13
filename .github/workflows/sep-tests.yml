@@ -335,6 +335,7 @@ jobs:
         run: |
           set -euo pipefail
           # install ss
+          sudo chmod 1777 /tmp
           sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
@@ -799,6 +800,7 @@ jobs:
         run: |
           set -euo pipefail
           # install ss
+          sudo chmod 1777 /tmp
           sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
