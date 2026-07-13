@@ -121,7 +121,7 @@ class SoMarkParser(RAGFlowPdfParser):
 
     # /usage quota check only works in SaaS; private deployments fall back
     # to a generic HEAD health check.
-    SAAS_BASE_URL = "https://somark.tech/api/v1"
+    SAAS_BASE_URL = "https://somark.cn/api/v1"
     USAGE_REQUEST_TIMEOUT = 10  # /usage request timeout
 
     # SoMark error codes
@@ -142,11 +142,17 @@ class SoMarkParser(RAGFlowPdfParser):
     POLL_INTERVAL_GROWTH = 1.5  # multiplier applied after each poll
     POLL_REQUEST_TIMEOUT = 30  # single poll request timeout
 
+    _REGION_BASE_URLS = {
+        "china": "https://somark.cn/api/v1",
+        "overseas": "https://somark.ai/api/v1",
+    }
+
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "",
         api_key: str = "",
         *,
+        region: str = "china",
         image_format: str = "url",
         formula_format: str = "latex",
         table_format: str = "html",
@@ -159,7 +165,10 @@ class SoMarkParser(RAGFlowPdfParser):
         enable_image_understanding: bool = True,
         keep_header_footer: bool = False,
     ):
+        if not base_url:
+            base_url = self._REGION_BASE_URLS.get(region, self._REGION_BASE_URLS["china"])
         self.base_url = base_url.strip().rstrip("/")
+        self.region = region
         # Intentionally NOT stripping: caller may want to pass raw key as-is
         # (e.g. for verification where whitespace would also be reported back).
         self.api_key = api_key
@@ -749,7 +758,7 @@ class SoMarkParser(RAGFlowPdfParser):
 
 if __name__ == "__main__":
     parser = SoMarkParser(
-        base_url=os.environ.get("SOMARK_BASE_URL", "https://somark.tech/api/v1"),
+        base_url=os.environ.get("SOMARK_BASE_URL", "https://somark.cn/api/v1"),
         api_key=os.environ.get("SOMARK_API_KEY", ""),
     )
     ok, reason = parser.check_installation()

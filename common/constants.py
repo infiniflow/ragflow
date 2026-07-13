@@ -345,7 +345,7 @@ SOMARK_ENV_KEYS = [
     "SOMARK_KEEP_HEADER_FOOTER",
 ]
 SOMARK_DEFAULT_CONFIG = {
-    "SOMARK_BASE_URL": "https://somark.tech/api/v1",
+    "SOMARK_BASE_URL": "https://somark.cn/api/v1",
     "SOMARK_API_KEY": "",
     "SOMARK_IMAGE_FORMAT": "url",
     "SOMARK_FORMULA_FORMAT": "latex",
