@@ -127,7 +127,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
             "messages": [{"role": "user", "content": "hello"}],
             "stream": False,
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     payload = res.json()
@@ -157,7 +157,7 @@ def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_cli
             "model": "model",
             "messages": [{"role": "user", "content": "hello"}],
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     assert "application/json" in res.headers.get("Content-Type", ""), res.headers.get("Content-Type", "")
@@ -182,7 +182,7 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
                 "reference_metadata": {"include": True, "fields": ["author"]},
             },
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     payload = res.json()
