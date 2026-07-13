@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { LLMFactory } from '@/constants/llm';
 import {
   useAddInstanceModel,
   useDeleteInstanceModels,
@@ -122,6 +123,7 @@ interface UseModelsCatalogArgs {
   isDraftInstance: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
+  instanceDetailsLoaded: boolean;
 }
 
 export function useModelsCatalog({
@@ -131,6 +133,7 @@ export function useModelsCatalog({
   isDraftInstance,
   resolveCreds,
   instanceModels,
+  instanceDetailsLoaded,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -141,9 +144,13 @@ export function useModelsCatalog({
   // The result is merged into `catalog`; the displayed list then becomes
   // the union of catalog + instance models.
   const handleListModels = async () => {
+    const { apiKey, baseUrl } = resolveCreds();
+    if (providerName === LLMFactory.VolcEngine && !apiKey) {
+      setHasFetched(true);
+      return;
+    }
     setManualListLoading(true);
     try {
-      const { apiKey, baseUrl } = resolveCreds();
       const ret = await listProviderModels({
         provider_name: providerName,
         api_key: apiKey,
@@ -163,16 +170,21 @@ export function useModelsCatalog({
   // Auto-fetch the provider's available-models catalog when this section
   // mounts (effectively "when the card is expanded"). Skipped for draft
   // instances and catalog-preview-only hosts.
+
+  const requiresApiKey = providerName === LLMFactory.VolcEngine;
+  const credsReady = !requiresApiKey || instanceDetailsLoaded;
+
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
     if (isDraftInstance) return;
+    if (!credsReady) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerName, instanceName, hideActions]);
+  }, [providerName, instanceName, hideActions, credsReady]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
   // it returned an empty array — so `hideIfEmpty` can safely take effect.
