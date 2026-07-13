@@ -273,8 +273,9 @@ class SoMarkOcrModel(Base, SoMarkParser):
         base_url = _resolve(
             "somark_base_url",
             "SOMARK_BASE_URL",
-            kwargs.get("base_url", "https://somark.cn/api/v1"),
+            kwargs.get("base_url", ""),
         )
+        region = _resolve("somark_region", "SOMARK_REGION", "china")
         api_key = _resolve("somark_api_key", "SOMARK_API_KEY", key_as_secret)
         image_format = _resolve("somark_image_format", "SOMARK_IMAGE_FORMAT", "url")
         formula_format = _resolve("somark_formula_format", "SOMARK_FORMULA_FORMAT", "latex")
@@ -301,6 +302,7 @@ class SoMarkOcrModel(Base, SoMarkParser):
             self,
             base_url=base_url,
             api_key=api_key,
+            region=region,
             image_format=image_format,
             formula_format=formula_format,
             table_format=table_format,
