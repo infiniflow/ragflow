@@ -128,8 +128,8 @@ def _load_session_module(monkeypatch):
     class _StubLLMType(StrEnum):
         CHAT = "chat"
         EMBEDDING = "embedding"
-        SPEECH2TEXT = "speech2text"
-        IMAGE2TEXT = "image2text"
+        ASR = "asr"
+        VISION = "vision"
         RERANK = "rerank"
         TTS = "tts"
         OCR = "ocr"
@@ -499,9 +499,9 @@ def _load_session_module(monkeypatch):
         model_name = ""
         if model_type_val == "embedding":
             model_name = tenant.embd_id
-        elif model_type_val == "speech2text":
+        elif model_type_val == "asr":
             model_name = tenant.asr_id
-        elif model_type_val == "image2text":
+        elif model_type_val == "vision":
             model_name = tenant.img2txt_id
         elif model_type_val == "chat":
             model_name = tenant.llm_id
@@ -513,7 +513,7 @@ def _load_session_module(monkeypatch):
             raise Exception("OCR model name is required")
         if not model_name:
             # Use friendly model type names
-            friendly_names = {"embedding": "Embedding", "speech2text": "ASR", "image2text": "Image2Text", "chat": "Chat", "rerank": "Rerank", "tts": "TTS", "ocr": "OCR"}
+            friendly_names = {"embedding": "Embedding", "asr": "ASR", "vision": "Vision", "chat": "Chat", "rerank": "Rerank", "tts": "TTS", "ocr": "OCR"}
             friendly_name = friendly_names.get(model_type_val, model_type_val)
             raise Exception(f"No default {friendly_name} model is set")
         return _MockModelConfig2(tenant_id, model_name, model_type_val).to_dict()
@@ -2197,7 +2197,7 @@ def _load_chat_api_module(monkeypatch):
     class _LLMType(StrEnum):
         CHAT = "chat"
         TTS = "tts"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         RERANK = "rerank"
 
     quart_mod = ModuleType("quart")

@@ -411,9 +411,8 @@ func (r *recordingSink) OnComponentProgress(ev ProgressEvent) {
 }
 
 // TestPipelineRunForwardsProgressToSink verifies the pipeline reports the
-// component-total denominator and each component lifecycle event to the
-// injected ProgressSink, and carries task/document/total context on every
-// event so the sink needs no canvas knowledge.
+// component-total denominator once via OnComponentTotal and each component
+// lifecycle event to the injected ProgressSink.
 func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
 	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
@@ -462,9 +461,6 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 		}
 		if ev.DocumentID != "doc-sink" {
 			t.Fatalf("event DocumentID = %q, want doc-sink", ev.DocumentID)
-		}
-		if ev.Total != 3 {
-			t.Fatalf("event Total = %d, want 3", ev.Total)
 		}
 		seen[ev.Component] = true
 	}
