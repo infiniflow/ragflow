@@ -26,45 +26,20 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-
 	"ragflow/internal/agent/runtime"
-	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/tokenizer"
 )
 
 const githubPromptMaxTokens = 200000
 
-type githubInvoker interface {
-	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
-}
-
 // githubComponent is the Canvas-facing GitHub repository search component.
 // It mirrors agent/tools/github.py: query is a runtime input, while top_n is
 // validated once from node parameters and defaults to ten.
 type githubComponent struct {
-	inner githubInvoker
+	inner toolInvoker
 }
 
-func newGitHubComponent(params map[string]any) (Component, error) {
-	toolParams := make(map[string]any, 1)
-	for _, key := range []string{"top_n"} {
-		if value, ok := params[key]; ok {
-			toolParams[key] = value
-		}
-	}
-	inner, err := agenttool.BuildByName("github", toolParams)
-	if err != nil {
-		return nil, err
-	}
-	invoker, ok := inner.(githubInvoker)
-	if !ok {
-		return nil, fmt.Errorf("GitHub: tool does not implement InvokableRun")
-	}
-	return newGitHubComponentWithInvoker(invoker), nil
-}
-
-func newGitHubComponentWithInvoker(inner githubInvoker) Component {
+func newGitHubComponentWithInvoker(inner toolInvoker) Component {
 	return &githubComponent{inner: inner}
 }
 
@@ -227,4 +202,13 @@ func truncateRunes(value string, limit int) string {
 		return value
 	}
 	return string([]rune(value)[:limit])
+}
+
+func init() {
+	registerToolComponent(toolComponentSpec{
+		componentName: "GitHub",
+		toolName:      "github",
+		toolParamKeys: []string{"top_n"},
+		wrap:          newGitHubComponentWithInvoker,
+	})
 }

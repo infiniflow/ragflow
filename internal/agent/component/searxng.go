@@ -25,10 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-
 	"ragflow/internal/agent/runtime"
-	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/tokenizer"
 )
 
@@ -38,33 +35,11 @@ var searxngDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;b
 
 var searxngNewlinePattern = regexp.MustCompile(`\n+`)
 
-type searxngInvoker interface {
-	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
-}
-
 type searxngComponent struct {
-	inner searxngInvoker
+	inner toolInvoker
 }
 
-func newSearXNGComponent(params map[string]any) (Component, error) {
-	toolParams := make(map[string]any, 2)
-	for _, key := range []string{"top_n", "searxng_url"} {
-		if value, ok := params[key]; ok {
-			toolParams[key] = value
-		}
-	}
-	inner, err := agenttool.BuildByName("searxng", toolParams)
-	if err != nil {
-		return nil, err
-	}
-	invoker, ok := inner.(searxngInvoker)
-	if !ok {
-		return nil, fmt.Errorf("SearXNG: tool does not implement InvokableRun")
-	}
-	return newSearXNGComponentWithInvoker(invoker), nil
-}
-
-func newSearXNGComponentWithInvoker(inner searxngInvoker) Component {
+func newSearXNGComponentWithInvoker(inner toolInvoker) Component {
 	return &searxngComponent{inner: inner}
 }
 
@@ -248,5 +223,10 @@ func hashSearXNGString(value string, modulus int) int {
 }
 
 func init() {
-	Register("SearXNG", newSearXNGComponent)
+	registerToolComponent(toolComponentSpec{
+		componentName: "SearXNG",
+		toolName:      "searxng",
+		toolParamKeys: []string{"top_n", "searxng_url"},
+		wrap:          newSearXNGComponentWithInvoker,
+	})
 }
