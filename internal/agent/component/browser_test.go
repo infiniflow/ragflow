@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 )
 
 // mockStagehandInvoker captures RunExtract requests and returns a
@@ -210,6 +211,59 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	}
 	if len(mock.requests) != 0 {
 		t.Errorf("runtime should not be called when tenant lookup fails; got %d calls", len(mock.requests))
+	}
+}
+
+func TestResolveBrowserLLM_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "default",
+		APIKey:       "sk-instance",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "tenant-model-1",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	prevLookup := tenantLLMLookupForTest
+	tenantLLMLookupForTest = nil
+	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+
+	provider, model, apiKey, baseURL, err := resolveBrowserLLM("tenant-1", "tenant-model-1")
+	if err != nil {
+		t.Fatalf("resolveBrowserLLM: %v", err)
+	}
+	if provider != "OpenAI" {
+		t.Fatalf("provider=%q, want OpenAI", provider)
+	}
+	if model != "gpt-4o" {
+		t.Fatalf("model=%q, want gpt-4o", model)
+	}
+	if apiKey != "sk-instance" {
+		t.Fatalf("apiKey=%q, want sk-instance", apiKey)
+	}
+	if baseURL != "https://instance.example/v1" {
+		t.Fatalf("baseURL=%q, want https://instance.example/v1", baseURL)
 	}
 }
 

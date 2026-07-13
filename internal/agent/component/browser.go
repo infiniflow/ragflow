@@ -51,7 +51,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/service"
+
+	"gorm.io/gorm"
 )
 
 const componentNameBrowser = "Browser"
@@ -437,9 +438,8 @@ func (b *BrowserComponent) Outputs() map[string]string {
 }
 
 // resolveBrowserLLM resolves the Browser's selected model into the model name
-// and credentials required by the stagehand runtime. It first tries
-// ResolveModelConfig for tenant_model.id values, then falls back to
-// model@factory parsing via resolveTenantLLM
+// and credentials required by the stagehand runtime. It first tries a
+// tenant_model.id lookup, then model@factory parsing via resolveTenantLLM.
 //
 // Tests override the lookup via `tenantLLMLookupForTest` (a
 // package-level function variable) so they don't need a real DB.
@@ -452,23 +452,12 @@ func resolveBrowserLLM(tenantID, llmID string) (providerName, modelName, apiKey,
 		return factory, oldModelName, apiKey, baseURL, err
 	}
 
-	driver, modelName, apiConfig, _, err := service.NewModelProviderService().ResolveModelConfig(tenantID, entity.ModelTypeChat, llmID)
+	providerName, modelName, apiKey, baseURL, err = resolveTenantModelBrowserLLM(tenantID, llmID)
 	if err == nil {
-		if apiConfig != nil {
-			if apiConfig.ApiKey != nil {
-				apiKey = *apiConfig.ApiKey
-			}
-			if apiConfig.BaseURL != nil {
-				baseURL = *apiConfig.BaseURL
-			}
-		}
-		provider := ""
-		if driver != nil {
-			provider = driver.Name()
-		}
-		baseURL = browserOpenAICompatibleBaseURL(baseURL, provider)
-		return provider, modelName, apiKey, baseURL, nil
+		baseURL = browserOpenAICompatibleBaseURL(baseURL, providerName)
+		return providerName, modelName, apiKey, baseURL, nil
 	}
+	modelErr := err
 
 	oldModelName, factory := resolveLLMID(llmID)
 	apiKey, baseURL, oldErr := resolveTenantLLM(tenantID, oldModelName, factory)
@@ -476,7 +465,58 @@ func resolveBrowserLLM(tenantID, llmID string) (providerName, modelName, apiKey,
 		baseURL = browserOpenAICompatibleBaseURL(baseURL, factory)
 		return factory, oldModelName, apiKey, baseURL, nil
 	}
-	return "", "", "", "", fmt.Errorf("model provider lookup: %v; tenant_llm fallback: %w", err, oldErr)
+	return "", "", "", "", fmt.Errorf("tenant_model lookup: %v; tenant_llm fallback: %w", modelErr, oldErr)
+}
+
+func resolveTenantModelBrowserLLM(tenantID, modelID string) (providerName, modelName, apiKey, baseURL string, err error) {
+	modelRow, err := dao.NewTenantModelDAO().GetByID(modelID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", err
+		}
+		return "", "", "", "", fmt.Errorf("tenant model id=%s lookup failed: %w", modelID, err)
+	}
+	if modelRow.Status != "active" {
+		return "", "", "", "", fmt.Errorf("tenant model id=%s is disabled", modelID)
+	}
+	if !entity.ModelType(modelRow.ModelType).Has(entity.ModelTypeChat) {
+		return "", "", "", "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, entity.ModelTypeChat.String())
+	}
+
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(modelRow.ProviderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
+		}
+		return "", "", "", "", err
+	}
+	if provider == nil {
+		return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
+	}
+	if provider.TenantID != tenantID {
+		return "", "", "", "", fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+	}
+
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(modelRow.InstanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)
+		}
+		return "", "", "", "", err
+	}
+	if instance == nil {
+		return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)
+	}
+
+	apiKey = instance.APIKey
+	if strings.TrimSpace(instance.Extra) != "" {
+		var extra map[string]string
+		if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+			return "", "", "", "", err
+		}
+		baseURL = extra["base_url"]
+	}
+	return provider.ProviderName, modelRow.ModelName, apiKey, baseURL, nil
 }
 
 func browserOpenAICompatibleBaseURL(baseURL, provider string) string {
