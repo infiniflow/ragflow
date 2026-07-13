@@ -26,8 +26,8 @@ import (
 	"testing"
 )
 
-func TestWritePDF_UsesPandocToolchain(t *testing.T) {
-	requirePDFToolchain(t)
+func TestWritePDF_UsesGoLibrary(t *testing.T) {
+	requirePDFLatinFont(t)
 	out, err := WritePDF("Hello\n中文", PDFOptions{})
 	if err != nil {
 		t.Fatalf("WritePDF: %v", err)
@@ -38,7 +38,7 @@ func TestWritePDF_UsesPandocToolchain(t *testing.T) {
 }
 
 func TestWritePDF_RendersVisibleText(t *testing.T) {
-	requirePDFToolchain(t)
+	requirePDFLatinFont(t)
 	if _, err := exec.LookPath("pdftoppm"); err != nil {
 		t.Skip("pdftoppm not available")
 	}
@@ -98,12 +98,22 @@ func TestWritePDF_RendersVisibleText(t *testing.T) {
 	}
 }
 
-func requirePDFToolchain(t *testing.T) {
+func TestResolvePDFLatinFontPathHonorsEnv(t *testing.T) {
+	dir := t.TempDir()
+	fontPath := filepath.Join(dir, "custom.ttf")
+	if err := os.WriteFile(fontPath, []byte("placeholder"), 0o600); err != nil {
+		t.Fatalf("WriteFile font: %v", err)
+	}
+	t.Setenv("RAGFLOW_PDF_LATIN_FONT_PATH", fontPath)
+	if got := resolvePDFLatinFontPath(); got != fontPath {
+		t.Fatalf("resolvePDFLatinFontPath() = %q, want %q", got, fontPath)
+	}
+}
+
+func requirePDFLatinFont(t *testing.T) {
 	t.Helper()
-	for _, binary := range []string{"pandoc", "xelatex"} {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not available", binary)
-		}
+	if resolvePDFLatinFontPath() == "" {
+		t.Skip("no local Latin PDF font available")
 	}
 }
 
