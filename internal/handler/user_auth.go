@@ -76,7 +76,7 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 	c.Redirect(http.StatusFound, init.AuthURL)
 }
 
-// OAuthCallback handles the OAuth/OIDC callback for the configured channel.
+// OAuthChannelCallback handles the OAuth/OIDC callback for the configured channel.
 // Mirrors Python's GET /auth/oauth/<channel>/callback: it verifies the
 // state, exchanges the code for an access token, fetches user info, and
 // then either logs in an existing user or registers a new one. On every
@@ -89,7 +89,7 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 // @Param code query string true "authorization code"
 // @Param state query string true "state token"
 // @Router /api/v1/auth/oauth/{channel}/callback [get]
-func (h *UserHandler) OAuthCallback(c *gin.Context) {
+func (h *UserHandler) OAuthChannelCallback(c *gin.Context) {
 	channel := c.Param("channel")
 	// An empty channel segment (/auth/oauth//callback) is a malformed path,
 	// not a real channel. Python's router never matches it and returns 404;
