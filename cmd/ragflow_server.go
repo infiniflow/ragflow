@@ -551,10 +551,10 @@ func runIngestor(args *serverArgs) error {
 	}
 
 	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ingestor.Stop()
+	ingestor.Stop(shutdownCtx)
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
