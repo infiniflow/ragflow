@@ -18,6 +18,7 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/mail"
 	"net/url"
 	"strconv"
@@ -554,7 +555,7 @@ func FromEnvironments() error {
 	// Minio
 	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
 	if minioHost != "" {
-		globalConfig.StorageEngine.Minio.Host = minioHost
+		globalConfig.StorageEngine.Minio.Host = minioEndpoint(minioHost, globalConfig.StorageEngine.Minio.Host)
 	}
 
 	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
@@ -571,6 +572,19 @@ func FromEnvironments() error {
 	}
 
 	return nil
+}
+
+func minioEndpoint(host, configuredEndpoint string) string {
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return host
+	}
+
+	port := "9000"
+	if _, configuredPort, err := net.SplitHostPort(configuredEndpoint); err == nil && configuredPort != "" {
+		port = configuredPort
+	}
+
+	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
 
 func FromConfigFile(configPath string) error {

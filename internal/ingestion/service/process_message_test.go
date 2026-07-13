@@ -23,10 +23,7 @@ func TestProcessMessage_NonIngestionTaskAcks(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle("task-1", "not-ingestion")
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("non-ingestion: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
@@ -46,10 +43,7 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	// No task seeded in DB — StartRunning returns ErrTaskNotFound.
 	handle := newFakeHandle("no-such-task", common.TaskTypeIngestionTask)
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("not-found: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
@@ -72,10 +66,7 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("completed: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
@@ -99,10 +90,7 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("claim-fail: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
@@ -123,10 +111,7 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	// Ack/Nack must not be called — settlement is deferred to the worker.
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("enqueued: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -159,10 +144,7 @@ func TestProcessMessage_ChannelFullNacks(t *testing.T) {
 
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	err := ingestor.processMessage(handle)
-	if err != nil {
-		t.Fatalf("expected nil (nack ok → continue), got: %v", err)
-	}
+	ingestor.processMessage(handle)
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("channel-full: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
@@ -176,5 +158,34 @@ func TestProcessMessage_ChannelFullNacks(t *testing.T) {
 	// Drain the fillers.
 	for i := 0; i < cap(ingestor.taskChan); i++ {
 		<-ingestor.taskChan
+	}
+}
+
+// TestProcessMessage_StartRunningErrorNacks: when StartRunning returns a
+// non-ErrTaskNotFound error (e.g. a DB blip), processMessage nacks the
+// message for redelivery instead of killing the consumer (B2 fix). The
+// consume loop's resilience relies on this never being a fatal return.
+func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	// Drop the tasks table so GetTask fails with a generic SQL error, not
+	// ErrRecordNotFound (which would map to ErrTaskNotFound and ack-skip).
+	if err := db.Migrator().DropTable(&entity.IngestionTask{}); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+
+	ingestor.processMessage(handle)
+
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("start-running error: expected 1 Nack/0 Ack (redeliver), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 0 {
+		t.Fatal("expected no task enqueued on activation failure")
 	}
 }

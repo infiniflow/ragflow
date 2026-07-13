@@ -1549,7 +1549,6 @@ func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([
 			pageSize = int64(documentParserConfigInt(doc.ParserConfig, "task_page_size", 22))
 		}
 		if doc.ParserID == string(entity.ParserTypeOne) ||
-			doc.ParserID == string(entity.ParserTypeKG) ||
 			documentParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 			pageSize = maximumTaskPageNumber
 		}

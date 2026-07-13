@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 )
 
 // mockStagehandInvoker captures RunExtract requests and returns a
@@ -145,8 +146,8 @@ func TestBrowser_ResolvesSysQueryTemplate(t *testing.T) {
 		"prompts": "{sys.query}打开百度，搜索'2026年最新AI技术趋势'",
 	})
 	ctx := stateWith(t, map[string]any{
-		"user_id": "tenant-1",
-		"query":   "what's the latest",
+		"tenant_id": "tenant-1",
+		"query":     "what's the latest",
 	})
 
 	// LLM lookup will fail (no DB seeded in test), so we can't
@@ -196,7 +197,7 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 		"llm_id":  "deepseek-v4-pro@DeepSeek",
 		"prompts": "do something",
 	})
-	ctx := stateWith(t, map[string]any{"user_id": "tenant-1"})
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
 	_, err := c.Invoke(ctx, nil)
 	if err == nil {
@@ -213,8 +214,60 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	}
 }
 
-// TestBrowser_MissingTenant: state.Sys["user_id"] is the only
-// tenant handle (until the cross-cutting tenant_id fix lands).
+func TestResolveBrowserLLM_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "default",
+		APIKey:       "sk-instance",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "tenant-model-1",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	prevLookup := tenantLLMLookupForTest
+	tenantLLMLookupForTest = nil
+	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+
+	provider, model, apiKey, baseURL, err := resolveBrowserLLM("tenant-1", "tenant-model-1")
+	if err != nil {
+		t.Fatalf("resolveBrowserLLM: %v", err)
+	}
+	if provider != "OpenAI" {
+		t.Fatalf("provider=%q, want OpenAI", provider)
+	}
+	if model != "gpt-4o" {
+		t.Fatalf("model=%q, want gpt-4o", model)
+	}
+	if apiKey != "sk-instance" {
+		t.Fatalf("apiKey=%q, want sk-instance", apiKey)
+	}
+	if baseURL != "https://instance.example/v1" {
+		t.Fatalf("baseURL=%q, want https://instance.example/v1", baseURL)
+	}
+}
+
+// TestBrowser_MissingTenant: state.Sys["tenant_id"] is required.
 // Missing tenant_id must error.
 func TestBrowser_MissingTenant(t *testing.T) {
 	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
@@ -224,7 +277,7 @@ func TestBrowser_MissingTenant(t *testing.T) {
 		"llm_id":  "gpt-4o@OpenAI",
 		"prompts": "x",
 	})
-	// state with no user_id
+	// state with no tenant_id
 	state := canvas.NewCanvasState("run-1", "task-1")
 	ctx := canvas.WithState(context.Background(), state)
 
@@ -235,7 +288,7 @@ func TestBrowser_MissingTenant(t *testing.T) {
 }
 
 // TestBrowser_PropagatesRuntimeError: a runtime error surfaces
-// wrapped as `Browser: stagehand run: ...`.
+// wrapped with model context.
 //
 // We can't easily seed the tenant DAO in a unit test, so this test
 // verifies the error-wrapping contract by injecting a mock runtime
@@ -258,7 +311,7 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 		"llm_id":  "gpt-4o@OpenAI",
 		"prompts": "x",
 	})
-	ctx := stateWith(t, map[string]any{"user_id": "tenant-1"})
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
 	_, err := c.Invoke(ctx, nil)
 	if err == nil {
@@ -267,8 +320,95 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 	if !strings.Contains(err.Error(), "stagehand extract") {
 		t.Errorf("error should mention stagehand extract; got %v", err)
 	}
+	if !strings.Contains(err.Error(), `model="openai/gpt-4o"`) {
+		t.Errorf("error should include model context; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "base_url=https://api.openai.com/v1") {
+		t.Errorf("error should include base_url context; got %v", err)
+	}
 	if !strings.Contains(err.Error(), "boom") {
 		t.Errorf("error should include underlying message; got %v", err)
+	}
+}
+
+func TestBrowserBaseURLForLog(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: "<provider default>"},
+		{name: "blank", in: " \t\n ", want: "<provider default>"},
+		{name: "redacts_userinfo", in: "https://user:pass@example.com/v1", want: "https://example.com/v1"},
+		{name: "invalid", in: "://bad", want: "<invalid>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := browserBaseURLForLog(tc.in); got != tc.want {
+				t.Fatalf("browserBaseURLForLog(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBrowserOpenAICompatibleBaseURL(t *testing.T) {
+	cases := []struct {
+		name     string
+		baseURL  string
+		provider string
+		want     string
+	}{
+		{
+			name:     "explicit_wins",
+			baseURL:  " https://gateway.example/v1 ",
+			provider: "DeepSeek",
+			want:     "https://gateway.example/v1",
+		},
+		{
+			name:     "deepseek_default",
+			provider: "DeepSeek",
+			want:     "https://api.deepseek.com/v1",
+		},
+		{
+			name:     "siliconflow_default",
+			provider: "SILICONFLOW",
+			want:     "https://api.siliconflow.cn/v1",
+		},
+		{
+			name:     "unknown_provider",
+			provider: "unknown",
+			want:     "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := browserOpenAICompatibleBaseURL(tc.baseURL, tc.provider); got != tc.want {
+				t.Fatalf("browserOpenAICompatibleBaseURL(%q, %q) = %q, want %q", tc.baseURL, tc.provider, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStagehandModelName(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		model    string
+		want     string
+	}{
+		{name: "deepseek_uses_openai_compatible_provider", provider: "DeepSeek", model: "deepseek-v4-pro", want: "openai/deepseek-v4-pro"},
+		{name: "siliconflow_uses_openai_compatible_provider", provider: "SILICONFLOW", model: "Qwen/Qwen3-32B", want: "openai/Qwen/Qwen3-32B"},
+		{name: "openai_native", provider: "OpenAI", model: "gpt-4o", want: "openai/gpt-4o"},
+		{name: "anthropic_native", provider: "Anthropic", model: "claude-sonnet-4-5", want: "anthropic/claude-sonnet-4-5"},
+		{name: "google_native", provider: "Google", model: "gemini-3-flash-preview", want: "google/gemini-3-flash-preview"},
+		{name: "already_prefixed", provider: "DeepSeek", model: "openai/deepseek-v4-pro", want: "openai/deepseek-v4-pro"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stagehandModelName(tc.provider, tc.model); got != tc.want {
+				t.Fatalf("stagehandModelName(%q, %q) = %q, want %q", tc.provider, tc.model, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -289,7 +429,7 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 		"llm_id":  "gpt-4o@OpenAI",
 		"prompts": "extract the page title",
 	})
-	ctx := stateWith(t, map[string]any{"user_id": "tenant-1"})
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
 	if _, err := c.Invoke(ctx, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -332,7 +472,7 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 		"prompts":  "x",
 		"headless": false,
 	})
-	ctx := stateWith(t, map[string]any{"user_id": "tenant-1"})
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
 	if _, err := c.Invoke(ctx, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -363,7 +503,7 @@ func TestBrowser_OutputsShape(t *testing.T) {
 		"llm_id":  "gpt-4o@OpenAI",
 		"prompts": "x",
 	})
-	ctx := stateWith(t, map[string]any{"user_id": "tenant-1"})
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
 	out, err := c.Invoke(ctx, nil)
 	if err != nil {

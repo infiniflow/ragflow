@@ -8,7 +8,7 @@ import (
 )
 
 // ErrOfficeCGORequired is returned by ParseWithResult on every
-// office-parser family (DOC / DOCX / PPT / PPTX / XLS / XLSX)
+// office-parser family (DOC / DOCX / PPT / PPTX)
 // when the build is not CGO-enabled. The CGO build's
 // implementation captures the office_oxide PlainText / ToMarkdown
 // output; this stub mirrors that surface so the package compiles
@@ -28,20 +28,6 @@ func (p *DOCParser) ParseWithResult(filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},
 		Err:  fmt.Errorf("%w: doc", ErrOfficeCGORequired),
-	}
-}
-
-func (p *XLSParser) ParseWithResult(filename string, _ []byte) ParseResult {
-	return ParseResult{
-		File: map[string]any{"name": filename},
-		Err:  fmt.Errorf("%w: xls", ErrOfficeCGORequired),
-	}
-}
-
-func (p *XLSXParser) ParseWithResult(filename string, _ []byte) ParseResult {
-	return ParseResult{
-		File: map[string]any{"name": filename},
-		Err:  fmt.Errorf("%w: xlsx", ErrOfficeCGORequired),
 	}
 }
 
@@ -77,26 +63,6 @@ func NewDOCXParser() *DOCXParser {
 
 func (p *DOCXParser) String() string {
 	return "DOCXParser(no-cgo)"
-}
-
-type XLSParser struct{}
-
-func NewXLSParser() *XLSParser {
-	return &XLSParser{}
-}
-
-func (p *XLSParser) String() string {
-	return "XLSParser(no-cgo)"
-}
-
-type XLSXParser struct{}
-
-func NewXLSXParser() *XLSXParser {
-	return &XLSXParser{}
-}
-
-func (p *XLSXParser) String() string {
-	return "XLSXParser(no-cgo)"
 }
 
 type PPTParser struct{}

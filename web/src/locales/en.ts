@@ -517,7 +517,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       graphPlaceholder: 'Graph view placeholder',
       llmWiki: 'LLM Wiki',
       skills: 'Skills',
-      contents: 'Contents',
+      contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
       entity: 'Entity',
@@ -1650,6 +1650,7 @@ Example: Virtual Hosted Style`,
         "Select or customize a specific structure from the Blueprint library on the left to define your Wiki's content framework and visual presentation.",
       blueprintsPlaceholderSkip:
         'If you have no special requirements, feel free to skip this step, and the system will automatically apply the default structure.',
+      useBlueprint: 'Use this blueprint',
       channelEmptyTip:
         'No chat channels added yet. Select one below to connect.',
       availableChannels: 'Available channels',
@@ -2055,15 +2056,6 @@ Example: Virtual Hosted Style`,
     },
     knowledgeCompilation: {
       builtinTemplates: 'Built-in template',
-      kind: {
-        knowledge_graph: 'Knowledge graph',
-        artifacts: 'Artifacts',
-        timeline: 'Timeline',
-        page_index: 'Page index',
-        tree: 'Tree',
-        mind_map: 'Mind map',
-        empty: 'Empty',
-      },
     },
     datasetSkill: {
       folders: 'Skills',

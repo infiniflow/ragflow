@@ -67,6 +67,7 @@ import (
 	"math"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -427,12 +428,7 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 			// OfSessionExecutesAgentConfigModelGenericModelConfigObject
 			// variant is the only path that exposes BaseURL.
 			Model: stagehand.SessionExecuteParamsAgentConfigModelUnion{
-				OfSessionExecutesAgentConfigModelGenericModelConfigObject: &stagehand.SessionExecuteParamsAgentConfigModelGenericModelConfigObject{
-					ModelName: req.ModelName,
-					APIKey:    stagehand.String(req.APIKey),
-					BaseURL:   stagehand.String(req.BaseURL),
-					Provider:  "openai",
-				},
+				OfSessionExecutesAgentConfigModelGenericModelConfigObject: stagehandExecuteModelConfig(req),
 			},
 		},
 		ExecuteOptions: stagehand.SessionExecuteParamsExecuteOptions{
@@ -453,6 +449,18 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 	}
 
 	return execResp.Data.Result.Message, nil
+}
+
+func stagehandExecuteModelConfig(req RunTaskRequest) *stagehand.SessionExecuteParamsAgentConfigModelGenericModelConfigObject {
+	model := &stagehand.SessionExecuteParamsAgentConfigModelGenericModelConfigObject{
+		ModelName: req.ModelName,
+		APIKey:    stagehand.String(req.APIKey),
+		Provider:  "openai",
+	}
+	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
+		model.BaseURL = stagehand.String(baseURL)
+	}
+	return model
 }
 
 // RunExtractRequest is the input to stagehandRuntime.RunExtract.
@@ -493,9 +501,9 @@ type RunExtractRequest struct {
 //  2. Sessions.Start (browser, model, launch options).
 //  3. defer Sessions.End.
 //  4. If URL != "", Sessions.Navigate({URL: req.URL}).
-//  5. Sessions.Extract({Instruction, Schema}). The response
-//     `Data.Result` field is the structured data matching Schema;
-//     we marshal it as JSON and return.
+//  5. Sessions.Extract({Instruction, Schema, Options.Model}). The
+//     response `Data.Result` field is the structured data matching
+//     Schema; we marshal it as JSON and return.
 //
 // RunExtract reuses the same `stagehandRuntime` cache as RunTask
 // (per `(apiKey, baseURL, modelName)` key), so cold-start cost is
@@ -564,7 +572,10 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 
 	extractResp, err := client.Sessions.Extract(ctx, sessionID, stagehand.SessionExtractParams{
 		Instruction: stagehand.String(req.Instruction),
-		Schema:      req.Schema,
+		Options: stagehand.SessionExtractParamsOptions{
+			Model: stagehandExtractModelConfig(req),
+		},
+		Schema: req.Schema,
 	})
 	if err != nil {
 		return "", fmt.Errorf("stagehand runtime: RunExtract: Sessions.Extract: %w", err)
@@ -581,6 +592,20 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 		return "", fmt.Errorf("stagehand runtime: RunExtract: marshal result: %w", err)
 	}
 	return string(out), nil
+}
+
+func stagehandExtractModelConfig(req RunExtractRequest) stagehand.SessionExtractParamsOptionsModelUnion {
+	model := &stagehand.SessionExtractParamsOptionsModelGenericModelConfigObject{
+		ModelName: req.ModelName,
+		APIKey:    stagehand.String(req.APIKey),
+		Provider:  "openai",
+	}
+	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
+		model.BaseURL = stagehand.String(baseURL)
+	}
+	return stagehand.SessionExtractParamsOptionsModelUnion{
+		OfSessionExtractsOptionsModelGenericModelConfigObject: model,
+	}
 }
 
 // Close drains the sweeper goroutine and closes every cached
