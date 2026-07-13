@@ -13,7 +13,7 @@
 //  limitations under the License.
 //
 
-package utility
+package common
 
 import (
 	"os"
@@ -24,21 +24,21 @@ import (
 )
 
 var (
-	ragflowVersionInfo = "unknown"
-	versionOnce        sync.Once
+	versionInfo = "unknown"
+	versionOnce sync.Once
 )
 
 // GetRAGFlowVersion gets the RAGFlow version information
 // It reads from VERSION file or falls back to git describe command
 func GetRAGFlowVersion() string {
 	versionOnce.Do(func() {
-		ragflowVersionInfo = getRAGFlowVersionInternal()
+		versionInfo = getVersionInternal()
 	})
-	return ragflowVersionInfo
+	return versionInfo
 }
 
-// getRAGFlowVersionInternal internal function to get version
-func getRAGFlowVersionInternal() string {
+// getVersionInternal internal function to get version
+func getVersionInternal() string {
 	// Get the path to VERSION file
 	// Assuming this file is in internal/utility, VERSION is in project root
 	exePath, err := os.Executable()
