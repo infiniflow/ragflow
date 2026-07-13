@@ -22,12 +22,19 @@ def get_model_type_human(model_type: int) -> List[str]:
     return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
 
 
+_LEGACY_MODEL_TYPE_ALIASES = {
+    "speech2text": "asr",
+    "image2text": "vision",
+}
+
+
 def calculate_model_type(model_type_name_list: List[str]|str) -> int:
     model_type = 0
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]
     type_value_map = {mt.name.lower(): mt.value for mt in ModelTypeBinary}
     for mt in model_type_name_list:
-        if mt in type_value_map:
-            model_type |= type_value_map[mt]
+        normalized_mt = _LEGACY_MODEL_TYPE_ALIASES.get(mt, mt)
+        if normalized_mt in type_value_map:
+            model_type |= type_value_map[normalized_mt]
     return model_type

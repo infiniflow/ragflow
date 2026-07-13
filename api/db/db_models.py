@@ -1833,3 +1833,44 @@ def migrate_db():
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
+    migrate_model_type_names()
+
+
+def migrate_model_type_names():
+    """Rename legacy model_type string values to the canonical asr/vision names.
+
+    Previously the code used speech2text / image2text. LLMType now emits asr /
+    vision, and the backend compares model_type strings directly. This idempotent
+    data migration updates persisted rows in llm and tenant_llm before the new
+    enum values are used at runtime.
+    """
+    RENAME_MAP = {
+        "speech2text": "asr",
+        "image2text": "vision",
+    }
+    tables = ["llm", "tenant_llm"]
+    for table in tables:
+        if not DB.table_exists(table):
+            continue
+        for old_name, new_name in RENAME_MAP.items():
+            try:
+                cursor = DB.execute_sql(
+                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    (new_name, old_name),
+                )
+                if cursor.rowcount:
+                    logging.info(
+                        "Migrated %s rows in %s.model_type from %s to %s",
+                        cursor.rowcount,
+                        table,
+                        old_name,
+                        new_name,
+                    )
+            except Exception as ex:
+                logging.warning(
+                    "Failed to migrate model_type values in %s (from %s to %s): %s",
+                    table,
+                    old_name,
+                    new_name,
+                    ex,
+                )
