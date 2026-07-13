@@ -1331,6 +1331,7 @@ func (e *parseTestDocEngine) Close() error {
 func (e *parseTestDocEngine) GetType() string {
 	return "test"
 }
+func (e *parseTestDocEngine) SupportsPageRank() bool { return false }
 
 func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
 	return nil
@@ -1504,6 +1505,7 @@ func (m *switchChunksEngineMock) GetScores(map[string]interface{}) map[string]fl
 func (m *switchChunksEngineMock) Ping(context.Context) error                          { return nil }
 func (m *switchChunksEngineMock) Close() error                                        { return nil }
 func (m *switchChunksEngineMock) GetType() string                                     { return "elasticsearch" }
+func (m *switchChunksEngineMock) SupportsPageRank() bool                              { return true }
 func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
 	return nil
 }

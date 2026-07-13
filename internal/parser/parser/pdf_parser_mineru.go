@@ -97,7 +97,7 @@ func parseMinerUMarkdownResult(filename, markdown, outputFormat string, pageCoun
 	fileMeta := pdfFileMeta(filename, pageCount)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
-		mp := NewMarkdownParser()
+		mp, _ := NewMarkdownParser(GoMarkdown)
 		res := mp.ParseWithResult(filename, []byte(markdown))
 		if res.Err != nil {
 			return res
