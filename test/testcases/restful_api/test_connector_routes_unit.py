@@ -485,6 +485,16 @@ def test_connector_oauth_helper_functions(monkeypatch):
     assert "Authorization failed" in popup_error.body
     assert "&lt;denied&gt;" in popup_error.body
 
+    # Regression for issue #16871: the popup title must use the proper
+    # product name (Google Drive / Gmail) rather than a naive
+    # `str.capitalize()` which produced "Google-google-drive".
+    popup_drive = _run(module._render_web_oauth_popup("flow-3", True, "done", "google-drive"))
+    assert "<title>Google Drive Authorization</title>" in popup_drive.body
+    assert "Google-google-drive" not in popup_drive.body
+
+    popup_gmail = _run(module._render_web_oauth_popup("flow-4", True, "done", "gmail"))
+    assert "<title>Gmail Authorization</title>" in popup_gmail.body
+
 
 @pytest.mark.p2
 def test_start_google_web_oauth_matrix(monkeypatch):
