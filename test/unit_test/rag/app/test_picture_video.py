@@ -22,11 +22,17 @@ from unittest.mock import patch
 
 
 def _load_picture_module(tokenized_texts):
+    """Load the picture parser with lightweight fakes for external services."""
+
     class FakeLLMBundle:
         def __init__(self, *args, **kwargs):
+            """Accept the same construction arguments as the real LLM bundle."""
+
             pass
 
         async def async_chat(self, **kwargs):
+            """Return a deterministic video description for the regression test."""
+
             return "A concise video description."
 
     llm_service = ModuleType("api.db.services.llm_service")
@@ -55,6 +61,8 @@ def _load_picture_module(tokenized_texts):
     nlp.rag_tokenizer = SimpleNamespace(tokenize=lambda value: value)
 
     def fake_tokenize(doc, text, *_args, **_kwargs):
+        """Capture the exact text passed to tokenization."""
+
         tokenized_texts.append(text)
         doc["content_with_weight"] = text
 
@@ -79,6 +87,8 @@ def _load_picture_module(tokenized_texts):
 
 
 def test_video_description_is_tokenized_once():
+    """Ensure one model response produces one tokenized video description."""
+
     tokenized_texts = []
     picture = _load_picture_module(tokenized_texts)
 
