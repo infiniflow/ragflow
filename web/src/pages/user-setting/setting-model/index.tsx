@@ -19,6 +19,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   LlmKeys,
   useAddProviderInstance,
+  useFetchAddedProviders,
   useFetchProviderInstances,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
@@ -61,9 +62,13 @@ const SettingModelV2: FC = () => {
   // for the current selection. Reset on every selection change.
   const cancelledRef = useRef(false);
 
-  // Always re-fetch when the selection changes. Passing an empty string
-  // disables the query.
-  const providerQueryName = selection === 'default' ? '' : selection;
+  const { data: addedProviders } = useFetchAddedProviders();
+  const providerQueryName = useMemo(() => {
+    if (selection === 'default') return '';
+    return addedProviders.some((p) => p.name === selection && p.has_instance)
+      ? selection
+      : '';
+  }, [selection, addedProviders]);
   const { data: instances, loading: instancesLoading } =
     useFetchProviderInstances(providerQueryName);
   const queryClient = useQueryClient();

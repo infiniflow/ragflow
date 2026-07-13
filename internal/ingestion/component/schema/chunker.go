@@ -168,7 +168,9 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed values: "token_size", "delimiter", "one".
+	// Allowed values: "token_size", "delimiter".
+	// The single-chunk "one" behavior is provided by the separate
+	// OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
 
 	// ChunkTokenSize is the target chunk size in tokens.
@@ -210,7 +212,7 @@ func (TokenChunkerParam) Defaults() TokenChunkerParam {
 // at construction time, keeping the schema and component decoder aligned.
 func (p TokenChunkerParam) Validate() error {
 	switch p.DelimiterMode {
-	case "token_size", "delimiter", "one":
+	case "token_size", "delimiter":
 	default:
 		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
 	}
