@@ -37,6 +37,7 @@ package component
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -61,21 +62,29 @@ const (
 	maxInvokeResponseBody  = 16 << 20 // 16 MiB; hard cap to avoid OOM
 )
 
-// InvokeComponent is the HTTP client node. Stateless across invocations.
+// invokeClockOrigin gives Invoke's _created_time the same monotonic-clock
+// semantics as Python's time.perf_counter(). Its absolute value is process
+// local; only elapsed durations are meaningful.
+var invokeClockOrigin = time.Now()
+
+// InvokeComponent is the HTTP client node. Its node configuration is immutable
+// across invocations.
 type InvokeComponent struct {
-	name string
+	name   string
+	params map[string]any
 }
 
 // NewInvokeComponent constructs an Invoke component.
-func NewInvokeComponent(_ map[string]any) (Component, error) {
-	return &InvokeComponent{name: componentNameInvoke}, nil
+func NewInvokeComponent(params map[string]any) (Component, error) {
+	return &InvokeComponent{name: componentNameInvoke, params: cloneInvokeParams(params)}, nil
 }
 
 // Name returns the registered component name.
 func (i *InvokeComponent) Name() string { return i.name }
 
-// Invoke executes a single HTTP request and returns the status code,
-// body, and response headers. See Inputs() for the param contract.
+// Invoke executes a single HTTP request and returns its response text as
+// `result`, matching the Python Invoke component. See Inputs() for the
+// param contract.
 //
 // SSRF flow (PR #15426):
 //  1. Validate the target URL via utility.AssertURLSafe (loopback /
@@ -92,7 +101,17 @@ func (i *InvokeComponent) Name() string { return i.name }
 // On any of those checks failing the function returns an `_ERROR`
 // output (no Go error) so the canvas can route around the failure
 // the same way the Python fix does, instead of crashing the node.
-func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (output map[string]any, invokeErr error) {
+	startedAt := time.Now()
+	defer func() {
+		if output == nil {
+			return
+		}
+		output["_created_time"] = startedAt.Sub(invokeClockOrigin).Seconds()
+		output["_elapsed_time"] = time.Since(startedAt).Seconds()
+	}()
+
+	inputs = i.mergeInputs(inputs)
 	method, _ := inputs["method"].(string)
 	method = strings.ToUpper(strings.TrimSpace(method))
 	switch method {
@@ -187,11 +206,13 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("User-Agent", defaultInvokeUserAgent)
-	if h, ok := inputs["headers"].(map[string]any); ok {
-		for k, v := range h {
-			if s, ok := v.(string); ok {
-				req.Header.Set(k, s)
-			}
+	headers, err := invokeHeaders(inputs["headers"])
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range headers {
+		if s, ok := v.(string); ok {
+			req.Header.Set(k, s)
 		}
 	}
 
@@ -270,16 +291,6 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		return nil, fmt.Errorf("Invoke: read body: %w", err)
 	}
 
-	hdr := make(map[string]string, len(resp.Header))
-	for k, vs := range resp.Header {
-		// First value only — multi-value headers are uncommon in
-		// canvas-DSL HTTP responses, and the param contract specifies
-		// a string map.
-		if len(vs) > 0 {
-			hdr[k] = vs[0]
-		}
-	}
-
 	bodyStr := string(bodyBytes)
 
 	// Clean HTML from response body when clean_html input is set.
@@ -287,24 +298,72 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		bodyStr = stripHTMLTags(bodyStr)
 	}
 
-	// Parse body according to the requested datatype.
-	datatype, _ := inputs["datatype"].(string)
-	if datatype == "" {
-		// Infer from Content-Type header.
-		ct := resp.Header.Get("Content-Type")
-		if strings.Contains(ct, "application/json") {
-			datatype = "json"
-		} else {
-			datatype = "text"
+	return map[string]any{
+		"result": bodyStr,
+	}, nil
+}
+
+// GetInputForm returns the variables an Invoke node accepts from the
+// surrounding canvas. The HTTP method, URL, headers, and timeout are node
+// configuration, while variables are supplied at run time.
+func (i *InvokeComponent) GetInputForm() map[string]any {
+	form := make(map[string]any)
+	variables, _ := i.params["variables"].([]any)
+	for _, raw := range variables {
+		variable, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref := strings.TrimSpace(stringParam(variable["ref"]))
+		if ref == "" {
+			continue
+		}
+		name := strings.TrimSpace(stringParam(variable["key"]))
+		if name == "" {
+			name = ref
+		}
+		form[ref] = map[string]any{"type": "line", "name": name}
+	}
+	return form
+}
+
+func (i *InvokeComponent) mergeInputs(inputs map[string]any) map[string]any {
+	merged := cloneInvokeParams(i.params)
+	for key, value := range inputs {
+		if _, configured := merged[key]; !configured {
+			merged[key] = value
 		}
 	}
+	return merged
+}
 
-	return map[string]any{
-		"status":   resp.StatusCode,
-		"body":     bodyStr,
-		"headers":  hdr,
-		"datatype": datatype,
-	}, nil
+func cloneInvokeParams(params map[string]any) map[string]any {
+	cloned := make(map[string]any, len(params))
+	for key, value := range params {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func invokeHeaders(raw any) (map[string]any, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if headers, ok := raw.(map[string]any); ok {
+		return headers, nil
+	}
+	text, ok := raw.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		return nil, nil
+	}
+	var headers map[string]any
+	if err := json.Unmarshal([]byte(text), &headers); err != nil {
+		return nil, fmt.Errorf("Invoke: headers must be a JSON object: %w", err)
+	}
+	if headers == nil {
+		return nil, errors.New("Invoke: headers must be a JSON object")
+	}
+	return headers, nil
 }
 
 // invokeSSRFError builds the _ERROR output the canvas uses to route
@@ -318,10 +377,8 @@ func invokeSSRFError(kind, raw string, err error) map[string]any {
 		zap.Error(err),
 	)
 	return map[string]any{
-		"_ERROR":  "URL not valid",
-		"status":  0,
-		"body":    "",
-		"headers": map[string]string{},
+		"_ERROR": "URL not valid",
+		"result": nil,
 	}
 }
 
@@ -377,10 +434,7 @@ func (i *InvokeComponent) Inputs() map[string]string {
 // Outputs returns the response surface.
 func (i *InvokeComponent) Outputs() map[string]string {
 	return map[string]string{
-		"status":   "HTTP status code (int).",
-		"body":     "Response body (string, truncated at 16 MiB).",
-		"headers":  "Response headers (first value per key).",
-		"datatype": "Inferred response datatype: 'json' | 'text' | 'html'.",
+		"result": "Response body as text.",
 	}
 }
 

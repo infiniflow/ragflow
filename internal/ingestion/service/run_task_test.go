@@ -204,10 +204,12 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 	}
 }
 
-// TestRunTask_MarkCompletedFailure: when runDocumentTask succeeds but
-// MarkCompleted fails (status conflict), runTask returns false (non-terminal)
-// so the message is Nacked for retry.
-func TestRunTask_MarkCompletedFailure(t *testing.T) {
+// TestRunTask_AlreadyCompletedAcksNotRedelivers: when the pipeline succeeds but
+// the task is already COMPLETED (e.g. another worker won a redelivery race),
+// MarkCompleted's transition fails terminally. runTask must treat this as
+// terminal and Ack - the work is done, redelivering would just ack-skip - and
+// must NOT retry the deterministically-invalid transition.
+func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -229,8 +231,8 @@ func TestRunTask_MarkCompletedFailure(t *testing.T) {
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
-	if terminal {
-		t.Fatal("expected false (non-terminal) on MarkCompleted failure")
+	if !terminal {
+		t.Fatal("expected true (terminal: task already COMPLETED, Ack instead of redeliver)")
 	}
 
 	// Task must still be COMPLETED (MarkCompleted failed to transition it).
@@ -240,6 +242,44 @@ func TestRunTask_MarkCompletedFailure(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED (unchanged)", task.Status)
+	}
+}
+
+// TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped: the pipeline
+// finishes successfully, but a concurrent user stop (RequestStop) moved the
+// task RUNNING->STOPPING just before MarkCompleted. The RUNNING->COMPLETED
+// transition is now terminally invalid; runTask must settle the task to
+// STOPPED and Ack (the pipeline already indexed the chunks) instead of
+// retrying the invalid transition and Nacking for redelivery.
+func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+		// Simulate the user pressing Stop mid-pipeline: RUNNING->STOPPING.
+		if _, err := ingestor.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+			t.Fatalf("RequestStop: %v", err)
+		}
+		return nil // pipeline still finishes successfully
+	}
+
+	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+
+	if !terminal {
+		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %s, want STOPPED (settled from concurrent STOPPING)", task.Status)
 	}
 }
 

@@ -432,6 +432,16 @@ func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instance
 	// Verify the API key against the provider.
 	modelVerifyResult := m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
 
+	// Normalize api_key: VLLM with empty api_key defaults to "x".
+	// Mirrors Python's _normalize_provider_api_key.
+	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
+		apiKey = "x"
+	}
+
+	// Verify the API key against the provider.
+	// Mirrors Python's verify_api_key (provider_api_service.py:596).
+	modelVerifyResult := m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
+
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)

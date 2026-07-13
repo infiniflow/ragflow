@@ -48,6 +48,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     instance,
     hideActions = false,
     hideIfEmpty = false,
+    instanceDetailsLoaded = false,
     getFormValues,
     onBlurSuppressChange,
     onInstanceModelsChange,
@@ -80,6 +81,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     isDraftInstance,
     resolveCreds,
     instanceModels,
+    instanceDetailsLoaded,
   });
 
   // 4. Derived union list (instance ∪ catalog) + push to host.

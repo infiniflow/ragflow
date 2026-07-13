@@ -519,17 +519,15 @@ func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
 }
 
 // NumTokensFromString returns the number of tokens in s using the cl100k_base
-// BPE encoding
+// BPE encoding. Mirrors Python's num_tokens_from_string (common/token_utils.py):
+// returns 0 on encoder error.
 func NumTokensFromString(s string) int {
 	if s == "" {
 		return 0
 	}
 	enc, err := getCL100KEncoder()
 	if err != nil {
-		// Fail closed: avoid dangerous undercounting when encoder is unavailable.
-		// A conservative byte-length estimate errs on the side of over-counting,
-		// which is safer for budget enforcement than returning zero.
-		return len([]byte(s))
+		return 0
 	}
 	return len(enc.Encode(s, nil, nil))
 }

@@ -1378,6 +1378,7 @@ func searchAfterPaginate(
 			}
 			chunk["_score"] = hit.Score
 			chunk["_id"] = hit.ID
+			chunk["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
 			chunk["_index"] = hit.Index
 			collected = append(collected, chunk)
 			collectedTake++
@@ -2836,6 +2837,7 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 		}
 		chunks[i]["_score"] = hit.Score
 		chunks[i]["_id"] = hit.ID
+		chunks[i]["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
 		chunks[i]["_index"] = hit.Index
 		if len(hit.Highlight) > 0 {
 			chunks[i]["highlight"] = hit.Highlight

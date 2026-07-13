@@ -101,11 +101,11 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("unexpected task type: %s", taskMsg.TaskType)
 	}
 
-	// Mirrors Start():142-143 — SetRunningByIngestor
+	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
 	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
-		t.Fatalf("SetRunningByIngestor: %v", err)
+		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
 	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestRealProducerConsumer(t *testing.T) {
 		taskHandle.Ack()
 		return
 	}
-	t.Logf("Consumer: SetRunningByIngestor status=%s", task.Status)
+	t.Logf("Consumer: UpdateStatusIfCurrent status=%s", task.Status)
 
 	// Mirrors Start():167-180 — status check
 	switch task.Status {
@@ -143,27 +143,23 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
-	handler := NewTaskHandler(tc)
-	handler.WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
-		svc, err := NewPipelineExecutor(ctx, canvasID, 0)
-		if err != nil {
-			return nil, err
-		}
-		svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
-			return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
-		})
-		svc.WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
-			return nil, "", nil
-		})
-		svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
-			return nil, nil
-		})
-		return svc, nil
-	})
-	if _, err := handler.Handle(); err != nil {
-		t.Fatalf("Handle: %v", err)
+	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0)
+	if err != nil {
+		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
-	t.Log("Consumer: TaskHandler.Handle() — OK")
+	svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+		return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
+	})
+	svc.WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+		return nil, "", nil
+	})
+	svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		return nil, nil
+	})
+	if _, err := svc.Execute(tc.Ctx); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
 	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(task.ID, common.RUNNING, common.COMPLETED); err != nil {
