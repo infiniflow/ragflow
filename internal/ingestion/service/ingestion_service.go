@@ -561,7 +561,10 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 	// which would cause executeTask's defer to deadlock on <-pollExited.
 	checkOnce := func() <-chan bool {
 		result := make(chan bool, 1)
-		go func() { result <- e.cancelCheck(taskID) }()
+		go func() {
+			defer func() { recover() }() // goroutine may outlive pollCancel; must not crash process
+			result <- e.cancelCheck(taskID)
+		}()
 		return result
 	}
 

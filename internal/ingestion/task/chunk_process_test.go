@@ -283,3 +283,48 @@ func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
 		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
 	}
 }
+
+func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
+	chunk := map[string]any{
+		"positions": []float64{0, 100, 50, 200, 150},
+	}
+	processChunkPositions(chunk)
+
+	if _, exists := chunk["positions"]; exists {
+		t.Fatal("positions key must be removed")
+	}
+	pageNum := chunk["page_num_int"].([]int)
+	if len(pageNum) != 1 || pageNum[0] != 1 {
+		t.Errorf("page_num_int = %v, want [1]", pageNum)
+	}
+}
+
+func TestProcessChunkPositions_2DFloat64(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]float64{
+			{0, 100, 50, 200, 150},
+			{1, 200, 60, 300, 250},
+		},
+	}
+	processChunkPositions(chunk)
+
+	if _, exists := chunk["positions"]; exists {
+		t.Fatal("positions key must be removed")
+	}
+	pageNum := chunk["page_num_int"].([]int)
+	if len(pageNum) != 2 || pageNum[0] != 1 || pageNum[1] != 2 {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	top := chunk["top_int"].([]int)
+	if len(top) != 2 || top[0] != 200 || top[1] != 300 {
+		t.Errorf("top_int = %v, want [200 300]", top)
+	}
+}
+
+func TestProcessChunkPositions_NoPositions(t *testing.T) {
+	chunk := map[string]any{"text": "hello"}
+	processChunkPositions(chunk)
+	if _, exists := chunk["page_num_int"]; exists {
+		t.Error("page_num_int must not be set when positions is missing")
+	}
+}

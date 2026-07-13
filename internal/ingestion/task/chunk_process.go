@@ -140,19 +140,19 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 	return metadata
 }
 
-// processChunkPositions converts the raw "positions" field ([]float64 in
-// groups of 5: page, left, right, top, bottom) into indexable position fields
-// (page_num_int, top_int, position_int) via AddPositions, then removes the
-// raw field.
+// processChunkPositions converts the raw "positions" field into indexable
+// position fields (page_num_int, top_int, position_int) via AddPositions,
+// then removes the raw field.
 //
-// Only []float64 is handled — that is the native type from parser components
-// that produce positions in-memory. The normal Go ingestion path never
-// serializes chunk maps through JSON, so []any (the JSON deserialization form)
-// does not occur here. If an unexpected type appears (e.g. from a JSON
-// round-trip through a checkpoint or golden-compare tool), the positions are
-// discarded and the field is removed — losing position metadata is acceptable
-// (frontend shows the chunk without highlight anchors), whereas writing
-// silently-corrupted position data would cause wrong-page highlights.
+// Two source types reach this point:
+//   - []float64 — flat array of 5-tuples [page,left,right,top,bottom,…] from
+//     parsers that emit positions directly as a flat float64 slice.
+//   - [][]float64 — the production path: positions flow through ChunkDoc
+//     (json.RawMessage → decodeStructuredValue) which produces a slice of
+//     5-element groups.
+//
+// Both are flattened into a single []float64 for AddPositions, which groups
+// by 5 internally. Unexpected types are logged and discarded.
 func processChunkPositions(ck map[string]any) {
 	poss, exists := ck["positions"]
 	if !exists {
@@ -161,6 +161,12 @@ func processChunkPositions(ck map[string]any) {
 	switch v := poss.(type) {
 	case []float64:
 		AddPositions(ck, v)
+	case [][]float64:
+		flat := make([]float64, 0, len(v)*5)
+		for _, group := range v {
+			flat = append(flat, group...)
+		}
+		AddPositions(ck, flat)
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}
