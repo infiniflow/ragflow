@@ -389,6 +389,68 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 	s.Retrieval["chunks"] = asAny
 }
 
+// AddRetrievalReferences appends tool-produced reference chunks and document
+// aggregates without exposing Retrieval's maps to unsynchronised mutation.
+func (s *CanvasState) AddRetrievalReferences(chunks, docAggs []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+
+	existingChunks, _ := s.Retrieval["chunks"].([]any)
+	seenChunkIDs := make(map[string]struct{}, len(existingChunks)+len(chunks))
+	for _, item := range existingChunks {
+		if chunk, ok := item.(map[string]any); ok {
+			seenChunkIDs[fmt.Sprint(chunk["id"])] = struct{}{}
+		}
+	}
+	for _, chunk := range chunks {
+		id := fmt.Sprint(chunk["id"])
+		if _, exists := seenChunkIDs[id]; exists {
+			continue
+		}
+		existingChunks = append(existingChunks, chunk)
+		seenChunkIDs[id] = struct{}{}
+	}
+	s.Retrieval["chunks"] = existingChunks
+
+	existingAggs, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if existingAggs == nil {
+		existingAggs = make(map[string]any)
+	}
+	for _, agg := range docAggs {
+		name := fmt.Sprint(agg["doc_name"])
+		if _, exists := existingAggs[name]; !exists {
+			existingAggs[name] = agg
+		}
+	}
+	s.Retrieval["doc_aggs"] = existingAggs
+}
+
+// GetRetrievalDocAggs returns a shallow snapshot keyed by document name.
+func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if raw == nil {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(raw))
+	for name, item := range raw {
+		if agg, ok := item.(map[string]any); ok {
+			out[name] = agg
+		}
+	}
+	return out
+}
+
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or
 // write) for the entire call.
 func getVarLocked(s *CanvasState, ref string) (any, error) {
