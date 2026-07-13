@@ -15,6 +15,7 @@
 #
 
 import base64
+import json
 from unittest.mock import MagicMock, patch
 
 from rag.llm.sequence2txt_model import QWenSeq2txt
@@ -63,14 +64,28 @@ def test_qwen_audio_asr_keeps_existing_dashscope_path():
     )
 
 
-def test_fun_asr_flash_stream_uses_native_transcription():
+def test_fun_asr_flash_stream_uses_sse():
+    response = MagicMock()
+    response.iter_lines.return_value = [
+        "id:1",
+        "event:result",
+        f"data:{json.dumps({'output': {'text': 'stream'}})}",
+        "",
+        "id:2",
+        "event:result",
+        f"data:{json.dumps({'output': {'text': 'stream text'}})}",
+        "",
+    ]
     model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
 
-    with patch.object(model, "_transcribe_fun_asr_flash", return_value=("stream text", 2)) as transcription:
-        events = list(model.stream_transcription("sample.wav"))
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response) as post:
+        events = list(model.stream_transcription("data:audio/wav;base64,dGVzdA=="))
 
-    transcription.assert_called_once_with("sample.wav")
+    response.raise_for_status.assert_called_once_with()
+    assert post.call_args.kwargs["headers"]["X-DashScope-SSE"] == "enable"
+    assert post.call_args.kwargs["stream"] is True
     assert events == [
+        {"event": "delta", "text": "stream"},
         {"event": "delta", "text": "stream text"},
         {"event": "final", "text": "stream text"},
     ]
@@ -115,10 +130,40 @@ def test_fun_asr_flash_rejects_extensionless_url(caplog):
     assert "Fun-ASR-Flash transcription failed" in caplog.text
 
 
+def test_fun_asr_flash_rejects_local_audio_over_base64_limit():
+    model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+    base64_limit = 8
+    largest_allowed_raw_size = (base64_limit // 4) * 3
+
+    with (
+        patch.object(QWenSeq2txt, "_FUN_ASR_BASE64_MAX_SIZE", base64_limit),
+        patch("rag.llm.sequence2txt_model.os.path.getsize", return_value=largest_allowed_raw_size + 1),
+        patch("rag.llm.sequence2txt_model.requests.post") as post,
+    ):
+        text, tokens = model.transcription("large.wav")
+
+    post.assert_not_called()
+    assert text.startswith("**ERROR**: Fun-ASR-Flash Base64 audio exceeds the 10 MB encoded-input limit")
+    assert tokens == 0
+
+
+def test_fun_asr_flash_rejects_data_uri_over_base64_limit():
+    model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+    base64_limit = 8
+    audio_data = f"data:audio/wav;base64,{'A' * (base64_limit + 1)}"
+
+    with patch.object(QWenSeq2txt, "_FUN_ASR_BASE64_MAX_SIZE", base64_limit), patch("rag.llm.sequence2txt_model.requests.post") as post:
+        text, tokens = model.transcription(audio_data)
+
+    post.assert_not_called()
+    assert text.startswith("**ERROR**: Fun-ASR-Flash Base64 audio exceeds the 10 MB encoded-input limit")
+    assert tokens == 0
+
+
 def test_fun_asr_flash_stream_emits_only_error_event_on_failure():
     model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
 
-    with patch.object(model, "_transcribe_fun_asr_flash", return_value=("**ERROR**: failed", 0)):
-        events = list(model.stream_transcription("sample.wav"))
+    with patch("rag.llm.sequence2txt_model.requests.post", side_effect=RuntimeError("failed")):
+        events = list(model.stream_transcription("data:audio/wav;base64,dGVzdA=="))
 
     assert events == [{"event": "error", "text": "**ERROR**: failed"}]

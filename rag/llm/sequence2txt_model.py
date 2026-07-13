@@ -85,6 +85,7 @@ class FuturMixSeq2txt(GPTSeq2txt):
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
     _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"
+    _FUN_ASR_BASE64_MAX_SIZE = 10 * 1024 * 1024
     _DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/api/v1"
     _AUDIO_MIME_FORMATS = {
         "audio/mpeg": "mp3",
@@ -147,40 +148,58 @@ class QWenSeq2txt(Base):
             raise ValueError("Cannot determine audio format; use a URL/path extension or an audio data URI MIME type")
         return audio_format
 
+    @classmethod
+    def _validate_fun_asr_base64_size(cls, encoded_size):
+        if encoded_size > cls._FUN_ASR_BASE64_MAX_SIZE:
+            raise ValueError("Fun-ASR-Flash Base64 audio exceeds the 10 MB encoded-input limit; provide a publicly accessible URL (for example, OSS) instead")
+
+    def _fun_asr_flash_request(self, audio_path, *, stream=False):
+        audio_format = self._fun_asr_audio_format(audio_path)
+
+        if audio_path.startswith(("http://", "https://")):
+            audio_input = audio_path
+        elif audio_path.startswith("data:"):
+            _, separator, encoded_audio = audio_path.partition(",")
+            if not separator:
+                raise ValueError("Invalid audio data URI: missing Base64 payload")
+            self._validate_fun_asr_base64_size(len(encoded_audio.encode("utf-8")))
+            audio_input = audio_path
+        else:
+            file_size = os.path.getsize(audio_path)
+            encoded_size = 4 * ((file_size + 2) // 3)
+            self._validate_fun_asr_base64_size(encoded_size)
+            mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
+            with open(audio_path, "rb") as audio_file:
+                audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
+
+        api_base = self.base_url
+        if api_base.endswith("/compatible-mode/v1"):
+            api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
+        url = f"{api_base}/services/aigc/multimodal-generation/generation"
+        payload = {
+            "model": self.model_name,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
+                    }
+                ]
+            },
+            # sample_rate is optional in the Fun-ASR-Flash API. Omitting it
+            # avoids declaring incorrect metadata for remote or compressed audio.
+            "parameters": {"format": audio_format},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-SSE": "enable" if stream else "disable",
+        }
+        return url, headers, payload
+
     def _transcribe_fun_asr_flash(self, audio_path):
         try:
-            audio_format = self._fun_asr_audio_format(audio_path)
-
-            if audio_path.startswith(("http://", "https://", "data:")):
-                audio_input = audio_path
-            else:
-                mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
-                with open(audio_path, "rb") as audio_file:
-                    audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
-
-            api_base = self.base_url
-            if api_base.endswith("/compatible-mode/v1"):
-                api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
-            url = f"{api_base}/services/aigc/multimodal-generation/generation"
-            payload = {
-                "model": self.model_name,
-                "input": {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
-                        }
-                    ]
-                },
-                # sample_rate is optional in the Fun-ASR-Flash API. Omitting it
-                # avoids declaring incorrect metadata for remote or compressed audio.
-                "parameters": {"format": audio_format},
-            }
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "X-DashScope-SSE": "disable",
-            }
+            url, headers, payload = self._fun_asr_flash_request(audio_path)
 
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
@@ -194,14 +213,36 @@ class QWenSeq2txt(Base):
             logging.exception("Fun-ASR-Flash transcription failed for model %s", self.model_name)
             return "**ERROR**: " + str(e), 0
 
+    def _stream_fun_asr_flash(self, audio_path):
+        try:
+            url, headers, payload = self._fun_asr_flash_request(audio_path, stream=True)
+            response = requests.post(url, headers=headers, json=payload, timeout=60, stream=True)
+            response.raise_for_status()
+
+            full = ""
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data:"):
+                    continue
+                event_data = line[5:].strip()
+                if not event_data or event_data == "[DONE]":
+                    continue
+                result = json.loads(event_data)
+                text = result.get("text") or result.get("output", {}).get("text")
+                if not text:
+                    continue
+                full = text.strip()
+                yield {"event": "delta", "text": full}
+
+            if not full:
+                raise ValueError("Missing transcription text in Fun-ASR-Flash stream")
+            yield {"event": "final", "text": full}
+        except Exception as e:
+            logging.exception("Fun-ASR-Flash streaming transcription failed for model %s", self.model_name)
+            yield {"event": "error", "text": "**ERROR**: " + str(e)}
+
     def stream_transcription(self, audio_path):
         if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
-            text, _ = self._transcribe_fun_asr_flash(audio_path)
-            if text.startswith("**ERROR**"):
-                yield {"event": "error", "text": text}
-            else:
-                yield {"event": "delta", "text": text}
-                yield {"event": "final", "text": text}
+            yield from self._stream_fun_asr_flash(audio_path)
             return
 
         import dashscope
