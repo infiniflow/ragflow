@@ -387,6 +387,16 @@ export default {
       paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
       paddleocrSelectAlgorithm: '選擇算法',
       paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
+      openDataLoaderOptions: 'OpenDataLoader 選項',
+      openDataLoaderHybrid: 'Hybrid 後端',
+      openDataLoaderHybridTip:
+        '將複雜頁面（無框線表格、掃描影像）交給 AI 輔助的後端處理，而非本地確定性解析器。設為「關閉」則只使用本地解析。',
+      openDataLoaderHybridMode: 'Hybrid 模式',
+      openDataLoaderHybridModeTip:
+        '僅在上方選擇了 Hybrid 後端時生效。Auto 由解析器逐頁自行判斷是否需要送至 Hybrid 後端；Full 強制每一頁都送至 Hybrid 後端——適用於掃描或純圖片文件，需要對整份文件執行 OCR 的情況。',
+      openDataLoaderSanitize: '輸出內容清洗',
+      openDataLoaderSanitizeTip:
+        '將文件中偵測到的電子郵件、電話號碼、IP、信用卡號與網址替換為佔位符。',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',

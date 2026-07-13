@@ -592,6 +592,16 @@ export default {
       paddleocrAlgorithmTip: '用于 PaddleOCR 解析的算法',
       paddleocrSelectAlgorithm: '选择算法',
       paddleocrModelNamePlaceholder: '例如：paddleocr-环境-1',
+      openDataLoaderOptions: 'OpenDataLoader 选项',
+      openDataLoaderHybrid: 'Hybrid 后端',
+      openDataLoaderHybridTip:
+        '将复杂页面（无框线表格、扫描图像）交给 AI 辅助的后端处理，而非本地确定性解析器。设为「关闭」则只使用本地解析。',
+      openDataLoaderHybridMode: 'Hybrid 模式',
+      openDataLoaderHybridModeTip:
+        '仅在上方选择了 Hybrid 后端时生效。Auto 由解析器逐页自行判断是否需要送至 Hybrid 后端；Full 强制每一页都送至 Hybrid 后端——适用于扫描或纯图片文件，需要对整份文件执行 OCR 的情况。',
+      openDataLoaderSanitize: '输出内容清洗',
+      openDataLoaderSanitizeTip:
+        '将文件中检测到的电子邮件、电话号码、IP、信用卡号与网址替换为占位符。',
       generationScopeTip: '选择 RAPTOR 的生成范围：整个知识库或单个文件。',
       generationScope: '生成范围',
       scopeSingleFile: '单文件',
