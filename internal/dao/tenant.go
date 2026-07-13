@@ -66,9 +66,9 @@ type TenantInfo struct {
 	TenantASRID     *string `gorm:"column:tenant_asr_id" json:"tenant_asr_id,omitempty"`
 	Img2TxtID       string  `gorm:"column:img2txt_id" json:"img2txt_id"`
 	TenantImg2TxtID *string `gorm:"column:tenant_img2txt_id" json:"tenant_img2txt_id,omitempty"`
-	TTSID           *string `gorm:"column:tts_id" json:"tts_id,omitempty"`
+	TTSID           string  `gorm:"column:tts_id" json:"tts_id"`
 	TenantTTSID     *string `gorm:"column:tenant_tts_id" json:"tenant_tts_id,omitempty"`
-	OCRID           *string `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
+	OCRID           string  `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
 	TenantOCRID     *string `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
 	ParserIDs       string  `gorm:"column:parser_ids" json:"parser_ids"`
 	Role            string  `gorm:"column:role" json:"role"`

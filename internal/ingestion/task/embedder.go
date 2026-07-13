@@ -79,6 +79,9 @@ func newEmbedderResolver(
 		if err != nil {
 			return nil, err
 		}
+		if model == nil {
+			return nil, fmt.Errorf("embedder: resolved embedding model is nil for embd_id=%s", embdID)
+		}
 		return &embedder{model: model}, nil
 	}
 }

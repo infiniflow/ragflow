@@ -12,10 +12,10 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { TreeTemplateFields } from '@/pages/user-setting/compilation-templates/edit-template/components/tree-template-fields';
-import { useTemplateKindChange } from '@/pages/user-setting/compilation-templates/edit-template/hooks/use-template-kind-change';
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
-import { SectionTitleKeyMap } from '@/pages/user-setting/compilation-templates/edit-template/utils';
+import { TreeTemplateFields } from '@/pages/user-setting/compilation-templates/create-next/components/tree-template-fields';
+import { useTemplateKindChange } from '@/pages/user-setting/compilation-templates/create-next/hooks/use-template-kind-change';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
+import { SectionTitleKeyMap } from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { useActiveSectionTab } from '../hooks/use-active-section-tab';
 import { useAvailableKindOptions } from '../hooks/use-available-kind-options';
@@ -233,7 +233,7 @@ export function TemplateConfiguration({
         </div>
       </div>
 
-      <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-between">
+      <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
         <Button type="button" variant="outline" onClick={onBack}>
           {t('common.back')}
         </Button>

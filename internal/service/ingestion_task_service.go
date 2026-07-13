@@ -409,14 +409,13 @@ func (s *IngestionTaskService) UpdateComponentTotal(taskID string, total int) er
 // ingestion_task_log (phase: 0 started / 1 done / 2 errored). The row's
 // Checkpoint is empty; component progress and step checkpoints are distinct
 // row models sharing the same table.
-func (s *IngestionTaskService) RecordComponentProgress(taskID, component string, index, phase int, message string) error {
+func (s *IngestionTaskService) RecordComponentProgress(taskID, component string, phase int, message string) error {
 	entry := &entity.IngestionTaskLog{
-		TaskID:         taskID,
-		Checkpoint:     entity.JSONMap{},
-		ComponentIndex: index,
-		Phase:          phase,
-		Component:      component,
-		Message:        message,
+		TaskID:     taskID,
+		Checkpoint: entity.JSONMap{},
+		Phase:      phase,
+		Component:  component,
+		Message:    message,
 	}
 	return s.ingestionTaskLogDAO.Create(entry)
 }

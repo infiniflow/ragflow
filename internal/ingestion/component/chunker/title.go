@@ -23,24 +23,29 @@
 //     happens in group.go / hierarchy.go depending on the
 //     `method` param.
 //
-//   - PARALLELISM: Parallelism() is only a hint for outer executors.
 //     TitleChunker.Invoke dispatches synchronously to group.go or
 //     hierarchy.go.
 //
 //   - HEADING DETECTION PARITY:
-//     The Python side uses three heading-detection strategies in
+//     The Python side uses two heading-detection strategies in
 //     `common.py:resolve_title_levels`:
 //     (1) PDF outlines   (extract_pdf_outlines, requires deepdoc/parser)
-//     (2) Regex families (the user's `levels` param)
-//     (3) Layout hints   (layout field matches section/title/head)
-//     The Go port ships ONLY strategy (2). Strategies (1) and (3)
-//     require PDF binary access (deepdoc is Python-only) and a parser
-//     that emits a layout field. A canvas author who needs PDF-outline heading
-//     detection must wait for the deepdoc/parser port.
+//     (2) Regex families (the user's `levels` param) with a layout-hint
+//     fallback (layout field matches section/title/head).
+//     The Go port ships strategy (2) IN FULL, including the
+//     match_layout_level fallback ported from common.py (Gap C closed):
+//     a non-regex text record whose layout flags it as a
+//     section/title/head and whose text passes not_title is promoted to
+//     fallback_level = len(selected_group) + 1. Strategy (1) —
+//     PDF-outline detection — still requires deepdoc/parser binary
+//     access and remains the only parity gap.
 //
-//   - TODO: parity-gap — non-ASCII heading formats and PDFs without
-//     user-supplied `levels` are not detected. Tests assert ASCII
-//     input only.
+//   - The Go port has NO hardcoded BULLET_PATTERN fallback. Heading
+//     detection relies entirely on the user-supplied `levels` param
+//     (which templates carry as comprehensive regex families) paired
+//     with the layout-hint fallback. A PDF without matching levels
+//     produces BODY_LEVEL-only records — Python's BULLET_PATTERN-based
+//     tree_merge / hierarchical_merge would still find structure.
 //
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels
@@ -52,6 +57,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
@@ -129,6 +135,11 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 			if text == "" {
 				continue
 			}
+			// Mirror common.py:select_level_group — a bullet-looking
+			// line cannot count as a heading hit for any family.
+			if notBullet(text) {
+				continue
+			}
 			for _, pattern := range group {
 				if re := compileLevelPattern(pattern); re != nil {
 					if re.MatchString(text) {
@@ -166,6 +177,11 @@ func matchRegexLevel(text string, group []string) int {
 	if stripped == "" {
 		return 0
 	}
+	// Mirror common.py:match_regex_level — a bullet-looking line is not
+	// a heading regardless of the regex family.
+	if notBullet(stripped) {
+		return 0
+	}
 	for lvl, pattern := range group {
 		re := compileLevelPattern(pattern)
 		if re != nil && re.MatchString(stripped) {
@@ -175,25 +191,104 @@ func matchRegexLevel(text string, group []string) int {
 	return 0
 }
 
-// resolveTitleLevels mirrors common.py:resolve_title_levels in the
-// "frequency" branch only (the outline branch is parity-gap territory
-// per the SCOPE comment above).
-func resolveTitleLevels(lines []string, p *titleChunkerParam) []int {
-	group := selectLevelGroup(lines, p.Levels)
-	if len(group) == 0 {
-		// No levels hit — every line is body.
-		out := make([]int, len(lines))
-		for i := range out {
-			out[i] = bodyLevel
+// notBulletPatterns mirrors rag/nlp.not_bullet. A line matching any of
+// these looks like a numbered/bulleted list item rather than a section
+// heading, so it must not be promoted to a title level by the regex
+// families.
+var notBulletPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`^0`),
+	regexp.MustCompile(`^[0-9]+ +[0-9~个只-]`),
+	regexp.MustCompile(`^[0-9]+\.{2,}`),
+	regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}[的中]`),
+}
+
+// notBullet mirrors rag/nlp.not_bullet: true when the line looks like a
+// numbered/bulleted list entry rather than a genuine section heading.
+func notBullet(s string) bool {
+	for _, re := range notBulletPatterns {
+		if re.MatchString(s) {
+			return true
 		}
-		return out
 	}
-	out := make([]int, len(lines))
-	for i, ln := range lines {
-		out[i] = matchRegexLevel(ln, group)
-		if out[i] == 0 {
+	return false
+}
+
+// notTitlePatterns mirrors rag/nlp.not_title:
+//   - notTitleException: `第...条` is always a title (never "not a title").
+//   - notTitlePunct: a body line typically carries one of these punctuation
+//     marks, so their presence flags the line as body text.
+var (
+	notTitleException = regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+条`)
+	notTitlePunct     = regexp.MustCompile(`[,;，。；！!]`)
+	layoutHeadingRe   = regexp.MustCompile(`(?i)(section|title|head)`)
+)
+
+// notTitle mirrors rag/nlp.not_title. Returns true when the line looks
+// like body text rather than a section heading, so layout-based heading
+// detection must skip it.
+func notTitle(s string) bool {
+	if notTitleException.MatchString(s) {
+		return false
+	}
+	if len(strings.Fields(s)) > 12 || (!strings.Contains(s, " ") && utf8.RuneCountInString(s) >= 32) {
+		return true
+	}
+	return notTitlePunct.MatchString(s)
+}
+
+// beforeAt mirrors python's `text.split("@")[0]` (used by
+// match_layout_level / not_title): the part of the line before the first
+// "@" separator, whitespace-trimmed.
+func beforeAt(s string) string {
+	if i := strings.Index(s, "@"); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
+}
+
+// matchLayoutLevel mirrors common.py:match_layout_level. When the
+// record's layout field flags it as a section/title/head and the text is
+// title-like (not not_title), the record is promoted to `fallback_level`
+// (common.py:resolve_frequency_levels sets this to len(level_group) + 1).
+// Otherwise it stays BODY_LEVEL.
+func matchLayoutLevel(text, layout string, fallbackLevel int) int {
+	if layoutHeadingRe.MatchString(layout) && !notTitle(beforeAt(text)) {
+		return fallbackLevel
+	}
+	return bodyLevel
+}
+
+// resolveTitleLevels mirrors common.py:resolve_frequency_levels over the
+// full record stream. It is the "frequency" branch of
+// common.py:resolve_title_levels (the outline branch is parity-gap
+// territory per the SCOPE comment above).
+//
+// For each record:
+//   - a non-text record is pinned to BODY_LEVEL directly (python skips
+//     regex/layout detection for doc_type_kwd != "text");
+//   - a text record first tries the selected regex group (match_regex_level);
+//     on no match it falls back to match_layout_level (layout hint), else
+//     BODY_LEVEL.
+//
+// fallback_level is len(selected_group) + 1, exactly as in python.
+func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
+	lines := make([]string, len(records))
+	for i, r := range records {
+		lines[i] = r.text
+	}
+	group := selectLevelGroup(lines, p.Levels)
+	fallbackLevel := len(group) + 1
+	out := make([]int, len(records))
+	for i, rec := range records {
+		if !rec.isText() {
 			out[i] = bodyLevel
+			continue
 		}
+		if lvl := matchRegexLevel(rec.text, group); lvl != 0 {
+			out[i] = lvl
+			continue
+		}
+		out[i] = matchLayoutLevel(rec.text, rec.layout, fallbackLevel)
 	}
 	return out
 }
@@ -230,39 +325,41 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text    string
-	docType string
-	imgID   *string
-	layout  string
-	pdfPos  []map[string]any
+	text       string
+	docType    string
+	imgID      *string
+	layout     string
+	pdfPos     []map[string]any
+	parentMeta map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }
 func (r lineRecord) isText() bool        { return r.docType == "text" }
 
+// trim mirrors python's str.strip(): remove leading/trailing Unicode
+// whitespace. Used for emptiness checks and regex matching so the Go
+// port matches python's `text.strip()` exactly.
 func trim(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\r') {
-		s = s[1:]
-	}
-	for len(s) > 0 {
-		last := s[len(s)-1]
-		if last == ' ' || last == '\t' || last == '\r' || last == '\n' {
-			s = s[:len(s)-1]
-			continue
-		}
-		break
-	}
-	return s
+	return strings.TrimSpace(s)
 }
 
 // compileLevelPattern returns a compiled regex for `pattern`. Returns
 // nil on empty/error to skip the entry — same effect as a regex
 // mismatch in python (the row falls through to body).
+//
+// Python's match_regex_level / select_level_group use `re.match`, which
+// anchors at the START of the string (not the end). We mirror that by
+// prepending `^` (unless the caller already anchored) so Go's
+// MatchString behaves exactly like re.match.
 func compileLevelPattern(pattern string) *regexp.Regexp {
 	if pattern == "" {
 		return nil
 	}
-	re, err := regexp.Compile(pattern)
+	anchored := pattern
+	if !strings.HasPrefix(pattern, "^") {
+		anchored = "^(?:" + pattern + ")"
+	}
+	re, err := regexp.Compile(anchored)
 	if err != nil {
 		return nil
 	}
@@ -277,17 +374,24 @@ type LevelContext struct {
 	mostLevel int
 }
 
-func newLevelContext(lines []string, p *titleChunkerParam) LevelContext {
-	levels := resolveTitleLevels(lines, p)
-	most := 0
-	seen := make(map[int]int)
+func newLevelContext(records []lineRecord, p *titleChunkerParam) LevelContext {
+	levels := resolveTitleLevels(records, p)
+	// most_level is the most-frequent non-body heading level
+	// (common.py:resolve_frequency_levels). Python computes this via
+	// Counter(levels).most_common() over the heading levels only. Walk
+	// levels in input order so ties resolve to the first-encountered
+	// level, matching python's insertion-order tie-break.
+	counts := make(map[int]int)
 	for _, lvl := range levels {
-		seen[lvl]++
+		if lvl < bodyLevel {
+			counts[lvl]++
+		}
 	}
-	// Pick the smallest level that has any hits — titles are
-	// more-specific headings, so the highest-specificity one wins.
-	for _, lvl := range seen {
-		if lvl < bodyLevel && (most == 0 || lvl < most) {
+	most := 0
+	best := 0
+	for _, lvl := range levels {
+		if c := counts[lvl]; c > best {
+			best = c
 			most = lvl
 		}
 	}
@@ -297,25 +401,6 @@ func newLevelContext(lines []string, p *titleChunkerParam) LevelContext {
 func (lc LevelContext) Levels() []int {
 	out := make([]int, len(lc.levels))
 	copy(out, lc.levels)
-	return out
-}
-
-// buildChunksFromRecordGroups is the cheap text-form materialiser
-// (used by Group/Hierarchy for plain-text payloads). For structured
-// upstream payloads a parallel fan-out over groups is used.
-func buildChunksFromRecordGroupsText(groups [][]lineRecord) []map[string]any {
-	out := make([]map[string]any, 0, len(groups))
-	for _, g := range groups {
-		if len(g) == 0 {
-			continue
-		}
-		var sb strings.Builder
-		for _, r := range g {
-			sb.WriteString(r.text)
-			sb.WriteString("\n")
-		}
-		out = append(out, map[string]any{"text": sb.String()})
-	}
 	return out
 }
 
@@ -346,10 +431,6 @@ func NewTitleChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-// Parallelism is the configured intra-component fan-out (plan §4
-// Phase 2 row 2.3b).
-func (c *TitleChunkerComponent) Parallelism() int { return 2 }
-
 // Inputs is exposed so callers can introspect.
 func (c *TitleChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
@@ -358,34 +439,32 @@ func (c *TitleChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 
 // Invoke delegates to the chosen strategy (group or hierarchy).
 func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			inputs = map[string]any{}
-		}
-		// `name` is read from the workflow-wide Globals bag (seeded at
-		// pipeline start, published by the File component), not from the
-		// upstream output map.
-		name := globals.GlobalOrInput(ctx, inputs, "name", "")
-		if name == "" {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "TitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		switch c.param.Method {
-		case "hierarchy":
-			return invokeHierarchy(ctx, inputs, &c.param)
-		case "group":
-			return invokeGroup(ctx, inputs, &c.param)
-		default:
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        fmt.Sprintf("TitleChunker: unsupported method %q", c.param.Method),
-			}, nil
-		}
-	})
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "TitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	switch c.param.Method {
+	case "hierarchy":
+		return invokeHierarchy(ctx, inputs, &c.param)
+	case "group":
+		return invokeGroup(ctx, inputs, &c.param)
+	default:
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        fmt.Sprintf("TitleChunker: unsupported method %q", c.param.Method),
+		}, nil
+	}
 }
 
 // init registers TitleChunker under CategoryIngestion.
