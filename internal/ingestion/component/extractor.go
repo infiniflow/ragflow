@@ -31,10 +31,9 @@
 //     response. We DO NOT panic: errors are surfaced as a clean
 //     "no driver for %q" wrap that callers can log and route.
 //
-//   - LLM CALL SHAPE: one chat call per chunk (no batching). Plan
-//     §AD-5a locks Parallelism at 1 because "LLM call is inherently
-//     serial"; sequential per-chunk processing keeps test ordering
-//     deterministic under -race.
+//   - LLM CALL SHAPE: one chat call per chunk (no batching). LLM
+//     calls are inherently serial; sequential per-chunk processing
+//     keeps test ordering deterministic under -race.
 //
 //   - TIMEOUT / ELAPSED: the call is wrapped in
 //     runtime.WithTimeout(60s) and runtime.TrackElapsed so the
@@ -169,12 +168,6 @@ func (c *ExtractorComponent) Outputs() map[string]string {
 		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
 	}
 }
-
-// Parallelism is locked at 1 (plan §AD-5a: "Extractor: 1 (LLM call
-// is inherently serial)"). The pipeline runner uses this to decide
-// fan-out degree; sequential per-chunk processing keeps test
-// ordering deterministic under -race.
-func (c *ExtractorComponent) Parallelism() int { return 1 }
 
 // extractorChatInvoker is the seam the Extractor uses to dispatch
 // its chat call. The production implementation
@@ -467,7 +460,8 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //	output_format (string)          — always "chunks".
 //	_ERROR        (string, reserved) — populated when the component
 //	                                  short-circuits with an error.
-//	_created_time, _elapsed_time    — TrackElapsed bookkeeping.
+//	_created_time, _elapsed_time    — stamped by the canvas framework
+//	                                 (realComponentBody), not here.
 func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
@@ -479,44 +473,41 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
 	}
 
-	tracked, err := runtime.TrackElapsed("Extractor", func() (map[string]any, error) {
-		cb := runtime.ProgressCallback(nil)
-		progressErr := runtime.TrackProgress("Extractor", cb, func() error {
-			return runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
-				if len(in.chunks) == 0 {
-					// Fast path (python _invoke line 108): one
-					// call with the resolved args directly.
-					ans, callErr := c.call(timeoutCtx, in, "")
-					if callErr != nil {
-						return callErr
-					}
-					in.chunks = []map[string]any{{in.fieldName: ans}}
-					return nil
-				}
-				for i, ck := range in.chunks {
-					text, _ := ck["text"].(string)
-					ans, callErr := c.call(timeoutCtx, in, text)
-					if callErr != nil {
-						return fmt.Errorf("chunk %d: %w", i, callErr)
-					}
-					ck[in.fieldName] = ans
-					in.chunks[i] = ck
-				}
-				return nil
-			})
-		})
-		if progressErr != nil {
-			return nil, progressErr
+	// Progress (_created_time / _elapsed_time stamping, start/done
+	// callbacks) is owned by the canvas framework (realComponentBody),
+	// not by this component. The per-chunk LLM timeout below is a
+	// business concern that stays here.
+	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
+		if len(in.chunks) == 0 {
+			// Fast path (python _invoke line 108): one
+			// call with the resolved args directly.
+			ans, callErr := c.call(timeoutCtx, in, "")
+			if callErr != nil {
+				return callErr
+			}
+			in.chunks = []map[string]any{{in.fieldName: ans}}
+			return nil
 		}
-		return map[string]any{
-			"chunks":        in.chunks,
-			"output_format": "chunks",
-		}, nil
-	})
-	if err != nil {
+		for i, ck := range in.chunks {
+			text, _ := ck["text"].(string)
+			ans, callErr := c.call(timeoutCtx, in, text)
+			if callErr != nil {
+				return fmt.Errorf("chunk %d: %w", i, callErr)
+			}
+			ck[in.fieldName] = ans
+			in.chunks[i] = ck
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
-	return tracked, nil
+	// Run-level metadata (name, tenant_id, kb_id, ...) is read by
+	// downstream components from the workflow-wide CanvasState.Globals
+	// bag (seeded at pipeline start), so it is not re-emitted here.
+	return map[string]any{
+		"chunks":        in.chunks,
+		"output_format": "chunks",
+	}, nil
 }
 
 // call dispatches one LLM chat call for the supplied chunk text

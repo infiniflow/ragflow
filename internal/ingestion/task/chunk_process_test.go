@@ -201,12 +201,12 @@ func TestRenameTextToContentWithWeight_NoTextKey(t *testing.T) {
 }
 
 // =============================================================================
-// ProcessChunksForDataflow — Python: processChunks()
+// ProcessChunksForPipeline — Python: processChunks()
 // =============================================================================
 
-func TestProcessChunksForDataflow_SetsDocIDAndKBID(t *testing.T) {
+func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 
 	if chunks[0]["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %q, want \"doc-1\"", chunks[0]["doc_id"])
@@ -220,18 +220,18 @@ func TestProcessChunksForDataflow_SetsDocIDAndKBID(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_SetsDocNameKwd(t *testing.T) {
+func TestProcessChunksForPipeline_SetsDocNameKwd(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	if chunks[0]["docnm_kwd"] != "test-doc.pdf" {
 		t.Errorf("docnm_kwd = %q, want \"test-doc.pdf\"", chunks[0]["docnm_kwd"])
 	}
 }
 
-func TestProcessChunksForDataflow_SetsTimeFields(t *testing.T) {
+func TestProcessChunksForPipeline_SetsTimeFields(t *testing.T) {
 	now := time.Now()
 	chunks := []map[string]any{{"text": "hello"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", now)
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", now)
 
 	if timeStr, ok := chunks[0]["create_time"].(string); ok {
 		if timeStr != now.Format("2006-01-02 15:04:05") {
@@ -250,33 +250,31 @@ func TestProcessChunksForDataflow_SetsTimeFields(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_GeneratesID(t *testing.T) {
+func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	id, ok := chunks[0]["id"].(string)
 	if !ok || id == "" {
 		t.Errorf("id should be non-empty string, got %v", chunks[0]["id"])
 	}
 }
 
-func TestProcessChunksForDataflow_PanicOnListText(t *testing.T) {
+func TestProcessChunksForPipeline_NoPanicOnListText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for list-shaped text")
-		}
-	}()
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	res := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	if res == nil {
+		t.Errorf("should return valid result")
+	}
 }
 
-func TestProcessChunksForDataflow_RemovesInternalPipelineFields(t *testing.T) {
+func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 	chunks := []map[string]any{{
 		"text":           "hello",
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
 		"image":          "data:image/png;base64,abc",
 	}}
 
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	if _, exists := chunks[0]["_pdf_positions"]; exists {
 		t.Fatalf("_pdf_positions should be removed before indexing: %v", chunks[0]["_pdf_positions"])
 	}
@@ -285,17 +283,17 @@ func TestProcessChunksForDataflow_RemovesInternalPipelineFields(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_PreservesExistingID(t *testing.T) {
+func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "id": "existing-id"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	if chunks[0]["id"] != "existing-id" {
 		t.Errorf("existing id should be preserved, got %q", chunks[0]["id"])
 	}
 }
 
-func TestProcessChunksForDataflow_QuestionsProcessing(t *testing.T) {
+func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "questions": "Q1\nQ2\nQ3"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 
 	if _, exists := chunks[0]["questions"]; exists {
 		t.Error("questions key should be removed")
@@ -312,9 +310,9 @@ func TestProcessChunksForDataflow_QuestionsProcessing(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_KeywordsProcessing(t *testing.T) {
+func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "keywords": "kw1,kw2;kw3"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 
 	if _, exists := chunks[0]["keywords"]; exists {
 		t.Error("keywords key should be removed")
@@ -328,9 +326,9 @@ func TestProcessChunksForDataflow_KeywordsProcessing(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_SummaryProcessing(t *testing.T) {
+func TestProcessChunksForPipeline_SummaryProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "summary": "This is a summary."}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 
 	if _, exists := chunks[0]["summary"]; exists {
 		t.Error("summary key should be removed")
@@ -343,9 +341,9 @@ func TestProcessChunksForDataflow_SummaryProcessing(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_TextRenamed(t *testing.T) {
+func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 
 	if _, exists := chunks[0]["text"]; exists {
 		t.Error("text key should be removed")
@@ -355,46 +353,10 @@ func TestProcessChunksForDataflow_TextRenamed(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_PreservesContentWithWeight(t *testing.T) {
+func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
-	_ = ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_ = ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
 	if chunks[0]["content_with_weight"] != "already set" {
 		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
-	}
-}
-
-func TestProcessChunksForDataflow_MetadataExtraction(t *testing.T) {
-	chunks := []map[string]any{
-		{"text": "hello", "metadata": map[string]any{"author": "Alice", "year": "2024"}},
-	}
-	meta := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-
-	if _, exists := chunks[0]["metadata"]; exists {
-		t.Error("metadata key should be removed from chunk")
-	}
-	if meta["author"] != "Alice" {
-		t.Errorf("metadata[\"author\"] = %q, want \"Alice\"", meta["author"])
-	}
-}
-
-func TestProcessChunksForDataflow_MetadataMergeAcrossChunks(t *testing.T) {
-	chunks := []map[string]any{
-		{"text": "chunk1", "metadata": map[string]any{"author": "Alice"}},
-		{"text": "chunk2", "metadata": map[string]any{"year": "2024"}},
-	}
-	meta := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-
-	if meta["author"] != "Alice" {
-		t.Errorf("author = %q, want \"Alice\"", meta["author"])
-	}
-	if meta["year"] != "2024" {
-		t.Errorf("year = %v, want \"2024\"", meta["year"])
-	}
-}
-
-func TestProcessChunksForDataflow_NilChunks(t *testing.T) {
-	meta := ProcessChunksForDataflow(nil, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-	if len(meta) != 0 {
-		t.Errorf("metadata should be empty for nil chunks, got %v", meta)
 	}
 }

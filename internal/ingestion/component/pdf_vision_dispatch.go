@@ -1,20 +1,24 @@
 package component
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
-
-	"gorm.io/gorm"
 )
 
 type pdfVisionPage struct {
@@ -52,6 +56,24 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parserDispatchResult{}, false, nil
 	}
+
+	method := getStringOr(setup, "parse_method", "")
+	layout := getStringOr(setup, "layout_recognizer", "")
+
+	// MinerU dispatch: parse_method "mineru" or layout_recognizer "@MinerU"
+	if method == "mineru" || strings.HasPrefix(layout, "mineru") || strings.Contains(layout, "@MinerU") {
+		tenantID := getStringOr(inputs, "tenant_id", "")
+		if tenantID == "" {
+			return parserDispatchResult{}, true,
+				fmt.Errorf("Parser: mineru requires tenant_id")
+		}
+		res, err := dispatchMinerUPDF(filename, binary, tenantID, setup)
+		if err != nil {
+			return parserDispatchResult{}, true, err
+		}
+		return res, true, nil
+	}
+
 	modelID, useVision := resolvePDFVisionModelID(setup)
 	if !useVision {
 		return parserDispatchResult{}, false, nil
@@ -66,6 +88,248 @@ func maybeDispatchPDFVision(
 		return parserDispatchResult{}, true, err
 	}
 	return res, true, nil
+}
+
+// dispatchMinerUPDF submits a PDF to the tenant's MinerU OCR model
+// via the streaming /file_parse endpoint and returns parsed sections.
+// Mirrors Python's mineru_parser.py:parse_pdf which POSTs with
+// stream=True and reads the zip response body directly (no polling).
+func dispatchMinerUPDF(
+	_ string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+) (parserDispatchResult, error) {
+	driver, _, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeOCR)
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("Parser: mineru model: %w", err)
+	}
+	if !isMinerUDriver(driver) {
+		return parserDispatchResult{}, fmt.Errorf(
+			"Parser: mineru requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant.", driver.Name())
+	}
+
+	baseURL := ""
+	if apiConfig.BaseURL != nil {
+		baseURL = *apiConfig.BaseURL
+	}
+	if baseURL == "" {
+		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
+	}
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+
+	// Parse method: "raw", "auto", "ocr", "txt" matching Python's MinerUParseMethod.
+	parseMethod := getStringOr(setup, "parse_method", "auto")
+	lang := getStringOr(setup, "mineru_lang", "English")
+	mineruLang := mineruLangCode(lang)
+	backend := getStringOr(setup, "mineru_backend", "pipeline")
+
+	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("Parser: mineru stream: %w", err)
+	}
+
+	sections, err := mineruExtractSections(zipBytes)
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("Parser: mineru extract: %w", err)
+	}
+
+	var parts []string
+	for _, s := range sections {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	md := strings.Join(parts, "\n")
+
+	outputFormat := getStringOr(setup, "output_format", "markdown")
+	return parserDispatchResult{
+		OutputFormat: outputFormat,
+		Markdown:     md,
+	}, nil
+}
+
+// resolveMinerUBaseURL extracts the resolved base URL from a model driver.
+func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig) (string, error) {
+	type baseURLGetter interface {
+		GetBaseURL(*modelModule.APIConfig) (string, error)
+	}
+	if g, ok := driver.(baseURLGetter); ok {
+		return g.GetBaseURL(apiConfig)
+	}
+	return "", fmt.Errorf("driver %q does not expose GetBaseURL", driver.Name())
+}
+
+// mineruLangCode maps a human-readable language name to a MinerU lang code,
+// mirroring Python's LANGUAGE_TO_MINERU_MAP in mineru_parser.py.
+func mineruLangCode(lang string) string {
+	switch strings.ToLower(lang) {
+	case "english":
+		return "en"
+	case "chinese":
+		return "ch"
+	case "traditional chinese":
+		return "chinese_cht"
+	case "japanese":
+		return "japan"
+	case "korean":
+		return "korean"
+	case "russian", "ukrainian":
+		return "east_slavic"
+	default:
+		return "ch"
+	}
+}
+
+// mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
+// endpoint with streaming and returns the zip response body.
+// Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
+func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend string) ([]byte, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("files", "document.pdf")
+	if err != nil {
+		return nil, fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := part.Write(binary); err != nil {
+		return nil, fmt.Errorf("write pdf: %w", err)
+	}
+
+	_ = writer.WriteField("backend", backend)
+	_ = writer.WriteField("parse_method", parseMethod)
+	_ = writer.WriteField("lang_list", lang)
+	_ = writer.WriteField("return_md", "true")
+	_ = writer.WriteField("return_content_list", "true")
+	_ = writer.WriteField("response_format_zip", "true")
+	_ = writer.WriteField("start_page_id", "0")
+	_ = writer.WriteField("end_page_id", "99999")
+	_ = writer.WriteField("return_images", "true")
+	_ = writer.WriteField("return_middle_json", "true")
+	_ = writer.WriteField("return_model_output", "true")
+	_ = writer.WriteField("formula_enable", "true")
+	_ = writer.WriteField("table_enable", "true")
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("finalize form: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if apiKey != nil && *apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+*apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
+	}
+
+	zipBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(zipBytes) == 0 {
+		return nil, fmt.Errorf("empty response from MinerU")
+	}
+	return zipBytes, nil
+}
+
+// mineruExtractSections reads the MinerU content_list.json from a zip
+// archive and extracts section text blocks, mirroring Python's
+// _transfer_to_sections.
+func mineruExtractSections(zipBytes []byte) ([]string, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("open zip: %w", err)
+	}
+
+	var contentList []byte
+	for _, f := range zipReader.File {
+		if strings.HasSuffix(f.Name, "content_list.json") {
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
+			contentList, _ = io.ReadAll(rc)
+			rc.Close()
+			break
+		}
+	}
+	if len(contentList) == 0 {
+		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
+	}
+
+	var items []map[string]any
+	if err := json.Unmarshal(contentList, &items); err != nil {
+		return nil, fmt.Errorf("parse content_list.json: %w", err)
+	}
+
+	var sections []string
+	for _, item := range items {
+		typ, _ := item["type"].(string)
+		switch typ {
+		case "text":
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		case "table":
+			if tb, ok := item["table_body"].(string); ok {
+				sections = append(sections, tb)
+			}
+			for _, cap := range stringSlice(item["table_caption"]) {
+				sections = append(sections, cap)
+			}
+		case "image":
+			for _, cap := range stringSlice(item["image_caption"]) {
+				sections = append(sections, cap)
+			}
+			if desc, ok := item["vlm_description"].(string); ok && desc != "" {
+				sections = append(sections, desc)
+			}
+		case "equation", "code":
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		case "list":
+			for _, li := range stringSlice(item["list_items"]) {
+				sections = append(sections, li)
+			}
+		default:
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		}
+	}
+	return sections, nil
+}
+
+func stringSlice(raw any) []string {
+	switch v := raw.(type) {
+	case []any:
+		var out []string
+		for _, s := range v {
+			if str, ok := s.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	case []string:
+		return v
+	}
+	return nil
 }
 
 func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
@@ -93,14 +357,13 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch {
-	case strings.HasSuffix(method, "@mineru"),
-		strings.HasSuffix(method, "@paddleocr"),
+	case strings.HasSuffix(method, "@paddleocr"),
 		strings.HasSuffix(method, "@somark"),
 		strings.HasSuffix(method, "@opendataloader"):
 		return true
 	}
 	switch method {
-	case "deepdoc", "plain_text", "plaintext", "mineru", "paddleocr", "docling", "opendataloader", "somark", "tcadp", "tcadp parser":
+	case "deepdoc", "plain_text", "plaintext", "paddleocr", "docling", "opendataloader", "somark", "tcadp", "tcadp parser":
 		return true
 	}
 	return false
@@ -201,7 +464,7 @@ func defaultPDFVisionModelResolver(
 		driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
 		return driver, modelName, apiConfig, err
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfigFromProviderInstance(tenantID, entity.ModelTypeImage2Text, modelID)
+	driver, modelName, apiConfig, _, err := resolveModelConfig(tenantID, entity.ModelTypeImage2Text, modelID)
 	return driver, modelName, apiConfig, err
 }
 
@@ -242,22 +505,12 @@ func loadPDFVisionPrompt(name string) (string, error) {
 func pdfVisionPromptsBaseDir() (string, error) {
 	var initErr error
 	pdfVisionPromptsOnce.Do(func() {
-		cwd, err := os.Getwd()
-		if err != nil {
-			initErr = err
+		root := utility.GetProjectRoot()
+		if _, statErr := os.Stat(filepath.Join(root, "rag", "prompts")); statErr == nil {
+			pdfVisionPromptsBase = root
 			return
 		}
-		for dir := cwd; dir != "/" && dir != "."; dir = filepath.Dir(dir) {
-			if _, err := os.Stat(filepath.Join(dir, "rag", "prompts")); err == nil {
-				pdfVisionPromptsBase = dir
-				return
-			}
-			next := filepath.Dir(dir)
-			if next == dir {
-				break
-			}
-		}
-		pdfVisionPromptsBase = "/ragflow"
+		initErr = fmt.Errorf("rag/prompts not found under project root %q", root)
 	})
 	if initErr != nil {
 		return "", initErr
@@ -271,163 +524,12 @@ func renderPDFVisionPrompt(template string, page int) string {
 	return rendered
 }
 
-type tenantModelExtra struct {
-	MaxTokens *int `json:"max_tokens"`
-}
-
-func resolveTenantModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	tenantDAO := dao.NewTenantDAO()
-	tenant, err := tenantDAO.GetByID(tenantID)
-	if err != nil {
-		return nil, "", nil, 0, err
+// isMinerUDriver reports whether the model driver is a MinerU variant
+// (remote mineru.net or local mineru).
+func isMinerUDriver(driver modelModule.ModelDriver) bool {
+	switch strings.ToLower(driver.Name()) {
+	case "mineru", "mineru.net":
+		return true
 	}
-	var modelID string
-	switch modelType {
-	case entity.ModelTypeChat:
-		modelID = tenant.LLMID
-	case entity.ModelTypeEmbedding:
-		modelID = tenant.EmbdID
-	case entity.ModelTypeRerank:
-		modelID = tenant.RerankID
-	case entity.ModelTypeSpeech2Text:
-		modelID = tenant.ASRID
-	case entity.ModelTypeImage2Text:
-		modelID = tenant.Img2TxtID
-	case entity.ModelTypeTTS:
-		modelID = tenant.TTSID
-	case entity.ModelTypeOCR:
-		modelID = tenant.OCRID
-	default:
-		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
-	}
-	if modelID == "" {
-		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
-	}
-	return resolveModelConfigFromProviderInstance(tenantID, modelType, modelID)
-}
-
-func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	providerDAO := dao.NewTenantModelProviderDAO()
-	instanceDAO := dao.NewTenantModelInstanceDAO()
-	modelDAO := dao.NewTenantModelDAO()
-
-	provider, err := providerDAO.GetByTenantIDAndProviderName(tenantID, providerName)
-	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
-	}
-	instance, err := instanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
-	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
-	}
-
-	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-	baseURL := extra["base_url"]
-
-	modelObj, modelErr := modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, int(modelType), pureModelName,
-	)
-	switch {
-	case modelErr == nil:
-		if modelObj.Status == "inactive" {
-			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
-		}
-		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-		if providerInfo == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
-		}
-		driver, err := newModelDriverForBaseURLLocal(providerInfo.ModelDriver, providerName, region, baseURL)
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
-		}
-		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
-			var tenantExtra tenantModelExtra
-			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
-				return nil, "", nil, 0, err
-			}
-			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				maxTokens = *tenantExtra.MaxTokens
-			}
-		}
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
-	case !errorsIsRecordNotFound(modelErr):
-		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
-	}
-
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-	if targetProvider == nil {
-		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
-	}
-	var llmInfo *modelModule.Model
-	for i := range targetProvider.Models {
-		if strings.EqualFold(targetProvider.Models[i].Name, pureModelName) {
-			llmInfo = targetProvider.Models[i]
-			break
-		}
-	}
-	if llmInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("model config not found: %s", modelName)
-	}
-	driver, err := newModelDriverForBaseURLLocal(targetProvider.ModelDriver, providerName, region, baseURL)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
-	}
-	return driver, llmInfo.Name, apiConfig, maxTokens, nil
-}
-
-func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	default:
-		return "", "", "", fmt.Errorf("invalid model name format: %s", compositeName)
-	}
-}
-
-func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
-	if driver == nil {
-		return nil, fmt.Errorf("provider %s driver not found", providerName)
-	}
-	if strings.TrimSpace(baseURL) == "" {
-		return driver, nil
-	}
-	baseURLByRegion := map[string]string{region: baseURL}
-	if region == "" {
-		baseURLByRegion["default"] = baseURL
-	}
-	newDriver := driver.NewInstance(baseURLByRegion)
-	if newDriver == nil {
-		return nil, fmt.Errorf("provider %s does not support custom base_url", providerName)
-	}
-	return newDriver, nil
-}
-
-func errorsIsRecordNotFound(err error) bool {
-	return err != nil && (err == gorm.ErrRecordNotFound || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+	return false
 }

@@ -23,7 +23,6 @@
 // (value.type starts with "file") emit a stable "<file:key>" stub
 // so the run keeps flowing while the FileService integration
 // surfaces the actual bytes via the storage layer.
-//
 package component
 
 import (
@@ -53,7 +52,6 @@ const fileStubPrefix = "<file:"
 var tipsPlaceholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 // userFillUpParam is the per-instance configuration for UserFillUp.
-//
 type userFillUpParam struct {
 	EnableTips      bool   `json:"enable_tips"`
 	Tips            string `json:"tips"`

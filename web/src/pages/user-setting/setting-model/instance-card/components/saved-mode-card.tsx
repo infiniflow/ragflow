@@ -63,7 +63,7 @@ export function SavedModeCard({
       <CollapsibleTrigger asChild>
         <div className="flex items-center gap-1 w-full mb-5">
           <div
-            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 px-2 py-1 cursor-pointer bg-bg-input rounded-md"
+            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 px-2 py-1 cursor-pointer bg-bg-card rounded-md"
             data-testid="instance-name-row"
           >
             <Button
@@ -130,6 +130,7 @@ export function SavedModeCard({
                 instance={instance}
                 hideActions={false}
                 hideIfEmpty={false}
+                instanceDetailsLoaded={instanceDetailsLoaded}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}
                 onBlurSuppressChange={(s) => {
                   blurSuppressRef.current = s;

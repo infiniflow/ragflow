@@ -336,4 +336,7 @@ export interface JsonEditorProps {
 
   // Configuration options for the JSONEditor
   options?: JsonEditorOptions;
+
+  // Whether to expand all nodes by default in tree/view/form modes
+  defaultExpanded?: boolean;
 }

@@ -1,4 +1,3 @@
-
 package table
 
 import (
@@ -125,4 +124,3 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 	}
 	return result
 }
-

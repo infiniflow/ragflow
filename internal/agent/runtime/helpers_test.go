@@ -26,29 +26,23 @@ import (
 )
 
 // recordingCallback is a thread-safe ProgressCallback recorder used by
-// the TrackProgress tests. progress/message pairs are appended in
+// the TrackProgress tests. ProgressEvent values are appended in
 // invocation order so tests can assert the exact call sequence.
 type recordingCallback struct {
-	mu      sync.Mutex
-	calls   []recordedCall
-	started bool
+	mu    sync.Mutex
+	calls []ProgressEvent
 }
 
-type recordedCall struct {
-	progress int
-	message  string
-}
-
-func (r *recordingCallback) callback(progress int, message string) {
+func (r *recordingCallback) callback(ev ProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls = append(r.calls, recordedCall{progress: progress, message: message})
+	r.calls = append(r.calls, ev)
 }
 
-func (r *recordingCallback) callsCopy() []recordedCall {
+func (r *recordingCallback) callsCopy() []ProgressEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]recordedCall, len(r.calls))
+	out := make([]ProgressEvent, len(r.calls))
 	copy(out, r.calls)
 	return out
 }
@@ -67,11 +61,11 @@ func TestTrackProgress_Success(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("expected 2 callback invocations, got %d: %+v", len(calls), calls)
 	}
-	if calls[0].progress != 0 || calls[0].message != "Parser Started" {
-		t.Errorf("first call = %+v, want progress=0 message=%q", calls[0], "Parser Started")
+	if calls[0].Phase != PhaseEnter || calls[0].Component != "Parser" {
+		t.Errorf("first call = %+v, want phase=PhaseEnter component=%q", calls[0], "Parser")
 	}
-	if calls[1].progress != 1 || calls[1].message != "Parser Done" {
-		t.Errorf("second call = %+v, want progress=1 message=%q", calls[1], "Parser Done")
+	if calls[1].Phase != PhaseExit || calls[1].Component != "Parser" {
+		t.Errorf("second call = %+v, want phase=PhaseExit component=%q", calls[1], "Parser")
 	}
 }
 
@@ -88,14 +82,17 @@ func TestTrackProgress_Failure(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("expected 2 callback invocations, got %d", len(calls))
 	}
-	if calls[0].progress != 0 || calls[0].message != "Tokenizer Started" {
-		t.Errorf("first call = %+v, want progress=0 message=%q", calls[0], "Tokenizer Started")
+	if calls[0].Phase != PhaseEnter || calls[0].Component != "Tokenizer" {
+		t.Errorf("first call = %+v, want phase=PhaseEnter component=%q", calls[0], "Tokenizer")
 	}
-	if calls[1].progress != -1 {
-		t.Errorf("second call progress = %d, want -1", calls[1].progress)
+	if calls[1].Phase != PhaseError {
+		t.Errorf("second call phase = %v, want PhaseError", calls[1].Phase)
 	}
-	if !strings.Contains(calls[1].message, "Tokenizer") || !strings.Contains(calls[1].message, "boom") {
-		t.Errorf("second call message = %q, want it to contain both %q and %q", calls[1].message, "Tokenizer", "boom")
+	if calls[1].Component != "Tokenizer" {
+		t.Errorf("second call component = %q, want %q", calls[1].Component, "Tokenizer")
+	}
+	if !errors.Is(calls[1].Err, wantErr) {
+		t.Errorf("second call Err = %v, want %v", calls[1].Err, wantErr)
 	}
 }
 
@@ -122,8 +119,9 @@ func TestTrackProgress_NilCallback(t *testing.T) {
 }
 
 // TestTrackProgress_PassesThroughReturnValue covers the documented contract
-// that the error returned to the caller is fn's error verbatim (wrapped
-// only by the message-formatting for the callback, not for the return).
+// that the error returned to the caller is fn's error verbatim (the
+// callback receives it on a PhaseError event but the return value is not
+// wrapped).
 func TestTrackProgress_PassesThroughReturnValue(t *testing.T) {
 	rec := &recordingCallback{}
 
@@ -139,13 +137,11 @@ func TestTrackProgress_PassesThroughReturnValue(t *testing.T) {
 		t.Fatalf("err not propagated by identity: got %v (%T), want %v (%T)", got, got, want, want)
 	}
 
-	// cb saw the failure with progress=-1
-	var last recordedCall
-	for _, c := range rec.callsCopy() {
-		last = c
-	}
-	if last.progress != -1 {
-		t.Errorf("final cb call progress = %d, want -1", last.progress)
+	// cb saw the failure on a PhaseError event
+	calls := rec.callsCopy()
+	last := calls[len(calls)-1]
+	if last.Phase != PhaseError {
+		t.Errorf("final cb call phase = %v, want PhaseError", last.Phase)
 	}
 }
 

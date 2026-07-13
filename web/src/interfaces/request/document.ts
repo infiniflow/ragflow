@@ -22,6 +22,7 @@ export interface IChangeParserConfigRequestBody {
     clustering_method?: 'gmm' | 'ahc';
     tree_builder?: 'raptor' | 'psi';
   };
+  compilation_template_group_id?: string[];
   // Metadata fields
   metadata?: Array<{
     key?: string;
