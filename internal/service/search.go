@@ -41,6 +41,7 @@ func NewSearchService() *SearchService {
 	return &SearchService{
 		searchDAO:     dao.NewSearchDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		datasetDAO:    dao.NewKnowledgebaseDAO(),
 		tenantService: NewTenantService(),
 	}
 }
