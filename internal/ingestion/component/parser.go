@@ -143,7 +143,16 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			if p.Setups == nil {
 				p.Setups = make(map[string]schema.ParserSetup)
 			}
-			p.Setups[fileType] = schema.ParserSetup(setupMap)
+			// Normalise to the canonical family name ("picture",
+			// "video", …) so downstream lookups via
+			// resolveParserFamily, maybeDispatchImage, etc. find
+			// the entry regardless of what key the template DSL
+			// used (e.g. "image", "visual", "picture").
+			family := pythonFamilyName(fileType)
+			if family == "" {
+				family = fileType
+			}
+			p.Setups[family] = schema.ParserSetup(setupMap)
 		}
 	}
 	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {
@@ -273,9 +282,48 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if visionErr != nil {
 		return nil, visionErr
 	}
+
+	var handledMedia bool
 	if !handledVision {
+		// Video dispatch: IMAGE2TEXT vision chat.
+		// Mirrors Python's _video().
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(fileTypeExt, filename, binary, inputs, c.Param.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	var handledImage bool
+	if !handledVision && !handledMedia {
+		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
+		// Mirrors Python's rag/app/picture.py:chunk() image branch.
+		dispatched, handledImage, visionErr = maybeDispatchImage(fileTypeExt, filename, binary, inputs, c.Param.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	var handledAudio bool
+	if !handledVision && !handledMedia && !handledImage {
+		// Audio dispatch: SPEECH2TEXT transcription.
+		// Mirrors Python's rag/app/audio.py:chunk().
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(fileTypeExt, filename, binary, inputs, c.Param.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	if !handledVision && !handledMedia && !handledImage && !handledAudio {
 		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Param.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
+
+		// DOCX vision figure enhancement: enrich the markdown
+		// with LLM-generated descriptions of embedded images.
+		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
+		dispatched, _, _ = maybeDispatchDOCXVision(fileTypeExt, dispatched, inputs, c.Param.Setups)
+
+		// Markdown vision figure enhancement: enrich parsed
+		// markdown JSON items with LLM-generated descriptions of
+		// referenced images (![alt](url)). Mirrors Python's
+		// enhance_media_sections_with_vision in _markdown.
+		dispatched, _, _ = maybeDispatchMarkdownVision(fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -320,7 +368,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	//    this component only reshapes the parser output. The DETERMINISTIC
 	//    MERGE (plan §8 R8) keeps pages sorted by PageNumber so the
 	//    downstream chunker / tokenizer get stable chunk IDs.
-	parsed, err := buildPagesFromBytes(ctx, pages)
+	parsed, err := buildPagesFromBytes(ctx, pages, dispatched.DocType)
 	if err != nil {
 		return nil, fmt.Errorf("Parser: %w", err)
 	}
@@ -359,9 +407,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 //
 // The function is format-agnostic: it does not resolve parsers or
 // inspect file families — it only carries the raw bytes under the
-// "text" key with doc_type_kwd "text", matching the shape downstream
-// readers expect from the raw-text fallback and dispatch paths.
-func buildPagesFromBytes(ctx context.Context, pages [][]byte) ([]schema.Page, error) {
+// "text" key with the given doc_type_kwd (defaults to "text" when
+// empty), matching the shape downstream readers expect from the
+// raw-text fallback and dispatch paths.
+func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([]schema.Page, error) {
+	if docType == "" {
+		docType = "text"
+	}
 	out := make([]schema.Page, 0, len(pages))
 	for _, raw := range pages {
 		if err := ctx.Err(); err != nil {
@@ -369,7 +421,7 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte) ([]schema.Page, er
 		}
 		out = append(out, schema.Page{
 			"text":         string(raw),
-			"doc_type_kwd": "text",
+			"doc_type_kwd": docType,
 		})
 	}
 	return out, nil

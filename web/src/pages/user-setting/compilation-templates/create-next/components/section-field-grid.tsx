@@ -11,8 +11,8 @@ import {
 } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
-import { getTypeOptionsFromBuiltinSection } from '@/pages/user-setting/compilation-templates/edit-template/utils';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
+import { getTypeOptionsFromBuiltinSection } from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { FieldCard } from './field-card';
 

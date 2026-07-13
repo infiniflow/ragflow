@@ -69,9 +69,9 @@
 //     chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
 //     and uses an async semaphore (`embed_limiter`). The Go port
 //     issues ONE `Encode([]string)` call with the entire chunk
-//     list (AD-5a calls out "embedding calls batched, not fanned"
-//     and Parallelism=1). Drivers that need to chunk internally
-//     can do so — the wire call is one round-trip.
+//     list (AD-5a calls out "embedding calls batched, not fanned").
+//     Drivers that need to chunk internally can do so — the wire
+//     call is one round-trip.
 //
 //   - TRACKING: WithTimeout (60s, matches python `@timeout(60)` on
 //     `batch_encode`), TrackProgress, TrackElapsed. See
@@ -94,8 +94,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,11 +109,20 @@ import (
 
 const ComponentNameTokenizer = "Tokenizer"
 
-// tokenizerTimeout bounds the batched embedding call. Mirrors the
-// python `@timeout(60)` decorator on `Tokenizer._embedding.embed_limiter`
-// + `batch_encode` in tokenizer.py:92-104. Declared as a var so tests
-// can shrink it; production wiring uses 60s.
-var tokenizerTimeout = 60 * time.Second
+// tokenizerTimeout returns the per-batch timeout for embedding API calls.
+// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 600s
+// (10 min) to match the canvas-level component timeout default.
+// Invalid / non-positive values fall back to the default.
+func tokenizerTimeout() time.Duration {
+	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return defaultTokenizerTimeout
+}
+
+var defaultTokenizerTimeout = 600 * time.Second
 
 // tokenizerEmbeddingBatchSize mirrors Python's
 // settings.EMBEDDING_BATCH_SIZE default.
@@ -295,11 +306,6 @@ func (c *TokenizerComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is fixed at 1 — embedding calls are batched in one
-// round-trip (plan §2 AD-5a "Tokenizer: 1 (embedding calls batched,
-// not fanned)").
-func (c *TokenizerComponent) Parallelism() int { return 1 }
-
 // Invoke computes tokens + embeddings for the upstream chunks.
 //
 // Failure modes:
@@ -340,34 +346,32 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	chunks := chunksFromTokenizerUpstream(upstream)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
-	return runtime.TrackElapsed("Tokenizer", func() (map[string]any, error) {
-		normalizeChunkTextFallback(chunks)
+	normalizeChunkTextFallback(chunks)
 
-		if contains(c.param.SearchMethod, "full_text") {
-			if err := tokenizeChunks(chunks, titleStem); err != nil {
-				return nil, err
-			}
-		}
-
-		out := map[string]any{
-			"output_format": "chunks",
-			"chunks":        schema.ChunkDocsToMaps(chunks),
-		}
-
-		if contains(c.param.SearchMethod, "embedding") {
-			chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
-			if err != nil {
-				return nil, err
-			}
-			out["embedding_token_consumption"] = tokenCount
-			out["chunks"] = schema.ChunkDocsToMaps(chunks)
-		}
-		if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+	if contains(c.param.SearchMethod, "full_text") {
+		if err := tokenizeChunks(chunks, titleStem); err != nil {
 			return nil, err
 		}
+	}
 
-		return out, nil
-	})
+	out := map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(chunks),
+	}
+
+	if contains(c.param.SearchMethod, "embedding") {
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		if err != nil {
+			return nil, err
+		}
+		out["embedding_token_consumption"] = tokenCount
+		out["chunks"] = schema.ChunkDocsToMaps(chunks)
+	}
+	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
@@ -468,7 +472,7 @@ func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) (
 		results []EmbeddingResult
 		encErr  error
 	)
-	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout, func(timeoutCtx context.Context) error {
+	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
 		results, encErr = embedder.Encode(texts)
 		return encErr
 	})

@@ -281,6 +281,19 @@ export const useAddProviderInstance = () => {
         true,
       );
       if (data.code === 0 && !params.verify) {
+        // Invalidate `addedProviders` so `has_instance` flips to `true`
+        // for providers that just gained their first instance. Without
+        // this, the parent page keeps `providerQueryName === ''` (the
+        // `has_instance` gate in index.tsx) and the `providerInstances`
+        // query stays disabled, so the newly-saved instance never
+        // appears. `exact: true` avoids cascading into every
+        // providerInstances / instanceModels query (they share the
+        // `['AddedProviders', ...]` prefix) - the dedicated invalidation
+        // below handles those.
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
         });

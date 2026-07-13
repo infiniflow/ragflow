@@ -193,9 +193,9 @@ def _load_chat_module(monkeypatch):
 
     class _StubLLMType(str, Enum):
         CHAT = "chat"
-        IMAGE2TEXT = "image2text"
+        VISION = "vision"
         RERANK = "rerank"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         TTS = "tts"
 
     class _StubRetCode(int, Enum):
