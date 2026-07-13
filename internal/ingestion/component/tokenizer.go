@@ -69,9 +69,9 @@
 //     chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
 //     and uses an async semaphore (`embed_limiter`). The Go port
 //     issues ONE `Encode([]string)` call with the entire chunk
-//     list (AD-5a calls out "embedding calls batched, not fanned"
-//     and Parallelism=1). Drivers that need to chunk internally
-//     can do so — the wire call is one round-trip.
+//     list (AD-5a calls out "embedding calls batched, not fanned").
+//     Drivers that need to chunk internally can do so — the wire
+//     call is one round-trip.
 //
 //   - TRACKING: WithTimeout (60s, matches python `@timeout(60)` on
 //     `batch_encode`), TrackProgress, TrackElapsed. See
@@ -295,11 +295,6 @@ func (c *TokenizerComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is fixed at 1 — embedding calls are batched in one
-// round-trip (plan §2 AD-5a "Tokenizer: 1 (embedding calls batched,
-// not fanned)").
-func (c *TokenizerComponent) Parallelism() int { return 1 }
-
 // Invoke computes tokens + embeddings for the upstream chunks.
 //
 // Failure modes:
@@ -340,34 +335,32 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	chunks := chunksFromTokenizerUpstream(upstream)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
-	return runtime.TrackElapsed("Tokenizer", func() (map[string]any, error) {
-		normalizeChunkTextFallback(chunks)
+	normalizeChunkTextFallback(chunks)
 
-		if contains(c.param.SearchMethod, "full_text") {
-			if err := tokenizeChunks(chunks, titleStem); err != nil {
-				return nil, err
-			}
-		}
-
-		out := map[string]any{
-			"output_format": "chunks",
-			"chunks":        schema.ChunkDocsToMaps(chunks),
-		}
-
-		if contains(c.param.SearchMethod, "embedding") {
-			chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
-			if err != nil {
-				return nil, err
-			}
-			out["embedding_token_consumption"] = tokenCount
-			out["chunks"] = schema.ChunkDocsToMaps(chunks)
-		}
-		if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+	if contains(c.param.SearchMethod, "full_text") {
+		if err := tokenizeChunks(chunks, titleStem); err != nil {
 			return nil, err
 		}
+	}
 
-		return out, nil
-	})
+	out := map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(chunks),
+	}
+
+	if contains(c.param.SearchMethod, "embedding") {
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		if err != nil {
+			return nil, err
+		}
+		out["embedding_token_consumption"] = tokenCount
+		out["chunks"] = schema.ChunkDocsToMaps(chunks)
+	}
+	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {

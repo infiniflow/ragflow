@@ -219,9 +219,9 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -322,9 +322,9 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	parserJoined := joinJSONItemTexts(jsonItems)
 	assertNormalizedContainsAll(t, parserJoined, fixture.ExpectContains...)
 
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != 1 {
@@ -804,6 +804,12 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			}
 			if templateUsesComponent(t, templateBytes, "Extractor") {
 				t.Skip("template includes real Extractor and requires model credentials; covered separately from File/Parser/Chunker/Tokenizer e2e")
+			}
+			if templateUsesComponent(t, templateBytes, "QAChunker") {
+				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
+			}
+			if templateUsesComponent(t, templateBytes, "TagChunker") {
+				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
