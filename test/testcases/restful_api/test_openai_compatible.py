@@ -148,7 +148,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], usage
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_client, create_chat):
     chat_id = create_chat("restful_openai_default_nonstream_chat")
     res = rest_client.post(

@@ -255,4 +255,13 @@ def pytest_runtest_protocol(item, nextitem):
     start = time.perf_counter()
     yield
     duration = time.perf_counter() - start
-    print(f"  [{duration:.3f}s]")
+    if duration >= 10:
+        color = "\033[91m"  # red
+    elif duration >= 5:
+        color = "\033[93m"  # orange/yellow (bright yellow)
+    elif duration >= 1:
+        color = "\033[33m"  # yellow
+    else:
+        color = ""
+    reset = "\033[0m" if color else ""
+    print(f"  {color}[{duration:.3f}s]{reset}")
