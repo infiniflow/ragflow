@@ -83,14 +83,26 @@ class FuturMixSeq2txt(GPTSeq2txt):
 
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
+    _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"
+    _DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/api/v1"
 
-    def __init__(self, key, model_name="qwen-audio-asr", **kwargs):
+    def __init__(self, key, model_name="qwen-audio-asr", base_url=None, **kwargs):
         import dashscope
 
         dashscope.api_key = key
+        self.api_key = key
         self.model_name = model_name
+        self.base_url = (base_url or self._DASHSCOPE_API_BASE).rstrip("/")
 
     def transcription(self, audio_path):
+        # Fun-ASR-Flash uses DashScope's workspace-scoped native multimodal
+        # endpoint and payload instead of MultiModalConversation.
+        if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
+            return self._transcribe_fun_asr_flash(audio_path)
+
+        return self._transcribe_qwen_audio(audio_path)
+
+    def _transcribe_qwen_audio(self, audio_path):
         import dashscope
 
         if audio_path.startswith("http"):
@@ -108,7 +120,62 @@ class QWenSeq2txt(Base):
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
 
+    def _transcribe_fun_asr_flash(self, audio_path):
+        audio_format = os.path.splitext(audio_path.split("?", 1)[0])[1].lower().lstrip(".") or "wav"
+        if audio_format == "wave":
+            audio_format = "wav"
+
+        if audio_path.startswith(("http://", "https://", "data:")):
+            audio_input = audio_path
+        else:
+            mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
+            with open(audio_path, "rb") as audio_file:
+                audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
+
+        api_base = self.base_url
+        if api_base.endswith("/compatible-mode/v1"):
+            api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
+        url = f"{api_base}/services/aigc/multimodal-generation/generation"
+        payload = {
+            "model": self.model_name,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
+                    }
+                ]
+            },
+            "parameters": {"format": audio_format, "sample_rate": "16000"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-SSE": "disable",
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            text = result.get("text") or result.get("output", {}).get("text")
+            if not text:
+                raise ValueError("Missing transcription text in Fun-ASR-Flash response")
+            text = text.strip()
+            return text, num_tokens_from_string(text)
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
     def stream_transcription(self, audio_path):
+        if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
+            text, _ = self._transcribe_fun_asr_flash(audio_path)
+            if text.startswith("**ERROR**"):
+                yield {"event": "error", "text": text}
+            else:
+                yield {"event": "delta", "text": text}
+                yield {"event": "final", "text": text}
+            return
+
         import dashscope
 
         if audio_path.startswith("http"):
