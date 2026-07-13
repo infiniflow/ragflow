@@ -293,8 +293,22 @@ class InfinityConnectionBase(DocStoreConnection):
             return f"{cln}!={de}"
 
         cond = list()
+
+        # Handle $or (ES-compatible OR clause) before the main loop.
+        # Each element in the $or array is a sub-condition dict.
+        # Infinity filter syntax:  (cond1) OR (cond2) ...
+        if "$or" in condition and isinstance(condition["$or"], list):
+            or_parts = []
+            for sub_cond in condition["$or"]:
+                if isinstance(sub_cond, dict):
+                    sub_str = self.equivalent_condition_to_str(sub_cond, table_instance)
+                    if sub_str and sub_str != "1=1":
+                        or_parts.append(f"({sub_str})")
+            if or_parts:
+                cond.append("(" + " OR ".join(or_parts) + ")")
+
         for k, v in condition.items():
-            if not isinstance(k, str):
+            if not isinstance(k, str) or k == "$or":
                 continue
             if k == "available_int":
                 if v == 0:
@@ -310,6 +324,9 @@ class InfinityConnectionBase(DocStoreConnection):
                     for item in v:
                         if isinstance(item, str):
                             item = item.replace("'", "''")
+                            # Wrap in double-quotes so Infinity fulltext parser
+                            # treats e.g. "AND", "OR", "NOT" as literals, not operators.
+                            item = f'"{item}"'
                         inCond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{item}')")
                     if inCond:
                         strInCond = " or ".join(inCond)
