@@ -58,7 +58,7 @@ func main() {
 	os.Exit(1)
 }
 
-func runActual(input map[string]any, docID string, kbID string, docName string) (result task.GoldenDataflowResult, err error) {
+func runActual(input map[string]any, docID string, kbID string, docName string) (result task.GoldenCompareResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic: %v", r)
