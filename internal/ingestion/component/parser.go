@@ -82,6 +82,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
@@ -337,6 +338,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if path, _ := getString(inputs, "path"); path != "" {
 		out["path"] = path
 	}
+	// Publish the resolved run-level metadata into the workflow-wide
+	// CanvasState.Globals bag so downstream components read it from ctx
+	// instead of relying on this output re-emitting it. The Go runtime
+	// forwards only this explicit output to the next node, so shared
+	// fields must live in Globals.
+	globals.PublishGlobals(ctx, out)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.

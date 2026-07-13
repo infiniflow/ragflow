@@ -80,7 +80,13 @@ def update_chunk_method(req, doc, tenant_id):
     """
     if doc.parser_id.lower() != req["chunk_method"].lower():
         # if chunk method changed, reset document for reparse
-        result = reset_document_for_reparse(doc, tenant_id, parser_id=req["chunk_method"])
+        result = reset_document_for_reparse(doc, tenant_id, parser_id=req["chunk_method"], pipeline_id="")
+        if result:
+            return result
+    elif doc.pipeline_id:
+        # An explicit chunk method selects the direct parser path. Clear the
+        # previous pipeline even when the parser method itself is unchanged.
+        result = reset_document_for_reparse(doc, tenant_id, pipeline_id="")
         if result:
             return result
     if not req.get("parser_config"):
@@ -122,7 +128,9 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     if not e:
         return get_error_data_result(message="Document not found!")
 
-    # Delete chunks from document store
+    # Update document statistics before deleting all document rows. Pipeline
+    # compilation rows may exist even when token_num is zero, so the doc-store
+    # cleanup must not be gated by the document counters.
     if doc.token_num > 0:
         try:
             e = DocumentService.increment_chunk_num(
@@ -136,7 +144,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
             return get_error_data_result(message="Document not found!")
         if not e:
             return get_error_data_result(message="Document not found!")
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+    settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     # Delete chunk images
     try:

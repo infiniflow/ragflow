@@ -255,7 +255,7 @@ services:
       - ragflow-go
     image: nats:2.14.2
     ports:
-      - ${NATS_PORT}:4222
+      - ${NATS_PORT:-4222}:4222
       - "8222:8222"
     volumes:
       - nats_data:/data
@@ -265,10 +265,10 @@ services:
       - ragflow
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${NATS_PORT}"]
+      test: ["CMD", "nats-server", "--health-check"]
       interval: 10s
       timeout: 10s
-      retries: 120
+      retries: 30
 
   tei-cpu:
     profiles:

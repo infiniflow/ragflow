@@ -66,6 +66,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
@@ -163,7 +164,17 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
-	upstream, err := decodeChunkerFromUpstream(inputs)
+	// `name` lives in the workflow-wide Globals bag (seeded at pipeline
+	// start, published by the File component), not in the upstream output
+	// map. decodeChunkerFromUpstream validates it, so carry the resolved
+	// name into the decode input.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	decInputs := inputs
+	if name != "" {
+		decInputs = cloneInputs(inputs)
+		decInputs["name"] = name
+	}
+	upstream, err := decodeChunkerFromUpstream(decInputs)
 	if err != nil {
 		return map[string]any{
 			"output_format": "chunks",

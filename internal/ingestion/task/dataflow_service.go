@@ -20,10 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/agent/runtime"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/utility"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -92,22 +90,6 @@ func (d *defaultChunkCounter) IncrementChunkNum(docID, kbID string, chunkNum, to
 	return service.NewDocumentService().IncrementChunkNum(docID, kbID, chunkNum, tokenConsumption, duration)
 }
 
-func encodeTexts(model *models.EmbeddingModel, texts []string) ([][]float64, int, error) {
-	texts = TruncateTexts(texts, model.MaxTokens)
-	config := &models.EmbeddingConfig{Dimension: 0}
-	embeds, err := model.ModelDriver.Embed(model.ModelName, texts, model.APIConfig, config)
-	if err != nil {
-		return nil, 0, err
-	}
-	vecs := make([][]float64, len(embeds))
-	totalTokens := 0
-	for i, v := range embeds {
-		vecs[i] = v.Embedding
-		totalTokens += v.TokenCount
-	}
-	return vecs, totalTokens, nil
-}
-
 type PipelineExecutor struct {
 	taskCtx            *TaskContext
 	dataflowID         string
@@ -115,14 +97,55 @@ type PipelineExecutor struct {
 	docBulkSize        int
 	progressFunc       ProgressFunc
 
-	docSvc                   docService
-	chunkCounter             chunkCounter
-	insertChunksFunc         func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error)
-	logCreateFunc            func(log *entity.PipelineOperationLog) error
-	getEmbeddingModelFunc    func(tenantID, embdID string) (*models.EmbeddingModel, error)
-	getKnowledgebaseByIDFunc func(kbID string) (*entity.Knowledgebase, error)
-	loadDSLFunc              func(ctx context.Context, dataflowID string) (string, string, error)
-	runPipelineFunc          func(ctx context.Context, dsl string) (map[string]any, string, error)
+	docSvc           docService
+	chunkCounter     chunkCounter
+	insertChunksFunc func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error)
+	logCreateFunc    func(log *entity.PipelineOperationLog) error
+	loadDSLFunc      func(ctx context.Context, dataflowID string) (string, string, error)
+	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
+}
+
+// newEmbedderResolver builds the production embedder resolver used by the
+// Tokenizer component. It honors an explicit embedding-model id (from the
+// Tokenizer's setups) and falls back to the dataset's configured embd_id when
+// none is given. Kept as a constructor over injectable deps so the resolution
+// logic stays unit-testable without a live model provider / DB.
+func newEmbedderResolver(
+	getEmbeddingModel func(tenantID, embdID string) (*models.EmbeddingModel, error),
+	getKnowledgebaseByID func(kbID string) (*entity.Knowledgebase, error),
+) componentpkg.EmbedderResolver {
+	return func(tenantID, kbID, embeddingModel string) (componentpkg.Embedder, error) {
+		embdID := strings.TrimSpace(embeddingModel)
+		if embdID == "" {
+			if strings.TrimSpace(kbID) == "" {
+				return nil, fmt.Errorf("embedding requested but neither embedding_model nor kb_id provided")
+			}
+			kb, err := getKnowledgebaseByID(kbID)
+			if err != nil {
+				return nil, err
+			}
+			if kb == nil || strings.TrimSpace(kb.EmbdID) == "" {
+				return nil, fmt.Errorf("embedding requested but dataset has no embd_id configured")
+			}
+			embdID = kb.EmbdID
+		}
+		model, err := getEmbeddingModel(tenantID, embdID)
+		if err != nil {
+			return nil, err
+		}
+		return &embedder{model: model}, nil
+	}
+}
+
+// init wires the production embedder resolver into the component package. The
+// component package must not import internal/service (dependency direction),
+// so the concrete resolver is injected here — the task package is the
+// composition root for ingestion runs.
+func init() {
+	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
+		service.NewModelProviderService().GetEmbeddingModel,
+		dao.NewKnowledgebaseDAO().GetByID,
+	)
 }
 
 func validateDataflowTaskContext(taskCtx *TaskContext) error {
@@ -163,7 +186,6 @@ func NewDataflowService(
 	if taskCtx != nil && taskCtx.ProgressFunc != nil {
 		progressFn = taskCtx.ProgressFunc
 	}
-	modelProvider := service.NewModelProviderService()
 	svc := &PipelineExecutor{
 		taskCtx:            taskCtx,
 		dataflowID:         dataflowID,
@@ -175,9 +197,7 @@ func NewDataflowService(
 		insertChunksFunc: func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 			return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
 		},
-		logCreateFunc:            dao.NewPipelineOperationLogDAO().Create,
-		getEmbeddingModelFunc:    modelProvider.GetEmbeddingModel,
-		getKnowledgebaseByIDFunc: dao.NewKnowledgebaseDAO().GetByID,
+		logCreateFunc: dao.NewPipelineOperationLogDAO().Create,
 	}
 	svc.loadDSLFunc = svc.defaultLoadDSL
 	svc.runPipelineFunc = svc.defaultRunPipeline
@@ -196,11 +216,6 @@ func (s *PipelineExecutor) WithInsertChunksFunc(f func(ctx context.Context, chun
 
 func (s *PipelineExecutor) WithLogCreateFunc(f func(log *entity.PipelineOperationLog) error) *PipelineExecutor {
 	s.logCreateFunc = f
-	return s
-}
-
-func (s *PipelineExecutor) WithGetEmbeddingModelFunc(f func(tenantID, embdID string) (*models.EmbeddingModel, error)) *PipelineExecutor {
-	s.getEmbeddingModelFunc = f
 	return s
 }
 
@@ -278,9 +293,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
 
 	metadata := s.processChunks(chunks)
-	if err := s.prepareChunkAssets(chunks); err != nil {
-		return err
-	}
 
 	if len(metadata) > 0 {
 		if err := s.updateDocumentMetadata(s.taskCtx.Doc.ID, metadata); err != nil {
@@ -316,10 +328,6 @@ func (s *PipelineExecutor) processChunks(chunks []map[string]any) map[string]any
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
-}
-
-func (s *PipelineExecutor) prepareChunkAssets(chunks []map[string]any) error {
-	return PrepareDataflowChunkAssets(chunks)
 }
 
 func (s *PipelineExecutor) insertChunks(ctx context.Context, chunks []map[string]any) error {
@@ -401,23 +409,6 @@ func (s *PipelineExecutor) progress(prog float64, msg string) {
 	}
 }
 
-func (s *PipelineExecutor) getEmbeddingModel(tenantID, embdID string) (*models.EmbeddingModel, error) {
-	return s.getEmbeddingModelFunc(tenantID, embdID)
-}
-
-func hasVectors(chunks []map[string]any) bool {
-	for _, ck := range chunks {
-		for k := range ck {
-			if matchQVec.MatchString(k) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-var matchQVec = regexp.MustCompile(`^q_\d+_vec$`)
-
 func (s *PipelineExecutor) defaultLoadDSL(ctx context.Context, dataflowID string) (string, string, error) {
 	if s == nil || s.taskCtx == nil {
 		return "", "", fmt.Errorf("dataflow service: nil task context")
@@ -443,36 +434,6 @@ func (s *PipelineExecutor) defaultLoadDSL(ctx context.Context, dataflowID string
 	return string(raw), dataflowID, nil
 }
 
-func (s *PipelineExecutor) tokenizerEmbedderResolver() componentpkg.EmbedderResolver {
-	return func(tenantID, kbID, modelID string) (componentpkg.Embedder, error) {
-		if strings.TrimSpace(tenantID) == "" && s != nil && s.taskCtx != nil {
-			tenantID = s.taskCtx.Tenant.ID
-		}
-		if strings.TrimSpace(kbID) == "" && s != nil && s.taskCtx != nil {
-			kbID = s.taskCtx.KB.ID
-		}
-		model, err := s.resolveEmbeddingModel(tenantID, kbID, modelID)
-		if err != nil {
-			return nil, err
-		}
-		return &embedder{model: model}, nil
-	}
-}
-
-func (s *PipelineExecutor) taskScopedComponentFactory() runtime.ComponentFactory {
-	resolver := s.tokenizerEmbedderResolver()
-	return func(name string, params map[string]any) (runtime.Component, error) {
-		if strings.EqualFold(name, componentpkg.ComponentNameTokenizer) {
-			return componentpkg.NewTokenizerComponentWithResolver(params, resolver)
-		}
-		factory, _, _, ok := runtime.DefaultRegistry.Lookup(name)
-		if !ok {
-			return nil, fmt.Errorf("runtime: unknown component %q", name)
-		}
-		return factory(name, params)
-	}
-}
-
 func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (map[string]any, string, error) {
 	if s == nil || s.taskCtx == nil {
 		return nil, dsl, fmt.Errorf("dataflow service: nil task context")
@@ -487,7 +448,6 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	if err != nil {
 		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}
-	pipe.WithComponentFactory(s.taskScopedComponentFactory())
 	inputs := map[string]any{}
 	if s.taskCtx.Doc.ID != "" {
 		inputs["doc_id"] = s.taskCtx.Doc.ID
@@ -507,29 +467,6 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 	return payload, dsl, nil
-}
-
-func (s *PipelineExecutor) resolveEmbeddingModel(tenantID, kbID, modelID string) (*models.EmbeddingModel, error) {
-	_ = modelID
-	if strings.TrimSpace(kbID) != "" {
-		if s.taskCtx != nil && s.taskCtx.KB.ID == kbID && strings.TrimSpace(s.taskCtx.KB.EmbdID) != "" {
-			return s.getEmbeddingModelFunc(tenantID, s.taskCtx.KB.EmbdID)
-		}
-		if s.getKnowledgebaseByIDFunc == nil {
-			return nil, fmt.Errorf("knowledgebase resolver unavailable")
-		}
-		kb, err := s.getKnowledgebaseByIDFunc(kbID)
-		if err != nil {
-			return nil, err
-		}
-		if kb != nil && strings.TrimSpace(kb.EmbdID) != "" {
-			return s.getEmbeddingModelFunc(tenantID, kb.EmbdID)
-		}
-	}
-	if s.taskCtx != nil && strings.TrimSpace(s.taskCtx.KB.EmbdID) != "" {
-		return s.getEmbeddingModelFunc(tenantID, s.taskCtx.KB.EmbdID)
-	}
-	return nil, fmt.Errorf("embedding requested but dataset has no embd_id configured")
 }
 
 func extractDataflowPipelinePayload(dsl string, out map[string]any) (map[string]any, error) {

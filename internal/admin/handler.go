@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/httputil"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -55,9 +56,25 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// Health check
-func (h *Handler) Health(c *gin.Context) {
-	c.JSON(200, gin.H{"status": "ok"})
+// Healthz to get system health
+func (h *Handler) Healthz(c *gin.Context) {
+	result, allOK := service.GetComponentsHealthz(c.Request.Context())
+	if allOK {
+		c.JSON(http.StatusOK, gin.H{
+			"code": 0,
+			"data": result,
+		})
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": common.CodeServerError,
+			"data": result,
+		})
+	}
+}
+
+// Live endpoint
+func (h *Handler) Live(c *gin.Context) {
+	common.SuccessNoData(c, "")
 }
 
 // Ping ping endpoint
@@ -122,12 +139,12 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) Logout(c *gin.Context) {
 	user, exists := c.Get("user")
 	if !exists {
-		common.ErrorWithCode(c, 401, "Not authenticated")
+		common.ErrorWithCode(c, common.CodeUnauthorized, "Not authenticated")
 		return
 	}
 
 	if err := h.service.Logout(user); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -161,7 +178,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	} else {
 		pageInt, err = strconv.Atoi(page)
 		if err != nil {
-			common.ErrorWithCode(c, 400, "Page must be an integer")
+			common.ErrorWithCode(c, common.CodeBadRequest, "Page must be an integer")
 			return
 		}
 	}
@@ -173,7 +190,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	} else {
 		pageSizeInt, err = strconv.Atoi(pageSize)
 		if err != nil {
-			common.ErrorWithCode(c, 400, "Page size must be an integer")
+			common.ErrorWithCode(c, common.CodeBadRequest, "Page size must be an integer")
 			return
 		}
 	}
@@ -183,7 +200,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	if err = c.ShouldBindJSON(&req); err != nil {
 		users, err = h.service.ListUsers(pageInt, pageSizeInt)
 		if err != nil {
-			common.ErrorWithCode(c, 500, err.Error())
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
 
@@ -191,7 +208,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	} else {
 		users, err = h.service.ListUsersEnterprise(pageInt, pageSizeInt, req.UserStatus, req.OrderBy, req.Plan, req.Top, req.Days, req.Quota)
 		if err != nil {
-			common.ErrorWithCode(c, 500, err.Error())
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
 
@@ -211,7 +228,7 @@ type CreateUserHTTPRequest struct {
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req CreateUserHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Username and password are required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username and password are required")
 		return
 	}
 
@@ -221,7 +238,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -233,21 +250,21 @@ func (h *Handler) GetUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	userDetails, err := h.service.GetUserDetails(username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, 404, "User not found")
+			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
 			return
 		}
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -259,17 +276,17 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	result, err := h.service.DeleteUser(username)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -291,22 +308,22 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	var req ChangePasswordHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "New password is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "New password is required")
 		return
 	}
 
 	if err := h.service.ChangePassword(username, req.NewPassword); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -323,28 +340,28 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	var req UpdateActivateStatusHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Activation status is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Activation status is required")
 		return
 	}
 
 	if req.ActivateStatus != "on" && req.ActivateStatus != "off" {
-		common.ErrorWithCode(c, 400, "Activation status must be 'on' or 'off'")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Activation status must be 'on' or 'off'")
 		return
 	}
 
 	isActive := req.ActivateStatus == "on"
 	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -356,23 +373,23 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	// Get current user email from context
 	email, _ := c.Get("email")
 	if email != nil && email.(string) == username {
-		common.ErrorWithCode(c, 409, "can't grant current user: "+username)
+		common.ErrorWithCode(c, common.CodeConflict, "can't grant current user: "+username)
 		return
 	}
 
 	if err := h.service.GrantAdmin(username); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -384,23 +401,23 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	// Get current user email from context
 	email, _ := c.Get("email")
 	if email != nil && email.(string) == username {
-		common.ErrorWithCode(c, 409, "can't revoke current user: "+username)
+		common.ErrorWithCode(c, common.CodeConflict, "can't revoke current user: "+username)
 		return
 	}
 
 	if err = h.service.RevokeAdmin(username); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -412,17 +429,17 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	apiKeys, err := h.service.ListUserAPITokens(username)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -434,17 +451,17 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if username == "" {
-		common.ErrorWithCode(c, 400, "Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
 	apiKey, err := h.service.GenerateUserAPIToken(username)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -456,17 +473,17 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	key := c.Param("token")
 	if username == "" || key == "" {
-		common.ErrorWithCode(c, 400, "Username and key are required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Username and key are required")
 		return
 	}
 
 	if err = h.service.DeleteUserAPIToken(username, key); err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -488,13 +505,13 @@ func (h *Handler) GetServices(c *gin.Context) {
 func (h *Handler) GetServicesByType(c *gin.Context) {
 	serviceType := c.Param("service_type")
 	if serviceType == "" {
-		common.ErrorWithCode(c, 400, "Service type is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Service type is required")
 		return
 	}
 
 	services, err := h.service.GetServicesByType(serviceType)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -505,7 +522,7 @@ func (h *Handler) GetServicesByType(c *gin.Context) {
 func (h *Handler) GetService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		common.ErrorWithCode(c, 400, "Service ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Service ID is required")
 		return
 	}
 
@@ -523,13 +540,13 @@ func (h *Handler) GetService(c *gin.Context) {
 	}
 
 	if targetService == nil {
-		common.ErrorWithCode(c, 404, "Service not found")
+		common.ErrorWithCode(c, common.CodeNotFound, "Service not found")
 		return
 	}
 
 	serviceStatus, err := h.service.GetServiceDetails(targetService)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -540,13 +557,13 @@ func (h *Handler) GetService(c *gin.Context) {
 func (h *Handler) ShutdownService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		common.ErrorWithCode(c, 400, "Service ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.ShutdownService(serviceID)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -557,13 +574,13 @@ func (h *Handler) ShutdownService(c *gin.Context) {
 func (h *Handler) StartService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		common.ErrorWithCode(c, 400, "Service ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.StartService(serviceID)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -574,13 +591,13 @@ func (h *Handler) StartService(c *gin.Context) {
 func (h *Handler) RestartService(c *gin.Context) {
 	serviceID := c.Param("service_id")
 	if serviceID == "" {
-		common.ErrorWithCode(c, 400, "Service ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Service ID is required")
 		return
 	}
 
 	result, err := h.service.RestartService(serviceID)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -594,7 +611,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		// List all variables
 		variables, err := h.service.ListAllVariables()
 		if err != nil {
-			common.ErrorWithCode(c, 500, err.Error())
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
 		common.SuccessWithData(c, variables, "")
@@ -606,12 +623,12 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		VarName string `json:"var_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Invalid request body")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid request body")
 		return
 	}
 
 	if req.VarName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
@@ -619,10 +636,10 @@ func (h *Handler) ListVariables(c *gin.Context) {
 	if err != nil {
 		// Check if it's an AdminException
 		if adminErr, ok := err.(*AdminException); ok {
-			common.ErrorWithCode(c, 400, adminErr.Message)
+			common.ErrorWithCode(c, common.CodeBadRequest, adminErr.Message)
 			return
 		}
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -634,17 +651,17 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 	encodedVarName := c.Param("var_name")
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if varName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	variable, err := h.service.GetVariable(varName)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -662,27 +679,27 @@ type SetVariableHTTPRequest struct {
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		common.ErrorWithCode(c, 400, "Var value is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
 		return
 	}
 
 	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
 		// Check if it's an AdminException
 		if adminErr, ok := err.(*AdminException); ok {
-			common.ErrorWithCode(c, 400, adminErr.Message)
+			common.ErrorWithCode(c, common.CodeBadRequest, adminErr.Message)
 			return
 		}
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -693,7 +710,7 @@ func (h *Handler) SetVariable(c *gin.Context) {
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -704,7 +721,7 @@ func (h *Handler) ListConfigs(c *gin.Context) {
 func (h *Handler) ListEnvironments(c *gin.Context) {
 	environments, err := h.service.ListEnvironments()
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -753,7 +770,7 @@ func (h *Handler) ShowLicense(c *gin.Context) {
 func (h *Handler) ListSandboxProviders(c *gin.Context) {
 	providers, err := h.service.ListSandboxProviders()
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -764,13 +781,13 @@ func (h *Handler) ListSandboxProviders(c *gin.Context) {
 func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 	providerID := c.Param("provider_id")
 	if providerID == "" {
-		common.ErrorWithCode(c, 400, "Provider ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Provider ID is required")
 		return
 	}
 
 	schema, err := h.service.GetSandboxProviderSchema(providerID)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -781,7 +798,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
 	config, err := h.service.GetSandboxConfig()
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -799,12 +816,12 @@ type SetSandboxConfigHTTPRequest struct {
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Request body is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Request body is required")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.ErrorWithCode(c, 400, "Provider type is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Provider type is required")
 		return
 	}
 
@@ -814,7 +831,7 @@ func (h *Handler) SetSandboxConfig(c *gin.Context) {
 
 	result, err := h.service.SetSandboxConfig(req.ProviderType, req.Config, req.SetActive)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -831,12 +848,12 @@ type TestSandboxConnectionHTTPRequest struct {
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Request body is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Request body is required")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.ErrorWithCode(c, 400, "Provider type is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Provider type is required")
 		return
 	}
 
@@ -855,7 +872,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			common.ErrorWithCode(c, 401, "Missing authorization header")
+			common.ErrorWithCode(c, common.CodeUnauthorized, "Missing authorization header")
 			c.Abort()
 			return
 		}
@@ -901,12 +918,12 @@ type SetLogLevelRequest struct {
 func (h *Handler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Level is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Level is required")
 		return
 	}
 
 	if err := common.SetLevel(req.Level); err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -918,7 +935,7 @@ func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	messages, err := msgQueueEngine.ListMessages("ingestion", false)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	var result []map[string]string
@@ -945,7 +962,7 @@ type PublishMessageToQueueRequest struct {
 func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	var req PublishMessageToQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Message is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Message is required")
 		return
 	}
 
@@ -957,14 +974,14 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	// convert task
 	taskMessageStr, err := json.Marshal(taskMessage)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -979,14 +996,14 @@ type PullMessageFromQueueRequest struct {
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, fmt.Sprintf("Message count error: %s", err.Error()))
+		common.ErrorWithCode(c, common.CodeBadRequest, fmt.Sprintf("Message count error: %s", err.Error()))
 		return
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
@@ -1030,7 +1047,7 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	result, err := msgQueueEngine.ShowMessageQueue()
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1046,14 +1063,14 @@ type RemoveIngestionTaskRequest struct {
 func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	var req RemoveIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Task ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
 		return
 	}
 
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
 		if err != nil {
-			common.ErrorWithCode(c, 400, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 
@@ -1061,7 +1078,7 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	} else {
 		tasks, err := h.service.RemoveIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
 		if err != nil {
-			common.ErrorWithCode(c, 400, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 		common.SuccessWithData(c, tasks, "Remove tasks successfully")
@@ -1077,14 +1094,14 @@ type StopIngestionTaskRequest struct {
 func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	var req StopIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Task ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
 		return
 	}
 
 	if req.Email == nil && req.Status == nil {
 		tasks, err := h.service.StopIngestionTasks(req.Tasks)
 		if err != nil {
-			common.ErrorWithCode(c, 400, err.Error())
+			common.ErrorWithCode(c, httputil.IngestionTaskErrorCode(err), err.Error())
 			return
 		}
 		var result []map[string]string
@@ -1099,7 +1116,7 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	} else {
 		tasks, err := h.service.StopIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
 		if err != nil {
-			common.ErrorWithCode(c, 400, err.Error())
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
 		common.SuccessWithData(c, tasks, "Stop tasks successfully")
@@ -1123,7 +1140,7 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	}
 
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 	}
 	common.SuccessWithData(c, tasks, "Get all tasks")
 }
@@ -1156,7 +1173,7 @@ type ShutdownIngestorRequest struct {
 func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	var req ShutdownIngestorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Ingestor ID is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Ingestor ID is required")
 		return
 	}
 
@@ -1218,7 +1235,7 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 	// List models
 	models, err := h.service.ListAllModels(page, pageSize)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -1234,18 +1251,18 @@ func (h *Handler) ShowModel(c *gin.Context) {
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		common.ErrorWithCode(c, 400, "Decoded model name is empty")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Decoded model name is empty")
 		return
 	}
 
 	// Get model
 	model, err := h.service.GetModelByModelName(decodedModelName)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -1281,7 +1298,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 	docEngine := engine.Get()
 	ctx := context.Background()
 	if err := docEngine.Ping(ctx); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 

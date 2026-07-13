@@ -37,6 +37,7 @@ export const useCompilationTemplateGroupForm = ({
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(buildFormSchema(t)),
     defaultValues,
+    mode: 'onChange',
   });
 
   useEffect(() => {
