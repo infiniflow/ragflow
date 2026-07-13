@@ -67,7 +67,7 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 			modelID = defaultModel
 		}
 	}
-	response, err := config.LLM.Chat(modelTenantID, modelID, []modelModule.Message{{Role: "user", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}, &modelModule.ChatConfig{})
+	response, err := config.LLM.Chat(modelTenantID, modelID, []modelModule.Message{{Role: "system", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}, &modelModule.ChatConfig{})
 	if err != nil {
 		return mindMapNode{}, err
 	}

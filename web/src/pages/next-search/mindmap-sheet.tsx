@@ -7,6 +7,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { IModalProps } from '@/interfaces/common';
+import { isEmpty } from 'lodash';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { usePendingMindMap } from './hooks';
@@ -21,7 +22,7 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className="top-24 p-0 flex flex-col gap-0 h-auto"
+        className="top-24 bottom-8 p-0 flex flex-col gap-0"
         closeIcon={false}
       >
         <SheetHeader className="border-b py-2 px-4">
@@ -39,15 +40,20 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
             />
           </div>
         </SheetHeader>
-        <div className="flex-1 p-4 overflow-hidden">
+        <div className="flex-1 p-4 overflow-hidden" style={{ minHeight: 0 }}>
           {loading && (
-            <div className="rounded-lg w-full h-full">
+            <div className="rounded-lg w-full h-full flex items-center">
               <Progress value={percent} className="h-1 flex-1 min-w-10" />
             </div>
           )}
-          {!loading && (
+          {!loading && data && !isEmpty(data) && (
             <div className="bg-bg-card rounded-lg w-full h-full">
               <IndentedTree data={data}></IndentedTree>
+            </div>
+          )}
+          {!loading && isEmpty(data) && (
+            <div className="flex items-center justify-center h-full text-text-secondary">
+              {t('common.noData')}
             </div>
           )}
         </div>
