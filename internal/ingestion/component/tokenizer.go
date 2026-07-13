@@ -655,26 +655,38 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 				return fmt.Errorf("Tokenizer: keyword tokens marshal: %w", err)
 			}
 		}
-		if s := ck.Summary; s != "" {
+		if s := ck.Summary; strings.TrimSpace(s) != "" {
 			st, err := tokenizer.Tokenize(s)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
+			}
+			if st == "" {
+				st = s
 			}
 			ck.ContentLtks = st
 			smt, err := tokenizer.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
 			}
+			if smt == "" {
+				smt = st
+			}
 			ck.ContentSmLtks = smt
-		} else if t := ck.Text; t != "" {
+		} else if t := ck.Text; strings.TrimSpace(t) != "" {
 			tt, err := tokenizer.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
+			}
+			if tt == "" {
+				tt = t
 			}
 			ck.ContentLtks = tt
 			smt, err := tokenizer.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
+			}
+			if smt == "" {
+				smt = tt
 			}
 			ck.ContentSmLtks = smt
 		}
