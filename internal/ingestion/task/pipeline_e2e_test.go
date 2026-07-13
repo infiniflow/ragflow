@@ -161,7 +161,7 @@ func isPortOpen(host string, port int) bool {
 // Main E2E Test with Subtests for Elasticsearch and Infinity
 // =============================================================================
 
-func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
+func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 	testCases := []struct {
 		name       string
 		engineType engine.EngineType
@@ -219,59 +219,54 @@ func TestPipelineE2E_TaskHandlerToPipelineExecutor(t *testing.T) {
 			)
 			var capturedChunks [][]map[string]any
 
-			// Create TaskHandler with mocked DataflowService factory
-			handler := NewTaskHandler(taskCtx)
-			handler.WithPipelineExecutorFactory(func(ctx *TaskContext, canvasID string) (*PipelineExecutor, error) {
-				svc := mustNewPipelineExecutor(t, ctx, canvasID, 0)
+			// Build a PipelineExecutor with mocked dependencies.
+			svc := mustNewPipelineExecutor(t, taskCtx, taskCtx.PipelineID, 0)
 
-				// Mock loadDSLFunc
-				svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
-					loadDSLCalled = true
-					return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
-				})
-
-				// Mock runPipelineFunc - returns test chunks (with vectors to skip embedding)
-				svc.WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
-					runPipelineCalled = true
-					return map[string]any{
-						"chunks": []map[string]any{
-							{
-								"text":    fmt.Sprintf("Hello world from E2E test with %s", tc.name),
-								"id":      fmt.Sprintf("chunk_e2e_%s_1", lowerName),
-								"q_2_vec": []float64{0.1, 0.2}, // Pre-vectorized to skip embedding
-							},
-							{
-								"text":    fmt.Sprintf("Second chunk from E2E test with %s", tc.name),
-								"id":      fmt.Sprintf("chunk_e2e_%s_2", lowerName),
-								"q_2_vec": []float64{0.3, 0.4}, // Pre-vectorized to skip embedding
-							},
-						},
-						EmbeddingTokenConsumptionKey: 100,
-					}, dsl, nil
-				})
-
-				// Use the injected DocEngine for insertChunks!
-				svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-					insertChunksCalled = true
-					t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
-					ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
-					if err != nil {
-						t.Logf("WARNING: InsertChunks err=%v", err)
-					}
-					capturedChunks = append(capturedChunks, chunks)
-					return ids, err
-				})
-
-				return svc, nil
+			// Mock loadDSLFunc
+			svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+				loadDSLCalled = true
+				return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
 			})
 
-			// Execute the task handler!
-			t.Logf("Calling TaskHandler.Handle()...")
-			_, err = handler.Handle()
+			// Mock runPipelineFunc - returns test chunks (with vectors to skip embedding)
+			svc.WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+				runPipelineCalled = true
+				return map[string]any{
+					"chunks": []map[string]any{
+						{
+							"text":    fmt.Sprintf("Hello world from E2E test with %s", tc.name),
+							"id":      fmt.Sprintf("chunk_e2e_%s_1", lowerName),
+							"q_2_vec": []float64{0.1, 0.2}, // Pre-vectorized to skip embedding
+						},
+						{
+							"text":    fmt.Sprintf("Second chunk from E2E test with %s", tc.name),
+							"id":      fmt.Sprintf("chunk_e2e_%s_2", lowerName),
+							"q_2_vec": []float64{0.3, 0.4}, // Pre-vectorized to skip embedding
+						},
+					},
+					EmbeddingTokenConsumptionKey: 100,
+				}, dsl, nil
+			})
+
+			// Use the injected DocEngine for insertChunks!
+			svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+				insertChunksCalled = true
+				t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
+				ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
+				if err != nil {
+					t.Logf("WARNING: InsertChunks err=%v", err)
+				}
+				capturedChunks = append(capturedChunks, chunks)
+				return ids, err
+			})
+
+			// Execute the pipeline!
+			t.Logf("Calling PipelineExecutor.Execute()...")
+			_, err = svc.Execute(taskCtx.Ctx)
 			if err != nil {
-				t.Fatalf("TaskHandler.Handle failed: %v", err)
+				t.Fatalf("PipelineExecutor.Execute failed: %v", err)
 			}
-			t.Logf("TaskHandler.Handle() complete!")
+			t.Logf("PipelineExecutor.Execute() complete!")
 
 			// Verify all the expected calls happened
 			if !loadDSLCalled {

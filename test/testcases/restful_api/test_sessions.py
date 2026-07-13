@@ -19,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import is_sorted
 
@@ -128,8 +129,7 @@ def test_session_create_requires_auth_and_invalid_chat_contract():
         res = client.post("/chats/chat_id/sessions", json={"name": "x"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -228,8 +228,7 @@ def test_session_delete_requires_auth_and_invalid_target_contract(rest_client, c
         res = client.delete(f"/chats/{chat_id}/sessions", json={"ids": [session_id]})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     invalid_chat_res = rest_client.delete("/chats/invalid_chat_assistant_id/sessions", json={"ids": [session_id]})
     assert invalid_chat_res.status_code == 200
@@ -356,8 +355,7 @@ def test_session_list_requires_auth_and_invalid_target_contract():
         res = client.get("/chats/chat_id/sessions")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -494,8 +492,7 @@ def test_session_update_requires_auth_and_invalid_target_contract(rest_client, c
         res = client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"name": "x"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     invalid_chat_res = rest_client.patch(f"/chats/{INVALID_ID_32}/sessions/{session_id}", json={"name": "x"})
     assert invalid_chat_res.status_code == 200
@@ -590,7 +587,8 @@ def test_chat_recommendation_requires_question(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload
-    assert "required argument are missing: question" in payload["message"], payload
+    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
+    assert expected_message in payload["message"], payload
 
 
 @pytest.mark.p2
@@ -603,12 +601,15 @@ def test_related_questions_compatibility_requires_auth(rest_client_noauth):
     )
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 102, payload
-    assert payload["message"].strip() in {
-        "Authorization is not valid!",
-        'Authentication error: API key is invalid!"',
-        "Authentication error: API key is invalid!",
-    }, payload
+    if IS_GO_PROXY:
+        assert_auth_error(payload, "invalid token")
+    else:
+        assert payload["code"] == 102, payload
+        assert payload["message"].strip() in {
+            "Authorization is not valid!",
+            'Authentication error: API key is invalid!"',
+            "Authentication error: API key is invalid!",
+        }, payload
 
 
 @pytest.mark.p2

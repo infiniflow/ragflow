@@ -40,16 +40,16 @@ const NextInnerLLMSelect = forwardRef<
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
     const ttsModel = useMemo(() => {
-      return showSpeech2TextModel ? [LlmModelType.Speech2text] : [];
+      return showSpeech2TextModel ? ['tts'] : [];
     }, [showSpeech2TextModel]);
 
     const modelTypes = useMemo(() => {
       if (filter === LlmModelType.Chat) {
-        return [LlmModelType.Chat];
+        return ['chat'];
       } else if (filter === LlmModelType.Image2text) {
-        return [LlmModelType.Image2text, ...ttsModel];
+        return ['vision', ...ttsModel];
       } else {
-        return [LlmModelType.Chat, LlmModelType.Image2text, ...ttsModel];
+        return ['chat', 'vision', ...ttsModel];
       }
     }, [filter, ttsModel]);
 

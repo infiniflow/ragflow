@@ -140,8 +140,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(page*pageSize, pageSize)
+func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(pageIndex*pageSize, pageSize, name, status, sort, orderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1544,8 +1544,8 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 // Version methods
 
 // GetVersion get RAGFlow version
-func (s *Service) GetVersion() string {
-	return utility.GetRAGFlowVersion()
+func (s *Service) GetVersion() (string, string) {
+	return common.GetRAGFlowVersion(), common.GetRAGFlowType()
 }
 
 // Sandbox methods

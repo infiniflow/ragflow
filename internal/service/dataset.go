@@ -1382,7 +1382,6 @@ func datasetPDFParseTaskRanges(doc *entity.Document, bucket, objectName string) 
 		pageSize = int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 22))
 	}
 	if doc.ParserID == string(entity.ParserTypeOne) ||
-		doc.ParserID == string(entity.ParserTypeKG) ||
 		datasetParserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
 		datasetParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 		pageSize = maximumTaskPageNumber

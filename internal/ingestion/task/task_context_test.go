@@ -25,7 +25,8 @@ import (
 
 func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) {
 	db := testutil.SetupTestDB(t)
-	testutil.ReplaceDBForTest(t, db)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
 
 	if err := db.Create(&entity.Document{
 		ID:           "doc-1",
@@ -70,7 +71,8 @@ func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) 
 
 func TestLoadFromIngestionTask_PrefersDocumentPipelineID(t *testing.T) {
 	db := testutil.SetupTestDB(t)
-	testutil.ReplaceDBForTest(t, db)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
 
 	docPipelineID := "doc-flow-1"
 	if err := db.Create(&entity.Document{

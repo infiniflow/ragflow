@@ -81,14 +81,14 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
 	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
-		t.Fatalf("SetRunningByIngestor: %v", err)
+		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
 	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
 	if err != nil || task == nil {
 		t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
 	}
 	if task.Status != common.RUNNING {
-		t.Fatalf("task status after SetRunningByIngestor = %s, want %s", task.Status, common.RUNNING)
+		t.Fatalf("task status after UpdateStatusIfCurrent = %s, want %s", task.Status, common.RUNNING)
 	}
 
 	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
