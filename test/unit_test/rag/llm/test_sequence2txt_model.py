@@ -91,6 +91,19 @@ def test_fun_asr_flash_stream_uses_sse():
     ]
 
 
+def test_fun_asr_flash_stream_closes_response_when_consumer_stops_early():
+    response = MagicMock()
+    response.iter_lines.return_value = [f"data:{json.dumps({'output': {'text': 'stream'}})}"]
+    model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response):
+        stream = model.stream_transcription("data:audio/wav;base64,dGVzdA==")
+        assert next(stream) == {"event": "delta", "text": "stream"}
+        stream.close()
+
+    response.close.assert_called_once_with()
+
+
 def test_fun_asr_flash_derives_format_from_data_uri():
     response = MagicMock()
     response.json.return_value = {"output": {"text": "transcribed text"}}

@@ -214,6 +214,7 @@ class QWenSeq2txt(Base):
             return "**ERROR**: " + str(e), 0
 
     def _stream_fun_asr_flash(self, audio_path):
+        response = None
         try:
             url, headers, payload = self._fun_asr_flash_request(audio_path, stream=True)
             response = requests.post(url, headers=headers, json=payload, timeout=60, stream=True)
@@ -239,6 +240,9 @@ class QWenSeq2txt(Base):
         except Exception as e:
             logging.exception("Fun-ASR-Flash streaming transcription failed for model %s", self.model_name)
             yield {"event": "error", "text": "**ERROR**: " + str(e)}
+        finally:
+            if response is not None:
+                response.close()
 
     def stream_transcription(self, audio_path):
         if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
