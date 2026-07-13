@@ -39,7 +39,7 @@ def test_fun_asr_flash_uses_native_request_format(tmp_path):
     request = post.call_args
     assert request.args[0] == "https://workspace.example.com/api/v1/services/aigc/multimodal-generation/generation"
     assert request.kwargs["headers"]["X-DashScope-SSE"] == "disable"
-    assert request.kwargs["json"]["parameters"] == {"format": "wav", "sample_rate": "16000"}
+    assert request.kwargs["json"]["parameters"] == {"format": "wav"}
     audio_data = request.kwargs["json"]["input"]["messages"][0]["content"][0]["input_audio"]["data"]
     assert audio_data == f"data:audio/wav;base64,{base64.b64encode(audio_path.read_bytes()).decode('utf-8')}"
 
@@ -74,3 +74,51 @@ def test_fun_asr_flash_stream_uses_native_transcription():
         {"event": "delta", "text": "stream text"},
         {"event": "final", "text": "stream text"},
     ]
+
+
+def test_fun_asr_flash_derives_format_from_data_uri():
+    response = MagicMock()
+    response.json.return_value = {"output": {"text": "transcribed text"}}
+    audio_data = "data:audio/mpeg;base64,dGVzdA=="
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response) as post:
+        model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+        text, _ = model.transcription(audio_data)
+
+    assert text == "transcribed text"
+    assert post.call_args.kwargs["json"]["parameters"] == {"format": "mp3"}
+    assert post.call_args.kwargs["json"]["input"]["messages"][0]["content"][0]["input_audio"]["data"] == audio_data
+
+
+def test_fun_asr_flash_derives_format_from_url_path():
+    response = MagicMock()
+    response.json.return_value = {"output": {"text": "transcribed text"}}
+    audio_url = "https://example.com/sample.opus?signature=test"
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response) as post:
+        model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+        text, _ = model.transcription(audio_url)
+
+    assert text == "transcribed text"
+    assert post.call_args.kwargs["json"]["parameters"] == {"format": "opus"}
+
+
+def test_fun_asr_flash_rejects_extensionless_url(caplog):
+    model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+
+    with patch("rag.llm.sequence2txt_model.requests.post") as post:
+        text, tokens = model.transcription("https://example.com/audio")
+
+    post.assert_not_called()
+    assert text.startswith("**ERROR**: Cannot determine audio format")
+    assert tokens == 0
+    assert "Fun-ASR-Flash transcription failed" in caplog.text
+
+
+def test_fun_asr_flash_stream_emits_only_error_event_on_failure():
+    model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+
+    with patch.object(model, "_transcribe_fun_asr_flash", return_value=("**ERROR**: failed", 0)):
+        events = list(model.stream_transcription("sample.wav"))
+
+    assert events == [{"event": "error", "text": "**ERROR**: failed"}]

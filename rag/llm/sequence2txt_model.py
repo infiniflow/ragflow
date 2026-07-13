@@ -21,6 +21,7 @@ import re
 from abc import ABC
 import tempfile
 import logging
+from urllib.parse import urlparse
 
 import requests
 from openai import OpenAI
@@ -85,6 +86,13 @@ class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
     _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"
     _DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/api/v1"
+    _AUDIO_MIME_FORMATS = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/wave": "wav",
+        "audio/x-wav": "wav",
+    }
 
     def __init__(self, key, model_name="qwen-audio-asr", base_url=None, **kwargs):
         import dashscope
@@ -120,41 +128,60 @@ class QWenSeq2txt(Base):
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
 
-    def _transcribe_fun_asr_flash(self, audio_path):
-        audio_format = os.path.splitext(audio_path.split("?", 1)[0])[1].lower().lstrip(".") or "wav"
+    @classmethod
+    def _fun_asr_audio_format(cls, audio_path):
+        """Derive the Fun-ASR audio format from a data URI, URL, or path."""
+
+        if audio_path.startswith("data:"):
+            mime_type = audio_path[5:].split(";", 1)[0].lower()
+            if not mime_type.startswith("audio/"):
+                raise ValueError(f"Unsupported audio data URI MIME type: {mime_type or 'missing'}")
+            audio_format = cls._AUDIO_MIME_FORMATS.get(mime_type, mime_type.split("/", 1)[1].removeprefix("x-"))
+        else:
+            path = urlparse(audio_path).path if audio_path.startswith(("http://", "https://")) else audio_path
+            audio_format = os.path.splitext(path)[1].lower().lstrip(".")
+
         if audio_format == "wave":
             audio_format = "wav"
+        if not audio_format:
+            raise ValueError("Cannot determine audio format; use a URL/path extension or an audio data URI MIME type")
+        return audio_format
 
-        if audio_path.startswith(("http://", "https://", "data:")):
-            audio_input = audio_path
-        else:
-            mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
-            with open(audio_path, "rb") as audio_file:
-                audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
-
-        api_base = self.base_url
-        if api_base.endswith("/compatible-mode/v1"):
-            api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
-        url = f"{api_base}/services/aigc/multimodal-generation/generation"
-        payload = {
-            "model": self.model_name,
-            "input": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
-                    }
-                ]
-            },
-            "parameters": {"format": audio_format, "sample_rate": "16000"},
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "X-DashScope-SSE": "disable",
-        }
-
+    def _transcribe_fun_asr_flash(self, audio_path):
         try:
+            audio_format = self._fun_asr_audio_format(audio_path)
+
+            if audio_path.startswith(("http://", "https://", "data:")):
+                audio_input = audio_path
+            else:
+                mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
+                with open(audio_path, "rb") as audio_file:
+                    audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
+
+            api_base = self.base_url
+            if api_base.endswith("/compatible-mode/v1"):
+                api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
+            url = f"{api_base}/services/aigc/multimodal-generation/generation"
+            payload = {
+                "model": self.model_name,
+                "input": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
+                        }
+                    ]
+                },
+                # sample_rate is optional in the Fun-ASR-Flash API. Omitting it
+                # avoids declaring incorrect metadata for remote or compressed audio.
+                "parameters": {"format": audio_format},
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "X-DashScope-SSE": "disable",
+            }
+
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
@@ -164,6 +191,7 @@ class QWenSeq2txt(Base):
             text = text.strip()
             return text, num_tokens_from_string(text)
         except Exception as e:
+            logging.exception("Fun-ASR-Flash transcription failed for model %s", self.model_name)
             return "**ERROR**: " + str(e), 0
 
     def stream_transcription(self, audio_path):
