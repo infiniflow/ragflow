@@ -35,9 +35,11 @@ func GetParser(fileType utility.FileType) (ParseResultProducer, error) {
 	case utility.FileTypePPT:
 		return NewPPTParser(), nil
 	case utility.FileTypeXLSX:
-		return NewXLSXParser(), nil
+		return NewXLSXParser("")
 	case utility.FileTypeXLS:
-		return NewXLSParser(), nil
+		return NewXLSParser("")
+	case utility.FileTypeCSV:
+		return NewCSVParser(), nil
 	case utility.FileTypeDOCX:
 		return NewDOCXParser(), nil
 	case utility.FileTypeDOC:
@@ -47,9 +49,19 @@ func GetParser(fileType utility.FileType) (ParseResultProducer, error) {
 	case utility.FileTypeHTML:
 		return NewHTMLParser(), nil
 	case utility.FileTypeMarkdown:
-		return NewMarkdownParser(), nil
+		return NewMarkdownParser(GoMarkdown)
 	case utility.FileTypeTXT:
 		return NewTextParser(), nil
+	case utility.FileTypeEPUB:
+		return NewEPUBParser(), nil
+	case utility.FileTypeJSON:
+		return NewJSONParser(), nil
+	case utility.FileTypeEMAIL:
+		return NewEmailParser(), nil
+	case utility.FileTypeVISUAL:
+		return NewPictureParser(), nil
+	case utility.FileTypeAURAL:
+		return NewAudioParser(), nil
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}

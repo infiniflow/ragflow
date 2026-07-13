@@ -37,13 +37,12 @@ func (IngestionTask) TableName() string {
 }
 
 type IngestionTaskLog struct {
-	ID             int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskID         string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Checkpoint     JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
-	ComponentIndex int     `gorm:"column:component_index" json:"component_index"`
-	Phase          int     `gorm:"column:phase" json:"phase"`
-	Component      string  `gorm:"column:component;size:64;index" json:"component"`
-	Message        string  `gorm:"column:message;type:text" json:"message"`
+	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
+	Phase      int     `gorm:"column:phase" json:"phase"`
+	Component  string  `gorm:"column:component;size:64;index" json:"component"`
+	Message    string  `gorm:"column:message;type:text" json:"message"`
 	BaseModel
 }
 

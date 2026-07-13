@@ -17,6 +17,7 @@
 package service
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 
@@ -63,12 +64,12 @@ func TestProgressSink_EagerlyConstructsDocumentService(t *testing.T) {
 // TestProgressSink_DocService_NoDataRace guards against regressing to lazy
 // DocumentService construction. eino's compose graph runs parallel branches
 // concurrently (compose/chain_parallel.go, branch.go), so the progress callback
-// can fire from multiple goroutines; docService() must return a pre-built,
-// immutable DocumentService, not lazily check-then-act on s.docSvc.
+// can fire from multiple goroutines; docSvc must be a pre-built, immutable
+// DocumentService, not lazily check-then-act on s.docSvc.
 //
-// The race is hit directly on docService() rather than through
-// OnComponentProgress because the latter serializes on the single test-DB
-// connection before reaching docService(), which masks the race.
+// The race is hit directly on docSvc rather than through OnComponentProgress
+// because the latter serializes on the single test-DB connection before
+// reaching docSvc, which masks the race.
 func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -76,7 +77,7 @@ func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 
 	// Deliberately do NOT inject a stub docSvc: the sink's own DocumentService
 	// must already be constructed (not lazily built mid-call) when the
-	// goroutines below race into docService().
+	// goroutines below race into docSvc.
 	sink := newProgressSink(servicepkg.NewIngestionTaskService())
 
 	const n = 30
@@ -87,7 +88,45 @@ func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_ = sink.docService()
+			_ = sink.docSvc
+		}()
+	}
+	close(start)
+	wg.Wait()
+}
+
+// TestProgressSink_Total_NoDataRace guards the total denominator against being
+// a non-atomic shared field. OnComponentTotal (writer, Run goroutine) and
+// OnComponentProgress (reader, concurrent eino branches) share total; a plain
+// int is a data race per the Go memory model. The read is hit directly on the
+// field rather than through OnComponentProgress because the latter serializes
+// on the single test-DB connection before reaching the read, masking the race.
+func TestProgressSink_Total_NoDataRace(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+
+	const n = 30
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			sink.OnComponentTotal(taskID, 5) // writes s.total
+		}()
+	}
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			v := sink.total.Load() // reads s.total atomically
+			runtime.KeepAlive(v)
 		}()
 	}
 	close(start)
@@ -137,10 +176,8 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		TaskID:     taskID,
 		DocumentID: docID,
 		Component:  "Parser",
-		Index:      0,
 		Phase:      1,
 		Message:    "Parser Done",
-		Total:      2,
 	})
 
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
@@ -187,10 +224,8 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	sink.OnComponentProgress(pipeline.ProgressEvent{
 		TaskID:    taskID,
 		Component: "Chunker",
-		Index:     1,
 		Phase:     1,
 		Message:   "Chunker Done",
-		Total:     2,
 	})
 
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)

@@ -84,7 +84,7 @@ func (h *Handler) Ping(c *gin.Context) {
 
 // Login handle admin login
 // @Summary Admin Login
-// @Description Admin login verification using email, only superuser can login
+// @Description Admin login verification using email, only superuser can log in
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -170,51 +170,66 @@ type ListUsersRequest struct {
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
 
-	var err error
-	var pageInt int
-	page := c.Param("page")
-	if page == "" {
-		pageInt = 0
-	} else {
-		pageInt, err = strconv.Atoi(page)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, "Page must be an integer")
-			return
-		}
+	name := c.DefaultQuery("keyword", "")
+	status := c.DefaultQuery("status", "")
+	role := c.DefaultQuery("role", "")
+	sort := c.DefaultQuery("sort", "")     // descending or ascending
+	orderBy := c.DefaultQuery("order", "") // order by field
+	pageInt, err := common.ParseRequestIntPositive(c, c.Query("page"), "page", 1)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	pageSizeInt, err := common.ParseRequestIntPositive(c, c.Query("page_size"), "page_size", 10)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	plan := c.Query("plan") // plan name
+	topInt, err := common.ParseRequestIntPositive(c, c.Query("top"), "top", 0)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	quotaInt, err := common.ParseRequestIntPositive(c, c.Query("quota"), "quota", 0)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if quotaInt > 100 {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be less than or equal to 100")
+		return
+	}
+	daysInt, err := common.ParseRequestIntPositive(c, c.Query("days"), "days", 0)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
 	}
 
-	var pageSizeInt int
-	pageSize := c.Param("page_size")
-	if pageSize == "" {
-		pageSizeInt = 0
-	} else {
-		pageSizeInt, err = strconv.Atoi(pageSize)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, "Page size must be an integer")
-			return
-		}
-	}
-
-	var req ListUsersRequest
 	var users []map[string]interface{}
-	if err = c.ShouldBindJSON(&req); err != nil {
-		users, err = h.service.ListUsers(pageInt, pageSizeInt)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
+	switch common.GetRAGFlowType() {
+	case common.OpenSourceVersion:
 
-		common.SuccessWithData(c, users, "Get all users")
-	} else {
-		users, err = h.service.ListUsersEnterprise(pageInt, pageSizeInt, req.UserStatus, req.OrderBy, req.Plan, req.Top, req.Days, req.Quota)
+		users, err = h.service.ListUsers(pageInt, pageSizeInt, name, status, sort, orderBy)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
 
 		common.SuccessWithData(c, users, "List users")
+	case common.EnterpriseEdition:
+		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaInt)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			return
+		}
+	default:
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
+		return
 	}
 
+	common.SuccessWithData(c, users, "List users")
+	return
 }
 
 // CreateUserHTTPRequest create user request
@@ -730,8 +745,8 @@ func (h *Handler) ListEnvironments(c *gin.Context) {
 
 // GetVersion handle get version
 func (h *Handler) GetVersion(c *gin.Context) {
-	version := h.service.GetVersion()
-	common.SuccessWithData(c, gin.H{"version": version}, "")
+	version, versionType := h.service.GetVersion()
+	common.SuccessWithData(c, gin.H{"version": version, "version_type": versionType}, "")
 }
 
 // GetFingerprint handle get system fingerprint

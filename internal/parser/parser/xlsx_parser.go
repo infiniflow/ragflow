@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -26,23 +24,81 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-type XLSXParser struct{}
+type XLSXParser struct {
+	libType                        string
+	ParseMethod                    string
+	OutputFormat                   string
+	TCADPAPIServer                 string
+	TCADPAPIKey                    string
+	TCADPTableResultType           string
+	TCADPMarkdownImageResponseType string
+}
 
-func NewXLSXParser() *XLSXParser {
-	return &XLSXParser{}
+func NewXLSXParser(libType string) (*XLSXParser, error) {
+	if libType == "" {
+		libType = "excelize"
+	}
+	return &XLSXParser{
+		libType:                        libType,
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}, nil
 }
 
 func (p *XLSXParser) String() string {
 	return "XLSXParser"
 }
 
-// ParseWithResult renders the spreadsheet as HTML — the python
-// ExcelParser shape. Each sheet becomes a <table> with row /
-// column structure preserved; sheet names become <h3> headings
-// so a downstream title chunker can pick them up. Implementation
-// uses excelize (already in go.mod) instead of office_oxide's
-// PlainText/ToMarkdown so cell boundaries survive the round-trip.
+func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
+		p.ParseMethod = v
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
+		p.TCADPAPIServer = v
+	}
+	if v, ok := setup["tcadp_api_key"].(string); ok {
+		p.TCADPAPIKey = v
+	}
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
+		p.TCADPTableResultType = v
+	}
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
+		p.TCADPMarkdownImageResponseType = v
+	}
+}
+
+func normalizeXLSXParseMethod(raw string) string {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	if method == "tcadp parser" {
+		return "tcadp"
+	}
+	return method
+}
+
 func (p *XLSXParser) ParseWithResult(filename string, data []byte) ParseResult {
+	method := normalizeXLSXParseMethod(p.ParseMethod)
+	switch method {
+	case "tcadp":
+		return parseSpreadsheetWithTCADP(
+			filename, data, "XLSX",
+			p.TCADPAPIServer, p.TCADPAPIKey,
+			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
+			p.OutputFormat,
+		)
+	case "", "excelize":
+		// Continue with the local Excelize parser.
+	default:
+		return ParseResult{
+			Err: fmt.Errorf("unsupported XLSX parse method: %q", p.ParseMethod),
+		}
+	}
+
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx open: %w", err)}

@@ -19,6 +19,8 @@ import uuid
 
 import pytest
 
+from test.testcases.configs import IS_GO_PROXY
+
 
 @pytest.fixture
 def search_resource(rest_client):
@@ -106,18 +108,19 @@ def test_search_update_invalid_search_id(rest_client):
 @pytest.mark.p2
 def test_search_completion_requires_question(rest_client, search_resource):
     search_id = search_resource
+    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
 
     completion_res = rest_client.post(f"/searches/{search_id}/completion", json={})
     assert completion_res.status_code == 200
     completion_payload = completion_res.json()
     assert completion_payload["code"] == 101, completion_payload
-    assert "required argument are missing: question" in completion_payload["message"], completion_payload
+    assert expected_message in completion_payload["message"], completion_payload
 
     completions_res = rest_client.post(f"/searches/{search_id}/completions", json={})
     assert completions_res.status_code == 200
     completions_payload = completions_res.json()
     assert completions_payload["code"] == 101, completions_payload
-    assert "required argument are missing: question" in completions_payload["message"], completions_payload
+    assert expected_message in completions_payload["message"], completions_payload
 
 
 @pytest.mark.p2

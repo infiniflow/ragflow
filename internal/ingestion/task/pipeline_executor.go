@@ -173,7 +173,6 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 }
 
 func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any) (*PipelineResult, error) {
-	taskStart := time.Now()
 	if pipelineOutput == nil {
 		return nil, nil
 	}
@@ -182,7 +181,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	chunks := NormalizeChunks(pipelineOutput)
-	if chunks == nil {
+	if len(chunks) == 0 {
 		return nil, nil
 	}
 
@@ -195,12 +194,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		time.Now(),
 	)
 
-	indexStart := time.Now()
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
-	_ = time.Since(indexStart)
-	_ = time.Since(taskStart)
 
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,

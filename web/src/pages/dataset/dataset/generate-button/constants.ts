@@ -27,10 +27,3 @@ export const GenerateTypeMap = {
   [GenerateType.Artifact]: ProcessingType.artifact,
   [GenerateType.ToSkills]: ProcessingType.skill,
 };
-
-export const IconKeyMap = {
-  KnowledgeGraph: 'knowledgegraph',
-  Raptor: 'dataflow-01',
-  Artifact: 'book-open-01',
-  ToSkills: 'spark',
-};
