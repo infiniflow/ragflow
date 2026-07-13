@@ -43,7 +43,6 @@ from peewee import (
     Metadata,
     Model,
     TextField,
-    PrimaryKeyField,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
@@ -1525,6 +1524,43 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         pass
 
 
+def ensure_model_indexes(migrator):
+    """Create indexes declared by the Peewee models when they are missing."""
+    members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+    for name, model in members:
+        if model == DataBaseModel or not issubclass(model, DataBaseModel):
+            continue
+
+        table_name = model._meta.table_name
+        expected = {}
+        for field in model._meta.fields.values():
+            if field.primary_key:
+                continue
+            if field.index or field.unique:
+                expected[(field.name,)] = bool(field.unique)
+
+        for columns, unique in model._meta.indexes:
+            expected[tuple(columns)] = bool(unique)
+
+        if not expected:
+            continue
+
+        try:
+            existing = {tuple(index.columns): bool(index.unique) for index in DB.get_indexes(table_name)}
+        except Exception as ex:
+            logging.error(f"Failed to inspect indexes on {table_name}: {ex}")
+            continue
+
+        for columns, unique in expected.items():
+            if columns in existing and (not unique or existing[columns]):
+                continue
+            try:
+                migrate(migrator.add_index(table_name, columns, unique=unique))
+                logging.info(f"Created {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)})")
+            except Exception as ex:
+                logging.error(f"Failed to create {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)}): {ex}")
+
+
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
     # step 0: check existing index state on user.email and prepare for unique constraint
@@ -1780,6 +1816,7 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "skill_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "evaluation_runs", "dialog_id", CharField(max_length=32, null=False, default="", help_text="dialog configuration being evaluated", index=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
@@ -1834,6 +1871,7 @@ def migrate_db():
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
+    ensure_model_indexes(migrator)
 
 
 def migrate_model_type_names():
