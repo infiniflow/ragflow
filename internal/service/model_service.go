@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -386,8 +387,6 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	return result, nil
 }
 
-// CreateInstanceModelInfo mirrors Python's model_info dict in
-// create_provider_instance. See api/apps/services/provider_api_service.py:434.
 type CreateInstanceModelInfo struct {
 	ModelName  string                 `json:"model_name"`
 	ModelTypes []string               `json:"model_type"`
@@ -395,9 +394,17 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
-	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
+func (m *ModelProviderService) getProviderByIDOrName(tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
+	provider, err := m.modelProviderDAO.GetByID(providerIDOrName)
+	if err == nil && provider.TenantID == tenantID {
+		return provider, nil
+	}
+	return m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, strings.ToLower(strings.TrimSpace(providerIDOrName)))
+}
+
+func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
+	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	providerName := strings.ToLower(providerIDOrName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -411,20 +418,18 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
 	if err != nil {
-		return common.CodeServerError, err
+		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
+	providerName = provider.ProviderName
 
 	// Normalize api_key: VLLM with empty api_key defaults to "x".
-	// Mirrors Python's _normalize_provider_api_key.
 	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
 		apiKey = "x"
 	}
 
 	// Verify the API key against the provider.
-	// Mirrors Python's verify_api_key (provider_api_service.py:596).
 	modelVerifyResult := m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
 
 	instanceID := utility.GenerateToken()
@@ -472,11 +477,9 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 }
 
 // CreateNameOnlyProviderInstance creates a provider instance with only a name,
-// skipping API key validation and model creation. Mirrors Python's
-// create_name_only_provider_instance in provider_api_service.py:536.
-func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
-	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
+// skipping API key validation and model creation.
+func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerIDOrName, instanceName, userID string) (common.ErrorCode, error) {
+	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	if instanceName == "default" {
 		return common.CodeBadRequest, errors.New("instance name cannot be 'default'")
@@ -491,9 +494,9 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerName, inst
 	}
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
 	if err != nil {
-		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
+		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
 
 	instanceID := utility.GenerateToken()
@@ -516,8 +519,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerName, inst
 
 // verifyProviderAPIKey verifies the API key against the provider by calling
 // the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown). Mirrors Python's verify_api_key in
-// provider_api_service.py:596.
+// status (success/fail/unknown).
 func (m *ModelProviderService) verifyProviderAPIKey(providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
 	result := make(map[string]string)
 
@@ -568,7 +570,6 @@ func (m *ModelProviderService) verifyProviderAPIKey(providerName, apiKey, region
 }
 
 // addModelToInstance creates a single model under the given provider instance.
-// Mirrors Python's add_model_to_instance in provider_api_service.py:969.
 func (m *ModelProviderService) addModelToInstance(tenantID, providerName, instanceName string, model CreateInstanceModelInfo) error {
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
@@ -627,9 +628,8 @@ func (m *ModelProviderService) addModelToInstance(tenantID, providerName, instan
 	return nil
 }
 
-func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
-	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
+func (m *ModelProviderService) ListProviderInstances(providerIDOrName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -643,20 +643,10 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	// Check if provider exists — try by ID first, then by name.
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
 	if err != nil {
-		// "provider not connected to this tenant" is a normal, expected state
-		// (e.g. demo tenant has never added SiliconFlow). Mirrors the Python
-		// contract in api/apps/services/provider_api_service.py:349-355 which
-		// returns (False, "No provider found for provider '<name>'") on this
-		// path. The REST layer maps that to get_error_data_result with
-		// code=RetCode.DATA_ERROR (=102), so the Go port must do the same —
-		// NOT a 500 server error.
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", providerName)
-		}
-		return nil, common.CodeServerError, err
+		return nil, common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", providerIDOrName)
 	}
 
 	// Check if provider exists
@@ -672,36 +662,35 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 	// crash on a freshly created tenant.
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
-		// convert instance.Extra (JSON string) to map
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return nil, common.CodeServerError, err
+		// Parse extra to extract region
+		var extraFields map[string]string
+		if instance.Extra != "" {
+			if err := json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+		if extraFields == nil {
+			extraFields = make(map[string]string)
 		}
 
-		// Emit snake_case keys to match the IProviderInstance TypeScript
-		// contract (web/src/interfaces/database/llm.ts) and the Python
-		// `TenantModelInstanceService.query(joinedload(...))` response
-		// shape. The Go port previously emitted camelCase
-		// (`instanceName`/`providerID`/`apiKey`), which broke the
-		// `instance.instance_name` reads in
-		// web/src/pages/user-setting/setting-model/components/used-model.tsx
-		// and made `useFetchInstanceModels(providerName,
-		// instance.instance_name)` hit `/api/v1/providers/<p>/instances/undefined/models`.
+		// Emit snake_case keys to match the Python
+		// list_provider_instances response shape
+		// (provider_api_service.py:563).
 		result = append(result, map[string]interface{}{
 			"id":            instance.ID,
 			"instance_name": instance.InstanceName,
 			"provider_id":   instance.ProviderID,
-			"api_key":       instance.APIKey,
+			"region":        extraFields["region"],
 			"status":        instance.Status,
-			"extra":         instance.Extra,
 		})
 	}
 
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (m *ModelProviderService) ShowProviderInstance(providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	providerName = strings.TrimSpace(providerName)
+	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -715,37 +704,50 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
+	// Check if provider exists. Mirrors Python's:
+	//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_id(tenant_id, provider_id_or_name)
+	//   if not provider_obj:
+	//       provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_id_or_name)
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", providerName)
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	// Find the instance — try by ID first, then by name.
+	// Mirrors Python's:
+	//   _, instance_obj = TenantModelInstanceService.get_by_id(instance_id_or_name)
+	//   if instance_obj and instance_obj.provider_id != provider_id: instance_obj = None
+	//   if not instance_obj:
+	//       instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_id, instance_id_or_name)
+	var instance *entity.TenantModelInstance
+	instance, err = m.modelInstanceDAO.GetByID(instanceIDOrName)
+	if err != nil || instance.ProviderID != provider.ID {
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+	}
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, common.CodeDataError, fmt.Errorf("No instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
 	}
 
-	// convert instance.Extra (JSON string) to map
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	// Parse extra fields. Mirrors Python's:
+	//   extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+	var extraFields map[string]string
+	if instance.Extra != "" {
+		if err := json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+	if extraFields == nil {
+		extraFields = make(map[string]string)
 	}
 
-	// Emit snake_case keys to match the IProviderInstance TypeScript
-	// contract — see ListProviderInstances above. The previous shape
-	// mixed conventions (`apikey` lowercase, `instanceName`/`providerID`
-	// camelCase) and broke the front-end's `instance.api_key` /
-	// `instance.instance_name` reads.
 	result := map[string]interface{}{
 		"id":            instance.ID,
 		"instance_name": instance.InstanceName,
-		"provider_id":   instance.ProviderID,
-		"status":        instance.Status,
+		"provider_id":   provider.ID,
+		"region":        extraFields["region"],
+		"base_url":      extraFields["base_url"],
 		"api_key":       instance.APIKey,
-		"region":        extra["region"],
-		"base_url":      extra["base_url"],
+		"status":        instance.Status,
 	}
 
 	return result, common.CodeSuccess, nil
@@ -1069,6 +1071,16 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 		modelTypeFilter = strings.ToLower(strings.TrimSpace(modelTypeFilter))
 	}
 
+	// Mirror Python's ensure_*_from_env calls.
+	_ = m.ensureMineruFromEnv(tenantID)
+	_ = m.ensurePaddleOCREnabledFromEnv(tenantID)
+	_ = m.ensureOpenDataLoaderFromEnv(tenantID)
+
+	var modelTypeFilterBin entity.ModelType
+	if modelTypeFilter != "" {
+		modelTypeFilterBin = entity.ModelTypeFromString(modelTypeFilter)
+	}
+
 	providers, err := m.modelProviderDAO.GetByTenantID(tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -1099,105 +1111,127 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 		instanceInfoByID[inst.ID] = inst
 	}
 
-	// Per-tenant enable/disable overrides. In the Go port this is
-	// typically empty (no writers), but we still honor active/inactive
-	// rows for correctness and parity.
+	// Fetch tenant model records and filter by model_type if needed.
 	modelRecords, err := m.modelDAO.GetModelsByProviderIDsAndInstanceIDs(providerIDs, instanceIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	activeByKey := make(map[string]int)
-	inactiveByKey := make(map[string]int)
-	activeModelIDByKey := make(map[string]string)
-	for _, rec := range modelRecords {
-		key := rec.ProviderID + "@" + rec.InstanceID + "@" + rec.ModelName
-		if rec.Status == "inactive" {
-			inactiveByKey[key] |= rec.ModelType
-		} else {
-			activeByKey[key] |= rec.ModelType
-			if activeModelIDByKey[key] == "" {
-				activeModelIDByKey[key] = rec.ID
+
+	var targetRecords []*entity.TenantModel
+	if modelTypeFilterBin != 0 {
+		for _, rec := range modelRecords {
+			if entity.ModelType(rec.ModelType)&modelTypeFilterBin != 0 {
+				targetRecords = append(targetRecords, rec)
 			}
 		}
+	} else {
+		targetRecords = modelRecords
 	}
 
-	// Group instances by provider_name for the outer loop.
-	instancesByProviderName := make(map[string][]*entity.TenantModelInstance)
-	for _, inst := range instances {
-		p, ok := providerInfoByID[inst.ProviderID]
-		if !ok {
-			continue
-		}
-		instancesByProviderName[p.ProviderName] = append(instancesByProviderName[p.ProviderName], inst)
-	}
-
+	// Build model rank map from factory catalog (mirrors Python's model_rank_map).
 	providerManager := dao.GetModelProviderManager()
-	added := make([]map[string]interface{}, 0)
-
-	// factory rank is not present in the Go entity.Provider struct, so we
-	// follow Python's stable ordering intent (factory rank desc, then
-	// provider_name, then instance_name) by simply iterating providers in
-	// the tenant's own order. With one provider today this is a no-op.
-	for _, p := range providers {
-		factory := providerManager.FindProvider(p.ProviderName)
-		if factory == nil {
-			// Factory not in the static catalog. The tenant has linked
-			// a provider we have no model list for. Skip — there is
-			// nothing to expose.
-			continue
-		}
-		factoryInstances := instancesByProviderName[p.ProviderName]
-		if len(factoryInstances) == 0 {
-			continue
-		}
+	modelRankMap := make(map[string]int) // key: "providerName@modelName"
+	factoryRankMapping := make(map[string]int)
+	for i := range providerManager.Providers {
+		factory := &providerManager.Providers[i]
+		factoryRankMapping[factory.Name] = -factory.Rank
 		for _, llm := range factory.Models {
-			if modelTypeFilter != "" {
-				match := false
-				for _, t := range llm.ModelTypes {
-					if strings.EqualFold(t, modelTypeFilter) {
-						match = true
+			rank := 500
+			if llm.Rank != nil {
+				rank = *llm.Rank
+			}
+			modelRankMap[factory.Name+"@"+llm.Name] = rank
+		}
+	}
+
+	added := make([]map[string]interface{}, 0, len(targetRecords))
+	for _, modelRecord := range targetRecords {
+		provInfo, provOK := providerInfoByID[modelRecord.ProviderID]
+		instInfo, instOK := instanceInfoByID[modelRecord.InstanceID]
+		if !provOK || !instOK {
+			continue
+		}
+		rank := modelRankMap[provInfo.ProviderName+"@"+modelRecord.ModelName]
+		if rank == 0 {
+			rank = 500
+		}
+		added = append(added, map[string]interface{}{
+			"model_id":      modelRecord.ID,
+			"tenant_id":     provInfo.TenantID,
+			"tenant_name":   tenantName,
+			"model_type":    entity.ModelType(modelRecord.ModelType).HumanReadable(),
+			"name":          modelRecord.ModelName,
+			"provider_id":   modelRecord.ProviderID,
+			"provider_name": provInfo.ProviderName,
+			"instance_id":   modelRecord.InstanceID,
+			"instance_name": instInfo.InstanceName,
+			"rank":          rank,
+		})
+	}
+
+	// Add TEI Builtin embedding model if configured (mirrors Python).
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if strings.Contains(composeProfiles, "tei-") && teiModel != "" {
+		if modelTypeFilter == "" || modelTypeFilter == "embedding" {
+			teiAlreadyAdded := false
+			for _, m := range added {
+				if pn, _ := m["provider_name"].(string); pn == "Builtin" {
+					if n, _ := m["name"].(string); n == teiModel {
+						teiAlreadyAdded = true
 						break
 					}
 				}
-				if !match {
-					continue
-				}
 			}
-			for _, inst := range factoryInstances {
-				key := p.ID + "@" + inst.ID + "@" + llm.Name
-				// Bitmask merge: factory types ∪ active overrides \ inactive overrides.
-				merged := entity.ModelTypeFromStrings(llm.ModelTypes)
-				merged |= entity.ModelType(activeByKey[key])
-				merged &^= entity.ModelType(inactiveByKey[key])
-				if merged == 0 {
-					continue
+			if !teiAlreadyAdded {
+				rank := modelRankMap["Builtin@"+teiModel]
+				if rank == 0 {
+					rank = 500
 				}
 				added = append(added, map[string]interface{}{
-					"model_id":      activeModelIDByKey[key],
+					"model_id":      "",
 					"tenant_id":     tenant.ID,
 					"tenant_name":   tenantName,
-					"model_type":    modelTypesForAPI(merged),
-					"name":          llm.Name,
-					"provider_id":   inst.ProviderID,
-					"provider_name": p.ProviderName,
-					"instance_id":   inst.ID,
-					"instance_name": inst.InstanceName,
+					"model_type":    []string{"embedding"},
+					"name":          teiModel,
+					"provider_id":   "",
+					"provider_name": "Builtin",
+					"instance_id":   "",
+					"instance_name": "default",
+					"rank":          rank,
 				})
 			}
 		}
 	}
 
-	return added, common.CodeSuccess, nil
-}
-
-func modelTypesForAPI(modelType entity.ModelType) []string {
-	types := modelType.HumanReadable()
-	for i, t := range types {
-		if t == "image2text" {
-			types[i] = "vision"
+	// Sort by factory rank desc, provider_name, instance_name, model rank desc, name.
+	sort.Slice(added, func(i, j int) bool {
+		pi, _ := added[i]["provider_name"].(string)
+		pj, _ := added[j]["provider_name"].(string)
+		fi := factoryRankMapping[pi]
+		fj := factoryRankMapping[pj]
+		if fi != fj {
+			return fi < fj // factory rank: smaller (more negative) = higher priority
 		}
-	}
-	return types
+		if pi != pj {
+			return pi < pj
+		}
+		ini, _ := added[i]["instance_name"].(string)
+		inj, _ := added[j]["instance_name"].(string)
+		if ini != inj {
+			return ini < inj
+		}
+		ri, _ := added[i]["rank"].(int)
+		rj, _ := added[j]["rank"].(int)
+		if ri != rj {
+			return ri > rj // model rank desc
+		}
+		ni, _ := added[i]["name"].(string)
+		nj, _ := added[j]["name"].(string)
+		return ni < nj
+	})
+
+	return added, common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID string) (*entity.Tenant, common.ErrorCode, error) {
@@ -1237,9 +1271,18 @@ func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID stri
 	return tenant, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
-	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
+// ensureMineruFromEnv is a stub that mirrors Python's ensure_mineru_from_env.
+// It ensures a MinerU OCR provider instance exists when env vars are configured.
+func (m *ModelProviderService) ensureMineruFromEnv(tenantID string) error { return nil }
+
+// ensurePaddleOCREnabledFromEnv is a stub that mirrors Python's ensure_paddleocr_from_env.
+func (m *ModelProviderService) ensurePaddleOCREnabledFromEnv(tenantID string) error { return nil }
+
+// ensureOpenDataLoaderFromEnv is a stub that mirrors Python's ensure_opendataloader_from_env.
+func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(tenantID string) error { return nil }
+
+func (m *ModelProviderService) AlterProviderInstance(userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -1250,10 +1293,11 @@ func (m *ModelProviderService) AlterProviderInstance(userID, providerName, insta
 	}
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
 	if err != nil {
-		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
+		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
+	providerName := provider.ProviderName
 
 	// Find the instance — try by ID first, then by name.
 	instance, err := m.modelInstanceDAO.GetByID(instanceIDOrName)
@@ -1407,27 +1451,8 @@ func (m *ModelProviderService) AlterProviderInstance(userID, providerName, insta
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) getProviderInstancesByNames(providerID string, instanceNames []string) ([]*entity.TenantModelInstance, []string, error) {
-	modelInstances := make([]*entity.TenantModelInstance, 0, len(instanceNames))
-	missingInstanceNames := make([]string, 0)
-
-	for _, instanceName := range instanceNames {
-		modelInstance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(providerID, instanceName)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				missingInstanceNames = append(missingInstanceNames, instanceName)
-				continue
-			}
-			return nil, nil, err
-		}
-		modelInstances = append(modelInstances, modelInstance)
-	}
-
-	return modelInstances, missingInstanceNames, nil
-}
-
-func (m *ModelProviderService) DropProviderInstances(providerName, userID string, instanceNames []string) (common.ErrorCode, error) {
-	if len(instanceNames) == 0 {
+func (m *ModelProviderService) DropProviderInstances(providerIDOrName, userID string, instanceIDOrNames []string) (common.ErrorCode, error) {
+	if len(instanceIDOrNames) == 0 {
 		return common.CodeBadRequest, errors.New("instances is required")
 	}
 
@@ -1443,42 +1468,46 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	// Find provider by ID or name
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return common.CodeNotFound, fmt.Errorf("no provider found for provider %q", providerName)
+			return common.CodeNotFound, fmt.Errorf("no provider found for provider %q", providerIDOrName)
 		}
 		return common.CodeServerError, err
 	}
 
-	modelInstances, missingInstanceNames, err := m.getProviderInstancesByNames(provider.ID, instanceNames)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	if len(missingInstanceNames) > 0 {
-		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerName, missingInstanceNames)
-	}
-
-	for _, modelInstance := range modelInstances {
-		if _, err = m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, modelInstance.ID); err != nil {
-			return common.CodeServerError, err
-		}
-
-		count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, modelInstance.InstanceName)
+	// Delete each instance by provider_id + instance_name.
+	// Since instance names are unique within a provider, we can delete directly.
+	notExistInstances := make([]string, 0)
+	for _, instanceName := range instanceIDOrNames {
+		instanceObj, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
 		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				notExistInstances = append(notExistInstances, instanceName)
+				continue
+			}
 			return common.CodeServerError, err
 		}
-		if count == 0 {
-			return common.CodeNotFound, fmt.Errorf("provider instance %q not found", modelInstance.InstanceName)
+
+		// Delete models under this instance first
+		if _, err := m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, instanceObj.ID); err != nil {
+			return common.CodeServerError, err
 		}
+
+		// Delete the instance itself
+		if _, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName); err != nil {
+			return common.CodeServerError, err
+		}
+	}
+	if len(notExistInstances) > 0 {
+		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerIDOrName, notExistInstances)
 	}
 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, userID string, modelIDs, models []string) (common.ErrorCode, error) {
-
+func (m *ModelProviderService) DropInstanceModels(providerIDOrName, instanceIDOrName, userID string, modelNames []string) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -1491,49 +1520,52 @@ func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, us
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	// Get provider by ID or name (matches Python's get_by_tenant_id_and_provider_id → get_by_tenant_id_and_provider_name fallback).
+	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	if err != nil {
+		return common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", providerIDOrName)
+	}
+
+	// Get instance by ID or name (matches Python's get_by_id → get_by_provider_id_and_instance_name fallback).
+	instance, err := m.modelInstanceDAO.GetByID(instanceIDOrName)
+	if err != nil || instance.ProviderID != provider.ID {
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+	}
+	if err != nil {
+		return common.CodeDataError, fmt.Errorf("No instance found for provider '%s' and instance '%s'", providerIDOrName, instanceIDOrName)
+	}
+
+	// Fetch all models under this instance and validate all requested names exist.
+	modelObjs, err := m.modelDAO.GetModelsByInstanceID(instance.ID)
 	if err != nil {
 		return common.CodeServerError, err
 	}
 
-	var modelInstance *entity.TenantModelInstance
-	modelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
-	if err != nil {
+	existingNames := make(map[string]struct{}, len(modelObjs))
+	for _, obj := range modelObjs {
+		existingNames[obj.ModelName] = struct{}{}
+	}
+
+	notExist := make([]string, 0)
+	for _, name := range modelNames {
+		if _, ok := existingNames[name]; !ok {
+			notExist = append(notExist, name)
+		}
+	}
+	if len(notExist) > 0 {
+		return common.CodeNotFound, fmt.Errorf("Models %v not found for provider '%s' and instance '%s'", notExist, providerIDOrName, instanceIDOrName)
+	}
+
+	// Collect IDs of models to delete.
+	idsToDelete := make([]string, 0, len(modelNames))
+	for _, obj := range modelObjs {
+		if _, ok := existingNames[obj.ModelName]; ok {
+			idsToDelete = append(idsToDelete, obj.ID)
+		}
+	}
+
+	if _, err := m.modelDAO.DeleteByIDs(idsToDelete); err != nil {
 		return common.CodeServerError, err
-	}
-
-	for _, modelID := range modelIDs {
-		modelID = strings.TrimSpace(modelID)
-		if modelID == "" {
-			return common.CodeBadRequest, errors.New("model ID is required")
-		}
-		var count int64 = 0
-		count, err = m.modelDAO.DeleteByModelIDAndProviderIDAndInstanceID(modelID, provider.ID, modelInstance.ID)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
-		if count == 0 {
-			return common.CodeNotFound, fmt.Errorf("model %s not found", modelID)
-		}
-	}
-
-	for _, modelName := range models {
-		modelName = strings.TrimSpace(modelName)
-		if modelName == "" {
-			return common.CodeBadRequest, errors.New("model name is required")
-		}
-		// Delete all models of this instance
-		var count int64 = 0
-		count, err = m.modelDAO.DeleteByProviderIDAndInstanceIDAndModelName(provider.ID, modelInstance.ID, modelName)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
-		if count == 0 {
-			return common.CodeNotFound, fmt.Errorf("model: %s not found", modelName)
-		}
 	}
 
 	return common.CodeSuccess, nil
@@ -1552,60 +1584,78 @@ func (m *ModelProviderService) ListInstanceModels(providerName, instanceName, us
 
 	tenantID := tenants[0].TenantID
 
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	// Find provider by ID or name
+	provider, err := m.getProviderByIDOrName(tenantID, providerName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get instance
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
-	if err != nil {
-		return nil, err
+	// Find instance by ID first, then by name
+	instance, err := m.modelInstanceDAO.GetByID(instanceName)
+	if err != nil || instance.ProviderID != provider.ID {
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Get all models for this instance
-	disabledModels, err := m.modelDAO.GetModelsByInstanceID(instance.ID)
+	modelObjs, err := m.modelDAO.GetModelsByInstanceID(instance.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	allModels, err := dao.GetModelProviderManager().ListModels(providerName)
+	modelList := make([]map[string]interface{}, 0, len(modelObjs))
+	for _, model := range modelObjs {
+		modelExtra := make(map[string]interface{})
+		if model.Extra != "" {
+			_ = json.Unmarshal([]byte(model.Extra), &modelExtra)
+		}
 
-	// insert models name into a set
-	modelNames := make(map[string]bool)
-	for _, model := range disabledModels {
-		if model.Status == "active" {
-			modelData := map[string]interface{}{
-				"name": model.ModelName,
+		maxTokens := 8192
+		if v, ok := modelExtra["max_tokens"]; ok {
+			switch val := v.(type) {
+			case float64:
+				maxTokens = int(val)
+			case int:
+				maxTokens = val
 			}
-			allModels = append(allModels, modelData)
-		} else {
-			modelNames[model.ModelName] = true
 		}
 
-	}
-
-	for _, model := range allModels {
-		// convert model["name"] to string
-		modelName := model["name"].(string)
-		if modelNames[modelName] {
-			model["status"] = "inactive"
-		} else {
-			model["status"] = "active"
+		verify := "unknown"
+		if v, ok := modelExtra["verify"].(string); ok {
+			verify = v
 		}
+
+		features := make([]string, 0)
+		if v, ok := modelExtra["is_tools"]; ok && isTruthy(v) {
+			features = append(features, "is_tools")
+		}
+		if v, ok := modelExtra["thinking"]; ok && isTruthy(v) {
+			features = append(features, "thinking")
+		}
+
+		modelList = append(modelList, map[string]interface{}{
+			"name":       model.ModelName,
+			"model_type": entity.ModelType(model.ModelType).HumanReadable(),
+			"max_tokens": maxTokens,
+			"status":     model.Status,
+			"verify":     verify,
+			"features":   features,
+		})
 	}
 
-	return allModels, nil
+	// Sort by name
+	sort.Slice(modelList, func(i, j int) bool {
+		return modelList[i]["name"].(string) < modelList[j]["name"].(string)
+	})
+
+	return modelList, nil
 }
 
-func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, modelName, userID, modelID, status string) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterModel(providerName, instanceName, modelName, userID, modelID string, updateDict map[string]interface{}) (common.ErrorCode, error) {
 	modelName = strings.TrimSpace(modelName)
 	modelID = strings.TrimSpace(modelID)
-	status = strings.TrimSpace(status)
-	if status != "active" && status != "inactive" {
-		return common.CodeBadRequest, errors.New("status must be active or inactive")
-	}
 	if modelName == "" && modelID == "" {
 		return common.CodeBadRequest, errors.New("model name or model ID is required")
 	}
@@ -1623,7 +1673,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(tenantID, providerName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1633,74 +1683,101 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 		return common.CodeServerError, err
 	}
 
-	var model *entity.TenantModel
-
-	if modelID != "" {
-		model, err = m.modelDAO.GetByID(modelID)
-		if err != nil || model == nil {
-			return common.CodeNotFound, errors.New("model not found")
+	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.CodeServerError, err
 		}
+		return common.CodeNotFound, fmt.Errorf("model %q not found for provider %q and instance %q", modelName, providerName, instanceName)
+	}
 
-		if model.ProviderID != provider.ID || model.InstanceID != instance.ID {
-			return common.CodeNotFound, errors.New("model not found")
+	if modelID != "" && model.ID != modelID {
+		return common.CodeBadRequest, errors.New("model ID does not match model name")
+	}
+
+	toUpdate := make(map[string]interface{})
+
+	// Handle status
+	if status, ok := updateDict["status"].(string); ok && status != "" {
+		if status != "active" && status != "inactive" {
+			return common.CodeBadRequest, errors.New("status must be 'active' or 'inactive'")
 		}
-
-		if modelName != "" && model.ModelName != modelName {
-			return common.CodeBadRequest, errors.New("model ID does not match model name")
+		if status != model.Status {
+			toUpdate["status"] = status
 		}
+	}
 
-		count, err := m.modelDAO.UpdateStatusByIDAndScope(modelID, provider.ID, instance.ID, status)
+	// Handle model_type
+	if modelTypeVal, ok := updateDict["model_type"]; ok && modelTypeVal != nil {
+		targetModelType := resolveModelType(modelTypeVal)
+		if targetModelType != model.ModelType {
+			toUpdate["model_type"] = targetModelType
+		}
+	}
+
+	// Handle extra (max_tokens, extra)
+	newExtra := make(map[string]interface{})
+	if extraVal, ok := updateDict["extra"]; ok && extraVal != nil {
+		if extraMap, ok := extraVal.(map[string]interface{}); ok {
+			for k, v := range extraMap {
+				newExtra[k] = v
+			}
+		}
+	}
+	if maxTokensVal, ok := updateDict["max_tokens"]; ok {
+		switch v := maxTokensVal.(type) {
+		case int:
+			if v > 0 {
+				newExtra["max_tokens"] = v
+			}
+		case float64:
+			if v > 0 {
+				newExtra["max_tokens"] = int(v)
+			}
+		}
+	}
+	if len(newExtra) > 0 {
+		dbExtra := make(map[string]interface{})
+		if model.Extra != "" {
+			_ = json.Unmarshal([]byte(model.Extra), &dbExtra)
+		}
+		for k, v := range newExtra {
+			dbExtra[k] = v
+		}
+		extraBytes, err := json.Marshal(dbExtra)
 		if err != nil {
 			return common.CodeServerError, err
 		}
-		if count == 0 {
-			return common.CodeNotFound, errors.New("model not found")
-		}
-		return common.CodeSuccess, nil
-	} else {
-		model, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
-		if err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return common.CodeServerError, err
-			}
-
-			modelID = utility.GenerateToken()
-
-			var modelSchema *modelModule.Model
-			modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-			if err != nil {
-				return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
-			}
-
-			// Get model info from provider
-			if len(modelSchema.ModelTypes) == 0 {
-				return common.CodeServerError, fmt.Errorf("provider %s model %s has no model types", providerName, modelName)
-			}
-			model = &entity.TenantModel{
-				ID:         modelID,
-				ModelName:  modelName,
-				ModelType:  int(entity.ModelTypeFromString(modelSchema.ModelTypes[0])),
-				ProviderID: provider.ID,
-				InstanceID: instance.ID,
-				Status:     status,
-			}
-			err = m.modelDAO.Create(model)
-			if err != nil {
-				return common.CodeServerError, errors.New("fail to create model")
-			}
-			return common.CodeSuccess, nil
-		}
+		toUpdate["extra"] = string(extraBytes)
 	}
 
-	count, err := m.modelDAO.UpdateStatusByIDAndScope(model.ID, provider.ID, instance.ID, status)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	if count == 0 {
-		return common.CodeNotFound, errors.New("model not found")
+	if len(toUpdate) > 0 {
+		if err := m.modelDAO.UpdateByID(model.ID, toUpdate); err != nil {
+			return common.CodeServerError, err
+		}
 	}
 
 	return common.CodeSuccess, nil
+}
+
+// resolveModelType converts a model_type value (string, []string, or float64) to an int bitmask.
+func resolveModelType(val interface{}) int {
+	switch v := val.(type) {
+	case string:
+		return int(entity.ModelTypeFromString(v))
+	case []interface{}:
+		types := make([]string, 0, len(v))
+		for _, t := range v {
+			if s, ok := t.(string); ok {
+				types = append(types, s)
+			}
+		}
+		return int(entity.ModelTypeFromStrings(types))
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
 }
 
 type ModelInstanceAndProviderInfo struct {
@@ -2572,9 +2649,12 @@ func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName strin
 }
 
 type AddModelRequest struct {
-	ProviderName string         `json:"provider_name"`
-	InstanceName string         `json:"instance_name"`
-	Models       []ModelRequest `json:"models"`
+	ProviderName string                 `json:"provider_name"`
+	InstanceName string                 `json:"instance_name"`
+	ModelName    string                 `json:"model_name"`
+	ModelTypes   []string               `json:"model_types"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Extra        map[string]interface{} `json:"extra"`
 }
 
 func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -2883,8 +2963,14 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 	if request == nil {
 		return common.CodeBadRequest, errors.New("request is required")
 	}
-	if len(request.Models) == 0 {
-		return common.CodeBadRequest, errors.New("models is required")
+
+	modelName := strings.TrimSpace(request.ModelName)
+	if modelName == "" {
+		return common.CodeBadRequest, errors.New("model_name is required")
+	}
+
+	if len(request.ModelTypes) == 0 {
+		return common.CodeBadRequest, errors.New("model_type is required")
 	}
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -2897,105 +2983,92 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, request.ProviderName)
+	// Get provider by ID or name (matches Python's get_by_tenant_id_and_provider_id → get_by_tenant_id_and_provider_name fallback).
+	provider, err := m.getProviderByIDOrName(tenantID, request.ProviderName)
 	if err != nil {
-		return common.CodeServerError, err
+		return common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", request.ProviderName)
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, request.InstanceName)
+	// Get instance by ID or name (matches Python's get_by_id → get_by_provider_id_and_instance_name fallback).
+	instance, err := m.modelInstanceDAO.GetByID(request.InstanceName)
+	if err != nil || instance.ProviderID != provider.ID {
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, request.InstanceName)
+	}
 	if err != nil {
+		return common.CodeDataError, fmt.Errorf("No instance found for provider '%s' and instance '%s'", request.ProviderName, request.InstanceName)
+	}
+
+	// Check for duplicate model.
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err == nil {
+		return common.CodeConflict, fmt.Errorf("Model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.CodeServerError, err
 	}
 
-	seen := make(map[string]struct{})
-	models := make([]*entity.TenantModel, 0, len(request.Models))
-
-	for _, model := range request.Models {
-		modelName := strings.TrimSpace(model.ModelName)
-		if len(model.ModelTypes) == 0 {
-			return common.CodeBadRequest, errors.New("model types is required")
+	// Compute model type bitmask.
+	combinedType := entity.ModelType(0)
+	for _, rawType := range request.ModelTypes {
+		mt := strings.TrimSpace(rawType)
+		if mt == "" {
+			continue
 		}
-
-		if modelName == "" {
-			return common.CodeBadRequest, errors.New("model name is required")
+		t := entity.ModelTypeFromString(mt)
+		if t == 0 {
+			return common.CodeBadRequest, fmt.Errorf("invalid model type: %s", mt)
 		}
-
-		// Validate each model type string and compute the combined bitmask.
-		combinedType := entity.ModelType(0)
-		seenTypes := make(map[string]struct{}, len(model.ModelTypes))
-		validTypes := make([]string, 0, len(model.ModelTypes))
-		for _, rawType := range model.ModelTypes {
-			mt := strings.TrimSpace(rawType)
-			if mt == "" {
-				return common.CodeBadRequest, errors.New("model type is required")
-			}
-			if _, ok := seenTypes[mt]; ok {
-				continue // skip duplicates
-			}
-			seenTypes[mt] = struct{}{}
-			validTypes = append(validTypes, mt)
-			t := entity.ModelTypeFromString(mt)
-			if t == 0 {
-				return common.CodeBadRequest, fmt.Errorf("invalid model type: %s", mt)
-			}
-			combinedType |= t
-		}
-
-		duplicateKey := strings.ToLower(modelName)
-		if _, ok := seen[duplicateKey]; ok {
-			return common.CodeConflict, fmt.Errorf("duplicate model in request: %s", modelName)
-		}
-		seen[duplicateKey] = struct{}{}
-
-		_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
-		if err == nil {
-			return common.CodeConflict, fmt.Errorf("model already exists: %s", modelName)
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return common.CodeServerError, err
-		}
-
-		modelID := utility.GenerateToken()
-
-		if model.MaxDimension < 0 {
-			return common.CodeBadRequest, errors.New("max_dimension must be non-negative")
-		}
-		for _, dimension := range model.Dimensions {
-			if dimension <= 0 {
-				return common.CodeBadRequest, errors.New("dimensions must contain positive values")
-			}
-			if model.MaxDimension > 0 && dimension > model.MaxDimension {
-				return common.CodeBadRequest, fmt.Errorf("dimension %d exceeds max_dimension %d", dimension, model.MaxDimension)
-			}
-		}
-		extra := map[string]interface{}{
-			"max_tokens":    model.MaxTokens,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
-		}
-		if model.Thinking != nil {
-			extra["thinking"] = *model.Thinking
-		}
-
-		var extraByte []byte
-		extraByte, err = json.Marshal(extra)
-		if err != nil {
-			return common.CodeServerError, errors.New("fail to marshal extra")
-		}
-
-		models = append(models, &entity.TenantModel{
-			ID:         modelID,
-			ModelName:  modelName,
-			ModelType:  int(combinedType),
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			Status:     "active",
-			Extra:      string(extraByte),
-		})
+		combinedType |= t
 	}
 
-	if err = m.modelDAO.CreateBatch(models); err != nil {
-		return common.CodeServerError, err
+	maxTokens := request.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
+
+	// Build extra fields. Mirrors Python's add_model_to_instance.
+	extraFields := map[string]interface{}{
+		"max_tokens": maxTokens,
+	}
+
+	// Look up factory info to populate is_tools and thinking (matches Python).
+	targetProvider := dao.GetModelProviderManager().FindProvider(provider.ProviderName)
+	if targetProvider != nil {
+		targetModel := dao.GetModelProviderManager().FindModel(targetProvider, modelName)
+		if targetModel != nil {
+			if targetModel.Tools != nil && targetModel.Tools.Support {
+				extraFields["is_tools"] = true
+			}
+			if targetModel.Thinking != nil {
+				extraFields["thinking"] = true
+			}
+		}
+	}
+
+	if request.Extra != nil {
+		for k, v := range request.Extra {
+			extraFields[k] = v
+		}
+	}
+
+	extraBytes, err := json.Marshal(extraFields)
+	if err != nil {
+		return common.CodeServerError, errors.New("fail to marshal extra")
+	}
+
+	modelID := utility.GenerateToken()
+	tenantModel := &entity.TenantModel{
+		ID:         modelID,
+		ModelName:  modelName,
+		ModelType:  int(combinedType),
+		ProviderID: provider.ID,
+		InstanceID: instance.ID,
+		Status:     "active",
+		Extra:      string(extraBytes),
+	}
+
+	if err := m.modelDAO.Create(tenantModel); err != nil {
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
 	}
 
 	return common.CodeSuccess, nil
