@@ -353,7 +353,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         fails = []
         question, answer = "", ""
         res = []
-        reader = csv.reader(lines, delimiter=delimiter)
+        # QUOTE_NONE keeps one physical line per record so the reader's row
+        # index stays aligned with lines[i] below; otherwise a field opening
+        # with a quote swallows following lines and desyncs the two.
+        reader = csv.reader(lines, delimiter=delimiter, quoting=csv.QUOTE_NONE)
 
         for i, row in enumerate(reader):
             if len(row) != 2:
