@@ -211,11 +211,17 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 		if lower == "csv" {
 			return utility.FileTypeCSV
 		}
-		if ft := familyToExt(pythonFamilyName(lower)); ft != utility.FileTypeOTHER {
+		// Direct extension match first — handles exact hints like
+		// "xls", "ppt", "doc", "docx", etc. This must run before
+		// the family look-up so that legacy binary extensions
+		// aren't collapsed to OOXML types (e.g. "xls" → XLSX).
+		if ft := utility.GetFileType("x." + lower); ft != utility.FileTypeOTHER {
 			return ft
 		}
-		// Direct extension match — handles "md", "docx", etc.
-		if ft := utility.GetFileType("x." + lower); ft != utility.FileTypeOTHER {
+		// Family-name lookup catches python-side family identifiers
+		// ("slides", "spreadsheet", "text&code") that aren't valid
+		// file extensions.
+		if ft := familyToExt(pythonFamilyName(lower)); ft != utility.FileTypeOTHER {
 			return ft
 		}
 	}
@@ -280,13 +286,9 @@ func pythonFamilyName(raw string) string {
 		return "doc"
 	case "docx":
 		return "docx"
-	case "ppt":
+	case "ppt", "pptx", "slides":
 		return "slides"
-	case "pptx":
-		return "slides"
-	case "xls":
-		return "spreadsheet"
-	case "xlsx":
+	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"
 	case "csv":
 		return "spreadsheet"

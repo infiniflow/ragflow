@@ -188,6 +188,12 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 		want string
 	}{
 		{"explicit pdf", map[string]any{"file_type": "pdf"}, "pdf"},
+		{"explicit xls (binary)", map[string]any{"file_type": "xls"}, "xls"},
+		{"explicit xlsx (OOXML)", map[string]any{"file_type": "xlsx"}, "xlsx"},
+		{"explicit ppt (binary)", map[string]any{"file_type": "ppt"}, "ppt"},
+		{"explicit pptx (OOXML)", map[string]any{"file_type": "pptx"}, "pptx"},
+		{"explicit slides (family name)", map[string]any{"file_type": "slides"}, "pptx"},
+		{"explicit spreadsheet (family name)", map[string]any{"file_type": "spreadsheet"}, "xlsx"},
 		{"explicit markdown (family form)", map[string]any{"file_type": "markdown"}, "md"},
 		{"file.name docx", map[string]any{"file": map[string]any{"name": "report.docx"}}, "docx"},
 		{"name fallback md", map[string]any{"name": "notes.md"}, "md"},
