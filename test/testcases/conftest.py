@@ -181,6 +181,9 @@ def get_added_models(auth, factory_name):
     # in the RESTful `/api/v1/models` response. Fall back to the legacy
     # `provider_name` key so this conftest works against both.
     added_factory = {model.get("model_provider") or model["provider_name"] for model in res.get("data", [])}
+    if API_PROXY_SCHEME == "go":
+        added_factory = {provider.casefold() for provider in added_factory}
+        factory_name = factory_name.casefold()
     if factory_name in added_factory:
         return True
     return False
