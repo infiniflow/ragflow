@@ -465,7 +465,13 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-               echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
+               else
+                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
+               fi
+               echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
@@ -575,9 +581,8 @@ jobs:
           source docker/.env
           set +a
 
-          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
           USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
-          USER_PORT="${SVR_HTTP_PORT}"
+          USER_PORT="${RAGFLOW_HTTP_PORT}"
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
 
@@ -929,7 +934,13 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-               echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
+               else
+                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
+               fi
+               echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
@@ -1039,9 +1050,8 @@ jobs:
           source docker/.env
           set +a
 
-          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
           USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
-          USER_PORT="${SVR_HTTP_PORT}"
+          USER_PORT="${RAGFLOW_HTTP_PORT}"
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
 
