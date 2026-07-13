@@ -26,7 +26,7 @@ import (
 // @Description Enable admin access endpoint
 // @Tags system
 // @Produce plain
-// @Router /v1/system/enable-admin [GET]
+// @Router /api/v1/system/enable-admin [GET]
 func (h *SystemHandler) GetEnableAdmin(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "EnableAdmin not implemented")
 }
