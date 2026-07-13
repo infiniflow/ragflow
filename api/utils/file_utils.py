@@ -178,6 +178,7 @@ def repair_pdf_with_ghostscript(input_bytes):
         try:
             proc = subprocess.run(
                 cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=GHOSTSCRIPT_TIMEOUT_SEC,
