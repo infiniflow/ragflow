@@ -30,7 +30,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
 	"akshare":               buildAkShareTool,
-	"arxiv":                 noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
+	"arxiv":                 buildArxivTool,
 	"bgpt":                  noConfig("bgpt", func() einotool.BaseTool { return NewBGPTTool() }),
 	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
@@ -126,6 +126,31 @@ func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 	}
 	return NewAkShareToolWithTopN(nil, topN), nil
+}
+
+func buildArxivTool(params map[string]any) (einotool.BaseTool, error) {
+	topN := defaultArxivTopN
+	sortBy := defaultArxivSortBy
+	for key := range params {
+		switch key {
+		case "top_n", "sort_by":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "arxiv", key)
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		topN = v
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "arxiv")
+	}
+	if v, ok := stringParam(params, "sort_by"); ok {
+		sortBy = v
+	}
+	if !ArxivSortBySupported(sortBy) {
+		return nil, fmt.Errorf("agent tool: tool %q has unsupported sort_by %q", "arxiv", sortBy)
+	}
+	return NewArxivToolWithParams(nil, topN, sortBy), nil
 }
 
 func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {

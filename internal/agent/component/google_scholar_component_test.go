@@ -81,9 +81,9 @@ func TestGoogleScholar_InvokeMergesNodeParams(t *testing.T) {
 
 	fake := &fakeGoogleScholarInvoker{}
 	c := newGoogleScholarComponentWithInvoker(fake, map[string]any{
-		"top_n":    float64(20),
-		"sort_by":  "date",
-		"patents":  false,
+		"top_n":   float64(20),
+		"sort_by": "date",
+		"patents": false,
 	})
 
 	_, err := c.Invoke(context.Background(), map[string]any{
