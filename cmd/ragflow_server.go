@@ -482,14 +482,8 @@ func runAdmin(args *serverArgs) error {
 
 func runIngestor(args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
-	if dictPath == "" {
-		dictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: dictPath,
-	}
-	if err := tokenizer.Init(tokenizerCfg); err != nil {
+	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
+	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
@@ -647,13 +641,9 @@ func runAPI(args *serverArgs) error {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := common.GetEnv(common.EnvRAGFlowDictPath)
-	if dictPath == "" {
-		dictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: dictPath,
-	}
+	// tokenizer.Init fills DictPath from env var or default, so
+	// tokenizerCfg.DictPath carries the resolved path for downstream use.
+	tokenizerCfg := &tokenizer.PoolConfig{}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}

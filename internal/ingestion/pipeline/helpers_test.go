@@ -18,9 +18,7 @@ import (
 	"encoding/json"
 	"math"
 	"path/filepath"
-	"ragflow/internal/common"
 	goruntime "runtime"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -39,61 +37,24 @@ func repoRootFromPipelineTest(t *testing.T) string {
 
 func RequireTokenizerPool(t *testing.T) {
 	t.Helper()
-	if tokenizer.IsInitialized() {
-		return
-	}
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	if err := tokenizer.Init(cfg); err != nil {
+	}); err != nil {
 		t.Skipf("tokenizer pool init failed: %v", err)
 	}
 }
 
 func terminalComponentIDsFromTemplate(t *testing.T, raw []byte) []string {
 	t.Helper()
-	var tpl map[string]any
-	if err := json.Unmarshal(raw, &tpl); err != nil {
-		t.Fatalf("unmarshal template: %v", err)
+	ids, err := TerminalComponentIDs(raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	dsl, ok := tpl["dsl"].(map[string]any)
-	if !ok {
-		t.Fatalf("template dsl = %T, want map[string]any", tpl["dsl"])
-	}
-	components, ok := dsl["components"].(map[string]any)
-	if !ok {
-		t.Fatalf("template components = %T, want map[string]any", dsl["components"])
-	}
-	var terminals []string
-	for id, rawComp := range components {
-		comp, ok := rawComp.(map[string]any)
-		if !ok {
-			t.Fatalf("component %q = %T, want map[string]any", id, rawComp)
-		}
-		switch ds := comp["downstream"].(type) {
-		case nil:
-			terminals = append(terminals, id)
-		case []any:
-			if len(ds) == 0 {
-				terminals = append(terminals, id)
-			}
-		case []string:
-			if len(ds) == 0 {
-				terminals = append(terminals, id)
-			}
-		default:
-			t.Fatalf("component %q downstream = %T, want []any/[]string/nil", id, comp["downstream"])
-		}
-	}
-	sort.Strings(terminals)
-	return terminals
+	return ids
 }
 
 func terminalPayloadFromRunOutput(t *testing.T, out map[string]any, terminalID string) map[string]any {
