@@ -102,10 +102,10 @@ func deepCopyChunks(chunks []map[string]any) []map[string]any {
 	return out
 }
 
-// PrepareTextsForDataflowEmbedding extracts texts for embedding from chunks.
+// PrepareTextsForPipelineEmbedding extracts texts for embedding from chunks.
 // Priority: questions > summary > text.
 // Mirrors Python: EmbeddingUtils.prepare_texts_for_dataflow_embedding()
-func PrepareTextsForDataflowEmbedding(chunks []map[string]any) []string {
+func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 	if chunks == nil {
 		return nil
 	}
