@@ -847,7 +847,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		}
 		existingFiles := s.fileDAO.Query(newName, targetParentID, file.TenantID)
 		for _, f := range existingFiles {
-			if f.Name == newName {
+			if f.ID != file.ID && f.Name == newName {
 				return false, "Duplicated file name in the same folder."
 			}
 		}

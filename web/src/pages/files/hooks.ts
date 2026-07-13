@@ -17,9 +17,6 @@ export const useGetRowSelection = () => {
 
   const rowSelection: TableRowSelection<IFile> = {
     selectedRowKeys,
-    getCheckboxProps: (record) => {
-      return { disabled: record.source_type === 'knowledgebase' };
-    },
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
     },

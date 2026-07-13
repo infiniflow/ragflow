@@ -29,7 +29,7 @@ import {
 } from './hooks';
 import { useHandleDeleteFile } from './use-delete-file';
 import { UseMoveDocumentShowType } from './use-move-file';
-import { isFolderType, isKnowledgeBaseType } from './util';
+import { isFolderType } from './util';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
@@ -51,7 +51,6 @@ export function ActionCell({
   const isFolder = isFolderType(record.type);
   const isSkillsFolder = isFolder && record.name.toLowerCase() === 'skills';
   const extension = getExtension(record.name);
-  const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
   const handleShowConnectToKnowledgeModal = useCallback(() => {
     showConnectToKnowledgeModal(record);
@@ -84,36 +83,30 @@ export function ActionCell({
 
   return (
     <section className="flex gap-2 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
-      {isKnowledgeBase || (
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size="icon-sm"
-          onClick={handleShowConnectToKnowledgeModal}
-        >
-          <Link2 />
-        </Button>
-      )}
-      {isKnowledgeBase || (
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size="icon-sm"
-          onClick={handleShowMoveFileModal}
-        >
-          <FolderInput />
-        </Button>
-      )}
-      {isKnowledgeBase || (
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size="icon-sm"
-          onClick={handleShowFileRenameModal}
-        >
-          <FolderPen />
-        </Button>
-      )}
+      <Button
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
+        size="icon-sm"
+        onClick={handleShowConnectToKnowledgeModal}
+      >
+        <Link2 />
+      </Button>
+      <Button
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
+        size="icon-sm"
+        onClick={handleShowMoveFileModal}
+      >
+        <FolderInput />
+      </Button>
+      <Button
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
+        size="icon-sm"
+        onClick={handleShowFileRenameModal}
+      >
+        <FolderPen />
+      </Button>
       {isFolder || (
         <Button
           variant="transparent"
@@ -165,38 +158,36 @@ export function ActionCell({
           )}
         </DropdownMenuContent>
       </DropdownMenu> */}
-      {isKnowledgeBase || (
-        <ConfirmDeleteDialog
-          onOk={onRemoveFile}
-          title={t('deleteModal.delFile')}
-          content={{
-            node: (
-              <ConfirmDeleteDialogNode>
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <span className="size-4">
-                    <FileIcon name={name} type={type}></FileIcon>
-                  </span>
-                  <span
-                    className={cn('truncate text-xs text-wrap', {
-                      ['cursor-pointer']: isFolder,
-                    })}
-                  >
-                    {name}
-                  </span>
-                </div>
-              </ConfirmDeleteDialogNode>
-            ),
-          }}
+      <ConfirmDeleteDialog
+        onOk={onRemoveFile}
+        title={t('deleteModal.delFile')}
+        content={{
+          node: (
+            <ConfirmDeleteDialogNode>
+              <div className="flex items-center gap-2 text-text-secondary">
+                <span className="size-4">
+                  <FileIcon name={name} type={type}></FileIcon>
+                </span>
+                <span
+                  className={cn('truncate text-xs text-wrap', {
+                    ['cursor-pointer']: isFolder,
+                  })}
+                >
+                  {name}
+                </span>
+              </div>
+            </ConfirmDeleteDialogNode>
+          ),
+        }}
+      >
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size="icon-sm"
         >
-          <Button
-            variant="transparent"
-            className="border-none hover:bg-bg-card text-text-primary"
-            size="icon-sm"
-          >
-            <Trash2 />
-          </Button>
-        </ConfirmDeleteDialog>
-      )}
+          <Trash2 />
+        </Button>
+      </ConfirmDeleteDialog>
     </section>
   );
 }
