@@ -16,6 +16,15 @@ export const buildRaptorConfigSchema = (t: (key: string) => string) =>
     rechunk: z.boolean().optional(),
   });
 
+export const buildSynthesisSchema = () =>
+  z
+    .object({
+      compile_kwd: z.string().optional(),
+      enabled: z.boolean().optional(),
+      example: z.string().optional(),
+    })
+    .passthrough();
+
 export const buildTemplateSchema = (t: (key: string) => string) =>
   z.object({
     id: z.string().optional(),
@@ -24,7 +33,12 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
     llm_id: z.string().min(1, t('setting.llmForExtractionRequired')),
     kind: z.string().min(1, t('setting.templateKindRequired')),
     config: z.record(
-      z.union([buildRaptorConfigSchema(t), buildSectionSchema(t), z.string()]),
+      z.union([
+        buildRaptorConfigSchema(t),
+        buildSectionSchema(t),
+        buildSynthesisSchema(),
+        z.string(),
+      ]),
     ),
   });
 

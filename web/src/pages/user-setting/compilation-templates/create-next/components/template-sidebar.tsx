@@ -9,6 +9,8 @@ import {
 } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { formatKindLabel } from '@/utils/compilation-template-util';
+
 import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
 import { DefaultTemplateValues } from '@/pages/user-setting/compilation-templates/edit-template/utils';
 
@@ -86,7 +88,7 @@ function TemplateSidebarItem({
         </span>
         {template?.kind && (
           <span className="ml-2 shrink-0 text-text-secondary">
-            {t(`knowledgeCompilation.kind.${template.kind}`)}
+            {formatKindLabel(template.kind)}
           </span>
         )}
       </div>

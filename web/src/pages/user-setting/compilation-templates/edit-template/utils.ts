@@ -60,6 +60,7 @@ export const isConfigMetaKey = (key: string) =>
     'example',
     'instruction',
     'page_example',
+    'synthesis',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -98,6 +99,13 @@ export const buildConfigFromBuiltin = (
       typeof builtinTemplate.config?.example === 'string'
         ? builtinTemplate.config.example
         : '',
+    ...(typeof builtinTemplate.config?.synthesis === 'object' &&
+    builtinTemplate.config?.synthesis !== null
+      ? {
+          synthesis: builtinTemplate.config
+            .synthesis as TemplateSchemaType['config']['synthesis'],
+        }
+      : {}),
   };
 
   if (kind === CompilationTemplateKind.Tree) {
@@ -133,6 +141,12 @@ export const transformDetailToForm = (
     llm_id: config.llm_id ?? '',
     global_rules: config.global_rules ?? '',
     example: typeof config.example === 'string' ? config.example : '',
+    ...(typeof config.synthesis === 'object' && config.synthesis !== null
+      ? {
+          synthesis:
+            config.synthesis as TemplateSchemaType['config']['synthesis'],
+        }
+      : {}),
   };
 
   if (detail.kind === CompilationTemplateKind.Tree) {
@@ -196,6 +210,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   Object.entries(template.config).forEach(([key, value]) => {
     if (key === 'kind' || key === 'llm_id') return;
     if (key === 'instruction' || key === 'page_example') return;
+    if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
     if (isConfigMetaKey(key)) {
       if (typeof value === 'string') config[key] = value;
     } else {

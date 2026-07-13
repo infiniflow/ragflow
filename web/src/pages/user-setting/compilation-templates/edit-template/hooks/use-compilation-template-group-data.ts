@@ -6,13 +6,13 @@ import {
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+
+import { formatKindLabel } from '@/utils/compilation-template-util';
 
 export const useCompilationTemplateGroupData = () => {
   const { id } = useParams<{ id: string }>();
   const isCreate = id === 'create';
-  const { t } = useTranslation();
 
   const { data: detail } = useFetchCompilationTemplateGroup(id);
   const { data: builtins, kindOptions: builtinKindOptions } =
@@ -28,9 +28,9 @@ export const useCompilationTemplateGroupData = () => {
     () =>
       builtinKindOptions.map((option) => ({
         ...option,
-        label: t(`knowledgeCompilation.kind.${option.value}`),
+        label: formatKindLabel(option.value),
       })),
-    [builtinKindOptions, t],
+    [builtinKindOptions],
   );
 
   const isLoading = createLoading || updateLoading;
