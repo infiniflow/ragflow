@@ -346,7 +346,7 @@ func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		"status":           0,
 		"size":             len(content),
 		"model_id":         b.param.LLMID,
-		"prompt":           b.param.Prompts,
+		"prompt":           prompts,
 	}
 	return out, nil
 }
@@ -437,9 +437,9 @@ func (b *BrowserComponent) Outputs() map[string]string {
 }
 
 // resolveBrowserLLM resolves the Browser's selected model into the model name
-// and credentials required by the stagehand runtime. Current UI selectors store
-// tenant_model.id values; older DSLs may still store model@factory names backed
-// by tenant_llm, so keep the old lookup as a fallback.
+// and credentials required by the stagehand runtime. It first tries
+// ResolveModelConfig for tenant_model.id values, then falls back to
+// model@factory parsing via resolveTenantLLM
 //
 // Tests override the lookup via `tenantLLMLookupForTest` (a
 // package-level function variable) so they don't need a real DB.
