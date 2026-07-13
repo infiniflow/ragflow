@@ -20,9 +20,8 @@
 //     text records into chunks that span multiple body records while
 //     staying inside one heading section.
 //
-//   - PARALLELISM: Parallelism() advertises a fan-out hint to outer
-//     executors. Heading detection stays sequential; grouping work is
-//     local to one invocation.
+//     Heading detection stays sequential; grouping work is local to
+//     one invocation.
 //
 //   - MIRRORS python `_build_section_ids` + `GroupTitleChunker.build_chunks`:
 //     consecutive records with the same (target_level-derived) sec_id
@@ -344,7 +343,6 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-func (c *GroupTitleChunkerComponent) Parallelism() int { return 2 }
 func (c *GroupTitleChunkerComponent) Inputs() map[string]string {
 	return ChunkerInputs
 }
@@ -353,23 +351,21 @@ func (c *GroupTitleChunkerComponent) Outputs() map[string]string {
 }
 
 func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameGroupTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			inputs = map[string]any{}
-		}
-		// `name` is read from the workflow-wide Globals bag (seeded at
-		// pipeline start, published by the File component), not from the
-		// upstream output map.
-		name := globals.GlobalOrInput(ctx, inputs, "name", "")
-		if name == "" {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		return invokeGroup(ctx, withName(inputs, name), &c.param)
-	})
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	return invokeGroup(ctx, withName(inputs, name), &c.param)
 }
 
 // init registers GroupTitleChunker under CategoryIngestion.

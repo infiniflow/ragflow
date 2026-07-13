@@ -43,22 +43,6 @@ func TestGroupTitleChunker_Registered(t *testing.T) {
 	}
 }
 
-func TestGroupTitleChunker_Parallelism(t *testing.T) {
-	c, err := NewGroupTitleChunker(map[string]any{
-		"levels": [][]string{{`^# `}},
-	})
-	if err != nil {
-		t.Fatalf("NewGroupTitleChunker: %v", err)
-	}
-	gc, ok := c.(*GroupTitleChunkerComponent)
-	if !ok {
-		t.Fatalf("NewGroupTitleChunker returned %T", c)
-	}
-	if got := gc.Parallelism(); got != 2 {
-		t.Errorf("Parallelism() = %d, want 2", got)
-	}
-}
-
 func TestGroupTitleChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	_, _, meta, ok := runtime.DefaultRegistry.Lookup("GroupTitleChunker")
 	if !ok {

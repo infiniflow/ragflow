@@ -46,24 +46,6 @@ func TestTitleChunker_Registered(t *testing.T) {
 	}
 }
 
-// TestTitleChunker_Parallelism enforces plan row 2.3b parallelism (2).
-func TestTitleChunker_Parallelism(t *testing.T) {
-	c, err := NewTitleChunker(map[string]any{
-		"method": "group",
-		"levels": [][]string{{"^# "}},
-	})
-	if err != nil {
-		t.Fatalf("NewTitleChunker: %v", err)
-	}
-	tc, ok := c.(*TitleChunkerComponent)
-	if !ok {
-		t.Fatalf("NewTitleChunker returned %T", c)
-	}
-	if got := tc.Parallelism(); got != 2 {
-		t.Errorf("Parallelism() = %d, want 2", got)
-	}
-}
-
 // TestTitleChunker_InputsOutputs_NonEmpty asserts metadata is
 // populated for both ends.
 func TestTitleChunker_InputsOutputs_NonEmpty(t *testing.T) {

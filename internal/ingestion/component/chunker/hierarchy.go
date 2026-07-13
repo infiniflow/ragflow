@@ -21,7 +21,6 @@
 //     chunks that respect hierarchical scope (a sub-tree's body
 //     chunks include the heading texts of all ancestor nodes).
 //
-//   - PARALLELISM: 2 goroutines (plan §4 Phase 2 row 2.3d). The
 //     tree-build pass is sequential; the subtree-to-chunk conversion
 //     runs across 2 goroutines, then results are merged in DFS
 //     traversal order (deterministic, plan §8 R8).
@@ -243,7 +242,6 @@ func NewHierarchyTitleChunker(params map[string]any) (runtime.Component, error) 
 	}, nil
 }
 
-func (c *HierarchyTitleChunkerComponent) Parallelism() int { return 2 }
 func (c *HierarchyTitleChunkerComponent) Inputs() map[string]string {
 	return ChunkerInputs
 }
@@ -252,23 +250,21 @@ func (c *HierarchyTitleChunkerComponent) Outputs() map[string]string {
 }
 
 func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameHierarchyTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			inputs = map[string]any{}
-		}
-		// `name` is read from the workflow-wide Globals bag (seeded at
-		// pipeline start, published by the File component), not from the
-		// upstream output map.
-		name := globals.GlobalOrInput(ctx, inputs, "name", "")
-		if name == "" {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "HierarchyTitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		return invokeHierarchy(ctx, withName(inputs, name), &c.param)
-	})
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "HierarchyTitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	return invokeHierarchy(ctx, withName(inputs, name), &c.param)
 }
 
 // init registers HierarchyTitleChunker under CategoryIngestion.

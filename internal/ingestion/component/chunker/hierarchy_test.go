@@ -43,23 +43,6 @@ func TestHierarchyTitleChunker_Registered(t *testing.T) {
 	}
 }
 
-func TestHierarchyTitleChunker_Parallelism(t *testing.T) {
-	c, err := NewHierarchyTitleChunker(map[string]any{
-		"hierarchy": 1,
-		"levels":    [][]string{{`^# `}, {`^## `}},
-	})
-	if err != nil {
-		t.Fatalf("NewHierarchyTitleChunker: %v", err)
-	}
-	hc, ok := c.(*HierarchyTitleChunkerComponent)
-	if !ok {
-		t.Fatalf("NewHierarchyTitleChunker returned %T", c)
-	}
-	if got := hc.Parallelism(); got != 2 {
-		t.Errorf("Parallelism() = %d, want 2", got)
-	}
-}
-
 func TestHierarchyTitleChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	_, _, meta, ok := runtime.DefaultRegistry.Lookup("HierarchyTitleChunker")
 	if !ok {

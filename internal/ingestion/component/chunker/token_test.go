@@ -248,22 +248,6 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_Parallelism enforces the plan's row 2.3a
-// parallelism (4).
-func TestTokenChunker_Parallelism(t *testing.T) {
-	c, err := NewTokenChunker(nil)
-	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
-	}
-	tc, ok := c.(*TokenChunkerComponent)
-	if !ok {
-		t.Fatalf("NewTokenChunker returned %T, want *TokenChunkerComponent", c)
-	}
-	if got := tc.Parallelism(); got != 4 {
-		t.Errorf("Parallelism() = %d, want 4", got)
-	}
-}
-
 // TestTokenChunker_NewRejectsBadParam enforces the param validation
 // at construction time (mirrors python `check()`).
 func TestTokenChunker_NewRejectsBadParam(t *testing.T) {

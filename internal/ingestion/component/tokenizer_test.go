@@ -212,9 +212,6 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 	if out["embedding_token_consumption"] == nil {
 		t.Error("embedding_token_consumption missing")
 	}
-	if out["_elapsed_time"] == nil {
-		t.Error("_elapsed_time missing")
-	}
 }
 
 // TestTokenizerComponent_Invoke_EmptyChunks covers the no-op branch:
@@ -593,15 +590,6 @@ func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := ins[key]; !ok {
 			t.Errorf("Inputs() missing %q", key)
 		}
-	}
-}
-
-// TestTokenizerComponent_Parallelism locks the fan-out to 1 (plan
-// §AD-5a: "embedding calls batched, not fanned").
-func TestTokenizerComponent_Parallelism(t *testing.T) {
-	c, _ := NewTokenizerComponent(map[string]any{})
-	if got := c.(*TokenizerComponent).Parallelism(); got != 1 {
-		t.Errorf("Parallelism() = %d, want 1", got)
 	}
 }
 

@@ -65,17 +65,12 @@ func NewQAChunker(params map[string]any) (runtime.Component, error) {
 		param: p,
 	}, nil
 }
-
-func (c *QAChunkerComponent) Parallelism() int { return 1 }
-
 func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
 func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 func (c *QAChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameQAChunker, func() (map[string]any, error) {
-		return c.invoke(ctx, inputs)
-	})
+	return c.invoke(ctx, inputs)
 }
 
 func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {

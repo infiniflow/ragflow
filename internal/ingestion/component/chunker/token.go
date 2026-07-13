@@ -131,10 +131,6 @@ func NewTokenChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-// Parallelism is the configured intra-component fan-out (plan §4
-// Phase 2 row 2.3a).
-func (c *TokenChunkerComponent) Parallelism() int { return 4 }
-
 // Inputs is exposed so callers can introspect.
 func (c *TokenChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
@@ -143,17 +139,15 @@ func (c *TokenChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 
 // Invoke runs the chunker against the input payload.
 //
-// Concurrency: text payloads are fanned across Parallelism goroutines
-// by primary-delimiter segment; structured JSON/chunks payloads fan
+// Concurrency: text payloads are fanned across 4 goroutines by
+// primary-delimiter segment; structured JSON/chunks payloads fan
 // across items. Merge is by input index (plan §8 R8): the i-th
 // goroutine's output occupies slot i, regardless of completion order.
 //
 // Timeout: honours ctx cancellation only — there is no inner @timeout
 // decorator equivalent (plan §8 R1).
 func (c *TokenChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameTokenChunker, func() (map[string]any, error) {
-		return c.invoke(ctx, inputs)
-	})
+	return c.invoke(ctx, inputs)
 }
 
 func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
@@ -404,12 +398,12 @@ func splitIntoSections(text string) []string {
 }
 
 // invokeJSONPayload handles structured upstream input. Items fan
-// across goroutines (Parallelism); merge is by input index.
+// across 4 goroutines; merge is by input index.
 func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
-	workers := c.Parallelism()
+	workers := 4
 	if workers < 1 {
 		workers = 1
 	}

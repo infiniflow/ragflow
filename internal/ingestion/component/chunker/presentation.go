@@ -62,17 +62,12 @@ func NewPresentationChunker(params map[string]any) (runtime.Component, error) {
 		param: p,
 	}, nil
 }
-
-func (c *PresentationChunkerComponent) Parallelism() int { return 1 }
-
 func (c *PresentationChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
 func (c *PresentationChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 func (c *PresentationChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNamePresentationChunker, func() (map[string]any, error) {
-		return c.invoke(ctx, inputs)
-	})
+	return c.invoke(ctx, inputs)
 }
 
 func (c *PresentationChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {

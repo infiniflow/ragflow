@@ -23,7 +23,6 @@
 //     happens in group.go / hierarchy.go depending on the
 //     `method` param.
 //
-//   - PARALLELISM: Parallelism() is only a hint for outer executors.
 //     TitleChunker.Invoke dispatches synchronously to group.go or
 //     hierarchy.go.
 //
@@ -432,10 +431,6 @@ func NewTitleChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-// Parallelism is the configured intra-component fan-out (plan §4
-// Phase 2 row 2.3b).
-func (c *TitleChunkerComponent) Parallelism() int { return 2 }
-
 // Inputs is exposed so callers can introspect.
 func (c *TitleChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
@@ -444,34 +439,32 @@ func (c *TitleChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 
 // Invoke delegates to the chosen strategy (group or hierarchy).
 func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			inputs = map[string]any{}
-		}
-		// `name` is read from the workflow-wide Globals bag (seeded at
-		// pipeline start, published by the File component), not from the
-		// upstream output map.
-		name := globals.GlobalOrInput(ctx, inputs, "name", "")
-		if name == "" {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "TitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		switch c.param.Method {
-		case "hierarchy":
-			return invokeHierarchy(ctx, inputs, &c.param)
-		case "group":
-			return invokeGroup(ctx, inputs, &c.param)
-		default:
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        fmt.Sprintf("TitleChunker: unsupported method %q", c.param.Method),
-			}, nil
-		}
-	})
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "TitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	switch c.param.Method {
+	case "hierarchy":
+		return invokeHierarchy(ctx, inputs, &c.param)
+	case "group":
+		return invokeGroup(ctx, inputs, &c.param)
+	default:
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        fmt.Sprintf("TitleChunker: unsupported method %q", c.param.Method),
+		}, nil
+	}
 }
 
 // init registers TitleChunker under CategoryIngestion.
