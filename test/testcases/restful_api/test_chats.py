@@ -28,6 +28,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from test.testcases.configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file
@@ -178,8 +179,7 @@ def test_chat_delete_requires_auth():
         res = client.delete("/chats", json={"ids": []})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -298,8 +298,7 @@ def test_chat_list_requires_auth():
         res = client.get("/chats")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
