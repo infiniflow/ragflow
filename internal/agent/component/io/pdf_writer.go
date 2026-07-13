@@ -14,29 +14,21 @@
 //  limitations under the License.
 //
 
-// Package io — PDF writer (signintech/gopdf).
+// Package io — PDF writer (pandoc + xelatex).
 //
-// WritePDF renders the supplied content to a PDF using the
-// MIT-licensed signintech/gopdf library. The writer probes via
-// gopdf.SetFont; if the family is unknown, it surfaces
-// ErrPDFFontNotConfigured so the orchestrator can return a clear
-// deployment-time error. Production deployments register a TTF
-// (e.g. Noto Sans CJK SC) at startup.
-//
-// When a TTF *is* registered, the writer emits a simple
-// one-paragraph page per line of content, with a centered header
-// and a centered footer carrying the page number / timestamp when
-// requested.
+// WritePDF follows the Python DocGenerator path: markdown content is
+// rendered by pandoc with xelatex. This keeps PDF body rendering aligned
+// with agent/component/docs_generator.py instead of drawing low-level
+// text operators by hand.
 package io
 
 import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/signintech/gopdf"
 )
 
 // PDFOptions is the public contract for the PDF writer.
@@ -50,24 +42,15 @@ type PDFOptions struct {
 	FontFamily     string
 }
 
-// ErrPDFFontNotConfigured is returned when no TTF is registered.
-// Callers should register a TTF via gopdf.SetFont before invoking
-// WritePDF.
-var ErrPDFFontNotConfigured = errors.New("PDF font not configured: register a TTF (e.g. Noto Sans CJK SC) via gopdf.SetFont before calling WritePDF")
+var ErrPDFFontNotConfigured = errors.New("PDF font not configured: install a xelatex-visible CJK font such as Noto Sans CJK SC")
 
 // WritePDF renders the content to a PDF byte stream.
 //
 // Layout:
 //
-//   - A4 portrait, 36pt margins on all sides.
-//   - Body lines are drawn top-to-bottom, one per line of content.
-//   - Header is centered at the top of every page (when set).
-//   - Footer is centered at the bottom of every page and may include
-//     the footer text, a generation timestamp, and a page number.
-//   - Watermark is rendered as grey text near the page center.
-//
-// When the requested font family is not registered, the function
-// returns ErrPDFFontNotConfigured and does not write any output.
+// The body rendering intentionally goes through pandoc/xelatex to match
+// the Python implementation. Header/footer/watermark overlays are handled
+// by LaTeX declarations when requested.
 func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	if opts.FontSize <= 0 {
 		opts.FontSize = 12
@@ -75,146 +58,106 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	if opts.FontFamily == "" {
 		opts.FontFamily = "Noto Sans CJK SC"
 	}
-
-	pdf := &gopdf.GoPdf{}
-	pdf.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
-
-	// Probe the font registry. gopdf returns an error like "font not
-	// found" when the family is not registered; we surface that as
-	// ErrPDFFontNotConfigured so callers can map it to a clear
-	// deployment message.
-	if err := pdf.SetFont(opts.FontFamily, "", opts.FontSize); err != nil {
-		if isFontNotFound(err) {
-			return nil, ErrPDFFontNotConfigured
-		}
-		return nil, fmt.Errorf("PDF: set font %q: %w", opts.FontFamily, err)
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		return nil, fmt.Errorf("PDF: pandoc not found: %w", err)
+	}
+	if _, err := exec.LookPath("xelatex"); err != nil {
+		return nil, fmt.Errorf("PDF: xelatex not found: %w", err)
 	}
 
-	pdf.AddPage()
-	drawHeader(pdf, opts)
-
-	// Body — one Cell per line, manual y-cursor.
-	bodyX := 36.0
-	bodyY := 72.0
-	lineHeight := float64(opts.FontSize) * 1.5
-	pdf.SetX(bodyX)
-	pdf.SetY(bodyY)
-
-	for _, line := range splitLines(content) {
-		if line == "" {
-			// Preserve blank lines as vertical space.
-			bodyY += lineHeight
-			if bodyY > 760 {
-				drawFooter(pdf, opts)
-				pdf.AddPage()
-				drawHeader(pdf, opts)
-				bodyY = 72.0
-			}
-			pdf.SetX(bodyX)
-			pdf.SetY(bodyY)
-			continue
-		}
-		if bodyY > 760 {
-			drawFooter(pdf, opts)
-			pdf.AddPage()
-			drawHeader(pdf, opts)
-			bodyY = 72.0
-		}
-		pdf.SetX(bodyX)
-		pdf.SetY(bodyY)
-		if err := pdf.Cell(nil, line); err != nil {
-			return nil, fmt.Errorf("PDF: cell: %w", err)
-		}
-		bodyY += lineHeight
-	}
-
-	if opts.WatermarkText != "" {
-		drawWatermark(pdf, opts)
-	}
-	drawFooter(pdf, opts)
-
-	return writePDFToBytes(pdf)
-}
-
-// drawHeader emits the header text at the top of the current page.
-// gopdf's API in v0.36.x doesn't expose a Header() callback; we draw
-// at the top of every page after AddPage.
-func drawHeader(pdf *gopdf.GoPdf, opts PDFOptions) {
-	if opts.HeaderText == "" {
-		return
-	}
-	_ = pdf.SetFont(opts.FontFamily, "", opts.FontSize-2)
-	pdf.SetX(36)
-	pdf.SetY(24)
-	_ = pdf.Cell(nil, opts.HeaderText)
-	// Restore body font.
-	_ = pdf.SetFont(opts.FontFamily, "", opts.FontSize)
-}
-
-// drawFooter emits the footer text plus optional timestamp / page
-// number at the bottom of the current page.
-func drawFooter(pdf *gopdf.GoPdf, opts PDFOptions) {
-	if opts.FooterText == "" && !opts.AddTimestamp && !opts.AddPageNumbers {
-		return
-	}
-	_ = pdf.SetFont(opts.FontFamily, "", opts.FontSize-2)
-	pdf.SetX(36)
-	pdf.SetY(800)
-	parts := []string{}
-	if opts.FooterText != "" {
-		parts = append(parts, opts.FooterText)
-	}
-	if opts.AddTimestamp {
-		parts = append(parts, time.Now().UTC().Format("2006-01-02 15:04"))
-	}
-	if opts.AddPageNumbers {
-		// gopdf doesn't expose a page-number macro; emit a
-		// literal placeholder until upstream adds one.
-		parts = append(parts, "Page #")
-	}
-	_ = pdf.Cell(nil, strings.Join(parts, " | "))
-	// Restore body font.
-	_ = pdf.SetFont(opts.FontFamily, "", opts.FontSize)
-}
-
-// drawWatermark emits a centered grey watermark. Full rotation is
-// not in the gopdf v0.36.x public surface; we use a light grey fill
-// as a visual proxy.
-func drawWatermark(pdf *gopdf.GoPdf, opts PDFOptions) {
-	if opts.WatermarkText == "" {
-		return
-	}
-	_ = pdf.SetFont(opts.FontFamily, "", 48)
-	pdf.SetTextColor(200, 200, 200)
-	pdf.SetX(120)
-	pdf.SetY(360)
-	_ = pdf.Cell(nil, opts.WatermarkText)
-	// Restore.
-	pdf.SetTextColor(0, 0, 0)
-	_ = pdf.SetFont(opts.FontFamily, "", opts.FontSize)
-}
-
-// writePDFToBytes serializes the gopdf output to a byte slice.
-//
-// gopdf's Write method requires an *os.File (it needs random access
-// for the xref table), so we route through a TempFile.
-func writePDFToBytes(pdf *gopdf.GoPdf) ([]byte, error) {
-	tmp, err := os.CreateTemp("", "ragflow-pdf-*.pdf")
+	dir, err := os.MkdirTemp("", "ragflow-pdf-*")
 	if err != nil {
-		return nil, fmt.Errorf("PDF: tmpfile: %w", err)
+		return nil, fmt.Errorf("PDF: tmpdir: %w", err)
 	}
-	tmpName := tmp.Name()
-	if err := pdf.Write(tmp); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return nil, fmt.Errorf("PDF: write: %w", err)
+	defer os.RemoveAll(dir)
+
+	headerPath := dir + "/header.tex"
+	if err := os.WriteFile(headerPath, []byte(buildPDFHeader(opts)), 0o600); err != nil {
+		return nil, fmt.Errorf("PDF: write header tex: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return nil, fmt.Errorf("PDF: close: %w", err)
+	outPath := dir + "/out.pdf"
+	args := []string{
+		"--standalone",
+		"--from=markdown",
+		"--to=pdf",
+		"--pdf-engine=xelatex",
+		"--include-in-header=" + headerPath,
+		"-V", "mainfont=" + opts.FontFamily,
+		"-V", "CJKmainfont=" + opts.FontFamily,
+		"-o", outPath,
 	}
-	defer os.Remove(tmpName)
-	return os.ReadFile(tmpName)
+	cmd := exec.Command("pandoc", args...)
+	cmd.Stdin = strings.NewReader(content)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("PDF: pandoc: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return os.ReadFile(outPath)
+}
+
+func buildPDFHeader(opts PDFOptions) string {
+	fontSize := opts.FontSize
+	leading := float64(fontSize) * 1.2
+	h1 := fontSize + 6
+	h2 := fontSize + 4
+	h3 := fontSize + 2
+	lines := []string{
+		`\usepackage{xeCJK}`,
+		`\usepackage{fancyhdr}`,
+		`\usepackage{eso-pic}`,
+		`\usepackage{graphicx}`,
+		`\usepackage{xcolor}`,
+		`\makeatletter`,
+		fmt.Sprintf(`\renewcommand\normalsize{\@setfontsize\normalsize{%dpt}{%.1fpt}}`, fontSize, leading),
+		`\normalsize`,
+		fmt.Sprintf(`\renewcommand\section{\@startsection{section}{1}{\z@}{-3.5ex \@plus -1ex \@minus -.2ex}{2.3ex \@plus .2ex}{\normalfont\fontsize{%dpt}{%.1fpt}\selectfont\bfseries}}`, h1, float64(h1)*1.2),
+		fmt.Sprintf(`\renewcommand\subsection{\@startsection{subsection}{2}{\z@}{-3.25ex\@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}{\normalfont\fontsize{%dpt}{%.1fpt}\selectfont\bfseries}}`, h2, float64(h2)*1.2),
+		fmt.Sprintf(`\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}{-3.25ex\@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}{\normalfont\fontsize{%dpt}{%.1fpt}\selectfont\bfseries}}`, h3, float64(h3)*1.2),
+		`\makeatother`,
+	}
+	if opts.HeaderText != "" || opts.FooterText != "" || opts.AddTimestamp || opts.AddPageNumbers {
+		lines = append(lines,
+			`\pagestyle{fancy}`,
+			`\fancyhf{}`,
+		)
+		if opts.HeaderText != "" {
+			lines = append(lines, fmt.Sprintf(`\fancyhead[L]{%s}`, escapeLatex(opts.HeaderText)))
+		}
+		footer := []string{}
+		if opts.FooterText != "" {
+			footer = append(footer, escapeLatex(opts.FooterText))
+		}
+		if opts.AddTimestamp {
+			footer = append(footer, escapeLatex("Generated: "+time.Now().Format("2006-01-02 15:04:05")))
+		}
+		if opts.AddPageNumbers {
+			footer = append(footer, `Page \thepage`)
+		}
+		if len(footer) > 0 {
+			lines = append(lines, fmt.Sprintf(`\fancyfoot[C]{%s}`, strings.Join(footer, ` \textbar{} `)))
+		}
+	}
+	if opts.WatermarkText != "" {
+		lines = append(lines, fmt.Sprintf(`\AddToShipoutPictureBG{\AtPageCenter{\makebox[0pt]{\rotatebox{45}{\textcolor[gray]{0.85}{\fontsize{48}{58}\selectfont %s}}}}}`, escapeLatex(opts.WatermarkText)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func escapeLatex(s string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\textbackslash{}`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`$`, `\$`,
+		`&`, `\&`,
+		`#`, `\#`,
+		`_`, `\_`,
+		`%`, `\%`,
+		`~`, `\textasciitilde{}`,
+		`^`, `\textasciicircum{}`,
+	)
+	return replacer.Replace(s)
 }
 
 // splitLines is a conservative wrapper that splits on \n and

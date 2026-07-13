@@ -1116,6 +1116,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// statePost wrappers in scheduler.go.
 		var answer string
 		var reference []interface{}
+		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
 			if v, ok := bucket["answer"].(string); ok && v != "" {
@@ -1131,6 +1132,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
 				reference = append(reference, v...)
+			}
+			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
+				downloads = v
 			}
 		}
 
@@ -1174,7 +1178,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      answer,
+					"outputs":      workflowOutputs(answer, downloads),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -1208,7 +1212,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      answer,
+			"outputs":      workflowOutputs(answer, downloads),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -1232,6 +1236,29 @@ func runIDFor(canvasID string, root map[string]any) string {
 		return canvasID + "-" + s
 	}
 	return canvasID
+}
+
+func workflowOutputs(content string, downloads any) any {
+	if emptyDownloadValue(downloads) {
+		return content
+	}
+	return map[string]any{
+		"content":   content,
+		"downloads": downloads,
+	}
+}
+
+func emptyDownloadValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return v.Len() == 0
+	default:
+		return false
+	}
 }
 
 func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference []interface{}) {
