@@ -219,14 +219,14 @@ func TestNormalizeChunks_NilInput(t *testing.T) {
 }
 
 // =============================================================================
-// PrepareTextsForDataflowEmbedding
+// PrepareTextsForPipelineEmbedding
 // =============================================================================
 
 func TestPrepareTexts_QuestionsPriority(t *testing.T) {
 	chunks := []map[string]any{
 		{"questions": "Q1\nQ2", "summary": "a summary", "text": "plain text"},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if len(result) != 1 {
 		t.Fatalf("len = %d, want 1", len(result))
 	}
@@ -239,7 +239,7 @@ func TestPrepareTexts_SummaryFallback(t *testing.T) {
 	chunks := []map[string]any{
 		{"summary": "a summary", "text": "plain text"},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if result[0] != "a summary" {
 		t.Errorf("summary should be used when no questions: got %q", result[0])
 	}
@@ -249,7 +249,7 @@ func TestPrepareTexts_TextFallback(t *testing.T) {
 	chunks := []map[string]any{
 		{"text": "plain text"},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if result[0] != "plain text" {
 		t.Errorf("text should be used when no questions/summary: got %q", result[0])
 	}
@@ -259,7 +259,7 @@ func TestPrepareTexts_EmptyStringFallback(t *testing.T) {
 	chunks := []map[string]any{
 		{"text": ""},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if len(result) > 0 {
 		t.Errorf("expected empty string, got %q", result[0])
 	}
@@ -271,7 +271,7 @@ func TestPrepareTexts_MultipleChunks(t *testing.T) {
 		{"summary": "S2", "text": "t2"},
 		{"text": "t3"},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if len(result) != 3 {
 		t.Fatalf("len = %d, want 3", len(result))
 	}
@@ -287,14 +287,14 @@ func TestPrepareTexts_MultipleChunks(t *testing.T) {
 }
 
 func TestPrepareTexts_NilChunks(t *testing.T) {
-	result := PrepareTextsForDataflowEmbedding(nil)
+	result := PrepareTextsForPipelineEmbedding(nil)
 	if result != nil {
 		t.Errorf("expected nil for nil chunks, got %v", result)
 	}
 }
 
 func TestPrepareTexts_EmptyChunks(t *testing.T) {
-	result := PrepareTextsForDataflowEmbedding([]map[string]any{})
+	result := PrepareTextsForPipelineEmbedding([]map[string]any{})
 	if len(result) != 0 {
 		t.Errorf("expected empty slice, got len=%d", len(result))
 	}
@@ -304,7 +304,7 @@ func TestPrepareTexts_MissingTextKey(t *testing.T) {
 	chunks := []map[string]any{
 		{"other_key": "value"},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if len(result) > 0 {
 		t.Errorf("expected empty string for missing text key, got %q", result[0])
 	}
@@ -314,7 +314,7 @@ func TestPrepareTexts_NoPanicOnListText(t *testing.T) {
 	chunks := []map[string]any{
 		{"text": []any{"bad-shape"}},
 	}
-	result := PrepareTextsForDataflowEmbedding(chunks)
+	result := PrepareTextsForPipelineEmbedding(chunks)
 	if len(result) > 0 {
 		t.Errorf("expected empty string for missing text key, got %q", result[0])
 	}
@@ -326,4 +326,44 @@ func TestMustGetChunkTextString_NoPanicOnStringSlice(t *testing.T) {
 		t.Errorf("expect error when chunk[text] is not string")
 	}
 
+}
+func TestGetEmbeddingTokenConsumption_Int(t *testing.T) {
+	input := map[string]any{EmbeddingTokenConsumptionKey: 42}
+	result := GetEmbeddingTokenConsumption(input)
+	if result != 42 {
+		t.Errorf("got %d, want 42", result)
+	}
+}
+func TestGetEmbeddingTokenConsumption_Float64(t *testing.T) {
+	input := map[string]any{EmbeddingTokenConsumptionKey: float64(42)}
+	result := GetEmbeddingTokenConsumption(input)
+	if result != 42 {
+		t.Errorf("got %d, want 42", result)
+	}
+}
+func TestGetEmbeddingTokenConsumption_MissingKey(t *testing.T) {
+	result := GetEmbeddingTokenConsumption(map[string]any{})
+	if result != 0 {
+		t.Errorf("got %d, want 0", result)
+	}
+}
+func TestGetEmbeddingTokenConsumption_NilMap(t *testing.T) {
+	result := GetEmbeddingTokenConsumption(nil)
+	if result != 0 {
+		t.Errorf("got %d, want 0", result)
+	}
+}
+func TestGetEmbeddingTokenConsumption_WrongType(t *testing.T) {
+	input := map[string]any{EmbeddingTokenConsumptionKey: "not a number"}
+	result := GetEmbeddingTokenConsumption(input)
+	if result != 0 {
+		t.Errorf("got %d, want 0", result)
+	}
+}
+func TestGetEmbeddingTokenConsumption_Zero(t *testing.T) {
+	input := map[string]any{EmbeddingTokenConsumptionKey: 0}
+	result := GetEmbeddingTokenConsumption(input)
+	if result != 0 {
+		t.Errorf("got %d, want 0", result)
+	}
 }
