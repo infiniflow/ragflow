@@ -1,14 +1,11 @@
-import { CirclePause, WandSparkles } from 'lucide-react';
+import { CirclePause, Logs, WandSparkles } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  GenerateType,
-  IconKeyMap,
-} from '@/pages/dataset/dataset/generate-button/constants';
+import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
 import {
   ITraceInfo,
   useDatasetGenerate,
@@ -79,10 +76,7 @@ export function CompilationEmptyState({
       ) : (
         <div className="w-full max-w-md p-6 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-text-primary">
-            <IconFontFill
-              name={IconKeyMap[generateType]}
-              className="text-accent-primary"
-            />
+            <Logs className="size-5" />
             <span>{t(LabelKeyMap[type])}</span>
           </div>
           <div className="flex items-center gap-2">

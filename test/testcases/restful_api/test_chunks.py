@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
@@ -153,8 +154,7 @@ def test_chunk_add_requires_auth(create_document):
         res = client.post(path, json={"content": "chunk test"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -165,8 +165,7 @@ def test_chunk_delete_requires_auth(create_document):
         res = client.delete(path, json={"chunk_ids": []})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -177,8 +176,7 @@ def test_chunk_list_requires_auth(create_document):
         res = client.get(path)
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -660,8 +658,7 @@ def test_chunk_update_requires_auth(rest_client, create_document):
         res = client.patch(f"{base_path}/{chunk_id}", json={"content": "updated"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2

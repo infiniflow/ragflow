@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/utility"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ragflow/internal/common"
@@ -33,6 +35,8 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 )
+
+const defaultHeartbeatInterval = 10 * time.Second
 
 type Ingestor struct {
 	id     string
@@ -47,8 +51,9 @@ type Ingestor struct {
 	heartbeatInterval time.Duration
 
 	// Runtime state
-	currentTasks map[string]*taskpkg.TaskContext
-	tasksMu      sync.RWMutex
+	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
+	tasksMu       sync.RWMutex
+	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -85,12 +90,12 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		maxConcurrency:    maxConcurrency,
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
-		currentTasks:      make(map[string]*taskpkg.TaskContext),
+		currentTasks:      make(map[string]struct{}),
 		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
 		docState:          newDocStateUpdater(),
-		heartbeatInterval: 10 * time.Second,
+		heartbeatInterval: defaultHeartbeatInterval,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
@@ -100,6 +105,11 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 func (e *Ingestor) ID() string {
 	return e.id
 }
+
+// consumeErrorBackoff paces the consume loop when GetMessages returns an
+// error, so a persistent MQ failure does not pin a CPU. The backoff is
+// cancellable so a shutdown during backoff returns promptly.
+const consumeErrorBackoff = 1 * time.Second
 
 func (e *Ingestor) Start() error {
 	common.Info(fmt.Sprintf("Ingestor %s initialized", e.id))
@@ -113,34 +123,57 @@ func (e *Ingestor) Start() error {
 	go e.startWorkerPool()
 
 	for {
-		var taskHandles []common.TaskHandle
-		taskHandles, err = msgQueueEngine.GetMessages(4)
+		// Graceful shutdown is the only condition under which the consume
+		// loop exits. Per-message processing failures never terminate the
+		// consumer: processMessage settles (ack/nack) each message itself.
+		if err := e.ctx.Err(); err != nil {
+			return nil
+		}
+		taskHandles, err := msgQueueEngine.GetMessages(4)
 		if err != nil {
 			common.Error("error consuming message", err)
+			select {
+			case <-time.After(consumeErrorBackoff):
+			case <-e.ctx.Done():
+				return nil
+			}
 			continue
 		}
 		for _, taskHandle := range taskHandles {
-			if err := e.processMessage(taskHandle); err != nil {
-				return err
-			}
+			e.processMessage(taskHandle)
 		}
 	}
 }
 
 // processMessage handles a single incoming MQ message: filter by type,
 // activate the task (state transition), guard against duplicate execution
-// (claim), and enqueue to the worker pool (or backpressure-reject).
-func (e *Ingestor) processMessage(handle common.TaskHandle) error {
+// (claim), and enqueue to the worker pool (or backpressure-reject). It
+// settles (ack/nack) every message itself and never returns an error: a
+// single message can never terminate the consume loop. Only ctx cancellation
+// (graceful shutdown) stops the consumer - see Start.
+func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	taskMessage := handle.GetMessage()
 	common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType))
+
+	// Deferred claim release: if this function claims a task but the task
+	// is not successfully enqueued to the worker pool (e.g. backpressure,
+	// or a future error path added between claim and enqueue), the defer
+	// cleans up so the task can be reclaimed on MQ redelivery. When the
+	// task IS enqueued, claimedTaskID is cleared and executeTask's own
+	// defer takes ownership of the release.
+	var claimedTaskID string
+	defer func() {
+		if claimedTaskID != "" {
+			e.releaseTask(claimedTaskID)
+		}
+	}()
 
 	if taskMessage.TaskType != common.TaskTypeIngestionTask {
 		common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
 		if err := handle.Ack(); err != nil {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
-			return err
 		}
-		return nil
+		return
 	}
 
 	task, err := e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
@@ -149,19 +182,24 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) error {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
 			if ackErr := handle.Ack(); ackErr != nil {
 				common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
-				return ackErr
 			}
-			return nil
+			return
 		}
+		// Recoverable activation failure (e.g. a DB blip): nack for
+		// redelivery instead of dropping the message or killing the
+		// consumer.
 		common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
-		return err
+		if nackErr := handle.Nack(); nackErr != nil {
+			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
+		}
+		return
 	}
 	if task == nil {
 		common.Info(fmt.Sprintf("task %s is already removed", taskMessage.TaskID))
 		if ackErr := handle.Ack(); ackErr != nil {
-			return ackErr
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
 		}
-		return nil
+		return
 	}
 
 	switch task.Status {
@@ -169,11 +207,8 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) error {
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
 		if ackErr := handle.Ack(); ackErr != nil {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
-			return ackErr
 		}
-		return nil
-	case common.STOPPING, common.CREATED:
-		return fmt.Errorf("task %s is in unexpected status %s", taskMessage.TaskID, task.Status)
+		return
 	case common.RUNNING:
 		// Guard against MQ redelivery: if another worker in this
 		// process is already processing this task, ack the redelivered
@@ -183,10 +218,19 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) error {
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
 			if ackErr := handle.Ack(); ackErr != nil {
 				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
-				return ackErr
 			}
-			return nil
+			return
 		}
+		claimedTaskID = task.ID
+	default:
+		// Unreachable given StartRunning normalizes every status to
+		// RUNNING/COMPLETED/STOPPED/FAILED, but defensive: ack-skip an
+		// unknown status instead of enqueuing it for execution.
+		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
+		}
+		return
 	}
 
 	// Construct TaskContext and carry the MQ handle so the worker can
@@ -197,16 +241,15 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) error {
 	// Push to task channel; if full, reject the task (backpressure).
 	select {
 	case e.taskChan <- taskCtx:
+		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
 	default:
 		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-		e.releaseTask(task.ID)
+		// claimedTaskID is still set; defer will call releaseTask.
 		if nackErr := handle.Nack(); nackErr != nil {
 			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
-			return nackErr
 		}
 	}
-	return nil
 }
 
 func (e *Ingestor) startWorkerPool() {
@@ -221,6 +264,8 @@ func (e *Ingestor) startWorkerPool() {
 
 func (e *Ingestor) workerLoop(id int32) {
 	defer e.workerWg.Done()
+	defer e.activeWorkers.Add(-1)
+	e.activeWorkers.Add(1)
 	common.Info(fmt.Sprintf("Worker %d started", id))
 	for {
 		select {
@@ -331,16 +376,74 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return e.markFailed(task.ID)
 	}
 
-	_, err := backoff.Retry(ctx, func() (struct{}, error) {
-		return struct{}{}, e.ingestionTaskSvc.MarkCompleted(task.ID)
-	}, backoff.WithMaxTries(3))
-	if err != nil {
+	if err := e.completeTask(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
 	}
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 	return true
+}
+
+// completeTask persists the task's terminal status after a successful pipeline.
+// MarkCompleted is retried with backoff for transient (DB) failures only. A
+// terminal transition failure - the task is no longer RUNNING because a
+// concurrent stop (or another worker) moved it - is NOT retried: the pipeline
+// already did the work, so completeOrSettle settles the task to its actual
+// terminal state and the caller Acks instead of redelivering.
+func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
+	_, err := backoff.Retry(ctx, func() (struct{}, error) {
+		return struct{}{}, e.completeOrSettle(taskID)
+	}, backoff.WithMaxTries(3))
+	return err
+}
+
+// completeOrSettle marks the task COMPLETED, or - if the transition is
+// terminally invalid because the task is no longer RUNNING - settles it to its
+// actual terminal state. Returns nil once the task is in any terminal state;
+// returns a non-terminal (transient) error only for retry-worthy DB failures.
+func (e *Ingestor) completeOrSettle(taskID string) error {
+	if err := e.ingestionTaskSvc.MarkCompleted(taskID); err != nil {
+		if isTerminalTransitionError(err) {
+			return e.settleToTerminal(taskID)
+		}
+		return err
+	}
+	return nil
+}
+
+// isTerminalTransitionError reports whether err is a state-machine transition
+// failure - an invalid transition or a lost optimistic CAS - meaning the task's
+// status moved on and MarkCompleted will never succeed as-is. Not retry-worthy;
+// the caller settles by the task's current status.
+func isTerminalTransitionError(err error) bool {
+	var ite *servicepkg.InvalidTaskTransitionError
+	var tce *servicepkg.TaskStatusConflictError
+	return errors.As(err, &ite) || errors.As(err, &tce)
+}
+
+// settleToTerminal finalizes a task whose MarkCompleted failed because it was
+// no longer RUNNING. STOPPING is moved to STOPPED via markStopped (which also
+// clears the Redis cancel flag so a future retry does not immediately
+// re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
+// action. An unexpected status returns an error so the caller nacks and
+// redelivery settles it.
+func (e *Ingestor) settleToTerminal(taskID string) error {
+	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	switch task.Status {
+	case common.STOPPING:
+		if !e.markStopped(taskID) {
+			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
+		}
+		return nil
+	case common.COMPLETED, common.STOPPED, common.FAILED:
+		return nil
+	default:
+		return fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
+	}
 }
 
 // settleMessage runs body under a heartbeat, then settles the MQ message. The
@@ -500,7 +603,7 @@ func (e *Ingestor) claimTask(taskID string) bool {
 	if _, ok := e.currentTasks[taskID]; ok {
 		return false
 	}
-	e.currentTasks[taskID] = nil // placeholder; replaced after scheduling
+	e.currentTasks[taskID] = struct{}{}
 	return true
 }
 
@@ -524,16 +627,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
 	// writes for this run; inject it into the executor so the pipeline reports
 	// progress to the service layer instead of touching the DAO directly.
-	sink := newProgressSink(e.ingestionTaskSvc)
-	result, err := taskpkg.NewTaskHandler(docTaskCtx).
-		WithPipelineExecutorFactory(func(c *taskpkg.TaskContext, canvasID string) (*taskpkg.PipelineExecutor, error) {
-			ex, err := taskpkg.NewPipelineExecutor(c, canvasID, 0)
-			if err != nil {
-				return nil, err
-			}
-			return ex.WithProgressSink(sink), nil
-		}).
-		Handle()
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, strings.TrimSpace(docTaskCtx.PipelineID), 0)
+	if err != nil {
+		return err
+	}
+	result, err := executor.WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}
@@ -541,12 +639,33 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	return nil
 }
 
-// Stop gracefully shuts down the ingestor
-func (e *Ingestor) Stop() {
+// Stop gracefully shuts down the ingestor. It cancels the root context so
+// idle workers exit immediately and in-flight pipelines abort at their next
+// ctx.Err() check, then waits for workers to return. The wait is bounded by
+// ctx: a stage that does not honor cancellation (e.g. a native CGO parse)
+// would otherwise block workerWg.Wait() indefinitely; when ctx expires Stop
+// returns and leaves the broker to redeliver any in-flight messages
+// (at-least-once). Callers must pass a deadline-bearing context.
+func (e *Ingestor) Stop(ctx context.Context) {
 	common.Info(fmt.Sprintf("Stopping ingestor %s", e.id))
 	e.cancel()
 
-	// Wait for all workers to finish (they exit on ctx.Done())
-	e.workerWg.Wait()
-	common.Info("All tasks completed")
+	waitDone := make(chan struct{})
+	go func() {
+		e.workerWg.Wait()
+		close(waitDone)
+	}()
+
+	select {
+	case <-waitDone:
+		common.Info("All tasks completed")
+	case <-ctx.Done():
+		e.tasksMu.RLock()
+		ids := make([]string, 0, len(e.currentTasks))
+		for id := range e.currentTasks {
+			ids = append(ids, id)
+		}
+		e.tasksMu.RUnlock()
+		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
+	}
 }
