@@ -172,6 +172,8 @@ def by_mineru(
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
+                    from_page=from_page,
+                    to_page=to_page,
                     **kwargs,
                 )
                 return sections, tables, pdf_parser
@@ -200,6 +202,8 @@ def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
         delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
         docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
         parse_method=parse_method,
+        from_page=from_page,
+        to_page=to_page,
     )
     return sections, tables, pdf_parser
 
@@ -229,12 +233,14 @@ def by_opendataloader(
                 ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, opendataloader_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
-                parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
+                parse_options = {k: kwargs[k] for k in ("hybrid", "hybrid_mode", "image_output", "sanitize") if k in kwargs}
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
                     **parse_options,
                 )
                 return sections, tables, pdf_parser
@@ -997,6 +1003,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
+
+        if name == "opendataloader":
+            # parser_config is an opaque dict at this point (Dataset/Document
+            # Configuration); OpenDataLoaderParser.parse_pdf() accepts these
+            # as **kwargs (see by_opendataloader() above) but nothing forwards
+            # them from parser_config by default. Thread them through
+            # explicitly so Hybrid/OCR mode is actually reachable from
+            # RAGFlow's own Dataset Configuration / REST API, not only via a
+            # direct call to the OpenDataLoader adapter.
+            for key in ("hybrid", "hybrid_mode", "image_output", "sanitize"):
+                value = parser_config.get(key)
+                if value is not None:
+                    kwargs[key] = value
 
         sections, tables, pdf_parser = parser(
             filename=filename,
