@@ -715,7 +715,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.debug("Proceeding with retrieval")
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
-        if prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
+        # replaced by extension of reasoning: 0, 1, 2
+        if False: #prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
@@ -1841,6 +1842,10 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin rag_agent")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     prompt_config = dialog.prompt_config
+    if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
+        async for ans in async_chat(dialog, messages, stream, **kwargs):
+            yield ans
+        return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
