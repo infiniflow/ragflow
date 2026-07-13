@@ -37,7 +37,6 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/server"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -156,16 +155,10 @@ type DatasetService struct {
 	searchService  *SearchService
 	docEngine      engine.DocEngine
 	embeddingCache *utility.EmbeddingLRU
-	engineType     server.EngineType
 }
 
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
-	cfg := server.GetConfig()
-	engineType := server.EngineType("")
-	if cfg != nil {
-		engineType = cfg.DocEngine.Type
-	}
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -178,7 +171,6 @@ func NewDatasetService() *DatasetService {
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
-		engineType:     engineType,
 	}
 }
 
@@ -2833,7 +2825,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
 		}
-		if d.engineType == server.EngineInfinity {
+		if !d.docEngine.SupportsPageRank() {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
