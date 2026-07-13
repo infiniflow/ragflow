@@ -319,8 +319,8 @@ class LLM(ComponentBase):
             max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
         )
         model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
-        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
-            model_type = LLMType.IMAGE2TEXT.value
+        if self.imgs and LLMType.VISION.value in model_types:
+            model_type = LLMType.VISION.value
         elif LLMType.CHAT.value in model_types:
             model_type = LLMType.CHAT.value
         else:

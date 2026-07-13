@@ -19,100 +19,129 @@ package tool
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
-const wencaiToolName = "wencai"
+const (
+	wencaiToolName         = "iwencai"
+	defaultWencaiTopN      = 10
+	defaultWencaiQueryType = "stock"
+)
 
-const wencaiToolDescription = "Query 同花顺 Wencai (问财) for natural-language stock screening " +
-	"(e.g. \"近期涨停股\", \"高股息低估值\"). " +
-	"STUB: Wencai has no public API; the Python implementation scrapes the " +
-	"10jqka.com.cn web app. Not yet implemented in the Go Canvas. " +
-	"Use the Python Canvas for Wencai queries."
+const wencaiToolDescription = `
+iwencai search: search platform is committed to providing hundreds of millions of investors with the most timely, accurate and comprehensive information, covering news, announcements, research reports, blogs, forums, Weibo, characters, etc.
+robo-advisor intelligent stock selection platform: through AI technology, is committed to providing investors with intelligent stock selection, quantitative investment, main force tracking, value investment, technical analysis and other types of stock selection technologies.
+fund selection platform: through AI technology, is committed to providing excellent fund, value investment, quantitative analysis and other fund selection technologies for foundation citizens.
+`
 
-const wencaiUnsupportedMessage = "Wencai requires web scraping of 同花顺 — not yet implemented in Go Canvas. " +
-	"Use Python Canvas."
+var wencaiQueryTypes = map[string]struct{}{
+	"stock":            {},
+	"zhishu":           {},
+	"fund":             {},
+	"hkstock":          {},
+	"usstock":          {},
+	"threeboard":       {},
+	"conbond":          {},
+	"insurance":        {},
+	"futures":          {},
+	"lccp":             {},
+	"foreign_exchange": {},
+}
 
-// wencaiParams is the JSON shape the model sends into InvokableRun.
-// The Python implementation accepts a free-form natural-language query
-// and an optional page/per-page limit. The Go stub preserves the shape
-// but rejects every invocation.
+// wencaiParams mirrors Python WenCaiParam. Query is model-provided runtime
+// input; top_n and query_type are Canvas node configuration.
 type wencaiParams struct {
-	Query   string `json:"query"`
-	Page    int    `json:"page,omitempty"`
-	PerPage int    `json:"per_page,omitempty"`
+	Query     string `json:"query"`
+	TopN      int    `json:"top_n"`
+	QueryType string `json:"query_type"`
 }
 
-// wencaiEnvelope is the model-facing JSON shape. The stub always
-// returns a populated Error.
 type wencaiEnvelope struct {
-	Items []any  `json:"items,omitempty"`
-	Error string `json:"_ERROR,omitempty"`
+	Report string `json:"report"`
+	Error  string `json:"_ERROR,omitempty"`
 }
 
-// WencaiTool is a stub for the
-// 同花顺 Wencai (问财) natural-language stock screening tool
-// ( .
-//
-// Wencai (https://www.iwencai.com) has no public API. The Python
-// implementation scrapes 10jqka.com.cn using session cookies and
-// reverse-engineered POST endpoints, which is fragile and legally
-// grey. A Go port would have to repeat the scraping work and the
-// reverse-engineering, and is deferred. For P3-B4 the tool is
-// registered so DSLs that reference "wencai" keep parsing, but every
-// invocation fails fast with a clear "use Python Canvas" message.
-//
-// WencaiTool does not own an HTTPHelper — it never makes network calls.
-type WencaiTool struct{}
+// WencaiTool implements the behavior currently exposed by Python WenCai.
+// The Python integration has its upstream request disabled and returns an
+// empty report for both empty and non-empty queries, so the Go tool does the
+// same without reporting a false unsupported error.
+type WencaiTool struct {
+	defaults wencaiParams
+}
 
-// NewWencaiTool returns a WencaiTool. No HTTPHelper is allocated; the
-// stub never issues network requests.
-func NewWencaiTool() *WencaiTool { return &WencaiTool{} }
+func NewWencaiTool() *WencaiTool {
+	return newWencaiTool(wencaiParams{})
+}
 
-// Info returns the tool's metadata for the chat model.
+func newWencaiTool(defaults wencaiParams) *WencaiTool {
+	if defaults.TopN == 0 {
+		defaults.TopN = defaultWencaiTopN
+	}
+	if strings.TrimSpace(defaults.QueryType) == "" {
+		defaults.QueryType = defaultWencaiQueryType
+	}
+	return &WencaiTool{defaults: defaults}
+}
+
+// Info exposes only Python meta.parameters. Node configuration does not
+// belong in the model-emitted function-call schema.
 func (w *WencaiTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: wencaiToolName,
-		Desc: wencaiToolDescription,
+		Desc: strings.TrimSpace(wencaiToolDescription),
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "Natural-language Wencai query (e.g. \"近期涨停股\", \"高股息低估值\").",
+				Desc:     "The question/conditions to select stocks.",
 				Required: true,
-			},
-			"page": {
-				Type:     schema.Integer,
-				Desc:     "Optional 1-based page number. Defaults to 1.",
-				Required: false,
-			},
-			"per_page": {
-				Type:     schema.Integer,
-				Desc:     "Optional results per page. Defaults to 20.",
-				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// InvokableRun validates the input shape (query is required) and
-// returns a clear "use Python Canvas" error. The model receives a
-// JSON envelope with the message in the `_ERROR` field.
-func (w *WencaiTool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
-	var p wencaiParams
-	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
-		return wencaiErrJSON(errors.New(wencaiUnsupportedMessage)),
-			errors.New(wencaiUnsupportedMessage)
+// InvokableRun matches the current Python invocation result: valid arguments
+// produce an empty report and no error because the upstream call is disabled.
+func (w *WencaiTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+	select {
+	case <-ctx.Done():
+		err := ctx.Err()
+		return wencaiErrJSON(err), err
+	default:
 	}
-	if p.Query == "" {
-		return wencaiErrJSON(errors.New(wencaiUnsupportedMessage)),
-			errors.New(wencaiUnsupportedMessage)
+
+	params := w.defaults
+	if strings.TrimSpace(argsJSON) != "" {
+		var runtimeParams wencaiParams
+		if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
+			err = fmt.Errorf("wencai: parse arguments: %w", err)
+			return wencaiErrJSON(err), err
+		}
+		params = mergeWencaiParams(params, runtimeParams)
 	}
-	return wencaiErrJSON(errors.New(wencaiUnsupportedMessage)),
-		errors.New(wencaiUnsupportedMessage)
+	_ = params
+	return wencaiJSON(wencaiEnvelope{Report: ""}), nil
+}
+
+func mergeWencaiParams(defaults, params wencaiParams) wencaiParams {
+	if params.Query == "" {
+		params.Query = defaults.Query
+	}
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	if strings.TrimSpace(params.QueryType) == "" {
+		params.QueryType = defaults.QueryType
+	}
+	return params
+}
+
+func isWencaiQueryTypeSupported(queryType string) bool {
+	_, ok := wencaiQueryTypes[queryType]
+	return ok
 }
 
 func wencaiJSON(env wencaiEnvelope) string {

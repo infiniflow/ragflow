@@ -30,7 +30,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 )
 
 // SystemService system service
@@ -67,6 +66,7 @@ func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 // VersionResponse version response
 type VersionResponse struct {
 	Version string `json:"version"`
+	Type    string `json:"type"`
 }
 
 type HealthzMeta struct {
@@ -86,9 +86,11 @@ type HealthzResponse struct {
 
 // GetVersion get RAGFlow version
 func (s *SystemService) GetVersion() (*VersionResponse, error) {
-	version := utility.GetRAGFlowVersion()
+	version := common.GetRAGFlowVersion()
+	versionType := common.GetRAGFlowType()
 	return &VersionResponse{
 		Version: version,
+		Type:    versionType,
 	}, nil
 }
 

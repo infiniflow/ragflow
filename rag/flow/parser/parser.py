@@ -637,9 +637,9 @@ class Parser(ProcessBase):
         # Vision parser treats each page as a large image block.
         else:
             if conf.get("parse_method"):
-                vision_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
+                vision_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.VISION, conf["parse_method"])
             else:
-                vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
+                vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.VISION)
             vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
             pdf_parser = VisionParser(vision_model=vision_model)
             lines, _ = pdf_parser(blob, callback=self.callback)
@@ -1110,7 +1110,7 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, conf["parse_method"])
             cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
@@ -1146,7 +1146,7 @@ class Parser(ProcessBase):
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-            seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, vlm["llm_id"])
+            seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
@@ -1159,7 +1159,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         vlm = conf.get("vlm")
         self.set_output("output_format", conf["output_format"])
-        cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, vlm["llm_id"])
+        cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
