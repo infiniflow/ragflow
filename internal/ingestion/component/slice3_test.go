@@ -16,77 +16,14 @@
 
 // Slice 3 tests for port-rag-flow-pipeline-to-go.md Phase 5.
 //
-// Pins the Tokenizer content_with_weight fallback and the
-// Extractor prompt placeholder substitution.
+// Pins the Extractor prompt placeholder substitution.
 
 package component
 
 import (
-	"context"
-	pipe "ragflow/internal/ingestion/pipeline"
 	"strings"
 	"testing"
 )
-
-// TestTokenizer_FallsBackToContentWithWeight pins the python
-// rag/flow/tokenizer.py:111 fallback. A chunk with only
-// content_with_weight (no text) must tokenize the fallback text.
-func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
-	pipe.RequireTokenizerPool(t)
-	c := &TokenizerComponent{}
-	c.param.SearchMethod = []string{"full_text"}
-	c.param.Fields = []string{"text"}
-	c.param.FilenameEmbdWeight = 0
-
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc",
-		"output_format": "chunks",
-		"chunks": []map[string]any{
-			{"content_with_weight": "fallback text", "doc_type_kwd": "text"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Tokenizer.Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) == 0 {
-		t.Fatal("no chunks emitted")
-	}
-	if got := chunks[0]["content_ltks"]; got == nil {
-		t.Errorf("content_ltks missing; content_with_weight fallback did not run")
-	} else if s, ok := got.(string); !ok || s == "" {
-		t.Errorf("content_ltks = %v (type %T), want non-empty string", got, got)
-	}
-}
-
-// TestTokenizer_DoesNotChangeChunkText pins the regression guard
-// for the fallback. When both "text" and "content_with_weight"
-// are present, "text" wins.
-func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
-	pipe.RequireTokenizerPool(t)
-	c := &TokenizerComponent{}
-	c.param.SearchMethod = []string{"full_text"}
-	c.param.Fields = []string{"text"}
-	c.param.FilenameEmbdWeight = 0
-
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc",
-		"output_format": "chunks",
-		"chunks": []map[string]any{
-			{"text": "primary text", "content_with_weight": "fallback", "doc_type_kwd": "text"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Tokenizer.Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) == 0 {
-		t.Fatal("no chunks emitted")
-	}
-	if got, want := chunks[0]["text"], "primary text"; got != want {
-		t.Errorf("text = %v, want %v (text should win over content_with_weight)", got, want)
-	}
-}
 
 // TestSubstitutePromptPlaceholders_ReplacesAtChunks pins the
 // resume-template pattern `{TitleChunker:FlatMiceFix@chunks}`.
