@@ -226,10 +226,6 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 # Install frontend dependencies — depends only on package manifests so
 # web source / docs changes don't invalidate this layer.
 COPY web/package.json web/package-lock.json web/.npmrc ./web/
-# The `prepare` lifecycle script (npm install) runs `node scripts/prepare.js`,
-# so that file must be present before `npm install` or the build fails with
-# "Cannot find module '/ragflow/web/scripts/prepare.js'".
-COPY web/scripts ./web/scripts
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
 

@@ -817,7 +817,6 @@ func (s *ChunkService) pdfParseTaskRanges(doc *entity.Document, bucket, objectNa
 		pageSize = int64(parserConfigInt(doc.ParserConfig, "task_page_size", 22))
 	}
 	if doc.ParserID == string(entity.ParserTypeOne) ||
-		doc.ParserID == string(entity.ParserTypeKG) ||
 		parserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
 		parserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 		pageSize = maximumTaskPageNumber
