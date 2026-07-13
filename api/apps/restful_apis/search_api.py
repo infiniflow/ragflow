@@ -220,6 +220,11 @@ async def completion(search_id):
     if not kb_ids:
         return get_data_error_result(message="`kb_ids` is required.")
 
+    # check if the kb_ids is accessible for this user
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id=kb_id, user_id=uid):
+            return get_data_error_result(message=f"You don't own the dataset {kb_id}")
+
     async def stream():
         nonlocal req, uid, kb_ids, search_config
         try:
