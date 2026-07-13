@@ -691,8 +691,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           if [ -d docker/ragflow-logs ]; then
-            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
-            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+            destination="${ARTIFACTS_DIR}/ragflow-logs-infinity"
+            sudo cp -r docker/ragflow-logs "${destination}"
+            sudo chown -R "$(id -u):$(id -g)" "${destination}"
+            echo "ragflow log" && sudo tail -n 200 docker/ragflow-logs/ragflow_server.log || true
           else
             echo "No docker/ragflow-logs directory found; skipping log collection"
           fi
@@ -1164,8 +1166,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           if [ -d docker/ragflow-logs ]; then
-            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-es
-            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+            destination="${ARTIFACTS_DIR}/ragflow-logs-es"
+            sudo cp -r docker/ragflow-logs "${destination}"
+            sudo chown -R "$(id -u):$(id -g)" "${destination}"
+            echo "ragflow log" && sudo tail -n 200 docker/ragflow-logs/ragflow_server.log || true
           else
             echo "No docker/ragflow-logs directory found; skipping log collection"
           fi
