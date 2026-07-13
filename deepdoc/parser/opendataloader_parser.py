@@ -332,7 +332,10 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         callback: Optional[Callable] = None,
         *,
         parse_method: str = "raw",
+        from_page: int = 0,
+        to_page: int = MAXIMUM_PAGE_NUMBER,
         hybrid: Optional[str] = None,
+        hybrid_mode: Optional[str] = None,
         image_output: Optional[str] = None,
         sanitize: Optional[bool] = None,
     ):
@@ -366,8 +369,21 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             callback(0.1, f"[OpenDataLoader] Sending '{filename}' to service")
 
         form_data: dict[str, str] = {}
+        # RAGFlow splits large documents into multiple page-range tasks
+        # (from_page/to_page, 0-indexed, to_page exclusive — same convention
+        # as __images__ below). Without this, every task re-sent the whole
+        # PDF and re-chunked the entire document N times over (see
+        # troubleshooting.md "Multi-task documents" for the full trace of
+        # what that cost). Only restrict when the caller actually asked for
+        # a sub-range; the common single-task case (from_page=0,
+        # to_page=MAXIMUM_PAGE_NUMBER) still parses the whole document with
+        # no --pages flag at all.
+        if from_page > 0 or to_page < MAXIMUM_PAGE_NUMBER:
+            form_data["pages"] = f"{from_page + 1}-{to_page}"
         if hybrid:
             form_data["hybrid"] = hybrid
+        if hybrid_mode:
+            form_data["hybrid_mode"] = hybrid_mode
         if image_output:
             form_data["image_output"] = image_output
         if sanitize is not None:
@@ -377,7 +393,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         last_exc: Exception | None = None
         for attempt in range(1, 4):
             try:
-                self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}' (attempt {attempt})")
+                self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}' pages={form_data.get('pages', 'all')} (attempt {attempt})")
                 resp = requests.post(
                     url=f"{self.api_url}/file_parse",
                     files={"file": (filename, pdf_bytes, "application/pdf")},

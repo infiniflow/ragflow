@@ -432,6 +432,14 @@ class ParserConfig(Base):
     table_column_roles: Annotated[dict[str, TableColumnRole] | None, Field(default=None)]
     # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
     table_column_names: Annotated[list[str] | None, Field(default=None)]
+    # OpenDataLoader-specific parse options — forwarded verbatim to the
+    # OpenDataLoader adapter's /file_parse multipart fields when
+    # layout_recognize == "OpenDataLoader" (see rag/app/naive.py::chunk()
+    # and deepdoc/parser/opendataloader_parser.py). Ignored by other parsers.
+    hybrid: Annotated[str | None, Field(default=None)]
+    hybrid_mode: Annotated[Literal["auto", "full"] | None, Field(default=None)]
+    image_output: Annotated[str | None, Field(default=None)]
+    sanitize: Annotated[bool | None, Field(default=None)]
 
     @field_validator("table_column_roles", mode="before")
     @classmethod
