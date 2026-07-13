@@ -217,6 +217,21 @@ func Warn(msg string, fields ...zap.Field) {
 	Logger.Warn(msg, fields...)
 }
 
+// BestEffort executes f and logs any error via Error. It never panics (nil f
+// is handled) and never propagates the error — best-effort means the caller
+// does not want the main flow interrupted by this failure. Use it for
+// resource cleanup, soft-state deletion, and progress mirroring: operations
+// whose failure must be visible (logged) but must not abort the task.
+func BestEffort(label string, f func() error) {
+	if f == nil {
+		Error(fmt.Sprintf("best-effort %s: nil function", label), fmt.Errorf("nil function"))
+		return
+	}
+	if err := f(); err != nil {
+		Error(fmt.Sprintf("best-effort %s failed: %v", label, err), err)
+	}
+}
+
 // IsDebugEnabled returns true if debug logging is enabled.
 func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
