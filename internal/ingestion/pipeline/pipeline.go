@@ -78,8 +78,8 @@ func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan §6.a
-// M4 方案 A: a deployment that cannot persist checkpoints must not silently
+// resolved (no injected store AND no global Redis client). This is plan A: a
+// deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
 // Production ingestion wiring sets this; unit tests leave it off to exercise
@@ -348,17 +348,17 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				_ = tracker.MarkCancelled(runCtx, p.taskID)
+				common.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			_ = tracker.MarkFailed(runCtx, p.taskID, err.Error())
+			common.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		_ = tracker.MarkSucceeded(runCtx, p.taskID)
+		common.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -395,8 +395,11 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
-				_ = tracker.ClearInterruptID(ctx, cpID)
-				_ = tracker.MarkSucceeded(ctx, cpID)
+				common.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
+				common.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+			}
+			if store != nil {
+				common.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
@@ -405,14 +408,14 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			p.cleanupCheckpoint(ctx, store, tracker, cpID)
 			if tracker != nil {
-				_ = tracker.MarkCancelled(ctx, cpID)
+				common.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
 			if tracker != nil {
-				_ = tracker.MarkFailed(ctx, cpID, invokeErr.Error())
+				common.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}

@@ -62,6 +62,7 @@ type Ingestor struct {
 	taskChan  chan *taskpkg.TaskContext
 	workerWg  sync.WaitGroup
 	startOnce sync.Once
+	stopOnce  sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
 
 	ingestionTaskSvc *servicepkg.IngestionTaskService
 	docState         *docStateUpdater
@@ -80,6 +81,9 @@ type Ingestor struct {
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
+	if maxConcurrency <= 0 {
+		maxConcurrency = 1
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
@@ -322,13 +326,17 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 func (e *Ingestor) markStopped(taskID string) bool {
 	if _, err := e.ingestionTaskSvc.RequestStop(taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+		return false
 	}
 	if err := e.ingestionTaskSvc.MarkStopped(taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
 	if rc := redis2.Get(); rc != nil {
-		rc.Delete(fmt.Sprintf("%s-cancel", taskID))
+		common.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
+			rc.Delete(fmt.Sprintf("%s-cancel", taskID))
+			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
+		})
 	}
 	return true
 }
@@ -351,14 +359,27 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		e.markStopped(task.ID)
-		return true
+		return e.markStopped(task.ID)
 	default:
 	}
 
 	if err := e.ingestionTaskSvc.IncrementRunCount(task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		return e.markFailed(task.ID)
+	}
+
+	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
+	// that exists now is stale — a leftover from a previous run whose
+	// markStopped failed to delete it. The current run's cancel is signalled
+	// by the DB status (STOPPING), which defaultCancelCheck falls back to
+	// when the Redis flag is absent. Clearing a stale flag here is safe:
+	// a genuine concurrent cancel sets the task to STOPPING in DB.
+	if rc := redis2.Get(); rc != nil {
+		key := fmt.Sprintf("%s-cancel", task.ID)
+		common.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
+			rc.Delete(key)
+			return nil // Delete returns bool; false may mean "key not found" or "error"
+		})
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
@@ -448,16 +469,49 @@ func (e *Ingestor) settleToTerminal(taskID string) error {
 
 // settleMessage runs body under a heartbeat, then settles the MQ message. The
 // heartbeat is stopped (and waited on) before ack/nack — see startHeartbeat.
-// terminal is derived from body's return value; on panic terminal defaults to
-// false (non-terminal → Nack) so the broker redelivers after restart.
+// A panic in body is recovered: the task is marked FAILED and the message is
+// Nacked for redelivery, so a single task's panic never crashes the worker.
+// Settlement queries the DB for the task's actual status: a terminal state
+// (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
+// return value is advisory only — DB truth is authoritative (BP1).
 func (e *Ingestor) settleMessage(taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
 	stop := e.startHeartbeat(taskCtx)
 	defer func() {
 		stop() // stop heartbeat (and wait) before ack/nack
+		if r := recover(); r != nil {
+			// Recover the panic so the worker process survives. Mark the
+			// task FAILED so a redelivery does not re-run a poison message
+			// (processMessage Ack-skips an already-FAILED task); Nack for
+			// redelivery. The broker's redelivery limit handles deterministic
+			// poison messages.
+			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
+			e.markFailed(taskCtx.IngestionTask.ID)
+			terminal = false
+		}
+		// Settlement authority is the DB, not the in-memory bool (BP1).
+		// Fall back to the in-memory bool only when the DB is unavailable.
+		if dbTerminal, ok := e.safeGetTerminal(taskCtx.IngestionTask.ID); ok {
+			terminal = dbTerminal
+		}
 		e.ackOrNack(taskCtx, terminal)
 	}()
 	terminal = body(taskCtx.Ctx)
 	return
+}
+
+// safeGetTerminal queries the DB for the task's actual status and returns
+// whether it is terminal (COMPLETED/STOPPED/FAILED). A recover guards
+// against nil-DB panics in test environments — in that case (false, false)
+// is returned so the caller falls back to the in-memory bool.
+func (e *Ingestor) safeGetTerminal(taskID string) (terminal bool, ok bool) {
+	defer func() { recover() }()
+	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	if err != nil {
+		return false, false
+	}
+	return task.Status == common.COMPLETED ||
+		task.Status == common.STOPPED ||
+		task.Status == common.FAILED, true
 }
 
 // ackOrNack settles the MQ message according to the terminal flag: Ack if the
@@ -501,13 +555,28 @@ func (e *Ingestor) defaultCancelCheck(taskID string) bool {
 // next ctx.Err() check to abort and runTask to record progress=-1. The
 // goroutine exits when done is closed (executeTask returns).
 func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-chan struct{}) {
-	// Check immediately so the test path (which sets cancelCheck to a func
-	// that returns true) does not need to wait for the first tick.
-	if e.cancelCheck(taskID) {
-		common.Info(fmt.Sprintf("Task %s cancel flag detected during polling, cancelling pipeline", taskID))
-		cancel()
-		return
+	// checkOnce runs cancelCheck in a goroutine so the caller can select
+	// between the result and the done signal. This prevents a blocked
+	// cancelCheck (e.g. stuck DB call) from blocking pollCancel itself,
+	// which would cause executeTask's defer to deadlock on <-pollExited.
+	checkOnce := func() <-chan bool {
+		result := make(chan bool, 1)
+		go func() { result <- e.cancelCheck(taskID) }()
+		return result
 	}
+
+	// Initial check (immediately, for the test path).
+	select {
+	case <-done:
+		return
+	case ok := <-checkOnce():
+		if ok {
+			common.Info(fmt.Sprintf("Task %s cancel flag detected during polling, cancelling pipeline", taskID))
+			cancel()
+			return
+		}
+	}
+
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -515,9 +584,15 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 		case <-done:
 			return
 		case <-ticker.C:
-			if e.cancelCheck(taskID) {
-				cancel()
+			select {
+			case <-done:
 				return
+			case ok := <-checkOnce():
+				if ok {
+					common.Info(fmt.Sprintf("Task %s cancel flag detected during polling, cancelling pipeline", taskID))
+					cancel()
+					return
+				}
 			}
 		}
 	}
@@ -631,7 +706,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return err
 	}
-	result, err := executor.WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}
@@ -668,4 +743,9 @@ func (e *Ingestor) Stop(ctx context.Context) {
 		e.tasksMu.RUnlock()
 		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
 	}
+
+	// Signal shutdown completion so the cmd-side select on <-ShutdownCh
+	// unblocks (the admin graceful-shutdown path). Guarded by stopOnce: a
+	// repeated Stop must not double-close the channel.
+	e.stopOnce.Do(func() { close(e.ShutdownCh) })
 }
