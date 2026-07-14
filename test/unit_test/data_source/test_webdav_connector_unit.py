@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from enum import IntFlag, auto
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 
@@ -147,6 +148,40 @@ def _load_webdav_connector_module():
 
 webdav_connector = _load_webdav_connector_module()
 WebDAVConnector = webdav_connector.WebDAVConnector
+
+
+@pytest.mark.p2
+def test_load_credentials_preserves_default_ssl_verification(monkeypatch):
+    """Preserve the WebDAV client's default SSL verification without a custom CA."""
+    webdav_client = Mock(return_value=object())
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector("https://webdav.example")
+    connector.load_credentials({"username": "user", "password": "password"})
+
+    webdav_client.assert_called_once_with(
+        base_url="https://webdav.example",
+        auth=("user", "password"),
+    )
+
+
+@pytest.mark.p2
+def test_load_credentials_passes_custom_ca_certificate_path(monkeypatch):
+    """Pass a configured custom CA certificate path to the WebDAV client."""
+    webdav_client = Mock(return_value=object())
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector(
+        "https://webdav.example",
+        ca_cert_path="/etc/ssl/certs/webdav-ca.pem",
+    )
+    connector.load_credentials({"username": "user", "password": "password"})
+
+    webdav_client.assert_called_once_with(
+        base_url="https://webdav.example",
+        auth=("user", "password"),
+        verify="/etc/ssl/certs/webdav-ca.pem",
+    )
 
 
 class _FakeClient:
