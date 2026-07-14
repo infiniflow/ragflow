@@ -2,6 +2,7 @@ import { DagreLayout } from '@antv/layout';
 import { Graph, type EdgeMetadata, type NodeMetadata } from '@antv/x6';
 import { useEffect, useRef } from 'react';
 
+import { type TimelineX6NodeData } from '../../../utils/adapters';
 import { type TimelineNodeValue, type TimelineX6GraphProps } from '../types';
 
 export function useX6Graph(
@@ -54,7 +55,6 @@ export function useX6Graph(
     const dagreLayout = new DagreLayout({
       type: 'dagre',
       rankdir: 'LR',
-      align: 'UL',
       ranksep: 240,
       nodesep: 200,
       edgeMinLen: 2,
@@ -70,10 +70,11 @@ export function useX6Graph(
       const positionedNodes = new Map<string, NodeMetadata>();
 
       dagreLayout.forEachNode((node) => {
+        const original = node._original as TimelineX6NodeData;
         positionedNodes.set(String(node.id), {
           ...(node._original as NodeMetadata),
-          x: node.x,
-          y: node.y,
+          x: (node.x ?? 0) - original.width / 2,
+          y: (node.y ?? 0) - original.height / 2,
         });
       });
 
