@@ -278,7 +278,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if strings.TrimSpace(args.SQL) == "" {
 		return exesqlErrorResult(errors.New("exesql: empty sql")), errors.New("exesql: empty sql")
 	}
-	if !isSelectStatement(args.SQL) {
+	if err := validateExeSQLStatements(args.SQL); err != nil {
 		return exesqlErrorResult(ErrExeSQLNotSelect), ErrExeSQLNotSelect
 	}
 
@@ -450,6 +450,27 @@ func isBadFloat(f float64) bool {
 // changes valid predicates such as `status = 'Completed'`.
 func splitSQLStatements(s string) []string {
 	return strings.Split(s, ";")
+}
+
+// validateExeSQLStatements rejects the entire batch before any database work
+// when one fragment is not read-only. Validating only the batch's first
+// keyword would allow inputs such as `SELECT 1; DROP TABLE users`.
+func validateExeSQLStatements(sqlText string) error {
+	hasStatement := false
+	for _, stmt := range splitSQLStatements(sqlText) {
+		stmt = strings.TrimSpace(stripChunkIDMarkers(stmt))
+		if stmt == "" {
+			continue
+		}
+		hasStatement = true
+		if !isSelectStatement(stmt) {
+			return ErrExeSQLNotSelect
+		}
+	}
+	if !hasStatement {
+		return ErrExeSQLNotSelect
+	}
+	return nil
 }
 
 // stripChunkIDMarkers drops the [ID:123] tokens the RAGFlow chunker

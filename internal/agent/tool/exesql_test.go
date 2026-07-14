@@ -112,6 +112,19 @@ func TestExeSQL_RejectsNonSelect(t *testing.T) {
 	}
 }
 
+func TestExeSQL_RejectsMixedBatchBeforeDatabaseAccess(t *testing.T) {
+	e := NewExeSQLTool(testConn()).
+		WithExeSQLDialer(func(_, _ string) (*sql.DB, error) {
+			t.Fatal("dialer called before every SQL statement was validated")
+			return nil, nil
+		})
+
+	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1; DROP TABLE users"}`)
+	if !errors.Is(err, ErrExeSQLNotSelect) {
+		t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
+	}
+}
+
 func TestExeSQL_AllowsSelect(t *testing.T) {
 	t.Parallel()
 
