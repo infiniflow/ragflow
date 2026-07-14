@@ -94,7 +94,7 @@ class LLMType(StrEnum):
 
 
 class ModelTypeBinary(Enum):
-    CHAT = 0b0000001      # 1 << 0 = 1
+    CHAT = 0b0000001  # 1 << 0 = 1
     EMBEDDING = 0b0000010  # 1 << 1 = 2
     ASR = 0b0000100  # 1 << 2 = 4
     VISION = 0b0001000  # 1 << 3 = 8
