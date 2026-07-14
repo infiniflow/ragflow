@@ -17,7 +17,10 @@
 package admin
 
 import (
+	"ragflow/internal/server"
+
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 // Router admin router
@@ -34,6 +37,9 @@ func NewRouter(handler *Handler) *Router {
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	serverName := server.GetServerName()
+	engine.Use(otelgin.Middleware(serverName))
+
 	// Healthz to get system health
 	engine.GET("/healthz", r.handler.Healthz)
 	engine.GET("/", r.handler.Live)

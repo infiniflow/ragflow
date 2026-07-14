@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
+	tracer "ragflow/internal/server/otel"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
@@ -44,7 +45,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 
 	_ "ragflow/internal/agent/component"
@@ -368,6 +368,13 @@ func main() {
 	if err = server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
+
+	ctx := context.Background()
+	traceProvider, err := tracer.NewTracerProvider(ctx, serverName)
+	if err != nil {
+		common.Fatal("failed to init tracer", zap.Error(err))
+	}
+	defer traceProvider.Shutdown(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName
@@ -707,7 +714,7 @@ func startServer(config *server.Config) {
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
-	systemHandler := handler.NewSystemHandler(systemService, otel.Tracer("ragflow"))
+	systemHandler := handler.NewSystemHandler(systemService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)

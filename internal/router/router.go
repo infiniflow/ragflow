@@ -17,7 +17,10 @@
 package router
 
 import (
+	"ragflow/internal/server"
+
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
@@ -122,6 +125,9 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	serverName := server.GetServerName()
+	engine.Use(otelgin.Middleware(serverName))
+
 	// Mark all responses from Go with a header for debugging.
 	engine.Use(func(c *gin.Context) {
 		c.Header("X-API-Source", "go")

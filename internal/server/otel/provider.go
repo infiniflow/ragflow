@@ -19,30 +19,31 @@
 //
 // The package exposes a TracerProvider factory and a callbacks.Handler
 // implementation that maps eino graph-node lifecycle events to OTel spans.
-// The handler is designed to be a no-op when tracing is not configured, so
-// production code can wire it up unconditionally without paying any cost
-// in deployments that do not run an OTel collector.
-package otel
+// When no OTLP endpoint is configured the provider falls back to a stdout
+// exporter, writing pretty-printed JSON spans to stderr so local debugging
+// works without a collector.
+package tracer
 
 import (
 	"context"
 	"fmt"
+	"os"
+	"ragflow/internal/common"
+	"ragflow/internal/server"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	stdouttrace "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
 // Default values applied when ProviderConfig fields are left zero.
 const (
-	defaultServiceName    = "ragflow"
-	defaultServiceVersion = "0.0.0"
-	defaultServiceNS      = "ragflow"
-	defaultExportTimeout  = 30 * time.Second
+	defaultExportTimeout = 30 * time.Second
 )
 
 // ProviderConfig configures the OTel TracerProvider built by
@@ -55,8 +56,8 @@ type ProviderConfig struct {
 	// Defaults to "0.0.0" when empty.
 	ServiceVersion string
 	// OTLPEndpoint is the OTLP/HTTP collector endpoint (e.g.
-	// "http://otel-collector:4318"). When empty, the returned provider
-	// has no exporter and effectively no-ops.
+	// "http://otel-collector:4318"). When empty, the provider falls back to
+	// a stdout exporter instead of no-oping.
 	OTLPEndpoint string
 	// Insecure disables TLS for the OTLP exporter. Defaults to true.
 	Insecure bool
@@ -68,43 +69,66 @@ type ProviderConfig struct {
 
 // NewTracerProvider builds a [sdktrace.TracerProvider] honoring config.
 //
-// Two failure modes are special-cased and never return an error:
+// One failure mode is special-cased and never returns an error:
 //
-//   - config.OTLPEndpoint == "": returns a provider with no exporter. Useful
-//     for unit tests and for deployments that do not yet run a collector.
 //   - config.SampleRatio == 0: returns a provider configured with
 //     [trace.NeverSample] and no exporter, so even a single manual span
 //     is dropped.
-func NewTracerProvider(ctx context.Context, config ProviderConfig) (*sdktrace.TracerProvider, error) {
-	config = getTraceProviderConfig(config)
+//
+// When config.OTLPEndpoint is empty the provider falls back to a stdout
+// exporter so local debugging works without an OTel collector.
+func NewTracerProvider(ctx context.Context, serviceName string) (*sdktrace.TracerProvider, error) {
 
-	// Short-circuit: no endpoint or no sampling requested → no-op provider.
-	// We deliberately still return a non-nil *sdktrace.TracerProvider so
-	// the handler does not need to special-case nil.
-	if config.OTLPEndpoint == "" || config.SampleRatio == 0 {
+	ragflowConfig := server.GetConfig()
+	serviceVersion := common.GetRAGFlowVersion()
+	traceConfig := newTraceProviderConfig(
+		serviceName,
+		serviceVersion,
+		ragflowConfig.OTel.Host,
+		ragflowConfig.OTel.Port,
+		ragflowConfig.OTel.Secure,
+		ragflowConfig.OTel.SampleRatio,
+	)
+
+	// Short-circuit: no sampling requested → no-op provider.
+	if (traceConfig.OTLPEndpoint == "" && !ragflowConfig.OTel.Stdout) || common.AlmostEqual64(traceConfig.SampleRatio, 0) {
 		return sdktrace.NewTracerProvider(
 			sdktrace.WithSampler(sdktrace.NeverSample()),
 		), nil
 	}
 
-	res, err := buildResource(ctx, config)
+	oTelResource, err := buildResource(traceConfig)
 	if err != nil {
-		return nil, fmt.Errorf("otel: build resource: %w", err)
+		return nil, fmt.Errorf("OTEL: build resource: %w", err)
 	}
 
-	exporter, err := buildExporter(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("otel: build exporter: %w", err)
+	// Fallback chain:
+	//   1. OTLP endpoint configured → OTLP/HTTP exporter.
+	//   2. No endpoint → stdout exporter for local debugging.
+	var oTelExporter sdktrace.SpanExporter
+	if ragflowConfig.OTel.Stdout {
+		oTelExporter, err = stdouttrace.New(
+			stdouttrace.WithWriter(os.Stdout),
+			stdouttrace.WithPrettyPrint(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("OTEL: build stdout exporter: %w", err)
+		}
+	} else {
+		oTelExporter, err = buildExporter(ctx, traceConfig)
+		if err != nil {
+			return nil, fmt.Errorf("OTEL: build exporter: %w", err)
+		}
 	}
 
-	bsp := sdktrace.NewBatchSpanProcessor(exporter,
+	batchSpanProcessor := sdktrace.NewBatchSpanProcessor(oTelExporter,
 		sdktrace.WithExportTimeout(defaultExportTimeout),
 	)
 
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithResource(res),
-		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.TraceIDRatioBased(config.SampleRatio)),
+		sdktrace.WithResource(oTelResource),
+		sdktrace.WithSpanProcessor(batchSpanProcessor),
+		sdktrace.WithSampler(sdktrace.TraceIDRatioBased(traceConfig.SampleRatio)),
 	)
 
 	// Register as the global tracer provider so that any code that calls
@@ -114,23 +138,30 @@ func NewTracerProvider(ctx context.Context, config ProviderConfig) (*sdktrace.Tr
 	return tp, nil
 }
 
-func getTraceProviderConfig(config ProviderConfig) ProviderConfig {
-	if config.ServiceName == "" {
-		config.ServiceName = defaultServiceName
+func newTraceProviderConfig(serviceName, serviceVersion, host string, port int, secure bool, sampleRatio float64) ProviderConfig {
+	var url string
+	var httpPrefix = "http://"
+	if secure {
+		httpPrefix = "https://"
 	}
-	if config.ServiceVersion == "" {
-		config.ServiceVersion = defaultServiceVersion
+	if host == "" {
+		url = ""
+	} else {
+		url = fmt.Sprintf("%s%s:%d", httpPrefix, host, port)
 	}
-	if config.SampleRatio < 0 {
-		config.SampleRatio = 0
+	return ProviderConfig{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		OTLPEndpoint:   url,
+		Insecure:       !secure,
+		SampleRatio:    sampleRatio,
 	}
-	return config
 }
 
 // buildResource composes the OTel resource (process identity) attached to
 // every span emitted by the provider. The resource uses semconv v1.26.0
 // attribute keys.
-func buildResource(ctx context.Context, config ProviderConfig) (*resource.Resource, error) {
+func buildResource(config ProviderConfig) (*resource.Resource, error) {
 	schemaURL := semconv.SchemaURL
 
 	// service.namespace is set to "ragflow" regardless of config so that the
@@ -140,7 +171,7 @@ func buildResource(ctx context.Context, config ProviderConfig) (*resource.Resour
 		schemaURL,
 		semconv.ServiceName(config.ServiceName),
 		semconv.ServiceVersion(config.ServiceVersion),
-		semconv.ServiceNamespace(defaultServiceNS),
+		semconv.ServiceNamespace("ragflow"),
 	)
 	detected, err := resource.Merge(
 		resource.Default(),
