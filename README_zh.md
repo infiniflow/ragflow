@@ -188,6 +188,25 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
+
+> [!NOTE]
+> **从本地源码构建镜像（推荐 fork / 本地修改后使用）**
+> 本仓库的 `docker/docker-compose.yml` 已为 `ragflow-cpu` 与 `ragflow-gpu` 服务配置了 `build:` 字段（context 为仓库根）。
+> 因此如果你 clone 的是 fork 仓库、对 `web/`、`api/`、`rag/` 等源码做了改动，请先 build 再启动，避免改动被 `image:` 字段回退到拉取官方镜像：
+>
+> ```bash
+> # 首次启动 / 改完源码后：先 build，再 up
+> $ docker compose -f docker-compose.yml build ragflow-cpu
+> $ docker compose -f docker-compose.yml up -d ragflow-cpu
+>
+> # 想跳过 build、直接拉 ${RAGFLOW_IMAGE}：用 --pull 强制拉镜像即可（会覆盖 build）
+> $ docker compose -f docker-compose.yml pull ragflow-cpu
+> $ docker compose -f docker-compose.yml up -d ragflow-cpu
+> ```
+>
+> 构建过程会跑 `Dockerfile` 里的 web 前端构建（`npm run build`），因此 build 完成后镜像里的前端一定包含你本地 `web/src` 的改动。
+
+
 > [!CAUTION]
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。

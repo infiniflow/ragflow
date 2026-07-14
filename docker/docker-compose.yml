@@ -24,6 +24,17 @@ services:
         condition: service_healthy
     profiles:
       - cpu
+    # Business: clone 后默认从本地源码 build 镜像，保证 web/、api/、rag/
+    # 的本地改动能直接进镜像（无需手动 docker build 再 tag）。
+    # - context: ../ 表示仓库根（compose 文件本身在 docker/ 下）。
+    # - dockerfile: 仓库根的 Dockerfile（非 docker/Dockerfile）。
+    # - 同时保留 image:，Docker Compose 会把构建产物 tag 成
+    #   ${RAGFLOW_IMAGE} 的值（例如 infiniflow/ragflow:dev-arm64），
+    #   既兼容已有用户的 .env，也保留「pull 官方镜像」的逃生通道
+    #   （设置 RAGFLOW_IMAGE 之外的任意变量或显式指定即可跳过 build）。
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
@@ -75,6 +86,12 @@ services:
         condition: service_healthy
     profiles:
       - gpu
+    # 同 ragflow-cpu：从本地源码 build，保证 web/、api/、rag/ 的改动
+    # 进入镜像。clone 后首次启动务必先 `docker compose build`，
+    # 否则会回退到拉 ${RAGFLOW_IMAGE}（可能与本地源码不一致）。
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
