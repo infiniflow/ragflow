@@ -3,14 +3,19 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/service"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // resolveTenantLLMConfig fills tenant-scoped API credentials for the supplied
@@ -151,6 +156,123 @@ func findSoleActiveProviderInstance(providerID string) *entity.TenantModelInstan
 		return nil
 	}
 	return active[0]
+}
+
+func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	if !isBareTenantModelID(modelRef) {
+		return "", "", apiKey, baseURL, false, nil
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return "", "", apiKey, baseURL, false, nil
+	}
+	tid, _ := state.Sys["tenant_id"].(string)
+	if tid == "" {
+		return "", "", apiKey, baseURL, false, nil
+	}
+
+	driver, modelName, cfg, _, err := service.NewModelProviderService().GetModelConfigByID(tid, entity.ModelTypeChat, modelRef)
+	if err == nil {
+		return modelName, driver.Name(), apiKeyFromConfig(apiKey, cfg), baseURLFromConfig(baseURL, cfg), true, nil
+	}
+	if !isNotFoundModelIDError(err) {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant chat model id %q: %w", modelRef, err)
+	}
+
+	modelName, provider, instanceKey, instanceBaseURL, ok, instErr := resolveTenantChatModelByInstanceID(tid, modelRef, apiKey, baseURL)
+	if instErr != nil {
+		return "", "", apiKey, baseURL, false, instErr
+	}
+	if ok {
+		return modelName, provider, instanceKey, instanceBaseURL, true, nil
+	}
+	return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant chat model id %q: %w", modelRef, err)
+}
+
+func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(instanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", apiKey, baseURL, false, nil
+		}
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant model instance id %q: %w", instanceID, err)
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(instance.ProviderID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve provider for tenant model instance id %q: %w", instanceID, err)
+	}
+	if provider.TenantID != tid {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s has no access to model instance id %s", tid, instanceID)
+	}
+
+	models, err := dao.NewTenantModelDAO().GetModelsByInstanceID(instance.ID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve models for tenant model instance id %q: %w", instanceID, err)
+	}
+	candidates := make([]*entity.TenantModel, 0, len(models))
+	for _, model := range models {
+		if model == nil || model.ProviderID != provider.ID {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
+			continue
+		}
+		if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
+			continue
+		}
+		candidates = append(candidates, model)
+	}
+	if len(candidates) == 0 {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has no active chat model", instanceID)
+	}
+	if len(candidates) > 1 {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has %d active chat models; use tenant_model.id or model@instance@provider", instanceID, len(candidates))
+	}
+	if apiKey == "" {
+		apiKey = instance.APIKey
+	}
+	if baseURL == "" && instance.Extra != "" {
+		var extra map[string]string
+		if err := json.Unmarshal([]byte(instance.Extra), &extra); err == nil {
+			baseURL = extra["base_url"]
+		}
+	}
+	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, true, nil
+}
+
+func isBareTenantModelID(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 32 || strings.Contains(s, "@") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func apiKeyFromConfig(current string, cfg *models.APIConfig) string {
+	if current != "" || cfg == nil || cfg.ApiKey == nil {
+		return current
+	}
+	return *cfg.ApiKey
+}
+
+func baseURLFromConfig(current string, cfg *models.APIConfig) string {
+	if current != "" || cfg == nil || cfg.BaseURL == nil {
+		return current
+	}
+	return *cfg.BaseURL
+}
+
+func isNotFoundModelIDError(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), "not found")
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
