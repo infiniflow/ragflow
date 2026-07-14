@@ -227,7 +227,10 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 			}
 			return nil, common.CodeServerError, err
 		}
-		provider["name"] = providerName
+		// provider["name"] is the catalog name from GetProviderByName (e.g.,
+		// "SILICONFLOW"), which matches Python's factory_info["name"]. Do NOT
+		// override it with providerName (the DB value), which may differ in
+		// case from historical ToLower writes.
 
 		// Set has_instance flag. Mirrors Python's:
 		//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
@@ -312,7 +315,6 @@ func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) 
 
 func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
