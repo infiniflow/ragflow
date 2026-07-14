@@ -194,20 +194,22 @@ releases! 🌟
 > `docker/docker-compose.yml` now declares a `build:` section for the `ragflow-cpu` and `ragflow-gpu` services, with the build context set to the repository root.
 > If you cloned a fork and modified anything under `web/`, `api/`, or `rag/`, build the image before starting it — otherwise the `image:` field will silently fall back to pulling `${RAGFLOW_IMAGE}`, which won't contain your changes:
 >
+> Run these commands from the repository root (so that `docker/docker-compose.yml` is on the relative path):
+>
 > ```bash
+> $ cd ragflow/docker
+>
 > # First run, or after editing source: build first, then up.
 > $ docker compose -f docker-compose.yml build ragflow-cpu
 > $ docker compose -f docker-compose.yml up -d ragflow-cpu
 >
-> # Skip build and pull the prebuilt image instead (overrides build):
+> # Skip build and pull the upstream prebuilt image instead (overrides build):
 > $ docker compose -f docker-compose.yml pull ragflow-cpu
 > $ docker compose -f docker-compose.yml up -d ragflow-cpu
 > ```
 >
 > The build runs `npm run build` inside `Dockerfile`, so the resulting image always contains the frontend built from your local `web/src`.
-
-
-
+>
 > [!CAUTION]
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
