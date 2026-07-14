@@ -85,6 +85,42 @@ func TestCanvasState_MarshalJSON_DoesNotLeakMutex(t *testing.T) {
 	}
 }
 
+func TestCanvasStateConversationHistory(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-history", "task-history")
+	state.AppendHistory("user", "previous question")
+	state.AppendHistory("assistant", map[string]any{"content": "previous answer"})
+	state.AppendHistory("user", "current question")
+	state.AppendSysHistory("user: previous question")
+	state.AppendSysHistory("assistant: {'content': 'previous answer'}")
+	state.AppendSysHistory("user: current question")
+
+	prior := state.SnapshotPriorHistory()
+	if len(prior) != 2 {
+		t.Fatalf("prior history length = %d, want 2", len(prior))
+	}
+	if got := prior[1]["content"]; got != "previous answer" {
+		t.Fatalf("prior assistant content = %v, want previous answer", got)
+	}
+	if got := state.SnapshotSysHistory(); len(got) != 3 || got[2] != "user: current question" {
+		t.Fatalf("sys.history = %#v", got)
+	}
+}
+
+func TestCanvasStateMemoryIsSeparateFromHistory(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-memory", "task-memory")
+	state.AppendMemory("question", "answer", "used search")
+
+	if len(state.SnapshotHistory()) != 0 {
+		t.Fatalf("memory polluted history: %#v", state.SnapshotHistory())
+	}
+	memory := state.SnapshotMemory()
+	if len(memory) != 1 || memory[0]["summary"] != "used search" {
+		t.Fatalf("memory = %#v", memory)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 

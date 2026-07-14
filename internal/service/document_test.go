@@ -396,6 +396,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}

@@ -216,6 +216,107 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	}
 }
 
+func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"globals": map[string]any{"sys.history": []any{}},
+		"history": []any{},
+		"memory":  []any{},
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{"history_0"},
+			},
+			"history_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "ListOperations",
+					"params": map[string]any{
+						"query":      "sys.history",
+						"operations": "tail",
+						"n":          10,
+					},
+				},
+				"upstream":   []any{"begin_0"},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params": map[string]any{
+						"text": "history={{history_0@result}}",
+					},
+				},
+				"upstream": []any{"history_0"},
+			},
+		},
+		"path": []any{"begin_0", "history_0", "message_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-history",
+		DialogID:  "canvas-history",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		DSL:       entity.JSONMap(dsl),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewAgentService()
+	run := func(input string) canvas.MessageEvent {
+		t.Helper()
+		events, err := svc.RunAgent(context.Background(), "user-1", "canvas-history", "session-history", "", input)
+		if err != nil {
+			t.Fatalf("RunAgent(%q): %v", input, err)
+		}
+		messages, waiting, errs, done := drainAgentEvents(t, events)
+		if len(errs) != 0 || len(waiting) != 0 || !done {
+			t.Fatalf("RunAgent(%q): messages=%+v waiting=%+v errors=%+v done=%v", input, messages, waiting, errs, done)
+		}
+		if len(messages) != 1 {
+			t.Fatalf("RunAgent(%q): message count = %d, want 1", input, len(messages))
+		}
+		return messages[0]
+	}
+
+	first := run("hi")
+	if !strings.Contains(first.Content, "user: hi") {
+		t.Fatalf("first content = %q, want current user in sys.history", first.Content)
+	}
+	second := run("again")
+	if !strings.Contains(second.Content, "user: hi") || !strings.Contains(second.Content, "assistant: {'content':") || !strings.Contains(second.Content, "user: again") {
+		t.Fatalf("second content does not contain accumulated history: %q", second.Content)
+	}
+
+	var session entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-history").First(&session).Error; err != nil {
+		t.Fatalf("reload session: %v", err)
+	}
+	history, ok := session.DSL["history"].([]any)
+	if !ok || len(history) != 4 {
+		t.Fatalf("persisted history = %#v, want four user/assistant entries", session.DSL["history"])
+	}
+	globals, _ := session.DSL["globals"].(map[string]any)
+	sysHistory, ok := globals["sys.history"].([]any)
+	if !ok || len(sysHistory) != 4 {
+		t.Fatalf("persisted sys.history = %#v, want four rendered entries", globals["sys.history"])
+	}
+}
+
 // TestRunAgent_RealCanvas_WaitForUserResume pins the resume path.
 // It publishes a 3-component DSL (Begin → Message → UserFillUp),
 // invokes RunAgent twice on the same (canvas, session), and asserts:
@@ -248,6 +349,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	dsl := map[string]any{
+		"globals": map[string]any{"sys.history": []any{}},
+		"history": []any{},
 		"components": map[string]any{
 			"begin_0": map[string]any{
 				"obj": map[string]any{
@@ -274,6 +377,16 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"path": []any{"begin_0", "user_fill_up_0", "message_0"},
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-fillup",
+		DialogID:  "canvas-fillup",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		DSL:       entity.JSONMap(dsl),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 
 	// v3.6.1 Gap #1 fix: a real checkpoint store + serializer is
 	// REQUIRED for the second Invoke to actually resume from
@@ -321,6 +434,14 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	if waiting1[0].CpnID == "" {
 		t.Error("run 1: waiting_for_user event has empty cpn_id")
 	}
+	var interrupted entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-fillup").First(&interrupted).Error; err != nil {
+		t.Fatalf("run 1: reload session: %v", err)
+	}
+	interruptedHistory, _ := interrupted.DSL["history"].([]any)
+	if len(interruptedHistory) != 1 {
+		t.Fatalf("run 1: persisted history = %#v, want only the user turn", interrupted.DSL["history"])
+	}
 
 	// Run 2: with the checkpoint store wired, eino loads the
 	// saved state from run 1, the engine targets the UserFillUp
@@ -356,6 +477,14 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	if !strings.Contains(messages2[0].Content, "got: my follow-up") {
 		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "got: my follow-up")
+	}
+	var completed entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-fillup").First(&completed).Error; err != nil {
+		t.Fatalf("run 2: reload session: %v", err)
+	}
+	completedHistory, _ := completed.DSL["history"].([]any)
+	if len(completedHistory) != 3 {
+		t.Fatalf("run 2: persisted history = %#v, want two user turns and one assistant turn", completed.DSL["history"])
 	}
 }
 

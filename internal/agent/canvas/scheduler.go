@@ -151,6 +151,12 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 	// the upstream outputs the state post handler already wrote.
 	if state != nil {
 		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx); ctxState != nil && ctxState != state {
+			localHistory := state.SnapshotHistory()
+			contextHistory := ctxState.SnapshotHistory()
+			localMemory := state.SnapshotMemory()
+			contextMemory := ctxState.SnapshotMemory()
+			localSysHistory := state.SnapshotSysHistory()
+			contextSysHistory := ctxState.SnapshotSysHistory()
 			for cpnID, bucket := range state.Outputs {
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
@@ -165,6 +171,23 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 			}
 			for k, v := range globalsNS {
 				ctxState.Globals[k] = v
+			}
+			if len(contextHistory) >= len(localHistory) {
+				state.SetHistory(contextHistory)
+			} else {
+				ctxState.SetHistory(localHistory)
+			}
+			if len(contextMemory) >= len(localMemory) {
+				state.SetMemory(contextMemory)
+			} else {
+				ctxState.SetMemory(localMemory)
+			}
+			if len(contextSysHistory) >= len(localSysHistory) {
+				state.SetSysHistory(contextSysHistory)
+				ctxState.SetSysHistory(contextSysHistory)
+			} else {
+				state.SetSysHistory(localSysHistory)
+				ctxState.SetSysHistory(localSysHistory)
 			}
 		}
 	}
@@ -215,6 +238,8 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 		state.Sys = sysNS
 		state.Env = envNS
 		state.Globals = globalsNS
+		state.SetHistory(ctxState.SnapshotHistory())
+		state.SetMemory(ctxState.SnapshotMemory())
 	}
 	return out, nil
 }
@@ -378,7 +403,23 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// seeding here mirrors the Python canvas.__init__ →
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
-	genState := func(_ context.Context) *CanvasState {
+	genState := func(runCtx context.Context) *CanvasState {
+		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
+			st := NewCanvasState(ctxState.RunID, ctxState.TaskID)
+			for cpnID, bucket := range ctxState.Snapshot() {
+				for key, value := range bucket {
+					st.SetVar(cpnID, key, value)
+				}
+			}
+			sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
+			st.Sys = sysNS
+			st.Env = envNS
+			st.Globals = globalsNS
+			st.Path = append([]string(nil), ctxState.Path...)
+			st.SetHistory(ctxState.SnapshotHistory())
+			st.SetMemory(ctxState.SnapshotMemory())
+			return st
+		}
 		st := NewCanvasState("", "")
 		if globals != nil {
 			for k, v := range globals {
@@ -391,6 +432,8 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 		}
+		st.SetHistory(c.History)
+		st.SetMemory(c.Memory)
 		return st
 	}
 

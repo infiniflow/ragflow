@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"ragflow/internal/utility"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -795,6 +796,15 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if dsl == nil {
 		dsl = normalisedDSLForRun(versionRow)
 	}
+	if sessionID != "" && s.api4ConversationDAO != nil {
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(sessionID, canvasID)
+		if sessionErr != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
+		}
+		if session != nil && len(session.DSL) > 0 {
+			dsl = dslpkg.NormalizeForRun(session.DSL)
+		}
+	}
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
@@ -1016,7 +1026,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
+		state.SetHistory(c.History)
+		state.SetMemory(c.Memory)
 		state.Sys["query"] = userInput
+		state.AppendHistory("user", userInput)
+		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
@@ -1105,7 +1119,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if isResume && resumeID != "" {
 			wfInput = ""
 		}
-		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		err = invokeErr
 
 		if cpID != "" && s.runTracker != nil {
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
@@ -1138,6 +1153,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1149,8 +1165,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.Error(err))
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload, state, answer != "")
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
 						Reference: referencePayload,
@@ -1165,7 +1181,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+				appendAssistantHistory(state, assistantOutput)
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload, state, true)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
 					Reference: referencePayload,
@@ -1197,7 +1214,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+		appendAssistantHistory(state, assistantOutput)
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload, state, true)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
 			Reference: referencePayload,
@@ -1262,7 +1280,14 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
+func (s *AgentService) persistAgentRunSession(
+	agentID, sessionID, messageID string,
+	userInput any,
+	answer string,
+	reference map[string]interface{},
+	state *canvas.CanvasState,
+	appendAssistantMessage bool,
+) {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return
 	}
@@ -1279,7 +1304,9 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	if text := stringifyAgentUserInput(userInput); text != "" {
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
-	messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	if appendAssistantMessage {
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw
 	}
@@ -1287,6 +1314,23 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	references = append(references, normalizeAgentReferenceEntry(reference))
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
+	}
+	if state != nil {
+		dsl := make(entity.JSONMap, len(session.DSL)+3)
+		for key, value := range session.DSL {
+			dsl[key] = value
+		}
+		globals := make(map[string]any)
+		if existing, ok := session.DSL["globals"].(map[string]any); ok {
+			for key, value := range existing {
+				globals[key] = value
+			}
+		}
+		globals["sys.history"] = state.SnapshotSysHistory()
+		dsl["globals"] = globals
+		dsl["history"] = canvas.EncodeHistory(state.SnapshotHistory())
+		dsl["memory"] = canvas.EncodeMemory(state.SnapshotMemory())
+		session.DSL = dsl
 	}
 	if err := s.api4ConversationDAO.Update(session); err != nil {
 		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
@@ -1320,6 +1364,136 @@ func stringifyAgentUserInput(userInput any) string {
 			return string(b)
 		}
 		return fmt.Sprint(v)
+	}
+}
+
+func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
+	if state == nil {
+		return
+	}
+	state.AppendHistory("assistant", payload)
+	state.AppendSysHistory("assistant: " + pythonHistoryRepr(payload))
+}
+
+func terminalCanvasOutput(
+	c *canvas.Canvas,
+	state *canvas.CanvasState,
+	workflowOutput map[string]any,
+	answer string,
+	downloads any,
+) map[string]any {
+	terminalIDs := make([]string, 0)
+	if c != nil {
+		for cpnID, component := range c.Components {
+			if len(component.Downstream) == 0 {
+				terminalIDs = append(terminalIDs, cpnID)
+			}
+		}
+	}
+	sort.Strings(terminalIDs)
+	for _, cpnID := range terminalIDs {
+		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
+			return cloneCanvasOutput(output)
+		}
+	}
+	if state != nil {
+		snapshot := state.Snapshot()
+		for _, cpnID := range terminalIDs {
+			if output := snapshot[cpnID]; len(output) > 0 {
+				return cloneCanvasOutput(output)
+			}
+		}
+	}
+	if len(workflowOutput) > 0 {
+		return cloneCanvasOutput(workflowOutput)
+	}
+	fallback := map[string]any{"content": answer}
+	if !emptyDownloadValue(downloads) {
+		fallback["downloads"] = downloads
+	}
+	return fallback
+}
+
+func cloneCanvasOutput(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		switch key {
+		case "__cpn_id__", "state", "__legacy_noop__":
+			continue
+		}
+		output[key] = value
+	}
+	return output
+}
+
+func renderUserHistoryValue(value any) string {
+	switch value := value.(type) {
+	case string:
+		return value
+	case map[string]any:
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return fmt.Sprint(value)
+		}
+		return strings.TrimSuffix(buf.String(), "\n")
+	default:
+		return pythonHistoryRepr(value)
+	}
+}
+
+func pythonHistoryRepr(value any) string {
+	switch item := value.(type) {
+	case nil:
+		return "None"
+	case string:
+		replacer := strings.NewReplacer(
+			"\\", "\\\\",
+			"'", "\\'",
+			"\n", "\\n",
+			"\r", "\\r",
+			"\t", "\\t",
+		)
+		return "'" + replacer.Replace(item) + "'"
+	case bool:
+		if item {
+			return "True"
+		}
+		return "False"
+	case map[string]any:
+		keys := make([]string, 0, len(item))
+		for key := range item {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if len(keys) > 1 {
+			for index, key := range keys {
+				if key == "content" {
+					keys = append([]string{"content"}, append(keys[:index], keys[index+1:]...)...)
+					break
+				}
+			}
+		}
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, pythonHistoryRepr(key)+": "+pythonHistoryRepr(item[key]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case []any:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(item)
 	}
 }
 

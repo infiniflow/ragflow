@@ -462,7 +462,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			msgs = prependHistory(msgs, state.History, p.MessageHistoryWindowSize)
+			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}
 	// Apply message fitting (trim to context window) after all
