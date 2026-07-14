@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   LucideBookText,
+  LucideCog,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
@@ -50,6 +51,11 @@ export function SideBar({ dataset: data }: PropType) {
         icon: <LucideSettings className="size-[1em]" />,
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
+      },
+      {
+        icon: <LucideCog className="size-[1em]" />,
+        label: t(`knowledgeDetails.nextConfiguration`),
+        key: Routes.DataSetSettingNext,
       },
       {
         icon: <LucideBookText className="size-[1em]" />,

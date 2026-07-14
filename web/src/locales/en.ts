@@ -499,6 +499,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
+      nextConfiguration: 'Next configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       export: 'Export',

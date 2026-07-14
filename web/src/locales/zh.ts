@@ -445,6 +445,7 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
+      nextConfiguration: '下个配置',
       knowledgeGraph: '知识图谱',
       compilation: '汇编',
       export: '导出',
