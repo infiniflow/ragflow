@@ -563,6 +563,7 @@ class Dealer:
         highlight=False,
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
+        exclude_compile_kwd: bool = True,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -586,18 +587,20 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
-            "must_not": {"exists": "compile_kwd"},
         }
+        # Always search regular chunks first (exclude compile_kwd rows).
+        # LightGraph is appended separately below when requested.
+        req["must_not"] = {"exists": "compile_kwd"}
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
         idx_names = [index_name(tid) for tid in tenant_ids]
+        # Always search regular chunks first (excludes compile_kwd rows).
+        # Swap in a fresh req so _prune_deleted_chunks receives only real chunks.
         sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
-        # Temporary retrieval-side guard: prune chunks whose parent document no
-        # longer exists before reranking and returning results.
-        sres = await self._prune_deleted_chunks(sres)
+
         if sres.total == 0:
             ranks["doc_aggs"] = []
             return ranks
@@ -718,6 +721,44 @@ class Dealer:
                 else:
                     d["highlight"] = d["content_with_weight"]
             ranks["chunks"].append(d)
+
+        # ── LightGraph append: when exclude_compile_kwd=False, fetch lightgraph
+        # entities/relations separately so they supplement regular chunks. ──
+        if not exclude_compile_kwd and ranks["chunks"]:
+            lg_req = {
+                "kb_ids": kb_ids,
+                "doc_ids": doc_ids,
+                "question": question,
+                "vector": True,
+                "topk": top,
+                "similarity": similarity_threshold,
+                "available_int": 1,
+                "compile_kwd": "lightgraph",
+            }
+            lg_sres = await self.search(lg_req, idx_names, kb_ids, embd_mdl, highlight)
+            if lg_sres.total > 0:
+                lowest_score = ranks["chunks"][-1]["similarity"] if ranks["chunks"] else 0.0
+                for lid in lg_sres.ids[:page_size]:
+                    row = lg_sres.field.get(lid)
+                    if not row:
+                        continue
+                    ranks["chunks"].append(
+                        {
+                            "chunk_id": lid,
+                            "content_ltks": row.get("content_ltks", ""),
+                            "content_with_weight": row.get("content_with_weight", ""),
+                            "doc_id": row.get("doc_id", ""),
+                            "docnm_kwd": row.get("docnm_kwd", ""),
+                            "kb_id": row.get("kb_id", ""),
+                            "important_kwd": row.get("important_kwd", []),
+                            "image_id": row.get("img_id", ""),
+                            "similarity": lowest_score,
+                            "vector_similarity": lowest_score,
+                            "term_similarity": 0.0,
+                            "vector": [],
+                            "positions": [],
+                        }
+                    )
 
         if aggs:
             for i in valid_idx:
