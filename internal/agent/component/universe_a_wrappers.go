@@ -1058,13 +1058,9 @@ func newExeSQLComponent(params map[string]any) (Component, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
 	}
-	sqlText, _ := params["sql"].(string)
-	if sqlText == "" {
-		sqlText = "{sys.query}"
-	}
 	return &exesqlComponent{
 		inner: agenttool.NewExeSQLTool(conn),
-		sql:   sqlText,
+		sql:   conn.SQL,
 	}, nil
 }
 
@@ -1127,8 +1123,12 @@ func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
 	return out
 }
 
+type exeSQLInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 type exesqlComponent struct {
-	inner toolInvoker
+	inner exeSQLInvoker
 	sql   string
 }
 

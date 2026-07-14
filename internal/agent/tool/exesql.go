@@ -87,22 +87,34 @@ const (
 	exesqlToolName        = "execute_sql"
 	exesqlToolDescription = "This is a tool that can execute SQL."
 
+	exesqlDefaultSQL        = "{sys.query}"
+	exesqlDefaultDBType     = "mysql"
+	exesqlDefaultPort       = 3306
 	exesqlDefaultMaxRecords = 1024
 	exesqlDefaultTimeout    = 60 * time.Second
 )
 
-// exesqlConnParams captures the user-supplied DB connection details.
-// These are tool-level config (set on the canvas node, not exposed
-// to the LLM at function-call time), matching the Python ExeSQLParam
-// fields. The LLM only sees `sql` and optional `database` in args.
+// exesqlConnParams mirrors Python's ExeSQLParam fields. SQL is the only
+// model-emitted runtime input; the remaining fields are Canvas node
+// configuration and are not exposed from Info.
 type exesqlConnParams struct {
-	DBType     string // mysql | postgres | mariadb | mssql | oceanbase
-	Database   string
-	Username   string
-	Host       string
-	Port       int
-	Password   string
-	MaxRecords int
+	SQL        string `json:"sql"`
+	DBType     string `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase
+	Database   string `json:"database"`
+	Username   string `json:"username"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Password   string `json:"password"`
+	MaxRecords int    `json:"max_records"`
+}
+
+func defaultExeSQLConnParams() exesqlConnParams {
+	return exesqlConnParams{
+		SQL:        exesqlDefaultSQL,
+		DBType:     exesqlDefaultDBType,
+		Port:       exesqlDefaultPort,
+		MaxRecords: exesqlDefaultMaxRecords,
+	}
 }
 
 // ExeSQLConnParams is the public alias of exesqlConnParams for
@@ -112,14 +124,17 @@ type exesqlConnParams struct {
 type ExeSQLConnParams = exesqlConnParams
 
 // NewExeSQLConnParams decodes a canvas-node params map into an
-// ExeSQLConnParams. Returns an error if any required field
-// (db_type, host, database, username) is missing.
+// ExeSQLConnParams. Python defaults are applied before node values;
+// host, database, and username remain required configuration.
 //
 // Callers (e.g. the Universe A exesqlComponent wrapper) build the
 // params map from the canvas DSL; the tool-side decoding stays
 // in this package so the schema lives next to the type.
 func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
-	conn := ExeSQLConnParams{}
+	conn := defaultExeSQLConnParams()
+	if v, ok := params["sql"].(string); ok {
+		conn.SQL = v
+	}
 	if v, ok := params["db_type"].(string); ok {
 		conn.DBType = v
 	}
@@ -132,13 +147,13 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 	if v, ok := params["host"].(string); ok {
 		conn.Host = v
 	}
-	if v, ok := params["port"].(int); ok {
+	if v, ok := intParam(params, "port"); ok {
 		conn.Port = v
 	}
 	if v, ok := params["password"].(string); ok {
 		conn.Password = v
 	}
-	if v, ok := params["max_records"].(int); ok {
+	if v, ok := intParam(params, "max_records"); ok {
 		conn.MaxRecords = v
 	}
 	if conn.DBType == "" || conn.Host == "" || conn.Username == "" || conn.Database == "" {
@@ -147,11 +162,10 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 	return conn, nil
 }
 
-// exesqlArgs is the JSON shape the model sends in. Matches the Python
-// ExeSQLParam ToolMeta (sql is required, database is optional).
+// exesqlArgs is the JSON shape the model sends in. It matches Python's
+// ExeSQLParam ToolMeta: SQL is the only runtime parameter.
 type exesqlArgs struct {
-	SQL      string `json:"sql"`
-	Database string `json:"database,omitempty"`
+	SQL string `json:"sql"`
 }
 
 // exesqlResult is the JSON envelope returned to the model. The shape
@@ -199,8 +213,18 @@ type ExeSQLTool struct {
 // params. The dialer defaults to `sql.Open`; tests can pass a
 // sqlmock-backed dialer via WithExeSQLDialer.
 func NewExeSQLTool(conn exesqlConnParams) *ExeSQLTool {
-	if conn.MaxRecords <= 0 {
-		conn.MaxRecords = exesqlDefaultMaxRecords
+	defaults := defaultExeSQLConnParams()
+	if conn.SQL == "" {
+		conn.SQL = defaults.SQL
+	}
+	if conn.DBType == "" {
+		conn.DBType = defaults.DBType
+	}
+	if conn.Port == 0 {
+		conn.Port = defaults.Port
+	}
+	if conn.MaxRecords == 0 {
+		conn.MaxRecords = defaults.MaxRecords
 	}
 	return &ExeSQLTool{
 		conn:   conn,
@@ -218,8 +242,8 @@ func (e *ExeSQLTool) WithExeSQLDialer(d exesqlDialer) *ExeSQLTool {
 }
 
 // Info returns the tool's metadata for the chat model. Mirrors the
-// Python ExeSQLParam ToolMeta: only `sql` (and optional `database`)
-// are visible to the LLM. Connection params are not exposed here —
+// Python ExeSQLParam ToolMeta: only `sql` is visible to the LLM.
+// Connection params are not exposed here —
 // they're set on the tool instance, matching the Python convention
 // where ExeSQLParam fields like `db_type` / `host` are tool
 // configuration, not function-call arguments.
@@ -232,11 +256,6 @@ func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Type:     schema.String,
 				Desc:     "The SQL statement to execute. Must be a SELECT (read-only).",
 				Required: true,
-			},
-			"database": {
-				Type:     schema.String,
-				Desc:     "Optional target database / schema name. Overrides the tool's configured DB.",
-				Required: false,
 			},
 		}),
 	}, nil
@@ -251,7 +270,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if argumentsInJSON == "" {
 		return exesqlErrorResult(errors.New("exesql: empty arguments")), errors.New("exesql: empty arguments")
 	}
-	var args exesqlArgs
+	args := exesqlArgs{SQL: e.conn.SQL}
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 		return exesqlErrorResult(fmt.Errorf("exesql: parse arguments: %w", err)),
 			fmt.Errorf("exesql: parse arguments: %w", err)
@@ -263,12 +282,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 		return exesqlErrorResult(ErrExeSQLNotSelect), ErrExeSQLNotSelect
 	}
 
-	// Honor the per-call `database` override if the model supplied one;
-	// fall back to the tool's configured DB.
 	conn := e.conn
-	if args.Database != "" {
-		conn.Database = args.Database
-	}
 	if err := conn.check(); err != nil {
 		return exesqlErrorResult(err), err
 	}

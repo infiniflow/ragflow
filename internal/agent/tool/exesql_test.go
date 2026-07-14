@@ -213,6 +213,47 @@ func TestExeSQL_Info(t *testing.T) {
 	if info.Name != "execute_sql" {
 		t.Errorf("Name = %q, want execute_sql", info.Name)
 	}
+	paramsSchema, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	rawSchema, err := json.Marshal(paramsSchema)
+	if err != nil {
+		t.Fatalf("marshal params schema: %v", err)
+	}
+	params := string(rawSchema)
+	if !strings.Contains(params, `"sql"`) {
+		t.Fatalf("schema missing sql: %s", params)
+	}
+	if strings.Contains(params, `"database"`) {
+		t.Fatalf("schema leaked node-level database param: %s", params)
+	}
+	if !strings.Contains(params, `"required":["sql"]`) {
+		t.Fatalf("schema does not require sql: %s", params)
+	}
+}
+
+func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
+	dialer, mock, cleanup := sqlmockDialer(t)
+	defer cleanup()
+	mock.ExpectPing()
+	mock.ExpectQuery("SELECT 1").WillReturnRows(
+		sqlmock.NewRows([]string{"value"}).AddRow(1),
+	)
+	conn := testConn()
+	conn.SQL = "SELECT 1"
+	e := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
+
+	out, err := e.InvokableRun(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if !strings.Contains(out, `"value":1`) {
+		t.Fatalf("output = %s, want configured SQL result", out)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
 }
 
 func TestExeSQL_ExecuteSelect_ReturnsRows(t *testing.T) {
