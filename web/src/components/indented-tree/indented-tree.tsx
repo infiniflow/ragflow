@@ -1,5 +1,5 @@
 import { Graph as G6Graph, treeToGraphData } from '@antv/g6';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 const assignIds = (node: any, parentId: string = '', index = 0) => {
   if (!node.id) node.id = parentId ? `${parentId}-${index}` : 'root';
@@ -11,7 +11,7 @@ const assignIds = (node: any, parentId: string = '', index = 0) => {
 };
 
 const getNodeSize = (d: any): [number, number] => {
-  const text = d?.id || '';
+  const text = d.id || '';
   const lines = text.split('\n');
   const maxChars = Math.max(...lines.map((l: string) => l.length), 0);
   const width = Math.min(maxChars * 6 + 20, 400);
@@ -20,34 +20,20 @@ const getNodeSize = (d: any): [number, number] => {
 };
 
 export interface GraphProps {
+  onRender?: (graph: G6Graph) => void;
+  onDestroy?: () => void;
   data: any;
 }
 
 export const IndentedTree = (props: GraphProps) => {
-  const { data } = props;
+  const { onRender, onDestroy, data } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<G6Graph>();
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-
-    let graphData;
-    if (data) {
-      assignIds(data);
-      graphData = treeToGraphData(data);
-    }
-
-    const graph = new G6Graph({
-      container,
-      width: rect.width || undefined,
-      height: rect.height || undefined,
+  const options = useMemo(
+    () => ({
       autoFit: 'view',
-      autoResize: true,
-      data: graphData,
       node: {
         style: (d: any) => ({
           labelText: d.id,
@@ -56,14 +42,23 @@ export const IndentedTree = (props: GraphProps) => {
           labelBackground: true,
           fill: 'transparent',
           stroke: 'transparent',
-          size: getNodeSize(d),
+          size: [0.1, 0.1],
         }),
-        animation: { enter: false },
+        animation: {
+          enter: false,
+        },
       },
       edge: {
         type: 'polyline',
-        style: { radius: 4, router: { type: 'orth' } },
-        animation: { enter: false },
+        style: {
+          radius: 4,
+          router: {
+            type: 'orth',
+          },
+        },
+        animation: {
+          enter: false,
+        },
       },
       layout: {
         type: 'indented',
@@ -79,36 +74,38 @@ export const IndentedTree = (props: GraphProps) => {
         'drag-element',
         'collapse-expand',
       ],
-    });
-    graphRef.current = graph;
-
-    if (graphData) {
-      graph
-        .render()
-        .catch((error) =>
-          console.error('[IndentedTree] initial render failed:', error),
-        );
-    }
-
-    return () => {
-      if (!graph.destroyed) {
-        graph.destroy();
-      }
-      graphRef.current = undefined;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }),
+    [],
+  );
 
   useEffect(() => {
-    const graph = graphRef.current;
-    if (!graph || graph.destroyed || !data) return;
+    const graph = new G6Graph({ container: containerRef.current! });
+    graphRef.current = graph;
 
+    return () => {
+      const graph = graphRef.current;
+      if (graph) {
+        graph.destroy();
+        onDestroy?.();
+        graphRef.current = undefined;
+      }
+    };
+  }, [onDestroy]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const graph = graphRef.current;
+
+    if (!container || !graph || graph.destroyed || !data) return;
+
+    graph.setOptions(options as any);
     assignIds(data);
     graph.setData(treeToGraphData(data));
     graph
       .render()
-      .catch((error) => console.error('[IndentedTree] render failed:', error));
-  }, [data]);
+      .then(() => onRender?.(graph))
+      .catch((error) => console.debug(error));
+  }, [options, data, onRender]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 };

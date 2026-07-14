@@ -311,9 +311,9 @@ export default function SearchingView({
                   <Button
                     onClick={showMindMapModal}
                     variant={'outline'}
-                    className="absolute top-16 translate-y-2 right-10 z-50 rounded-full size-8 border-border-default bg-bg-card"
+                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
                   >
-                    <ListTree className="text-text-primary" />
+                    <ListTree />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-fit">
