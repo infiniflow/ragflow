@@ -471,6 +471,45 @@ func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instance
 				return common.CodeServerError, err
 			}
 		}
+	} else {
+		// model_info not provided — add all factory default models.
+		// Mirrors Python's create_provider_instance
+		// (api/apps/services/provider_api_service.py:506-531).
+		targetFactoryName := providerName
+		if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
+			targetFactoryName = "siliconflow_intl"
+		}
+		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+		if factoryProvider != nil {
+			for _, llm := range factoryProvider.Models {
+				verifyStatus := modelVerifyResult[llm.Name]
+				if verifyStatus == "" {
+					verifyStatus = entity.ModelVerifyUnknown
+				}
+				extra := map[string]interface{}{
+					"verify": verifyStatus,
+				}
+				if llm.Tools != nil {
+					extra["is_tools"] = llm.Tools.Support
+				}
+				if llm.Thinking != nil {
+					extra["thinking"] = llm.Thinking.DefaultValue
+				}
+				if err := m.addModelToInstance(tenantID, providerName, instanceName, CreateInstanceModelInfo{
+					ModelName:  llm.Name,
+					ModelTypes: llm.ModelTypes,
+					MaxTokens: func() int {
+						if llm.MaxTokens != nil {
+							return *llm.MaxTokens
+						}
+						return 8192
+					}(),
+					Extra: extra,
+				}); err != nil {
+					return common.CodeServerError, err
+				}
+			}
+		}
 	}
 
 	return common.CodeSuccess, nil
