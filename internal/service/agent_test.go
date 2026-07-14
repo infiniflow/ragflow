@@ -220,7 +220,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -248,7 +250,9 @@ func TestGetVersion_NotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
