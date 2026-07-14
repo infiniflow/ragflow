@@ -45,7 +45,7 @@ def _load_picture_module(tokenized_texts):
     tenant_model_service.ensure_paddleocr_from_env = lambda *args, **kwargs: None
 
     constants = ModuleType("common.constants")
-    constants.LLMType = SimpleNamespace(IMAGE2TEXT="image2text", OCR="ocr")
+    constants.LLMType = SimpleNamespace(VISION="vision", OCR="ocr")
 
     parser_config_utils = ModuleType("common.parser_config_utils")
     parser_config_utils.normalize_layout_recognizer = lambda value: (value, "")
