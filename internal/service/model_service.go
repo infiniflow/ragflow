@@ -404,7 +404,6 @@ func (m *ModelProviderService) getProviderByIDOrName(tenantID, providerIDOrName 
 
 func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
-	providerName := strings.ToLower(providerIDOrName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -422,16 +421,11 @@ func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instance
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
-	providerName = provider.ProviderName
-
-	// Normalize api_key: VLLM with empty api_key defaults to "x".
-	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
-		apiKey = "x"
-	}
+	providerName := provider.ProviderName
 
 	// Normalize api_key: VLLM with empty api_key defaults to "x".
 	// Mirrors Python's _normalize_provider_api_key.
-	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
+	if strings.EqualFold(providerName, "VLLM") && apiKey == "" {
 		apiKey = "x"
 	}
 
