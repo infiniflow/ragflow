@@ -78,9 +78,10 @@ export function NextMessageInput({
 
   const thinkingOptions = useMemo(
     () => [
-      { label: t('chat.thinkingLevelLow'), value: '0' },
-      { label: t('chat.thinkingLevelMedium'), value: '1' },
+      { label: t('chat.thinkingLevelUltra'), value: '3' },
       { label: t('chat.thinkingLevelHigh'), value: '2' },
+      { label: t('chat.thinkingLevelMedium'), value: '1' },
+      { label: t('chat.thinkingLevelLow'), value: '0' },
     ],
     [t],
   );
