@@ -52,9 +52,11 @@ nats:
   host: "localhost"
   port: 4222
 otel:
+  host: "localhost"
+  port: 4318
   secure: false
   sample_ratio: 1.0
-  stdout: true
+  stdout: false
 task_executor:
   message_queue_type: 'nats'
 file_syncer:
