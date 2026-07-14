@@ -547,12 +547,10 @@ func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, err
 // asserts the component returns context.DeadlineExceeded.
 func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 	requireTokenizerPool(t)
-	prevTimeout := tokenizerTimeout
-	tokenizerTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { tokenizerTimeout = prevTimeout })
+	t.Setenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER", "1")
 
 	c, stub := withStubEmbedder(t, 4)
-	stub.delay = 500 * time.Millisecond
+	stub.delay = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

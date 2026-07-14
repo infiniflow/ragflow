@@ -193,6 +193,20 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		}
 		return c.invokeTextPayload(ctx, *upstream.HTMLResult, delimPattern, childrenPattern), nil
 	default:
+		// Port of token_chunker.py:347 — when the upstream emitted
+		// chunks (output_format == "chunks", e.g. a TitleChunker
+		// feeding into this TokenChunker), consume those chunks rather
+		// than the raw parser json_result. Otherwise fall back to the
+		// structured json_result. This fixes #16812 where a
+		// TitleChunker → TokenChunker chain silently discarded the
+		// chapter-level chunks and re-chunked the raw parser output.
+		var items []schema.ChunkDoc
+		if upstream.OutputFormat == schema.PayloadFormatChunks {
+			items = upstream.Chunks
+		} else {
+			items = upstream.JSONResult
+		}
+
 		// Re-acquire the source PDF (if the Parser forwarded storage
 		// refs) so image/table sections are cropped on demand rather
 		// than carried through the wire. Best-effort: a nil engine
@@ -204,7 +218,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		if engine != nil {
 			defer engine.Close()
 		}
-		return c.invokeJSONPayload(ctx, upstream.JSONResult, delimPattern, childrenPattern, engine), nil
+		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine), nil
 	}
 }
 
