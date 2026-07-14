@@ -402,6 +402,10 @@ def _set_request_json(monkeypatch, module, payload_state):
     monkeypatch.setattr(module, "get_request_json", _req_json)
 
 
+def _set_request_args(monkeypatch, module, args):
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=args))
+
+
 @pytest.fixture(scope="session")
 def auth():
     return "unit-auth"
@@ -460,6 +464,10 @@ def _load_file2document_module(monkeypatch):
 
         @staticmethod
         def delete_by_file_id(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def delete_by_document_id(*_args, **_kwargs):
             return None
 
         @staticmethod
@@ -585,6 +593,7 @@ def test_convert_branch_matrix_unit(monkeypatch):
     module = _load_file2document_module(monkeypatch)
     req_state = {"kb_ids": ["kb-1"], "file_ids": ["f1"]}
     _set_request_json(monkeypatch, module, req_state)
+    _set_request_args(monkeypatch, module, {})
 
     # Falsy file returns "File not found!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])
@@ -638,6 +647,41 @@ def test_convert_branch_matrix_unit(monkeypatch):
     res = _run(module.convert())
     assert res["code"] == 500
     assert "convert boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_convert_files_mode_add_and_replace_unit(monkeypatch):
+    module = _load_file2document_module(monkeypatch)
+    inserted = []
+    removed = []
+    deleted_doc_links = []
+    deleted_file_links = []
+    file = _DummyFile("f1", module.FileType.DOC.value, name="a.txt")
+    kb = SimpleNamespace(id="kb-new", parser_id="naive", pipeline_id="p1", parser_config={})
+
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, file))
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda file_id: [SimpleNamespace(document_id=f"doc-{file_id}")])
+    monkeypatch.setattr(module.File2DocumentService, "delete_by_document_id", lambda doc_id: deleted_doc_links.append(doc_id))
+    monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: deleted_file_links.append(file_id))
+    monkeypatch.setattr(module.File2DocumentService, "insert", lambda payload: inserted.append(payload) or SimpleNamespace(to_json=lambda: {}))
+    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(id=doc_id, kb_id="kb-old")))
+    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
+    monkeypatch.setattr(module.DocumentService, "remove_document", lambda doc, tenant_id: removed.append((doc.id, tenant_id)) or True)
+    monkeypatch.setattr(module.DocumentService, "insert", lambda payload: SimpleNamespace(id=f"new-{payload['kb_id']}"))
+
+    module._convert_files(["f1", "f2"], ["kb-old", "kb-new"], "user-1", "add")
+    assert len(inserted) == 2
+    assert removed == []
+    assert deleted_doc_links == []
+    assert deleted_file_links == []
+
+    inserted.clear()
+    module._convert_files(["f1", "f2"], ["kb-new"], "user-1", "replace")
+    assert len(inserted) == 2
+    assert removed == [("doc-f1", "tenant-1"), ("doc-f2", "tenant-1")]
+    assert deleted_doc_links == ["doc-f1", "doc-f2"]
+    assert deleted_file_links == ["f1", "f2"]
 
 
 def _load_file_api_service(monkeypatch):

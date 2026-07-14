@@ -21,7 +21,6 @@ import {
   omit,
   sample,
 } from 'lodash';
-import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
@@ -164,10 +163,7 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
 }
 
 const buildOperatorParams = (operatorName: string) =>
-  pipe(
-    removeUselessDataInTheOperator(operatorName),
-    // initializeOperatorParams(operatorName), // Final processing, for guarantee
-  );
+  removeUselessDataInTheOperator(operatorName);
 
 const ExcludeOperators = [Operator.Note, Operator.Tool, Operator.Placeholder];
 

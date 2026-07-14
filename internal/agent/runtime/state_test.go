@@ -133,6 +133,29 @@ func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	}
 }
 
+func TestCanvasState_GetRetrievalReferenceReturnsFrontendPayload(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-1", "document_name": "Doc 1"}},
+		[]map[string]any{{"doc_name": "Doc 1", "doc_id": "doc-1", "count": 1}},
+	)
+
+	reference := state.GetRetrievalReference()
+	chunks, _ := reference["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks length = %d, want 1", len(chunks))
+	}
+	docAggs, _ := reference["doc_aggs"].([]any)
+	if len(docAggs) != 1 {
+		t.Fatalf("doc_aggs length = %d, want 1", len(docAggs))
+	}
+	if reference["total"] != 1 {
+		t.Fatalf("total = %v, want 1", reference["total"])
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {
