@@ -46,12 +46,12 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
               <Progress value={percent} className="h-1 flex-1 min-w-10" />
             </div>
           )}
-          {!loading && data && !isEmpty(data) && (
+          {!loading && data && !isEmpty(data.children) && (
             <div className="bg-bg-card rounded-lg w-full h-full">
               <IndentedTree data={data}></IndentedTree>
             </div>
           )}
-          {!loading && isEmpty(data) && (
+          {!loading && (isEmpty(data) || isEmpty(data?.children)) && (
             <div className="flex items-center justify-center h-full text-text-secondary">
               {t('common.noData')}
             </div>
