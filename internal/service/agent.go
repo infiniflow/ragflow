@@ -1116,7 +1116,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// statePost wrappers in scheduler.go.
 		var answer string
 		var legacyReference []interface{}
-		var reference []interface{}
 		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
