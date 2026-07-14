@@ -1353,6 +1353,13 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]interface{}, error) {
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
+	if msgQueueEngine == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "Message queue engine not initialized",
+		}, nil
+	}
+
 	status := msgQueueEngine.CheckStatus()
 
 	return map[string]interface{}{
