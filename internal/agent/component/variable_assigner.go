@@ -129,6 +129,16 @@ func NewVariableAssignerComponent(params map[string]any) (Component, error) {
 // Name returns the registered component name.
 func (v *VariableAssignerComponent) Name() string { return v.name }
 
+// GetInputForm returns the runtime input form defined by the Python component.
+func (v *VariableAssignerComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"items": map[string]any{
+			"type": "json",
+			"name": "Items",
+		},
+	}
+}
+
 // Invoke walks the param.variables list, evaluates each tuple against
 // the canvas state, and writes the result back unless the operator
 // returned an "ERROR:..." sentinel. The list of refs that were
