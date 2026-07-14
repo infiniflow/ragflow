@@ -47,7 +47,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y \
     libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese fonts-freefont-ttf fonts-noto-cjk postgresql-client && \
-    rm -rf /var/lib/apt/lists/*
 
 # Download resource from GitHub to /usr/share/infinity
 RUN mkdir -p /usr/share/infinity/resource && \
@@ -67,7 +66,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt -o Acquire::Retries=5 update && \
     apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
     apt-mark hold nginx && \
-    rm -rf /var/lib/apt/lists/*
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
@@ -97,7 +95,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt autoremove -y && \
     apt update && \
     apt install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
 
 # stagehand-server-v3 (Node.js SEA binary used by Browser component
 # in local mode).
@@ -156,8 +153,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     else \
         # x86_64 or others \
         ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi && \
-    rm -rf /var/lib/apt/lists/* || \
+    fi || \
     { echo "Failed to install ODBC driver"; exit 1; }
 
 
@@ -189,7 +185,6 @@ WORKDIR /ragflow
 # Install build-only dependencies for compiling Python C extensions.
 # These are not inherited from base to keep the production image smaller.
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt update && \
     apt install -y build-essential libpython3-dev libicu-dev libgbm-dev && \
     rm -rf /var/lib/apt/lists/*
 
