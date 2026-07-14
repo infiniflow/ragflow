@@ -247,7 +247,7 @@ type mindMapNode struct {
 
 var mindMapHeadingRe = regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
 var mindMapListRe = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+\.)\s+(.+)$`)
-var mindMapThinkRe = regexp.MustCompile(`(?s)^.*</think>`)
+var mindMapThinkRe = regexp.MustCompile(`(?s)<think>.*?(?:</think>|$)`)
 var mindMapFenceRe = regexp.MustCompile("(?m)^```[^\n]*$")
 
 func parseMindMapMarkdown(text string) mindMapNode {

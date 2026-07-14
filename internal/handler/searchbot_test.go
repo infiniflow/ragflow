@@ -606,6 +606,25 @@ func TestParseMindMapMarkdown_ThinkTag(t *testing.T) {
 	}
 }
 
+func TestParseMindMapMarkdown_ThinkTagMultiple(t *testing.T) {
+	input := "<think>first</think>\n# A\n- x\n<think>second</think>\n# B\n- y"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "root" {
+		t.Fatalf("root = %q, want root (two top-level headings)", got.ID)
+	}
+	if len(got.Children) != 2 || got.Children[0].ID != "A" || got.Children[1].ID != "B" {
+		t.Fatalf("children = %+v, want [A, B]", got.Children)
+	}
+}
+
+func TestParseMindMapMarkdown_ThinkTagUnclosed(t *testing.T) {
+	input := "<think>reasoning that gets cut off by max tokens without a close tag"
+	got := parseMindMapMarkdown(input)
+	if len(got.Children) != 0 {
+		t.Fatalf("children = %+v, want empty root for unclosed think block", got.Children)
+	}
+}
+
 // ---- SSE helper direct tests ----
 
 func TestSseAnswer_Final(t *testing.T) {
