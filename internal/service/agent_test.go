@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -146,6 +147,33 @@ func TestListVersions_Empty(t *testing.T) {
 	}
 }
 
+func TestWorkflowOutputs_WithDownloads(t *testing.T) {
+	downloads := []map[string]any{
+		{
+			"doc_id":    "d1",
+			"filename":  "report.pdf",
+			"mime_type": "application/pdf",
+		},
+	}
+
+	out, ok := workflowOutputs("", downloads).(map[string]any)
+	if !ok {
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads))
+	}
+	if out["content"] != "" {
+		t.Fatalf("content = %v, want empty string", out["content"])
+	}
+	if got := out["downloads"]; !reflect.DeepEqual(got, downloads) {
+		t.Fatalf("downloads = %#v, want %#v", got, downloads)
+	}
+}
+
+func TestWorkflowOutputs_NoDownloadsKeepsString(t *testing.T) {
+	if got := workflowOutputs("answer", nil); got != "answer" {
+		t.Fatalf("workflowOutputs without downloads = %#v, want string answer", got)
+	}
+}
+
 // TestGetVersion_Success verifies getting a specific version by ID.
 func TestGetVersion_Success(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -192,7 +220,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -220,7 +250,9 @@ func TestGetVersion_NotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
