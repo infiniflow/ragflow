@@ -1667,6 +1667,13 @@ func (m *ModelProviderService) AlterModel(providerName, instanceName, modelName,
 		return common.CodeBadRequest, errors.New("model name or model ID is required")
 	}
 
+	// Validate status early, before any DB lookup.
+	if status, ok := updateDict["status"].(string); ok && status != "" {
+		if status != "active" && status != "inactive" {
+			return common.CodeBadRequest, errors.New("status must be 'active' or 'inactive'")
+		}
+	}
+
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -1690,25 +1697,32 @@ func (m *ModelProviderService) AlterModel(providerName, instanceName, modelName,
 		return common.CodeServerError, err
 	}
 
-	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return common.CodeServerError, err
+	var model *entity.TenantModel
+	if modelName != "" {
+		model, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.CodeServerError, err
+			}
+			return common.CodeNotFound, fmt.Errorf("model %q not found for provider %q and instance %q", modelName, providerName, instanceName)
 		}
-		return common.CodeNotFound, fmt.Errorf("model %q not found for provider %q and instance %q", modelName, providerName, instanceName)
-	}
-
-	if modelID != "" && model.ID != modelID {
-		return common.CodeBadRequest, errors.New("model ID does not match model name")
+		if modelID != "" && model.ID != modelID {
+			return common.CodeBadRequest, errors.New("model ID does not match model name")
+		}
+	} else {
+		model, err = m.modelDAO.GetByID(modelID)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.CodeServerError, err
+			}
+			return common.CodeNotFound, fmt.Errorf("model with ID %q not found", modelID)
+		}
 	}
 
 	toUpdate := make(map[string]interface{})
 
-	// Handle status
+	// Handle status (validation already done above, here we only apply the change)
 	if status, ok := updateDict["status"].(string); ok && status != "" {
-		if status != "active" && status != "inactive" {
-			return common.CodeBadRequest, errors.New("status must be 'active' or 'inactive'")
-		}
 		if status != model.Status {
 			toUpdate["status"] = status
 		}

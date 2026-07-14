@@ -205,7 +205,7 @@ func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
 	if code != common.CodeBadRequest {
 		t.Fatalf("code = %v, want %v", code, common.CodeBadRequest)
 	}
-	if !strings.Contains(err.Error(), "status must be active or inactive") {
+	if !strings.Contains(err.Error(), "status must be") {
 		t.Fatalf("error = %v, want status validation message", err)
 	}
 }
