@@ -2251,7 +2251,7 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID, id, name)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 	}
@@ -2275,7 +2275,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, common.CodeDataError, errors.New("`name` is required.")
+		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
 	}
 	if len(name) > entity.DatasetNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
@@ -2666,6 +2666,11 @@ type UpdateDatasetRequest struct {
 	PipelineID         *string                    `json:"pipeline_id,omitempty"`
 	AutoMetadataConfig *AutoMetadataConfig        `json:"auto_metadata_config,omitempty"`
 	Ext                map[string]interface{}     `json:"ext,omitempty"`
+
+	// ParserConfigProvided reports whether the raw request body contained a
+	// "parser_config" key. An explicitly provided parser_config ({} or null) is a
+	// valid no-op that must succeed, unlike a truly empty request body.
+	ParserConfigProvided bool `json:"-"`
 }
 
 // UpdateDataset Update a dataset
@@ -2860,7 +2865,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 
-	if len(updates) == 0 && !connectorsProvided {
+	if len(updates) == 0 && !connectorsProvided && !req.ParserConfigProvided {
 		return nil, common.CodeDataError, errors.New("No properties were modified")
 	}
 

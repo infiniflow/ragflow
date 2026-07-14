@@ -66,7 +66,7 @@ func TestDatasetServiceCreateDatasetValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "`name` is required." {
+	if err.Error() != "Dataset name can't be empty." {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

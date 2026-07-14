@@ -225,6 +225,9 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	if _, ok := req["vector_similarity_weight"]; !ok {
 		req["vector_similarity_weight"] = 0.3
 	}
+	if _, ok := req["do_refer"]; !ok {
+		req["do_refer"] = "1"
+	}
 	if _, ok := req["icon"]; !ok {
 		req["icon"] = ""
 	}

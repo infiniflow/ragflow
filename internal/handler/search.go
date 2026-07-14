@@ -148,8 +148,8 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name" binding:"required"` // required field, max 255 bytes
-	Description *string `json:"description,omitempty"`   // optional description
+	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Description *string `json:"description,omitempty"` // optional description
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {

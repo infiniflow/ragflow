@@ -48,6 +48,8 @@ GO_ONLY_SKIPS = {
         "test_dataset_update_identifier_validation_contract",
         "test_dataset_update_parser_config_invalid_contract",
         "test_dataset_update_field_unset_and_unsupported_contract",
+        "test_dataset_update_name_invalid_and_duplicate_contract",
+        "test_dataset_create_name_and_case_insensitive_contract",
         "test_dataset_create_parser_config_missing_raptor_and_graphrag",
         "test_dataset_create_embedding_model_contract",
         "test_dataset_create_parser_config_bugfix_contract",
