@@ -185,20 +185,29 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
     return {
       id: entity.id,
       shape: isTimestamp ? ('circle' as const) : ('rect' as const),
-      width: isTimestamp ? 96 : 200,
-      height: isTimestamp ? 96 : 80,
+      width: isTimestamp ? 40 : 200,
+      height: isTimestamp ? 40 : 80,
       label: entity.name,
       data: entity,
       attrs: {
         body: {
-          fill: isTimestamp ? '#e6f7ff' : '#fff7e6',
-          stroke: isTimestamp ? '#1890ff' : '#fa8c16',
+          fill: isTimestamp ? 'rgb(var(--accent-primary))' : 'transparent',
+          stroke: 'rgb(var(--accent-primary))',
           rx: isTimestamp ? 48 : 8,
           ry: isTimestamp ? 48 : 8,
         },
         label: {
-          fill: '#262626',
+          fill: isTimestamp
+            ? 'rgb(var(--accent-primary))'
+            : 'rgb(var(--text-primary))',
           fontSize: 12,
+          ...(isTimestamp && {
+            refX: '50%',
+            refY: 0,
+            refY2: -8,
+            textAnchor: 'middle',
+            textVerticalAnchor: 'bottom',
+          }),
           textWrap: {
             width: isTimestamp ? 80 : 180,
             height: isTimestamp ? 80 : 64,
