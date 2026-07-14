@@ -107,15 +107,15 @@ type NodeFinishedData struct {
 
 // MessageEvent is the JSON payload for Type=="message" frames.
 type MessageEvent struct {
-	Content   string        `json:"content"`
-	Reference []interface{} `json:"reference,omitempty"`
+	Content   string      `json:"content"`
+	Reference interface{} `json:"reference,omitempty"`
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
 type MessageEndEvent struct {
 	Status     *string       `json:"status,omitempty"`
 	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  []interface{} `json:"reference,omitempty"`
+	Reference  interface{}   `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"

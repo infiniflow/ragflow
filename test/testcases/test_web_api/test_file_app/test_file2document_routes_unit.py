@@ -59,6 +59,10 @@ def _set_request_json(monkeypatch, module, payload_state):
     monkeypatch.setattr(module, "get_request_json", _req_json)
 
 
+def _set_request_args(monkeypatch, module, args):
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=args))
+
+
 @pytest.fixture(scope="session")
 def auth():
     return "unit-auth"
@@ -117,6 +121,10 @@ def _load_file2document_module(monkeypatch):
 
         @staticmethod
         def delete_by_file_id(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def delete_by_document_id(*_args, **_kwargs):
             return None
 
         @staticmethod
@@ -242,6 +250,7 @@ def test_convert_branch_matrix_unit(monkeypatch):
     module = _load_file2document_module(monkeypatch)
     req_state = {"kb_ids": ["kb-1"], "file_ids": ["f1"]}
     _set_request_json(monkeypatch, module, req_state)
+    _set_request_args(monkeypatch, module, {})
 
     # Falsy file returns "File not found!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])

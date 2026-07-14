@@ -39,9 +39,11 @@ export interface ProviderInstanceCardProps {
    * Called after a draft instance's *name* has been persisted via
    * `addProviderInstance` (with just `instance_name`). The parent should
    * remove this draft from its visible list; the freshly invalidated
-   * `providerInstances` query will surface the persisted card.
+   * `providerInstances` query will surface the persisted card. The
+   * saved `instanceName` is passed so the parent can keep the newly
+   * persisted card expanded.
    */
-  onNameSaved?: () => void;
+  onNameSaved?: (instanceName: string) => void;
   /**
    * Called when the user deletes a draft instance.
    * For drafts this is equivalent to onCancel; for saved instances
