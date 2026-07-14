@@ -188,7 +188,7 @@ func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "String should have at least 1 character" {
+	if err.Error() != "`name` is required." {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -302,9 +302,9 @@ func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
-	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+	insertDatasetUpdateTenantModel(t, "aabbccdd11223344aabbccdd11223344", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
-	embeddingModelID := "model-1"
+	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModelID,
 	})
@@ -346,6 +346,205 @@ func TestDatasetServiceUpdateDatasetRejectsEmptyConnectorID(t *testing.T) {
 		t.Fatalf("expected data error code, got %d", code)
 	}
 	if err.Error() != "connector id is required" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetRejectsInvalidEmbeddingModelFormat(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	cases := []struct {
+		name            string
+		embeddingModel  string
+		expectedMessage string
+	}{
+		{"empty", "", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"whitespace", " ", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"empty_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"},
+		{"empty_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"},
+	}
+
+	svc := testDatasetUpdateService(t)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			embdModel := tc.embeddingModel
+			_, code, err := svc.UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+				EmbeddingModel: &embdModel,
+			})
+			if err == nil {
+				t.Fatal("expected embedding model format error")
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("expected data error code, got %d", code)
+			}
+			if err.Error() != tc.expectedMessage {
+				t.Fatalf("unexpected error: got %q, want %q", err.Error(), tc.expectedMessage)
+			}
+		})
+	}
+}
+
+func TestDatasetServiceUpdateDatasetRejectsDuplicateNameCaseInsensitive(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
+
+	uppercaseName := "EXISTING"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		Name: &uppercaseName,
+	})
+	if err == nil {
+		t.Fatal("expected case-insensitive duplicate name error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetPreservesUnmodifiedFields(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	description := "original description"
+	language := "English"
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Updates(map[string]interface{}{
+		"description": description,
+		"language":    language,
+	})
+
+	newName := "Renamed Only"
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		Name: &newName,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["name"] != newName {
+		t.Fatalf("expected updated name %q, got %#v", newName, result["name"])
+	}
+	if result["description"] != description {
+		t.Fatalf("expected description preserved, got %#v", result["description"])
+	}
+	if result["language"] != language {
+		t.Fatalf("expected language preserved, got %#v", result["language"])
+	}
+	if result["embedding_model"] != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("expected embedding_model preserved, got %#v", result["embedding_model"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.Name != newName {
+		t.Fatalf("expected persisted name %q, got %q", newName, persisted.Name)
+	}
+	if persisted.Description == nil || *persisted.Description != description {
+		t.Fatalf("expected persisted description %q, got %#v", description, persisted.Description)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetPreservesParserConfigOnEmptyUpdate(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"chunk_token_num": float64(512),
+		"delimiter":       "\n",
+	})
+
+	name := "Updated Name"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		Name: &name,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.ParserConfig["chunk_token_num"] != float64(512) {
+		t.Fatalf("expected chunk_token_num preserved, got %#v", persisted.ParserConfig["chunk_token_num"])
+	}
+	if persisted.ParserConfig["delimiter"] != "\n" {
+		t.Fatalf("expected delimiter preserved, got %#v", persisted.ParserConfig["delimiter"])
+	}
+}
+
+func TestDatasetServiceUpdateDatasetMergesParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"chunk_token_num": float64(256),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	parserConfig, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("expected parser_config map, got %T: %+v", result["parser_config"], result["parser_config"])
+	}
+	if parserConfig["chunk_token_num"] != float64(256) {
+		t.Fatalf("expected chunk_token_num=256, got %#v", parserConfig["chunk_token_num"])
+	}
+}
+
+func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "11111111111141118111111111111111", "tenant-1", "Test")
+
+	svc := NewDatasetService()
+	normalizedID := "11111111111141118111111111111111"
+	_, code, err := svc.DeleteDatasets([]string{normalizedID}, false, "tenant-2")
+	if err == nil {
+		t.Fatal("expected unauthorized error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "lacks permission") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := NewDatasetService()
+	_, code, err := svc.DeleteDatasets([]string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, "tenant-1")
+	if err == nil {
+		t.Fatal("expected unauthorized error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "lacks permission") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

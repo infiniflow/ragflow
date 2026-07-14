@@ -329,7 +329,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		errMsg := err.Error()
 		switch errMsg {
 		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:

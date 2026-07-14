@@ -211,6 +211,10 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
+	if err := common.ValidateName(name); err != nil {
+		return nil, err
+	}
+
 	// Generate UUID for search ID (same as Python get_uuid())
 	searchID := utility.GenerateUUID()
 
@@ -561,14 +565,11 @@ type UpdateSearchRequest struct {
 
 func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
 	// Step 1: Check update permission (same as delete - uses accessible4deletion)
-	// Only creator can update
+	// Only creator can update. A missing or non-owned search is treated as
+	// unauthorized so the contract returns a clear "no authorization" error.
 
-	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
-	}
-
-	if !status {
+	accessible, _ := s.searchDAO.Accessible4Deletion(searchID, userID)
+	if !accessible {
 		return nil, fmt.Errorf("no authorization")
 	}
 

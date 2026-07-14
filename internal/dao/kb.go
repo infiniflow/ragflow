@@ -103,7 +103,7 @@ func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*entity.Knowledgebase, er
 // GetByName retrieves a knowledge base by name and tenant ID
 func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*entity.Knowledgebase, error) {
 	var kb entity.Knowledgebase
-	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
+	err := DB.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}

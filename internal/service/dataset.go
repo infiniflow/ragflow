@@ -2275,7 +2275,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+		return nil, common.CodeDataError, errors.New("`name` is required.")
 	}
 	if len(name) > entity.DatasetNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
@@ -2349,7 +2349,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 			}
 			nameValue = strings.TrimSpace(nameValue)
 			if nameValue == "" {
-				return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+				return nil, common.CodeDataError, errors.New("`name` is required.")
 			}
 			if len(nameValue) > entity.DatasetNameLimit {
 				return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(nameValue), entity.DatasetNameLimit)
@@ -2481,18 +2481,18 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	kbID := utility.GenerateToken()
 
 	status := string(entity.StatusValid)
-	// Deduplicate name within tenant
-	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
-		existing, err := d.kbDAO.GetByName(n, tid)
-		return err == nil && existing != nil
-	}, name, tenantID)
-	if err != nil {
-		return nil, common.CodeDataError, err
+	// Reject duplicate name within tenant to match the established API contract.
+	existing, err := d.kbDAO.GetByName(name, tenantID)
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	if existing != nil {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", name)
 	}
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
-		Name:         duplicateName,
+		Name:         name,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
@@ -2694,7 +2694,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
+			return nil, common.CodeDataError, errors.New("`name` is required.")
 		}
 		if len(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
@@ -2942,10 +2942,8 @@ func datasetUpdateEmbeddingID(req UpdateDatasetRequest) (string, bool, error) {
 	if !provided {
 		return "", false, nil
 	}
-	if embdID != "" {
-		if err := validateDatasetEmbeddingModel(embdID); err != nil {
-			return "", true, err
-		}
+	if err := validateDatasetEmbeddingModel(embdID); err != nil {
+		return "", true, err
 	}
 	return embdID, true, nil
 }
@@ -3582,25 +3580,32 @@ func validateDatasetAvatar(avatar string) error {
 	return nil
 }
 
-func validateDatasetEmbeddingModel(embeddingModel string) error {
-	if embeddingModel == "" {
-		return errors.New("Embedding model identifier is required")
+func isHexID(s string) bool {
+	if len(s) != 32 {
+		return false
 	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
 
-	if !strings.Contains(embeddingModel, "@") {
+func validateDatasetEmbeddingModel(embeddingModel string) error {
+	if isHexID(embeddingModel) {
 		return nil
 	}
 
-	parts := strings.Split(embeddingModel, "@")
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			return errors.New("Both model_name and provider must be non-empty strings")
-		}
-	}
-	if len(parts) < 2 {
+	if !strings.Contains(embeddingModel, "@") {
 		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
 	}
-	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
+
+	parts := strings.SplitN(embeddingModel, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return errors.New("Both model_name and provider must be non-empty strings")
+	}
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 		return errors.New("Both model_name and provider must be non-empty strings")
 	}
 

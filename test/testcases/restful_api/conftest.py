@@ -38,29 +38,18 @@ GO_ONLY_SKIPS = {
         "test_cancel_missing_task_sets_cancel_contract",
     },
     "Go validation or response contract does not match the established API contract": {
-        "test_chat_create_name_validation",
-        "test_chat_duplicate_name_validation",
-        "test_chat_create_additional_guards_contract",
-        "test_chat_list_default_get_and_separate_lookup_contract",
         "test_chat_list_page_and_page_size_contract",
         "test_chat_list_sorting_contract",
-        "test_chat_create_prompt_contract",
-        "test_chat_update_name_contract",
-        "test_chat_update_mapping_and_validation_branches_p2",
-        "test_dataset_update_name_and_case_insensitive_contract",
-        "test_dataset_update_embedding_model_format_contract",
         "test_dataset_update_parser_config_valid_matrix_contract",
         "test_dataset_update_parser_config_with_chunk_method_change_contract",
         "test_dataset_update_pagerank_contract",
         "test_dataset_update_pagerank_set_to_zero_contract",
         "test_dataset_update_content_type_and_payload_contract",
         "test_dataset_update_identifier_validation_contract",
-        "test_dataset_update_parser_config_defaults_contract",
         "test_dataset_update_parser_config_invalid_contract",
         "test_dataset_update_field_unset_and_unsupported_contract",
         "test_dataset_create_parser_config_missing_raptor_and_graphrag",
         "test_dataset_create_embedding_model_contract",
-        "test_dataset_create_embedding_model_format_contract",
         "test_dataset_create_parser_config_bugfix_contract",
         "test_dataset_create_content_type_and_payload_bad_contract",
         "test_dataset_create_parser_config_invalid_contract",
@@ -75,8 +64,6 @@ GO_ONLY_SKIPS = {
         "test_memory_crud_and_config",
         "test_messages_list_and_search_validation_contracts",
         "test_message_update_forget_and_content_error_contracts",
-        "test_search_create_invalid_name",
-        "test_search_update_invalid_search_id",
         "test_session_create_validation_and_deleted_chat_contract",
         "test_session_delete_basic_scenarios",
         "test_session_list_filter_and_deleted_chat_contract",
@@ -252,6 +239,7 @@ def ensure_parsed_document(rest_client, create_document):
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     import time
+
     start = time.perf_counter()
     yield
     duration = time.perf_counter() - start
