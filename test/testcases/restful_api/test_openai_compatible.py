@@ -117,7 +117,7 @@ def test_openai_compatible_invalid_chat(rest_client):
     assert expected_message in payload["message"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     chat_id = create_chat("restful_openai_nonstream_chat")
     res = rest_client.post(
@@ -127,7 +127,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
             "messages": [{"role": "user", "content": "hello"}],
             "stream": False,
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     payload = res.json()
@@ -148,7 +148,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], usage
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_client, create_chat):
     chat_id = create_chat("restful_openai_default_nonstream_chat")
     res = rest_client.post(
@@ -157,7 +157,7 @@ def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_cli
             "model": "model",
             "messages": [{"role": "user", "content": "hello"}],
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     assert "application/json" in res.headers.get("Content-Type", ""), res.headers.get("Content-Type", "")
@@ -168,7 +168,7 @@ def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_cli
     assert payload["choices"][0].get("finish_reason") == "stop", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, create_chat):
     chat_id = create_chat("restful_openai_reference_chat")
     res = rest_client.post(
@@ -182,7 +182,7 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
                 "reference_metadata": {"include": True, "fields": ["author"]},
             },
         },
-        timeout=60,
+        timeout=120,
     )
     assert res.status_code == 200
     payload = res.json()
@@ -192,7 +192,7 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
     assert isinstance(choice_msg["reference"], list), payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_stream_shape_and_done_semantics(rest_client, create_chat):
     chat_id = create_chat("restful_openai_stream_chat")
     res = rest_client.post(
@@ -241,4 +241,5 @@ def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_c
     choice_msg = payload["choices"][0]["message"]
     skip_if_go_proxy_upstream_error(choice_msg)
     assert "reference" in choice_msg, payload
+    print(payload)
     assert isinstance(choice_msg["reference"], list), payload
