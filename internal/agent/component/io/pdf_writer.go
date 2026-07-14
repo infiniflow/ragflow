@@ -94,25 +94,28 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	lineHeight := float64(opts.FontSize) * 1.5
 	pdf.SetX(bodyX)
 	pdf.SetY(bodyY)
+	pageNumber := 1
 
 	for _, line := range splitLines(content) {
 		if line == "" {
 			bodyY += lineHeight
 			if bodyY > 760 {
-				drawFooter(pdf, fonts, opts)
+				drawFooter(pdf, fonts, opts, pageNumber)
 				pdf.AddPage()
 				drawHeader(pdf, fonts, opts)
 				bodyY = 72.0
+				pageNumber++
 			}
 			pdf.SetX(bodyX)
 			pdf.SetY(bodyY)
 			continue
 		}
 		if bodyY > 760 {
-			drawFooter(pdf, fonts, opts)
+			drawFooter(pdf, fonts, opts, pageNumber)
 			pdf.AddPage()
 			drawHeader(pdf, fonts, opts)
 			bodyY = 72.0
+			pageNumber++
 		}
 		pdf.SetX(bodyX)
 		pdf.SetY(bodyY)
@@ -125,7 +128,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	if opts.WatermarkText != "" {
 		drawWatermark(pdf, fonts, opts)
 	}
-	drawFooter(pdf, fonts, opts)
+	drawFooter(pdf, fonts, opts, pageNumber)
 
 	return writePDFToBytes(pdf)
 }
@@ -213,7 +216,7 @@ func drawHeader(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) {
 	_ = drawPDFText(pdf, fonts, opts.HeaderText, size)
 }
 
-func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) {
+func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions, pageNumber int) {
 	if opts.FooterText == "" && !opts.AddTimestamp && !opts.AddPageNumbers {
 		return
 	}
@@ -228,7 +231,7 @@ func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) {
 		parts = append(parts, time.Now().UTC().Format("2006-01-02 15:04"))
 	}
 	if opts.AddPageNumbers {
-		parts = append(parts, "Page #")
+		parts = append(parts, fmt.Sprintf("Pages %d", pageNumber))
 	}
 	_ = drawPDFText(pdf, fonts, strings.Join(parts, " | "), size)
 }
