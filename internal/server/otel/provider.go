@@ -91,7 +91,7 @@ func NewTracerProvider(ctx context.Context, serviceName string) (*sdktrace.Trace
 	)
 
 	// Short-circuit: no sampling requested → no-op provider.
-	if (traceConfig.OTLPEndpoint == "" && !ragflowConfig.OTel.Stdout) || common.AlmostEqual64(traceConfig.SampleRatio, 0) {
+	if !ragflowConfig.OTel.Stdout || common.AlmostEqual64(traceConfig.SampleRatio, 0) {
 		return sdktrace.NewTracerProvider(
 			sdktrace.WithSampler(sdktrace.NeverSample()),
 		), nil
@@ -140,14 +140,10 @@ func NewTracerProvider(ctx context.Context, serviceName string) (*sdktrace.Trace
 
 func newTraceProviderConfig(serviceName, serviceVersion, host string, port int, secure bool, sampleRatio float64) ProviderConfig {
 	var url string
-	var httpPrefix = "http://"
-	if secure {
-		httpPrefix = "https://"
-	}
 	if host == "" {
 		url = ""
 	} else {
-		url = fmt.Sprintf("%s%s:%d", httpPrefix, host, port)
+		url = fmt.Sprintf("%s:%d", host, port)
 	}
 	return ProviderConfig{
 		ServiceName:    serviceName,

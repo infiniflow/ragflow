@@ -64,8 +64,8 @@ nats:
   host: ${NATS_HOST:-0.0.0.0}
   port: ${NATS_PORT:-4222}
 otel:
-  host: ${OTAEGER_HOST:-0.0.0.0}
-  port: ${OTAEGER_PORT:-4318}
+  host: ${OTEL_HOST:-0.0.0.0}
+  port: ${OTEL_PORT:-4318}
   secure: false
   sample_ratio: 1.0
   stdout: false
