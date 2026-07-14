@@ -584,6 +584,28 @@ func TestParseMindMapMarkdown_ListUnderHeading(t *testing.T) {
 	}
 }
 
+func TestParseMindMapMarkdown_CodeFence(t *testing.T) {
+	input := "```markdown\n# Title\n## Section\n- Item\n```"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "Title" {
+		t.Fatalf("root = %q, want Title", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Section" {
+		t.Fatalf("children = %+v, want Section", got.Children)
+	}
+}
+
+func TestParseMindMapMarkdown_ThinkTag(t *testing.T) {
+	input := "<think>reasoning here</think>\n# Title\n- Item"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "Title" {
+		t.Fatalf("root = %q, want Title", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Item" {
+		t.Fatalf("children = %+v, want Item", got.Children)
+	}
+}
+
 // ---- SSE helper direct tests ----
 
 func TestSseAnswer_Final(t *testing.T) {
