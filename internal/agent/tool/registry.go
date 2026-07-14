@@ -197,11 +197,6 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 
 func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
 	topN := defaultGitHubTopN
-	for key := range params {
-		if key != "top_n" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
-		}
-	}
 	if raw, exists := params["top_n"]; exists {
 		value, ok := intParam(params, "top_n")
 		if !ok {
@@ -280,13 +275,6 @@ func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
 
 func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := defaultSearXNGParams()
-	for key := range params {
-		switch key {
-		case "top_n", "searxng_url":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "searxng", key)
-		}
-	}
 	if value, ok := params["top_n"]; ok {
 		topN, valid := parseSearXNGTopN(value)
 		if !valid || topN <= 0 {

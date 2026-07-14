@@ -32,20 +32,12 @@ type toolInvoker interface {
 type toolComponentSpec struct {
 	componentName string
 	toolName      string
-	toolParamKeys []string
 	wrap          func(toolInvoker) Component
 }
 
 func newToolComponentFactory(spec toolComponentSpec) Factory {
 	return func(params map[string]any) (Component, error) {
-		toolParams := make(map[string]any, len(spec.toolParamKeys))
-		for _, key := range spec.toolParamKeys {
-			if value, ok := params[key]; ok {
-				toolParams[key] = value
-			}
-		}
-
-		inner, err := agenttool.BuildByName(spec.toolName, toolParams)
+		inner, err := agenttool.BuildByName(spec.toolName, params)
 		if err != nil {
 			return nil, err
 		}

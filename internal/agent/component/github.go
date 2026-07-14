@@ -208,7 +208,6 @@ func init() {
 	registerToolComponent(toolComponentSpec{
 		componentName: "GitHub",
 		toolName:      "github",
-		toolParamKeys: []string{"top_n"},
 		wrap:          newGitHubComponentWithInvoker,
 	})
 }

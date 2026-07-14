@@ -42,7 +42,12 @@ func (f *fakeGitHubInvoker) InvokableRun(_ context.Context, argsJSON string, _ .
 }
 
 func TestGitHub_RegisteredFactory(t *testing.T) {
-	c, err := New("GitHub", map[string]any{"top_n": float64(10)})
+	c, err := New("GitHub", map[string]any{
+		"top_n":   float64(10),
+		"query":   "runtime query",
+		"outputs": map[string]any{"json": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
 	if err != nil {
 		t.Fatalf("New(GitHub) errored: %v", err)
 	}

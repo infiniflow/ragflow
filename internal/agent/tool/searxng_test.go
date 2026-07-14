@@ -168,6 +168,9 @@ func TestSearXNGBuildByNameAcceptsPythonNodeParams(t *testing.T) {
 	built, err := BuildByName("searxng", map[string]any{
 		"top_n":       "8",
 		"searxng_url": "https://searx.example.com",
+		"query":       "runtime query",
+		"outputs":     map[string]any{"json": map[string]any{}},
+		"setups":      map[string]any{"query": "configured query"},
 	})
 	if err != nil {
 		t.Fatalf("BuildByName: %v", err)
@@ -188,7 +191,6 @@ func TestSearXNGBuildByNameRejectsInvalidNodeParams(t *testing.T) {
 		{"top_n": "abc"},
 		{"top_n": 0},
 		{"top_n": 1.5},
-		{"unknown": true},
 	}
 	for _, params := range invalid {
 		if _, err := BuildByName("searxng", params); err == nil {

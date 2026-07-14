@@ -161,7 +161,12 @@ func TestGitHub_RequiresQuery(t *testing.T) {
 }
 
 func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
-	built, err := BuildByName("github", map[string]any{"top_n": float64(17)})
+	built, err := BuildByName("github", map[string]any{
+		"top_n":   float64(17),
+		"query":   "runtime query",
+		"outputs": map[string]any{"json": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
 	if err != nil {
 		t.Fatalf("BuildByName(github): %v", err)
 	}
@@ -186,9 +191,6 @@ func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
 	}
 	if _, err := BuildByName("github", map[string]any{"top_n": 101}); err == nil {
 		t.Fatal("BuildByName(github) accepted top_n above GitHub's per_page limit")
-	}
-	if _, err := BuildByName("github", map[string]any{"max_results": 5}); err == nil {
-		t.Fatal("BuildByName(github) accepted removed max_results parameter")
 	}
 }
 

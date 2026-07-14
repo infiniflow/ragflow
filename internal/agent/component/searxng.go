@@ -226,7 +226,6 @@ func init() {
 	registerToolComponent(toolComponentSpec{
 		componentName: "SearXNG",
 		toolName:      "searxng",
-		toolParamKeys: []string{"top_n", "searxng_url"},
 		wrap:          newSearXNGComponentWithInvoker,
 	})
 }
