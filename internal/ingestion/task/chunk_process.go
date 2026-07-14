@@ -18,7 +18,6 @@ package task
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -113,7 +112,7 @@ func removeInternalChunkFields(ck map[string]any) {
 func cleanupConsumedChunkFields(ck map[string]any) {
 	if q, ok := ck["questions"].(string); ok {
 		if _, has := ck["question_kwd"]; !has {
-			ck["question_kwd"] = strings.Split(q, "\n")
+			ck["question_kwd"] = utility.SplitQuestions(q)
 		}
 	}
 	delete(ck, "questions")

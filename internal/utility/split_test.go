@@ -55,3 +55,42 @@ func TestSplitKeywords_Empty(t *testing.T) {
 		t.Errorf("got %v, want empty", result)
 	}
 }
+
+// SplitQuestions - splits by newline only, dropping empty lines.
+
+func TestSplitQuestions_MultipleLines(t *testing.T) {
+	result := SplitQuestions("Q1\nQ2\nQ3")
+	if len(result) != 3 || result[0] != "Q1" || result[2] != "Q3" {
+		t.Fatalf("got %v, want [Q1 Q2 Q3]", result)
+	}
+}
+
+func TestSplitQuestions_Empty(t *testing.T) {
+	if result := SplitQuestions(""); result != nil {
+		t.Errorf("got %v, want nil", result)
+	}
+}
+
+func TestSplitQuestions_TrailingNewlineDropped(t *testing.T) {
+	// "Q1\n" would yield ["Q1", ""] with a plain split; the trailing empty
+	// must be filtered so the index is not seeded with a spurious [""].
+	result := SplitQuestions("Q1\n")
+	if len(result) != 1 || result[0] != "Q1" {
+		t.Fatalf("got %v, want [Q1]", result)
+	}
+}
+
+func TestSplitQuestions_BlankLinesDropped(t *testing.T) {
+	result := SplitQuestions("Q1\n\nQ2")
+	if len(result) != 2 || result[0] != "Q1" || result[1] != "Q2" {
+		t.Fatalf("got %v, want [Q1 Q2]", result)
+	}
+}
+
+func TestSplitQuestions_PreservesCommas(t *testing.T) {
+	// Unlike SplitKeywords, questions must NOT split on commas.
+	result := SplitQuestions("请问A,B和C有何区别？")
+	if len(result) != 1 || result[0] != "请问A,B和C有何区别？" {
+		t.Fatalf("got %v, want single element preserving comma", result)
+	}
+}
