@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,33 @@ func TestListVersions_Empty(t *testing.T) {
 	}
 	if len(versions) != 0 {
 		t.Errorf("expected 0 versions, got %d", len(versions))
+	}
+}
+
+func TestWorkflowOutputs_WithDownloads(t *testing.T) {
+	downloads := []map[string]any{
+		{
+			"doc_id":    "d1",
+			"filename":  "report.pdf",
+			"mime_type": "application/pdf",
+		},
+	}
+
+	out, ok := workflowOutputs("", downloads).(map[string]any)
+	if !ok {
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads))
+	}
+	if out["content"] != "" {
+		t.Fatalf("content = %v, want empty string", out["content"])
+	}
+	if got := out["downloads"]; !reflect.DeepEqual(got, downloads) {
+		t.Fatalf("downloads = %#v, want %#v", got, downloads)
+	}
+}
+
+func TestWorkflowOutputs_NoDownloadsKeepsString(t *testing.T) {
+	if got := workflowOutputs("answer", nil); got != "answer" {
+		t.Fatalf("workflowOutputs without downloads = %#v, want string answer", got)
 	}
 }
 

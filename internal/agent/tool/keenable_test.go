@@ -389,4 +389,14 @@ func TestKeenable_Info(t *testing.T) {
 	if strings.Contains(string(paramsJSON), "api_key") {
 		t.Fatalf("Info ParamsOneOf unexpectedly exposes api_key: %s", string(paramsJSON))
 	}
+	form := tool.GetInputForm()
+	for _, key := range []string{"query", "site"} {
+		field, ok := form[key].(map[string]any)
+		if !ok {
+			t.Fatalf("GetInputForm()[%s] = %#v, want field map", key, form[key])
+		}
+		if field["type"] != "line" {
+			t.Fatalf("GetInputForm()[%s][type] = %v, want line", key, field["type"])
+		}
+	}
 }

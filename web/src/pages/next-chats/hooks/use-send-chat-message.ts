@@ -109,7 +109,7 @@ export const useSendMessage = (controller: AbortController) => {
             message,
           ],
           pass_all_history_messages: true,
-          reasoning: enableThinking,
+          reasoning: Number(enableThinking),
           internet: enableInternet,
         },
         controller,
