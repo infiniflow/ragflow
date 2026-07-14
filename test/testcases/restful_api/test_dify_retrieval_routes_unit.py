@@ -319,7 +319,7 @@ def test_retrieval_kb_not_found(monkeypatch):
     assert "Knowledgebase not found" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_not_found_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})

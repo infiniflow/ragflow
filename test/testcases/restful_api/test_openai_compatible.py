@@ -219,7 +219,7 @@ def test_openai_compatible_stream_shape_and_done_semantics(rest_client, create_c
     assert any(evt.get("choices", [{}])[0].get("finish_reason") == "stop" for evt in json_events), json_events
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_client, create_chat):
     chat_id = create_chat("restful_openai_reference_fields_array_chat")
     res = rest_client.post(
