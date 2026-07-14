@@ -117,7 +117,9 @@ class UserMgr:
         # check new_password different from old.
         usr = user_list[0]
         psw = decrypt(new_password)
-        if check_password_hash(usr.password, psw):
+        # SSO-provisioned users (OIDC/OAuth) have no local password (usr.password is None):
+        # skip the equality check, which would otherwise crash inside werkzeug's split().
+        if usr.password and check_password_hash(usr.password, psw):
             return "Same password, no need to update!"
         # update password
         UserService.update_user_password(usr.id, psw)
