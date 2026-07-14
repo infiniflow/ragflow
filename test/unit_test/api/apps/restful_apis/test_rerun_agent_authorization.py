@@ -48,7 +48,16 @@ def _load_agent_api_for_rerun(monkeypatch, *, documents_info, accessible):
 
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
 
-    _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="user-owner"), login_required=lambda func: func)
+    _stub(
+        monkeypatch,
+        "api.apps",
+        AUTH_JWT="jwt",
+        AUTH_API="api",
+        AUTH_BETA="beta",
+        QuartAuthUnauthorized=Exception,
+        current_user=SimpleNamespace(id="user-owner", is_superuser=True),
+        login_required=lambda func=None, **_kwargs: (lambda f: f) if func is None else func,
+    )
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
 
