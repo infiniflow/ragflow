@@ -489,7 +489,7 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		modelData := map[string]interface{}{
 			"name":          model.Name,
 			"max_tokens":    model.MaxTokens,
-			"model_type":    model.ModelTypes,
+			"model_types":   model.ModelTypes,
 			"max_dimension": model.MaxDimension,
 			"dimensions":    model.Dimensions,
 		}
