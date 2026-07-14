@@ -1,0 +1,49 @@
+# dataset.test.yaml
+suite: dataset.tests
+
+base: base.yaml
+
+tests:
+  # switch to admin server
+  - server: admin
+
+  # login admin
+  - case: login admin
+    command: login admin 'admin@ragflow.io' password 'admin'
+    expect:
+      status: success
+
+  # list services
+  - case: list services
+    command: list services
+    expect:
+      status: success
+      data:
+        id: $service_id
+        name: sample-service
+
+  # switch to api server
+  - server: api
+
+  # login user
+  - case: login user
+    command: login user 'aaa@aaa.com' password 'aaa'
+    expect:
+      status: success
+  # case 1: list datasets
+  - case: list datasets
+    command: list datasets
+    expect:
+      status: success
+      data:
+        id: $document_id
+        name: sample.pdf
+
+  # case 2: show dataset
+  - case: show dataset
+    run: show dataset 'aaa';
+    expect:
+      status: success
+      expect:
+        id: $document_id
+
