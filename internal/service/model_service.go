@@ -399,7 +399,7 @@ func (m *ModelProviderService) getProviderByIDOrName(tenantID, providerIDOrName 
 	if err == nil && provider.TenantID == tenantID {
 		return provider, nil
 	}
-	return m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, strings.ToLower(strings.TrimSpace(providerIDOrName)))
+	return m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, strings.TrimSpace(providerIDOrName))
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
@@ -1710,6 +1710,9 @@ func (m *ModelProviderService) AlterModel(providerName, instanceName, modelName,
 				return common.CodeServerError, err
 			}
 			return common.CodeNotFound, fmt.Errorf("model with ID %q not found", modelID)
+		}
+		if model.ProviderID != provider.ID || model.InstanceID != instance.ID {
+			return common.CodeNotFound, fmt.Errorf("model with ID %q does not belong to provider %q and instance %q", modelID, providerName, instanceName)
 		}
 	}
 
