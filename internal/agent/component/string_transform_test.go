@@ -183,7 +183,7 @@ func TestStringTransform_GetInputFormSplit(t *testing.T) {
 		t.Fatalf("NewStringTransformComponent: %v", err)
 	}
 
-	got := c.GetInputForm()
+	got := c.(*StringTransformComponent).GetInputForm()
 	want := map[string]any{
 		"line": map[string]any{
 			"name": "String",
@@ -205,7 +205,7 @@ func TestStringTransform_GetInputFormMerge(t *testing.T) {
 		t.Fatalf("NewStringTransformComponent: %v", err)
 	}
 
-	got := c.GetInputForm()
+	got := c.(*StringTransformComponent).GetInputForm()
 	want := map[string]any{
 		"sys.query": map[string]any{
 			"name": "sys.query",
