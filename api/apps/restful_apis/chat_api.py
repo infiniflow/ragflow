@@ -270,9 +270,9 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
     conf_model_type = (llm_setting or {}).get("model_type")
     if isinstance(conf_model_type, str):
-        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
+        model_type = conf_model_type if conf_model_type in {"chat", "vision"} else "chat"
     elif isinstance(conf_model_type, list):
-        model_type = "image2text" if "image2text" in conf_model_type else "chat"
+        model_type = "vision" if "vision" in conf_model_type else "chat"
     else:
         model_type = "chat"
     try:
@@ -300,7 +300,7 @@ async def _validate_rerank_id(rerank_id, tenant_id):
         await thread_pool_exec(
             resolve_model_config,
             tenant_id=tenant_id,
-            model_name=rerank_id,
+            model_ref=rerank_id,
             model_type="rerank",
         )
     except Exception as e:
@@ -399,9 +399,9 @@ async def create():
             #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
-        req.setdefault("llm_id", tenant.llm_id)
+        req.setdefault("llm_id", tenant.tenant_llm_id)
         if req["llm_id"] is None:
-            req["llm_id"] = tenant.llm_id
+            req["llm_id"] = tenant.tenant_llm_id
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
@@ -1064,7 +1064,7 @@ async def transcription():
     await uploaded.save(temp_audio_path)
 
     try:
-        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
+        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.ASR)
     except Exception as e:
         return get_data_error_result(message=str(e))
 

@@ -15,6 +15,7 @@ import {
   adaptTreeToTreeData,
   filterTreeDataByKeyword,
 } from '../utils/adapters';
+import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
 
 export interface ClickableNode {
@@ -75,6 +76,15 @@ export function RepresentationRenderer({
 
   const handleTimelineNodeClick = useCallback(
     (node: { id: string; name: string; source_chunk_ids?: string[] }) => {
+      if (node.source_chunk_ids?.length) {
+        onNodeClick?.(node);
+      }
+    },
+    [onNodeClick],
+  );
+
+  const handleMindMapNodeClick = useCallback(
+    (node: ClickableNode) => {
       if (node.source_chunk_ids?.length) {
         onNodeClick?.(node);
       }
@@ -153,11 +163,10 @@ export function RepresentationRenderer({
     case CompilationTemplateKind.MindMap:
       return (
         <div className="mt-6 flex-1 min-h-0">
-          <ArtifactForceGraph
-            data={adaptKnowledgeGraphToForceGraph(template)}
+          <MindMapG6Graph
+            template={template}
             show
-            getNodeId={getArtifactNodeName}
-            onNodeClick={handleArtifactNodeClick}
+            onNodeClick={handleMindMapNodeClick}
           />
         </div>
       );

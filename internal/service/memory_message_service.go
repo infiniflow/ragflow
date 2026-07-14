@@ -262,7 +262,7 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 	}
 
 	content, _ := rawMessage["content"].(string)
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}

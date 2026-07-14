@@ -37,7 +37,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
     {
       name: 'api_key',
       label: 'apiKey',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
       placeholder: 'apiKeyMessage',
       validation: { message: 'apiKeyMessage' },

@@ -335,7 +335,7 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
-        # Qwen3.x models can be registered as IMAGE2TEXT and routed through this CV wrapper.
+        # Qwen3.x models can be registered as VISION and routed through this CV wrapper.
         # Disable thinking here so parser-side extraction tasks do not emit reasoning text.
         self.extra_body = _qwen3_no_think_extra_body(self.model_name) or self.extra_body
 

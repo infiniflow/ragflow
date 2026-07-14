@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -313,6 +314,14 @@ type bgptInvoker interface {
 	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
 }
 
+type duckDuckGoInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+type keenableInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
@@ -404,6 +413,393 @@ func (c *bgptComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 
 func (c *bgptComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// wikipediaComponent delegates to internal/agent/tool/WikipediaTool.
+// Python's canvas component is named "Wikipedia" and stores top_n/language
+// on the node params while accepting query at runtime.
+type wikipediaComponent struct {
+	inner *agenttool.WikipediaTool
+}
+
+func newWikipediaComponent(params map[string]any) (Component, error) {
+	topN := 10
+	if v, ok := params["top_n"]; ok {
+		topN = toIntParam(v)
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: Wikipedia: top_n must be a positive integer")
+	}
+	language := "en"
+	if v, ok := params["language"].(string); ok && strings.TrimSpace(v) != "" {
+		language = strings.TrimSpace(v)
+	}
+	if !agenttool.WikipediaLanguageSupported(language) {
+		return nil, fmt.Errorf("canvas: Wikipedia: unsupported language %q", language)
+	}
+	return &wikipediaComponent{inner: agenttool.NewWikipediaToolWithParams(nil, topN, language)}, nil
+}
+
+func (c *wikipediaComponent) Name() string { return "Wikipedia" }
+
+func (c *wikipediaComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
+	}
+}
+
+func (c *wikipediaComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *wikipediaComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered Wikipedia article summaries for downstream LLM prompts.",
+		"json":               "Raw Wikipedia result list.",
+	}
+}
+
+func (c *wikipediaComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"query": query})
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if results, ok := decoded["results"]; ok {
+		decoded["json"] = results
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			if _, ok := decoded["formalized_content"]; !ok {
+				decoded["formalized_content"] = ""
+			}
+			if _, ok := decoded["json"]; !ok {
+				decoded["json"] = []any{}
+			}
+			return decoded, nil
+		}
+		return nil, fmt.Errorf("canvas: Wikipedia: %w", err)
+	}
+	return decoded, nil
+}
+
+func (c *wikipediaComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// duckDuckGoComponent delegates to internal/agent/tool/DuckDuckGoTool.
+type duckDuckGoComponent struct {
+	inner duckDuckGoInvoker
+}
+
+func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
+	return newDuckDuckGoComponentWithInvoker(agenttool.NewDuckDuckGoTool()), nil
+}
+
+func newDuckDuckGoComponentWithInvoker(inner duckDuckGoInvoker) Component {
+	return &duckDuckGoComponent{inner: inner}
+}
+
+func (c *duckDuckGoComponent) Name() string { return "DuckDuckGo" }
+
+func (c *duckDuckGoComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"channel": "Search channel: general or news.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *duckDuckGoComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"channel": map[string]any{
+			"name":    "Channel",
+			"type":    "options",
+			"value":   "general",
+			"options": []string{"general", "news"},
+		},
+	}
+}
+
+func (c *duckDuckGoComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *duckDuckGoComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if channel := strings.TrimSpace(stringParam(inputs["channel"])); channel != "" {
+		args["channel"] = channel
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: DuckDuckGo: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderDuckDuckGoResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *duckDuckGoComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// keenableSearchComponent delegates to internal/agent/tool/KeenableTool.
+type keenableSearchComponent struct {
+	inner  keenableInvoker
+	apiKey string
+	mode   string
+	topN   int
+	site   string
+}
+
+func newKeenableSearchComponent(params map[string]any) (Component, error) {
+	apiKey := stringParam(params["api_key"])
+	return newKeenableSearchComponentWithInvoker(agenttool.NewKeenableToolWithAPIKey(nil, apiKey), params), nil
+}
+
+func newKeenableSearchComponentWithInvoker(inner keenableInvoker, params map[string]any) Component {
+	if inner == nil {
+		inner = agenttool.NewKeenableTool()
+	}
+	mode := strings.TrimSpace(stringParam(params["mode"]))
+	if mode == "" {
+		mode = "pro"
+	}
+	topN := toIntParam(params["top_n"])
+	if topN <= 0 {
+		topN = 10
+	}
+	return &keenableSearchComponent{
+		inner:  inner,
+		apiKey: stringParam(params["api_key"]),
+		mode:   mode,
+		topN:   topN,
+		site:   stringParam(params["site"]),
+	}
+}
+
+func (c *keenableSearchComponent) Name() string { return "KeenableSearch" }
+
+func (c *keenableSearchComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"site":    "Optional single-domain filter.",
+		"api_key": "Optional Keenable API key.",
+		"mode":    "Search mode: pro or realtime.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *keenableSearchComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"site": map[string]any{
+			"name": "Site",
+			"type": "line",
+		},
+	}
+}
+
+func (c *keenableSearchComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw Keenable result list.",
+	}
+}
+
+func (c *keenableSearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+
+	args := map[string]any{
+		"query": query,
+		"mode":  c.mode,
+		"top_n": c.topN,
+	}
+	if mode := strings.TrimSpace(stringParam(inputs["mode"])); mode != "" {
+		args["mode"] = mode
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	site := strings.TrimSpace(stringParam(inputs["site"]))
+	if site == "" {
+		site = strings.TrimSpace(c.site)
+	}
+	if site != "" {
+		args["site"] = site
+	}
+
+	invoker := c.inner
+	if apiKey := strings.TrimSpace(stringParam(inputs["api_key"])); apiKey != "" && apiKey != strings.TrimSpace(c.apiKey) {
+		invoker = agenttool.NewKeenableToolWithAPIKey(nil, apiKey)
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := invoker.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	results := anySlice(decoded["results"])
+	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
+		return map[string]any{
+			"formalized_content": "",
+			"json":               results,
+			"_ERROR":             existing,
+		}, nil
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               results,
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: KeenableSearch: %w", err)
+	}
+	chunks, docAggs := buildKeenableReferences(results)
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		state.SetRetrievalReferences(chunks, docAggs)
+	}
+	return map[string]any{
+		"formalized_content": renderKeenableReferences(chunks),
+		"json":               results,
+	}, nil
+}
+
+func (c *keenableSearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func buildKeenableReferences(results []any) ([]map[string]any, []map[string]any) {
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateRunes(strings.TrimSpace(keenableValueString(m["description"])), 10000)
+		if content == "" || content == "None" {
+			continue
+		}
+		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		title := keenableValueString(m["title"])
+		url := keenableValueString(m["url"])
+		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           url,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      url,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderKeenableReferences(chunks []map[string]any) string {
+	if len(chunks) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + keenableValueString(chunk["id"]),
+			"├── Title: " + keenableValueString(chunk["docnm_kwd"]),
+			"├── URL: " + keenableValueString(chunk["url"]),
+			"└── Content:\n" + keenableValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func keenableValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func renderDuckDuckGoResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("url")),
+			fmt.Sprintf("Body: %s", field("body")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func stringParam(v any) string {
@@ -859,7 +1255,10 @@ func newExeSQLComponent(params map[string]any) (Component, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
 	}
-	return &exesqlComponent{inner: agenttool.NewExeSQLTool(conn)}, nil
+	return &exesqlComponent{
+		inner: agenttool.NewExeSQLTool(conn),
+		sql:   conn.SQL,
+	}, nil
 }
 
 // translateExeSQLParamsToToolShape adapts a v1 DSL ExeSQL params
@@ -921,16 +1320,20 @@ func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
 	return out
 }
 
+type exeSQLInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 type exesqlComponent struct {
-	inner *agenttool.ExeSQLTool
+	inner exeSQLInvoker
+	sql   string
 }
 
 func (c *exesqlComponent) Name() string { return "ExeSQL" }
 
 func (c *exesqlComponent) Inputs() map[string]string {
 	return map[string]string{
-		"sql":      "SQL statement to execute (SELECT-only; DML/DDL rejected).",
-		"database": "Optional target database/schema (overrides the tool's configured DB).",
+		"sql": "SQL statement to execute (SELECT-only; DML/DDL rejected).",
 	}
 }
 
@@ -945,19 +1348,114 @@ func (c *exesqlComponent) GetInputForm() map[string]any {
 
 func (c *exesqlComponent) Outputs() map[string]string {
 	return map[string]string{
-		"columns": "Result-set column names.",
-		"rows":    "Result-set rows as column→value maps.",
-		"sql":     "Resolved SQL string (after parameter substitution).",
+		"formalized_content": "SQL result rendered as Markdown.",
+		"json":               "Raw SQL statement results.",
 	}
 }
 
 func (c *exesqlComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	argsJSON, _ := json.Marshal(inputs)
-	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
+	sqlText := c.sql
+	if value, ok := inputs["sql"].(string); ok && strings.TrimSpace(value) != "" {
+		sqlText = value
 	}
-	return parseToolEnvelope(out), nil
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		resolved, resolveErr := runtime.ResolveTemplate(sqlText, state)
+		if resolveErr != nil {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             resolveErr.Error(),
+			}, nil
+		}
+		sqlText = resolved
+	}
+
+	argsJSON, err := json.Marshal(map[string]any{"sql": sqlText})
+	if err != nil {
+		return nil, fmt.Errorf("canvas: ExeSQL: encode SQL: %w", err)
+	}
+	out, invokeErr := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	result := formatExeSQLCanvasOutput(decoded)
+	if invokeErr != nil {
+		if message := stringParam(decoded["_ERROR"]); message != "" {
+			result["_ERROR"] = message
+		} else {
+			result["_ERROR"] = invokeErr.Error()
+		}
+	}
+	return result, nil
+}
+
+func formatExeSQLCanvasOutput(decoded map[string]any) map[string]any {
+	rows := anySlice(decoded["rows"])
+	columns := anySlice(decoded["columns"])
+	jsonResult := make([]any, 0, 1)
+	if len(rows) == 1 {
+		if row, ok := rows[0].(map[string]any); ok && len(row) == 1 {
+			if _, hasContent := row["content"]; hasContent {
+				jsonResult = append(jsonResult, row)
+			}
+		}
+	}
+	if len(jsonResult) == 0 && len(rows) > 0 {
+		jsonResult = append(jsonResult, rows)
+	}
+	result := map[string]any{
+		"formalized_content": renderExeSQLMarkdown(columns, rows),
+		"json":               jsonResult,
+	}
+	if message := stringParam(decoded["_ERROR"]); message != "" {
+		result["_ERROR"] = message
+	}
+	return result
+}
+
+func renderExeSQLMarkdown(columns, rows []any) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	for _, value := range rows {
+		if row, ok := value.(map[string]any); ok && len(row) == 1 {
+			if message, exists := row["content"]; exists {
+				return stringParam(message)
+			}
+		}
+	}
+	columnNames := make([]string, 0, len(columns))
+	for _, column := range columns {
+		columnNames = append(columnNames, fmt.Sprint(column))
+	}
+	if len(columnNames) == 0 {
+		if first, ok := rows[0].(map[string]any); ok {
+			for column := range first {
+				columnNames = append(columnNames, column)
+			}
+			sort.Strings(columnNames)
+		}
+	}
+	if len(columnNames) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(columnNames, " | "))
+	separators := make([]string, len(columnNames))
+	for i := range separators {
+		separators[i] = "---"
+	}
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(separators, " | "))
+	for _, value := range rows {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		cells := make([]string, len(columnNames))
+		for i, column := range columnNames {
+			cells[i] = strings.ReplaceAll(strings.ReplaceAll(fmt.Sprint(row[column]), "|", "\\|"), "\n", "<br>")
+		}
+		fmt.Fprintf(&builder, "| %s |\n", strings.Join(cells, " | "))
+	}
+	return strings.TrimSuffix(builder.String(), "\n")
 }
 
 func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
@@ -1303,20 +1801,406 @@ func (c *yahooFinanceComponent) Stream(_ context.Context, _ map[string]any) (<-c
 	return nil, nil
 }
 
+// arxivComponent delegates to internal/agent/tool/ArxivTool. Query is the
+// runtime input; top_n and sort_by are validated node parameters.
+type arxivComponent struct {
+	inner *agenttool.ArxivTool
+}
+
+func newArxivComponent(params map[string]any) (Component, error) {
+	topN := 12
+	if v, ok := params["top_n"]; ok {
+		topN = toIntParam(v)
+	}
+	if topN <= 0 {
+		return nil, fmt.Errorf("canvas: ArXiv: top_n must be a positive integer")
+	}
+	sortBy := "submittedDate"
+	if v, ok := params["sort_by"].(string); ok && strings.TrimSpace(v) != "" {
+		sortBy = strings.TrimSpace(v)
+	}
+	if !agenttool.ArxivSortBySupported(sortBy) {
+		return nil, fmt.Errorf("canvas: ArXiv: unsupported sort_by %q", sortBy)
+	}
+	return &arxivComponent{inner: agenttool.NewArxivToolWithParams(nil, topN, sortBy)}, nil
+}
+
+func (c *arxivComponent) Name() string { return "ArXiv" }
+
+func (c *arxivComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "Search query.",
+	}
+}
+
+func (c *arxivComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered arXiv papers for downstream LLM prompts.",
+		"json":               "Raw arXiv paper list.",
+	}
+}
+
+func (c *arxivComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *arxivComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"query": query})
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: ArXiv: %w", err)
+	}
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderArxivResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *arxivComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderArxivResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		paper, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		summary := strings.TrimSpace(stringParam(paper["summary"]))
+		if summary == "" {
+			continue
+		}
+		title := strings.TrimSpace(stringParam(paper["title"]))
+		url := strings.TrimSpace(stringParam(paper["pdf_url"]))
+		lines := make([]string, 0, 3)
+		if title != "" {
+			lines = append(lines, fmt.Sprintf("Title: %s", title))
+		}
+		if url != "" {
+			lines = append(lines, fmt.Sprintf("URL: %s", url))
+		}
+		lines = append(lines, summary)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+// googleScholarComponent delegates to internal/agent/tool/GoogleScholarTool.
+type googleScholarComponent struct {
+	inner  googleScholarInvoker
+	params map[string]any
+}
+
+type googleScholarInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+type pubmedInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
+func newGoogleScholarComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{
+		inner:  agenttool.NewGoogleScholarTool(),
+		params: cloned,
+	}, nil
+}
+
+func newGoogleScholarComponentWithInvoker(inner googleScholarInvoker, params map[string]any) Component {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &googleScholarComponent{inner: inner, params: cloned}
+}
+
+func (c *googleScholarComponent) Name() string { return "GoogleScholar" }
+
+func (c *googleScholarComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":     "Search query.",
+		"top_n":     "Maximum number of results (default 12).",
+		"sort_by":   "Sort order: relevance or date.",
+		"year_low":  "Earliest publication year to include.",
+		"year_high": "Latest publication year to include.",
+		"patents":   "Whether to include patents, defaults to true.",
+	}
+}
+
+func (c *googleScholarComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw result list.",
+	}
+}
+
+func (c *googleScholarComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *googleScholarComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs))
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+
+	query := strings.TrimSpace(stringParam(merged["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	args := map[string]any{
+		"query": query,
+	}
+	if topN := toIntParam(merged["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	if sortBy := strings.TrimSpace(stringParam(merged["sort_by"])); sortBy != "" {
+		args["sort_by"] = sortBy
+	}
+	if yearLow := toIntParam(merged["year_low"]); yearLow > 0 {
+		args["year_low"] = yearLow
+	}
+	if yearHigh := toIntParam(merged["year_high"]); yearHigh > 0 {
+		args["year_high"] = yearHigh
+	}
+	if patents, ok := merged["patents"].(bool); ok {
+		args["patents"] = patents
+	} else {
+		args["patents"] = true
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: GoogleScholar: %w", err)
+	}
+
+	results := anySlice(decoded["results"])
+	return map[string]any{
+		"formalized_content": renderGoogleScholarResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *googleScholarComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderGoogleScholarResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		field := func(key string) string {
+			v, ok := m[key]
+			if !ok || v == nil {
+				return "-"
+			}
+			text := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if text == "" {
+				return "-"
+			}
+			return text
+		}
+		blocks = append(blocks, strings.Join([]string{
+			fmt.Sprintf("Title: %s", field("title")),
+			fmt.Sprintf("URL: %s", field("link")),
+			fmt.Sprintf("Authors: %s", field("authors")),
+			fmt.Sprintf("Year: %s", field("year")),
+			fmt.Sprintf("Snippet: %s", field("snippet")),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+// pubMedComponent delegates to the PubMed tool. Its node parameters are
+// consumed at construction time, leaving query as the sole runtime input.
+type pubMedComponent struct {
+	inner pubmedInvoker
+}
+
+func newPubMedComponent(params map[string]any) (Component, error) {
+	toolParams := make(map[string]any, 2)
+	for _, key := range []string{"top_n", "email"} {
+		if value, ok := params[key]; ok {
+			toolParams[key] = value
+		}
+	}
+	inner, err := agenttool.BuildByName("pubmed", toolParams)
+	if err != nil {
+		return nil, err
+	}
+	invoker, ok := inner.(pubmedInvoker)
+	if !ok {
+		return nil, fmt.Errorf("PubMed: tool does not implement InvokableRun")
+	}
+	return newPubMedComponentWithInvoker(invoker), nil
+}
+
+func newPubMedComponentWithInvoker(inner pubmedInvoker) Component {
+	return &pubMedComponent{inner: inner}
+}
+
+func (c *pubMedComponent) Name() string { return "PubMed" }
+
+func (c *pubMedComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query": "PubMed search query.",
+	}
+}
+
+func (c *pubMedComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered PubMed references for downstream LLM prompts.",
+		"json":               "Raw PubMed result list.",
+	}
+}
+
+func (c *pubMedComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
+func (c *pubMedComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+	argsJSON, err := json.Marshal(map[string]any{"query": query})
+	if err != nil {
+		return nil, fmt.Errorf("canvas: PubMed: encode query: %w", err)
+	}
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	results := anySlice(decoded["results"])
+	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
+		return map[string]any{
+			"formalized_content": "",
+			"json":               results,
+			"_ERROR":             existing,
+		}, nil
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               results,
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: PubMed: %w", err)
+	}
+	return map[string]any{
+		"formalized_content": renderPubMedResults(results),
+		"json":               results,
+	}, nil
+}
+
+func (c *pubMedComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func renderPubMedResults(results []any) string {
+	if len(results) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(results))
+	for i, item := range results {
+		result, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := strings.TrimSpace(stringParam(result["content"]))
+		if content == "" {
+			continue
+		}
+		lines := []string{fmt.Sprintf("ID: %d", i)}
+		if title := strings.TrimSpace(stringParam(result["title"])); title != "" {
+			lines = append(lines, "Title: "+title)
+		}
+		if link := strings.TrimSpace(stringParam(result["url"])); link != "" {
+			lines = append(lines, "URL: "+link)
+		}
+		lines = append(lines, "Content:", content)
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 // Compile-time interface checks.
 var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*googleComponent)(nil)
 	_ Component = (*tavilyExtractComponent)(nil)
+	_ Component = (*duckDuckGoComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
+	_ Component = (*arxivComponent)(nil)
+	_ Component = (*wikipediaComponent)(nil)
+	_ Component = (*googleScholarComponent)(nil)
+	_ Component = (*pubMedComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
 var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.WikipediaTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.GoogleTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.TavilyExtractTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.DuckDuckGoTool)(nil)
 var _ einotool.InvokableTool = (*agenttool.YahooFinanceTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.GoogleScholarTool)(nil)
+var _ einotool.InvokableTool = (*agenttool.PubMedTool)(nil)

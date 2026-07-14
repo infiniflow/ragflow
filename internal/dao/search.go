@@ -197,8 +197,8 @@ func (dao *SearchDAO) QueryByTenantIDAndID(tenantID string, searchID string) ([]
 
 // DeleteByID deletes a search by ID (soft delete by setting status to "0")
 // Reference: Python common_service.py::delete_by_id
-func (dao *SearchDAO) DeleteByID(id string) error {
-	return DB.Model(&entity.Search{}).Where("id = ?", id).Update("status", "0").Error
+func (dao *SearchDAO) DeleteByID(tenantID, id string) error {
+	return DB.Model(&entity.Search{}).Where("tenant_id = ? AND id = ?", tenantID, id).Update("status", "0").Error
 }
 
 // Accessible4Deletion checks if a search can be deleted by a specific user

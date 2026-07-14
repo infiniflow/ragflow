@@ -2,7 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -18,18 +18,18 @@ func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseRe
 	}
 	apiServer := strings.TrimSpace(parser.MinerUAPIServer)
 	if apiServer == "" {
-		apiServer = strings.TrimSpace(os.Getenv("MINERU_APISERVER"))
+		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruApiServer))
 	}
 	if apiServer == "" {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU requires mineru_apiserver or MINERU_APISERVER")}
 	}
 	apiKey := parser.MinerUAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(os.Getenv("MINERU_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvMineruApiKey))
 	}
 	backend := strings.TrimSpace(parser.MinerUBackend)
 	if backend == "" {
-		backend = strings.TrimSpace(os.Getenv("MINERU_BACKEND"))
+		backend = strings.TrimSpace(common.GetEnv(common.EnvMineruBackend))
 	}
 	if backend == "" {
 		backend = "pipeline"
@@ -97,10 +97,7 @@ func parseMinerUMarkdownResult(filename, markdown, outputFormat string, pageCoun
 	fileMeta := pdfFileMeta(filename, pageCount)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
-		mp, err := NewMarkdownParser(GoMarkdown)
-		if err != nil {
-			return ParseResult{Err: err}
-		}
+		mp, _ := NewMarkdownParser(GoMarkdown)
 		res := mp.ParseWithResult(filename, []byte(markdown))
 		if res.Err != nil {
 			return res

@@ -51,26 +51,27 @@
 //     `LLMBundle(tenant_id, embd_id).encode([...])` from
 //     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
 //     through `service.ModelProviderService.GetEmbeddingModel`
-//     (callers inject the model bundle, see `EncodeFunc` below).
+//     (callers inject the resolver, see `DefaultEmbedderResolver`).
 //     The component does NOT directly construct a model driver —
 //     the resolution path depends on tenant/DAO context that lives
 //     in `internal/service`, and importing `internal/service` from
 //     `internal/ingestion/component` would invert the dependency
 //     direction (plan §3 import graph: ingestion → agent/runtime
-//     only). The injection point is `EncodeFunc` (package-level
-//     var); production wires it in `main()` (or an analogous
-//     bootstrap step) and tests inject a stub. When `EncodeFunc` is
-//     nil the component short-circuits the embedding branch with
-//     a clear error — the same fail-loud contract the Python side
-//     enforces via `LLMBundle` constructor.
+//     only). The injection point is `DefaultEmbedderResolver`
+//     (package-level var); the ingestion task package wires it in
+//     its init() and tests inject a stub via the test-only
+//     NewTokenizerComponentWithResolver. When no resolver is
+//     available the component short-circuits the embedding branch
+//     with a clear error — the same fail-loud contract the Python
+//     side enforces via `LLMBundle` constructor.
 //
 //   - BATCHED EMBEDDING (plan §AD-5a): matched. The Python path
 //     chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
 //     and uses an async semaphore (`embed_limiter`). The Go port
 //     issues ONE `Encode([]string)` call with the entire chunk
-//     list (AD-5a calls out "embedding calls batched, not fanned"
-//     and Parallelism=1). Drivers that need to chunk internally
-//     can do so — the wire call is one round-trip.
+//     list (AD-5a calls out "embedding calls batched, not fanned").
+//     Drivers that need to chunk internally can do so — the wire
+//     call is one round-trip.
 //
 //   - TRACKING: WithTimeout (60s, matches python `@timeout(60)` on
 //     `batch_encode`), TrackProgress, TrackElapsed. See
@@ -93,23 +94,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
 
 const ComponentNameTokenizer = "Tokenizer"
 
-// tokenizerTimeout bounds the batched embedding call. Mirrors the
-// python `@timeout(60)` decorator on `Tokenizer._embedding.embed_limiter`
-// + `batch_encode` in tokenizer.py:92-104. Declared as a var so tests
-// can shrink it; production wiring uses 60s.
-var tokenizerTimeout = 60 * time.Second
+// tokenizerTimeout returns the per-batch timeout for embedding API calls.
+// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 600s
+// (10 min) to match the canvas-level component timeout default.
+// Invalid / non-positive values fall back to the default.
+func tokenizerTimeout() time.Duration {
+	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return defaultTokenizerTimeout
+}
+
+var defaultTokenizerTimeout = 600 * time.Second
 
 // tokenizerEmbeddingBatchSize mirrors Python's
 // settings.EMBEDDING_BATCH_SIZE default.
@@ -140,7 +153,18 @@ type Embedder interface {
 }
 
 // EmbedderResolver resolves the embedder for one tokenizer invocation.
-type EmbedderResolver func(tenantID, kbID, modelID string) (Embedder, error)
+// embeddingModel is the Tokenizer-scoped embedding-model identifier (from the
+// component's setups); an empty value tells the resolver to fall back to the
+// dataset's configured model.
+type EmbedderResolver func(tenantID, kbID, embeddingModel string) (Embedder, error)
+
+// DefaultEmbedderResolver is the production embedder resolver. It is nil in
+// this leaf package — which must not import internal/service (see the
+// EMBEDDING MODEL RESOLUTION note above) — and is injected by the composition
+// root: the ingestion task package wires a resolver backed by the model
+// provider in its init(). NewTokenizerComponent falls back to this resolver
+// when no explicit (test-only) resolver is supplied.
+var DefaultEmbedderResolver EmbedderResolver
 
 // TokenizerComponent computes token counts and (optionally) embedding
 // vectors for an upstream chunk list. Mirrors python
@@ -149,8 +173,8 @@ type EmbedderResolver func(tenantID, kbID, modelID string) (Embedder, error)
 // Inputs:
 //
 //	tenant_id  (string, optional) — used to resolve the embedding model
-//	model_id   (string, optional) — explicit override; falls back to
-//	                             Param.EmbeddingID (future)
+//	kb_id      (string, optional) — dataset whose embd_id is used when the
+//	                             setups embedding_model is unset
 //	output_format (string) — one of json/markdown/text/html/chunks
 //	chunks        (list[map]) — chunk list when output_format == "chunks"
 //	json          (list[map]) — structured parser payload when output_format == "json" or unset
@@ -166,19 +190,31 @@ type EmbedderResolver func(tenantID, kbID, modelID string) (Embedder, error)
 //	output_format                — always "chunks" (matches python set_output)
 //	_created_time / _elapsed_time — TrackElapsed bookkeeping
 type TokenizerComponent struct {
-	param    schema.TokenizerParam
-	resolver EmbedderResolver
+	param          schema.TokenizerParam
+	resolver       EmbedderResolver
+	embeddingModel string
 }
 
-// NewTokenizerComponent constructs a TokenizerComponent from DSL
+// NewTokenizerComponent constructs a production TokenizerComponent from DSL
 // params. Mirrors python `TokenizerParam` defaults (search_method =
-// ["full_text","embedding"], filename_embd_weight=0.1, fields=["text"]).
+// ["full_text","embedding"], filename_embd_weight=0.1, fields=["text"]). The
+// embedding branch resolves its embedder via the injected
+// DefaultEmbedderResolver (wired by the ingestion task package).
 func NewTokenizerComponent(params map[string]any) (runtime.Component, error) {
-	return NewTokenizerComponentWithResolver(params, nil)
+	return newTokenizerComponent(params, nil)
 }
 
+// NewTokenizerComponentWithResolver is TEST-ONLY. It injects an explicit
+// embedder resolver so unit/integration tests can stub the embedding backend
+// without touching the model provider. Production code MUST use
+// NewTokenizerComponent and rely on DefaultEmbedderResolver instead.
 func NewTokenizerComponentWithResolver(params map[string]any, resolver EmbedderResolver) (runtime.Component, error) {
+	return newTokenizerComponent(params, resolver)
+}
+
+func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (runtime.Component, error) {
 	p := schema.TokenizerParam{}.Defaults()
+	embeddingModel := ""
 	if params != nil {
 		if v, ok := params["search_method"]; ok {
 			// Replace (not append) so a caller-supplied
@@ -219,19 +255,35 @@ func NewTokenizerComponentWithResolver(params map[string]any, resolver EmbedderR
 				p.Fields = append(p.Fields, t...)
 			}
 		}
+		embeddingModel = embeddingModelFromSetups(params)
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("Tokenizer: param check: %w", err)
 	}
-	return &TokenizerComponent{param: p, resolver: resolver}, nil
+	return &TokenizerComponent{param: p, resolver: resolver, embeddingModel: embeddingModel}, nil
+}
+
+// embeddingModelFromSetups extracts the embedding-model identifier from the
+// component's setups map (params["setups"]["embedding_model"]). The embedding
+// model id is a Tokenizer-scoped setup rather than a run-level global so it is
+// never mistaken for, e.g., a chat model id shared across components. Empty
+// when unset — the resolver then falls back to the dataset's configured model.
+func embeddingModelFromSetups(params map[string]any) string {
+	setups, ok := params["setups"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if v, ok := setups["embedding_model"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 // Inputs returns the parameter metadata.
 func (c *TokenizerComponent) Inputs() map[string]string {
 	return map[string]string{
 		"tenant_id":     "Tenant identifier used to resolve the embedding model (mirrors python self._canvas._tenant_id).",
-		"kb_id":         "Optional knowledgebase identifier used to resolve the bound embedding model when model_id is unset.",
-		"model_id":      "Optional explicit embedding-model override.",
+		"kb_id":         "Optional knowledgebase identifier used to resolve the bound embedding model when the setups embedding_model is unset.",
 		"output_format": "Upstream payload discriminator: json / markdown / text / html / chunks.",
 		"chunks":        "List of chunk maps when output_format == \"chunks\".",
 		"json":          "Structured parser payload when output_format == \"json\" or unset.",
@@ -254,11 +306,6 @@ func (c *TokenizerComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is fixed at 1 — embedding calls are batched in one
-// round-trip (plan §2 AD-5a "Tokenizer: 1 (embedding calls batched,
-// not fanned)").
-func (c *TokenizerComponent) Parallelism() int { return 1 }
-
 // Invoke computes tokens + embeddings for the upstream chunks.
 //
 // Failure modes:
@@ -273,55 +320,74 @@ func (c *TokenizerComponent) Parallelism() int { return 1 }
 //     continue`), but the chunk still carries tokenized fields if
 //     `full_text` is in `search_method`.
 func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	kbID := getStringOr(inputs, "kb_id", "")
-	modelID := getStringOr(inputs, "model_id", "")
-	upstream, err := decodeTokenizerFromUpstream(inputs)
+	// Run-level metadata lives in the workflow-wide CanvasState.Globals
+	// bag (seeded at pipeline start, published by the File component),
+	// not in the upstream output map — see GlobalOrInput.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
+	kbID := globals.GlobalOrInput(ctx, inputs, "kb_id", "")
+	// The embedding-model id is a Tokenizer-scoped setup (params["setups"]),
+	// resolved at construction, not a run-level global — see
+	// embeddingModelFromSetups.
+	embeddingModel := c.embeddingModel
+
+	// decodeTokenizerFromUpstream validates `name`; carry the resolved
+	// name into the decode input so both a Globals-backed run and a
+	// headless run (no Globals attached) satisfy it.
+	decInputs := inputs
+	if name != "" {
+		decInputs = cloneInputs(inputs)
+		decInputs["name"] = name
+	}
+	upstream, err := decodeTokenizerFromUpstream(decInputs)
 	if err != nil {
 		return nil, err
 	}
 	chunks := chunksFromTokenizerUpstream(upstream)
-	name := upstream.Name
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
-	return runtime.TrackElapsed("Tokenizer", func() (map[string]any, error) {
-		normalizeChunkTextFallback(chunks)
+	normalizeChunkTextFallback(chunks)
 
-		if contains(c.param.SearchMethod, "full_text") {
-			if err := tokenizeChunks(chunks, titleStem); err != nil {
-				return nil, err
-			}
-		}
-
-		out := map[string]any{
-			"output_format": "chunks",
-			"chunks":        schema.ChunkDocsToMaps(chunks),
-		}
-
-		if contains(c.param.SearchMethod, "embedding") {
-			chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, modelID, name, chunks)
-			if err != nil {
-				return nil, err
-			}
-			out["embedding_token_consumption"] = tokenCount
-			out["chunks"] = schema.ChunkDocsToMaps(chunks)
-		}
-		if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+	if contains(c.param.SearchMethod, "full_text") {
+		if err := tokenizeChunks(chunks, titleStem); err != nil {
 			return nil, err
 		}
+	}
 
-		return out, nil
-	})
+	out := map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(chunks),
+	}
+
+	if contains(c.param.SearchMethod, "embedding") {
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		if err != nil {
+			return nil, err
+		}
+		out["embedding_token_consumption"] = tokenCount
+		out["chunks"] = schema.ChunkDocsToMaps(chunks)
+	}
+	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
-func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, modelID, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
+func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
 	if len(chunks) == 0 {
 		return chunks, 0, nil
 	}
-	if c.resolver == nil {
-		return nil, 0, fmt.Errorf("Tokenizer: embedding requested but resolver is unset")
+	// An explicit (test-only) resolver wins; production wiring leaves it nil
+	// and falls back to the injected DefaultEmbedderResolver.
+	resolver := c.resolver
+	if resolver == nil {
+		resolver = DefaultEmbedderResolver
 	}
-	embedder, err := c.resolver(tenantID, kbID, modelID)
+	if resolver == nil {
+		return nil, 0, fmt.Errorf("Tokenizer: embedding requested but no embedder resolver configured")
+	}
+	embedder, err := resolver(tenantID, kbID, embeddingModel)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Tokenizer: resolve embedder: %w", err)
 	}
@@ -406,7 +472,7 @@ func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) (
 		results []EmbeddingResult
 		encErr  error
 	)
-	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout, func(timeoutCtx context.Context) error {
+	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
 		results, encErr = embedder.Encode(texts)
 		return encErr
 	})
@@ -593,26 +659,38 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 				return fmt.Errorf("Tokenizer: keyword tokens marshal: %w", err)
 			}
 		}
-		if s := ck.Summary; s != "" {
+		if s := ck.Summary; strings.TrimSpace(s) != "" {
 			st, err := tokenizer.Tokenize(s)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
+			}
+			if st == "" {
+				st = s
 			}
 			ck.ContentLtks = st
 			smt, err := tokenizer.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
 			}
+			if smt == "" {
+				smt = st
+			}
 			ck.ContentSmLtks = smt
-		} else if t := ck.Text; t != "" {
+		} else if t := ck.Text; strings.TrimSpace(t) != "" {
 			tt, err := tokenizer.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
+			}
+			if tt == "" {
+				tt = t
 			}
 			ck.ContentLtks = tt
 			smt, err := tokenizer.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
+			}
+			if smt == "" {
+				smt = tt
 			}
 			ck.ContentSmLtks = smt
 		}
@@ -703,28 +781,24 @@ func hasEmbeddingVector(ck schema.ChunkDoc) bool {
 }
 
 func getStringOr(m map[string]any, key, def string) string {
-	if v, ok := getStringLocal(m, key); ok && v != "" {
+	if v, ok := m[key].(string); ok && v != "" {
 		return v
 	}
 	return def
 }
 
-// getStringLocal mirrors file.go's getString; we keep a local copy
-// so the tokenizer package does not depend on the file package's
-// helper signature. Reads either a string or a byte slice (JSON
-// decoding yields string for string fields by default).
-func getStringLocal(m map[string]any, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return "", false
+// cloneInputs returns a shallow copy of m with room for one extra key.
+// Used to inject the Globals-resolved `name` into the decode input without
+// mutating the caller's input snapshot.
+func cloneInputs(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
 	}
-	switch s := v.(type) {
-	case string:
-		return s, true
-	case []byte:
-		return string(s), true
+	cp := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		cp[k] = v
 	}
-	return "", false
+	return cp
 }
 
 func contains(s []string, v string) bool {

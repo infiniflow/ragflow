@@ -87,22 +87,34 @@ const (
 	exesqlToolName        = "execute_sql"
 	exesqlToolDescription = "This is a tool that can execute SQL."
 
+	exesqlDefaultSQL        = "{sys.query}"
+	exesqlDefaultDBType     = "mysql"
+	exesqlDefaultPort       = 3306
 	exesqlDefaultMaxRecords = 1024
 	exesqlDefaultTimeout    = 60 * time.Second
 )
 
-// exesqlConnParams captures the user-supplied DB connection details.
-// These are tool-level config (set on the canvas node, not exposed
-// to the LLM at function-call time), matching the Python ExeSQLParam
-// fields. The LLM only sees `sql` and optional `database` in args.
+// exesqlConnParams mirrors Python's ExeSQLParam fields. SQL is the only
+// model-emitted runtime input; the remaining fields are Canvas node
+// configuration and are not exposed from Info.
 type exesqlConnParams struct {
-	DBType     string // mysql | postgres | mariadb | mssql | oceanbase
-	Database   string
-	Username   string
-	Host       string
-	Port       int
-	Password   string
-	MaxRecords int
+	SQL        string `json:"sql"`
+	DBType     string `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase
+	Database   string `json:"database"`
+	Username   string `json:"username"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Password   string `json:"password"`
+	MaxRecords int    `json:"max_records"`
+}
+
+func defaultExeSQLConnParams() exesqlConnParams {
+	return exesqlConnParams{
+		SQL:        exesqlDefaultSQL,
+		DBType:     exesqlDefaultDBType,
+		Port:       exesqlDefaultPort,
+		MaxRecords: exesqlDefaultMaxRecords,
+	}
 }
 
 // ExeSQLConnParams is the public alias of exesqlConnParams for
@@ -112,14 +124,17 @@ type exesqlConnParams struct {
 type ExeSQLConnParams = exesqlConnParams
 
 // NewExeSQLConnParams decodes a canvas-node params map into an
-// ExeSQLConnParams. Returns an error if any required field
-// (db_type, host, database, username) is missing.
+// ExeSQLConnParams. Python defaults are applied before node values;
+// host, database, and username remain required configuration.
 //
 // Callers (e.g. the Universe A exesqlComponent wrapper) build the
 // params map from the canvas DSL; the tool-side decoding stays
 // in this package so the schema lives next to the type.
 func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
-	conn := ExeSQLConnParams{}
+	conn := defaultExeSQLConnParams()
+	if v, ok := params["sql"].(string); ok {
+		conn.SQL = v
+	}
 	if v, ok := params["db_type"].(string); ok {
 		conn.DBType = v
 	}
@@ -132,13 +147,13 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 	if v, ok := params["host"].(string); ok {
 		conn.Host = v
 	}
-	if v, ok := params["port"].(int); ok {
+	if v, ok := intParam(params, "port"); ok {
 		conn.Port = v
 	}
 	if v, ok := params["password"].(string); ok {
 		conn.Password = v
 	}
-	if v, ok := params["max_records"].(int); ok {
+	if v, ok := intParam(params, "max_records"); ok {
 		conn.MaxRecords = v
 	}
 	if conn.DBType == "" || conn.Host == "" || conn.Username == "" || conn.Database == "" {
@@ -147,11 +162,10 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 	return conn, nil
 }
 
-// exesqlArgs is the JSON shape the model sends in. Matches the Python
-// ExeSQLParam ToolMeta (sql is required, database is optional).
+// exesqlArgs is the JSON shape the model sends in. It matches Python's
+// ExeSQLParam ToolMeta: SQL is the only runtime parameter.
 type exesqlArgs struct {
-	SQL      string `json:"sql"`
-	Database string `json:"database,omitempty"`
+	SQL string `json:"sql"`
 }
 
 // exesqlResult is the JSON envelope returned to the model. The shape
@@ -188,7 +202,7 @@ func defaultExeSQLDialer(driver, dsn string) (*sql.DB, error) {
 }
 
 // ExeSQLTool is the ExeSQL tool.
-// It validates SELECT-only at the parser level and executes the
+// It validates read-only SQL before database access and executes the
 // statement against a user-configured external DB via `database/sql`.
 type ExeSQLTool struct {
 	conn   exesqlConnParams
@@ -199,8 +213,18 @@ type ExeSQLTool struct {
 // params. The dialer defaults to `sql.Open`; tests can pass a
 // sqlmock-backed dialer via WithExeSQLDialer.
 func NewExeSQLTool(conn exesqlConnParams) *ExeSQLTool {
-	if conn.MaxRecords <= 0 {
-		conn.MaxRecords = exesqlDefaultMaxRecords
+	defaults := defaultExeSQLConnParams()
+	if conn.SQL == "" {
+		conn.SQL = defaults.SQL
+	}
+	if conn.DBType == "" {
+		conn.DBType = defaults.DBType
+	}
+	if conn.Port == 0 {
+		conn.Port = defaults.Port
+	}
+	if conn.MaxRecords == 0 {
+		conn.MaxRecords = defaults.MaxRecords
 	}
 	return &ExeSQLTool{
 		conn:   conn,
@@ -218,8 +242,8 @@ func (e *ExeSQLTool) WithExeSQLDialer(d exesqlDialer) *ExeSQLTool {
 }
 
 // Info returns the tool's metadata for the chat model. Mirrors the
-// Python ExeSQLParam ToolMeta: only `sql` (and optional `database`)
-// are visible to the LLM. Connection params are not exposed here —
+// Python ExeSQLParam ToolMeta: only `sql` is visible to the LLM.
+// Connection params are not exposed here —
 // they're set on the tool instance, matching the Python convention
 // where ExeSQLParam fields like `db_type` / `host` are tool
 // configuration, not function-call arguments.
@@ -232,11 +256,6 @@ func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Type:     schema.String,
 				Desc:     "The SQL statement to execute. Must be a SELECT (read-only).",
 				Required: true,
-			},
-			"database": {
-				Type:     schema.String,
-				Desc:     "Optional target database / schema name. Overrides the tool's configured DB.",
-				Required: false,
 			},
 		}),
 	}, nil
@@ -251,7 +270,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if argumentsInJSON == "" {
 		return exesqlErrorResult(errors.New("exesql: empty arguments")), errors.New("exesql: empty arguments")
 	}
-	var args exesqlArgs
+	args := exesqlArgs{SQL: e.conn.SQL}
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 		return exesqlErrorResult(fmt.Errorf("exesql: parse arguments: %w", err)),
 			fmt.Errorf("exesql: parse arguments: %w", err)
@@ -259,16 +278,11 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if strings.TrimSpace(args.SQL) == "" {
 		return exesqlErrorResult(errors.New("exesql: empty sql")), errors.New("exesql: empty sql")
 	}
-	if !isSelectStatement(args.SQL) {
+	conn := e.conn
+	if err := validateExeSQLStatements(args.SQL, conn.DBType); err != nil {
 		return exesqlErrorResult(ErrExeSQLNotSelect), ErrExeSQLNotSelect
 	}
 
-	// Honor the per-call `database` override if the model supplied one;
-	// fall back to the tool's configured DB.
-	conn := e.conn
-	if args.Database != "" {
-		conn.Database = args.Database
-	}
 	if err := conn.check(); err != nil {
 		return exesqlErrorResult(err), err
 	}
@@ -309,20 +323,20 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 			fmt.Errorf("exesql: ping: %w", err)
 	}
 
-	res, err := exesqlExecute(ctx, db, args.SQL, conn.MaxRecords)
+	res, err := exesqlExecute(ctx, db, args.SQL, conn.DBType, conn.MaxRecords)
 	if err != nil {
 		return exesqlErrorResult(err), err
 	}
 	return exesqlMarshalResult(res)
 }
 
-// exesqlExecute splits the SQL on `;` (Python parity) and runs each
-// statement independently. A failing statement is recorded as an
+// exesqlExecute splits the SQL on statement-delimiting semicolons and runs
+// each statement independently. A failing statement is recorded as an
 // error entry but does not abort subsequent statements — this is
 // the same isolation guarantee the Python tool provides so that
 // earlier results survive a bad statement later in the batch.
-func exesqlExecute(ctx context.Context, db *sql.DB, sqlText string, maxRows int) (*exesqlResult, error) {
-	stmts := splitSQLStatements(sqlText)
+func exesqlExecute(ctx context.Context, db *sql.DB, sqlText, dbType string, maxRows int) (*exesqlResult, error) {
+	stmts := splitSQLStatements(sqlText, dbType)
 	res := &exesqlResult{}
 	for _, stmt := range stmts {
 		stmt = stripChunkIDMarkers(stmt)
@@ -431,13 +445,46 @@ func isBadFloat(f float64) bool {
 	return false
 }
 
-// splitSQLStatements splits on `;`, ignoring semicolons inside string
-// literals and line/block comments. This matches what the Python
-// tool does with `sqls = sql.split(";")` — a naive split, but safe
-// enough for read-only statements the LLM is expected to produce.
-func splitSQLStatements(s string) []string {
-	cleaned := stripSQLStrings(stripSQLComments(s))
-	return strings.Split(cleaned, ";")
+// splitSQLStatements preserves the original SQL and splits only on delimiters
+// outside strings, quoted identifiers, and comments. SQL quoting differs by
+// database, so the scanner enables backslash escapes, dollar quotes, bracketed
+// identifiers, and # comments only for dialects that support them.
+func splitSQLStatements(s, dbType string) []string {
+	masked, _ := maskSQLLiteralsAndComments(s, dbType)
+	statements := make([]string, 0, strings.Count(masked, ";")+1)
+	start := 0
+	for i := range masked {
+		if masked[i] != ';' {
+			continue
+		}
+		statements = append(statements, s[start:i])
+		start = i + 1
+	}
+	return append(statements, s[start:])
+}
+
+// validateExeSQLStatements rejects the entire batch before any database work.
+// Each executable fragment is checked independently so a read-only first
+// statement cannot hide a later write statement.
+func validateExeSQLStatements(sqlText, dbType string) error {
+	if _, executableComment := maskSQLLiteralsAndComments(sqlText, dbType); executableComment {
+		return ErrExeSQLNotSelect
+	}
+	hasStatement := false
+	for _, stmt := range splitSQLStatements(sqlText, dbType) {
+		stmt = strings.TrimSpace(stripChunkIDMarkers(stmt))
+		if stmt == "" {
+			continue
+		}
+		hasStatement = true
+		if !isReadOnlySQLStatement(stmt, dbType) {
+			return ErrExeSQLNotSelect
+		}
+	}
+	if !hasStatement {
+		return ErrExeSQLNotSelect
+	}
+	return nil
 }
 
 // stripChunkIDMarkers drops the [ID:123] tokens the RAGFlow chunker
@@ -539,29 +586,21 @@ func (c exesqlConnParams) check() error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// SELECT-only safety validator
-// ---------------------------------------------------------------------------
-
-// leadingKeywordRe matches the first non-comment, non-whitespace keyword
-// in a SQL statement. Comments (-- line, /* block */) and string literals
-// are stripped before the match.
-var leadingKeywordRe = regexp.MustCompile(`^[\s,;(]*([A-Za-z]+)`)
-
-// nonSelectKeywords lists DML/DDL/DCL verbs the parser rejects. These
-// are the only top-level forms we refuse; everything else (WITH ... SELECT,
-// SELECT INTO, SHOW, DESCRIBE, EXPLAIN) is allowed because they're
-// read-only.
-var nonSelectKeywords = map[string]struct{}{
+// writeCapableSQLKeywords are rejected anywhere in SELECT, WITH, and EXPLAIN
+// statements. Checking every executable token prevents data-modifying CTEs
+// such as `WITH t AS (DELETE ... RETURNING *) SELECT ...` from passing merely
+// because their first keyword is WITH.
+var writeCapableSQLKeywords = map[string]struct{}{
 	"INSERT": {}, "UPDATE": {}, "DELETE": {}, "REPLACE": {},
+	"MERGE":    {},
 	"TRUNCATE": {},
 	"CREATE":   {}, "DROP": {}, "ALTER": {}, "RENAME": {},
 	"GRANT": {}, "REVOKE": {},
 	"LOCK": {}, "UNLOCK": {},
 	"CALL": {}, "EXEC": {}, "EXECUTE": {},
 	"COPY":   {},
-	"VACUUM": {}, "ANALYZE": {},
-	"SET": {}, "RESET": {},
+	"VACUUM": {},
+	"SET":    {}, "RESET": {},
 	"USE":        {},
 	"KILL":       {},
 	"LOAD":       {},
@@ -570,90 +609,192 @@ var nonSelectKeywords = map[string]struct{}{
 	"SHUTDOWN": {},
 }
 
-// isSelectStatement returns true iff sql is a read-only statement. The
-// heuristic is intentionally narrow: strip line + block comments and
-// string literals, scan the first keyword, and reject if it's a
-// DML/DDL/DCL verb. SQL parsers in Go stdlib don't exist; this matches
-// the safety bar the Go shell needs.
-func isSelectStatement(sql string) bool {
-	cleaned := stripSQLComments(sql)
-	cleaned = stripSQLStrings(cleaned)
-	m := leadingKeywordRe.FindStringSubmatch(cleaned)
-	if len(m) < 2 {
+// isReadOnlySQLStatement validates executable tokens rather than only the
+// leading keyword. Quoted text and comments are masked first, so write verbs
+// in data values do not cause false rejections.
+func isReadOnlySQLStatement(sql, dbType string) bool {
+	masked, executableComment := maskSQLLiteralsAndComments(sql, dbType)
+	if executableComment {
 		return false
 	}
-	kw := strings.ToUpper(m[1])
-	if _, bad := nonSelectKeywords[kw]; bad {
+	words := sqlKeywordRe.FindAllString(masked, -1)
+	if len(words) == 0 {
 		return false
 	}
-	switch kw {
-	case "SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "PRAGMA":
+	for i := range words {
+		words[i] = strings.ToUpper(words[i])
+	}
+
+	switch words[0] {
+	case "SHOW", "DESCRIBE", "DESC", "PRAGMA":
+		return true
+	case "SELECT", "WITH", "EXPLAIN":
+		for _, word := range words[1:] {
+			if _, bad := writeCapableSQLKeywords[word]; bad {
+				return false
+			}
+			switch word {
+			case "INTO", "OUTFILE", "DUMPFILE":
+				return false
+			}
+		}
 		return true
 	}
-	// Unknown verb → conservative reject. The Python tool would forward
-	// this; the Go shell declines to execute without a recognized form.
 	return false
 }
 
-// stripSQLComments removes -- line comments and /* ... */ block comments.
-// We don't try to handle nested comments (MySQL/PG/SQLite differ) — this
-// is a best-effort guard for the SELECT validator, not a SQL parser.
-func stripSQLComments(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	i := 0
-	for i < len(s) {
-		if i+1 < len(s) && s[i] == '-' && s[i+1] == '-' {
-			for i < len(s) && s[i] != '\n' {
-				i++
+var sqlKeywordRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
+
+// maskSQLLiteralsAndComments replaces non-executable SQL regions with spaces
+// without changing byte offsets. The returned flag identifies MySQL/MariaDB
+// executable comments, which are rejected rather than mistaken for comments.
+func maskSQLLiteralsAndComments(s, dbType string) (string, bool) {
+	masked := []byte(s)
+	dialect := strings.ToLower(dbType)
+	isMySQL := dialect == "mysql" || dialect == "mariadb" || dialect == "oceanbase"
+	isPostgres := dialect == "postgres" || dialect == "postgresql"
+	isMSSQL := dialect == "mssql" || dialect == "sqlserver"
+	executableComment := false
+
+	mask := func(start, end int) {
+		for i := start; i < end; i++ {
+			masked[i] = ' '
+		}
+	}
+
+	for i := 0; i < len(s); {
+		if i+1 < len(s) && s[i] == '-' && s[i+1] == '-' &&
+			(!isMySQL || i+2 == len(s) || s[i+2] <= ' ') {
+			end := i + 2
+			for end < len(s) && s[end] != '\n' && s[end] != '\r' {
+				end++
 			}
+			mask(i, end)
+			i = end
+			continue
+		}
+		if isMySQL && s[i] == '#' {
+			end := i + 1
+			for end < len(s) && s[end] != '\n' && s[end] != '\r' {
+				end++
+			}
+			mask(i, end)
+			i = end
 			continue
 		}
 		if i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
-			i += 2
-			for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
-				i++
+			if isMySQL && (i+2 < len(s) && s[i+2] == '!' ||
+				i+3 < len(s) && s[i+2] == 'M' && s[i+3] == '!') {
+				executableComment = true
 			}
-			i += 2
+			end := scanSQLBlockComment(s, i, isPostgres)
+			mask(i, end)
+			i = end
 			continue
 		}
-		b.WriteByte(s[i])
+		if s[i] == '\'' || s[i] == '"' || s[i] == '`' {
+			backslashEscapes := isMySQL || isPostgres && s[i] == '\'' && isPostgresEscapeString(s, i)
+			end := scanSQLQuotedText(s, i, s[i], backslashEscapes)
+			mask(i, end)
+			i = end
+			continue
+		}
+		if isMSSQL && s[i] == '[' {
+			end := scanSQLQuotedText(s, i, ']', false)
+			mask(i, end)
+			i = end
+			continue
+		}
+		if isPostgres && s[i] == '$' {
+			if delimiter := postgresDollarQuoteDelimiter(s, i); delimiter != "" {
+				end := i + len(delimiter)
+				if closeAt := strings.Index(s[end:], delimiter); closeAt >= 0 {
+					end += closeAt + len(delimiter)
+				} else {
+					end = len(s)
+				}
+				mask(i, end)
+				i = end
+				continue
+			}
+		}
 		i++
 	}
-	return b.String()
+	return string(masked), executableComment
 }
 
-// stripSQLStrings removes single- and double-quoted string literals and
-// replaces them with empty placeholders so that keywords inside string
-// contents don't confuse the validator.
-func stripSQLStrings(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	i := 0
-	inStr := byte(0)
-	for i < len(s) {
-		c := s[i]
-		if inStr != 0 {
-			if c == inStr {
-				if i+1 < len(s) && s[i+1] == inStr {
-					b.WriteByte(' ')
-					i += 2
-					continue
-				}
-				inStr = 0
+func scanSQLBlockComment(s string, start int, nested bool) int {
+	depth := 1
+	for i := start + 2; i < len(s); {
+		if nested && i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
+			depth++
+			i += 2
+			continue
+		}
+		if i+1 < len(s) && s[i] == '*' && s[i+1] == '/' {
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
 			}
-			b.WriteByte(' ')
-			i++
 			continue
 		}
-		if c == '\'' || c == '"' || c == '`' {
-			inStr = c
-			b.WriteByte(' ')
-			i++
-			continue
-		}
-		b.WriteByte(c)
 		i++
 	}
-	return b.String()
+	return len(s)
+}
+
+func scanSQLQuotedText(s string, start int, quote byte, backslashEscapes bool) int {
+	for i := start + 1; i < len(s); {
+		if backslashEscapes && s[i] == '\\' && i+1 < len(s) {
+			i += 2
+			continue
+		}
+		if s[i] != quote {
+			i++
+			continue
+		}
+		if i+1 < len(s) && s[i+1] == quote {
+			i += 2
+			continue
+		}
+		return i + 1
+	}
+	return len(s)
+}
+
+func isPostgresEscapeString(s string, quoteAt int) bool {
+	if quoteAt == 0 || s[quoteAt-1] != 'E' && s[quoteAt-1] != 'e' {
+		return false
+	}
+	return quoteAt == 1 || !isSQLIdentifierByte(s[quoteAt-2])
+}
+
+func postgresDollarQuoteDelimiter(s string, start int) string {
+	if start > 0 && isSQLIdentifierByte(s[start-1]) {
+		return ""
+	}
+	for i := start + 1; i < len(s); i++ {
+		if s[i] == '$' {
+			return s[start : i+1]
+		}
+		if i == start+1 {
+			if !isSQLIdentifierStartByte(s[i]) {
+				return ""
+			}
+			continue
+		}
+		if !isSQLIdentifierByte(s[i]) {
+			return ""
+		}
+	}
+	return ""
+}
+
+func isSQLIdentifierStartByte(b byte) bool {
+	return b == '_' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
+}
+
+func isSQLIdentifierByte(b byte) bool {
+	return isSQLIdentifierStartByte(b) || b >= '0' && b <= '9' || b == '$'
 }

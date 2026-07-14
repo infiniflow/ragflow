@@ -37,7 +37,6 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/server"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -156,16 +155,10 @@ type DatasetService struct {
 	searchService  *SearchService
 	docEngine      engine.DocEngine
 	embeddingCache *utility.EmbeddingLRU
-	engineType     server.EngineType
 }
 
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
-	cfg := server.GetConfig()
-	engineType := server.EngineType("")
-	if cfg != nil {
-		engineType = cfg.DocEngine.Type
-	}
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -178,7 +171,6 @@ func NewDatasetService() *DatasetService {
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
-		engineType:     engineType,
 	}
 }
 
@@ -905,7 +897,7 @@ func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *CheckEmbe
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -1390,7 +1382,6 @@ func datasetPDFParseTaskRanges(doc *entity.Document, bucket, objectName string) 
 		pageSize = int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 22))
 	}
 	if doc.ParserID == string(entity.ParserTypeOne) ||
-		doc.ParserID == string(entity.ParserTypeKG) ||
 		datasetParserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
 		datasetParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 		pageSize = maximumTaskPageNumber
@@ -1990,7 +1981,7 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
@@ -2081,7 +2072,7 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Determine embedding model
 	var embeddingModel *models.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
 		if embErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
@@ -2095,7 +2086,7 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Get rerank model if rerankID is specified
 	var rerankModel *models.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
@@ -2469,12 +2460,22 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	parserConfig["llm_id"] = tenant.LLMID
 
 	embdID := tenant.EmbdID
+	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
 		embdID = embeddingModel
+		tenantEmbdID = ""
+	}
+	if embdID != "" && tenantEmbdID == "" {
+		resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+		if err == nil {
+			tenantEmbdID = resolvedID
+		} else {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	kbID := utility.GenerateToken()
@@ -2499,6 +2500,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		ParserConfig: parserConfig,
 		Permission:   permission,
 		EmbdID:       embdID,
+		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
 	}
 
@@ -2785,14 +2787,24 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 	if embdIDProvided {
+		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
 		if embdID == "" {
 			embdID = kb.EmbdID
+		} else {
+			tenantEmbdID = ""
 		}
 		ok, message := d.verifyEmbeddingAvailability(embdID, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
+		if embdID != "" && tenantEmbdID == "" {
+			resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+			if err == nil {
+				tenantEmbdID = resolvedID
+			}
+		}
 		updates["embd_id"] = embdID
+		updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 	}
 
 	if req.AutoMetadataConfig != nil {
@@ -2812,7 +2824,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
 		}
-		if d.engineType == server.EngineInfinity {
+		if !d.docEngine.SupportsPageRank() {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
@@ -3572,14 +3584,23 @@ func validateDatasetAvatar(avatar string) error {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if embeddingModel == "" {
-		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+		return errors.New("Embedding model identifier is required")
 	}
 
-	modelName, provider, ok := strings.Cut(embeddingModel, "@")
-	if !ok {
+	if !strings.Contains(embeddingModel, "@") {
+		return nil
+	}
+
+	parts := strings.Split(embeddingModel, "@")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return errors.New("Both model_name and provider must be non-empty strings")
+		}
+	}
+	if len(parts) < 2 {
 		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
 	}
-	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(provider) == "" {
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
 		return errors.New("Both model_name and provider must be non-empty strings")
 	}
 
@@ -3637,7 +3658,7 @@ func normalizeDatasetID(id string) (string, error) {
 }
 
 func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeEmbedding, embdID)
+	_, _, _, _, err := NewModelProviderService().ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

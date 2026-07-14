@@ -1,6 +1,3 @@
-//go:build embedding
-// +build embedding
-
 //	Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
 //	Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +12,13 @@
 //	See the License for the specific language governing permissions and
 //	limitations under the License.
 
-// TODO: This test should be part of unit test once "file name" issue for embedding is fixed.
+// These tests exercise the real File -> Parser -> Chunker -> Tokenizer chain
+// end-to-end. They double as the regression test for run-level `name`
+// propagation: the Tokenizer reads `name` from CanvasState.Globals (via
+// globals.GlobalOrInput), so the filename resolved by File reaches the
+// Tokenizer and title weighting runs - the q_<n>_vec first element is
+// 0.1*len(name) + 0.9*len(content), and embedding_token_consumption includes
+// the one title encode (len(name)) plus the per-chunk content encodes.
 package pipeline
 
 import (
@@ -31,6 +34,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/storage"
@@ -112,14 +116,14 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 			t.Fatalf("chunks[%d].content_sm_ltks missing or empty: %v", i, chunks[i]["content_sm_ltks"])
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		wantFirst := expectedFixedEmbedderFirst("", wantText)
+		wantFirst := expectedFixedEmbedderFirst(filename, wantText)
 		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
 		totalTokens += len(wantText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -182,7 +186,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 
 	wantTexts := []string{"Alpha paragraph.", "Beta paragraph."}
 	wantMergedText := "Alpha paragraph.\nBeta paragraph."
-	assertTokenizerTerminalChunk(t, payload, "", wantMergedText)
+	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
 	state := stateFromRunOutput(t, out)
 	fileState, ok := state["File"]
@@ -215,9 +219,9 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -284,11 +288,11 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	}
 	vec := floatSliceFromAny(t, chunks[0]["q_4_vec"])
 	trimmedChunkText := strings.TrimSpace(chunkText)
-	wantFirst := expectedFixedEmbedderFirst("", trimmedChunkText)
+	wantFirst := expectedFixedEmbedderFirst(fixture.Name, trimmedChunkText)
 	if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 		t.Fatalf("chunks[0].q_4_vec = %v, want first=%v", vec, wantFirst)
 	}
-	wantTokens := len(trimmedChunkText)
+	wantTokens := len(fixture.Name) + len(trimmedChunkText)
 	if got := payload["embedding_token_consumption"]; got != wantTokens {
 		t.Fatalf("embedding_token_consumption = %v, want %d", got, wantTokens)
 	}
@@ -318,9 +322,9 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	parserJoined := joinJSONItemTexts(jsonItems)
 	assertNormalizedContainsAll(t, parserJoined, fixture.ExpectContains...)
 
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != 1 {
@@ -388,14 +392,14 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
 		wantEmbedText := strings.TrimSpace(wantText)
-		wantFirst := expectedFixedEmbedderFirst("", wantEmbedText)
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
 		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
 		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -484,14 +488,14 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
 		wantEmbedText := strings.TrimSpace(wantText)
-		wantFirst := expectedFixedEmbedderFirst("", wantEmbedText)
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
 		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
 		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -564,14 +568,14 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 		}
 		wantEmbedText := strings.TrimSpace(wantText)
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		wantFirst := expectedFixedEmbedderFirst("", wantEmbedText)
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
 		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
 		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -649,14 +653,14 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 		}
 		wantEmbedText := strings.TrimSpace(wantText)
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		wantFirst := expectedFixedEmbedderFirst("", wantEmbedText)
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
 		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
 			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
 		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -677,9 +681,9 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
 	}
@@ -800,6 +804,12 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			}
 			if templateUsesComponent(t, templateBytes, "Extractor") {
 				t.Skip("template includes real Extractor and requires model credentials; covered separately from File/Parser/Chunker/Tokenizer e2e")
+			}
+			if templateUsesComponent(t, templateBytes, "QAChunker") {
+				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
+			}
+			if templateUsesComponent(t, templateBytes, "TagChunker") {
+				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
@@ -1102,7 +1112,7 @@ func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, name, wa
 	if got := vec[0]; !approxFloat(got, wantFirst) {
 		t.Fatalf("chunks[0].q_4_vec[0] = %v, want %v", got, wantFirst)
 	}
-	wantTokens := len(wantMergedText)
+	wantTokens := len(name) + len(wantMergedText)
 	if got := payload["embedding_token_consumption"]; got != wantTokens {
 		t.Fatalf("embedding_token_consumption = %v, want %d", got, wantTokens)
 	}

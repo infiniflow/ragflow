@@ -1533,8 +1533,10 @@ class ModelTypeMergeStage(MigrationStage):
     MODEL_TYPE_STR_TO_INT = {
         "chat": 1,  # 0b0000001
         "embedding": 2,  # 0b0000010
-        "speech2text": 4,  # 0b0000100
-        "image2text": 8,  # 0b0001000
+        "asr": 4,  # 0b0000100
+        "speech2text": 4,  # 0b0000100 legacy alias
+        "vision": 8,  # 0b0001000
+        "image2text": 8,  # 0b0001000 legacy alias
         "rerank": 16,  # 0b0010000
         "tts": 32,  # 0b0100000
         "ocr": 64,  # 0b1000000
@@ -1739,7 +1741,9 @@ class TenantModelIdMigrationStage(MigrationStage):
     MODEL_TYPE_TO_INT = {
         "chat": 1,
         "embedding": 2,
+        "asr": 4,
         "speech2text": 4,
+        "vision": 8,
         "image2text": 8,
         "rerank": 16,
         "tts": 32,
@@ -1777,7 +1781,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                     has_work = True
                     break
                 # Check if there are NULL values that should be populated
-                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = ''")
+                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32")
                 null_count = cursor.fetchone()[0]
                 if null_count > 0:
                     has_work = True
@@ -1837,17 +1841,12 @@ class TenantModelIdMigrationStage(MigrationStage):
                     logger.info(f"Column {table_name}.{legacy_col} does not exist, skipping")
                     continue
 
-                # Get rows where tenant_*_id is NULL or empty
-                cursor = self.db.execute_sql(
-                    f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
-                )
-
                 # Also need tenant_id for model lookup
                 # For tenant table, the PK is the tenant_id
                 # For knowledgebase, dialog, memory we also need tenant_id
                 if table_name == "tenant":
                     cursor = self.db.execute_sql(
-                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)
@@ -1872,7 +1871,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                             tables_operated.add(table_name)
                 else:
                     cursor = self.db.execute_sql(
-                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)

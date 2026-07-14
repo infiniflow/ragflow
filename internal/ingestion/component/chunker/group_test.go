@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestGroupTitleChunker_Registered(t *testing.T) {
@@ -39,22 +40,6 @@ func TestGroupTitleChunker_Registered(t *testing.T) {
 	}
 	if len(meta.Outputs) == 0 {
 		t.Errorf("outputs metadata is empty")
-	}
-}
-
-func TestGroupTitleChunker_Parallelism(t *testing.T) {
-	c, err := NewGroupTitleChunker(map[string]any{
-		"levels": [][]string{{`^# `}},
-	})
-	if err != nil {
-		t.Fatalf("NewGroupTitleChunker: %v", err)
-	}
-	gc, ok := c.(*GroupTitleChunkerComponent)
-	if !ok {
-		t.Fatalf("NewGroupTitleChunker returned %T", c)
-	}
-	if got := gc.Parallelism(); got != 2 {
-		t.Errorf("Parallelism() = %d, want 2", got)
 	}
 }
 
@@ -143,6 +128,63 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
+	}
+}
+
+// TestResolveGroupTargetLevel_UsesMostLevelDirectly pins Gap F: when
+// `hierarchy` is unset the group target level is `most_level` DIRECTLY,
+// not resolve_target_level (which would re-rank the distinct heading
+// levels and pick the wrong depth when levels are not contiguous from
+// 1). With levels {2,2,3} most_level is 2, but resolve_target_level
+// would return 3.
+func TestResolveGroupTargetLevel_UsesMostLevelDirectly(t *testing.T) {
+	levels := []int{2, 2, 3, bodyLevel, bodyLevel}
+	pUnset := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{Method: "group"}}
+	if got := resolveGroupTargetLevel(levels, pUnset, 2); got != 2 {
+		t.Errorf("unset hierarchy: got %d, want 2 (most_level directly)", got)
+	}
+	h := 2
+	pSet := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{Method: "group", Hierarchy: &h}}
+	if got := resolveGroupTargetLevel(levels, pSet, 2); got != 3 {
+		t.Errorf("hierarchy=2: got %d, want 3 (resolve_target_level)", got)
+	}
+}
+
+// TestGroupChunker_StructuredMetadata pins Gap E: for a structured
+// (output_format=chunks) payload, non-text records keep their
+// doc_type_kwd and img_id on the emitted chunk.
+func TestGroupChunker_StructuredMetadata(t *testing.T) {
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels": [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Heading", "doc_type_kwd": "text"},
+		{"text": "body line", "doc_type_kwd": "text"},
+		{"text": "an image caption", "doc_type_kwd": "image", "img_id": "img-9"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	found := false
+	for _, ck := range chunks {
+		if dt, _ := ck["doc_type_kwd"].(string); dt == "image" {
+			found = true
+			if ck["img_id"] != "img-9" {
+				t.Errorf("image chunk img_id = %v, want img-9", ck["img_id"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no image chunk emitted")
 	}
 }
 

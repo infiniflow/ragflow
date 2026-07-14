@@ -33,6 +33,7 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -304,6 +305,35 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	b[bucket] = payload
 }
 
+// GetGlobal returns a value from the workflow-wide Globals bag. Globals is a
+// generic, cross-component scratch space owned by CanvasState; the set of
+// keys an ingestion pipeline elects to store there is ingestion-specific and
+// therefore lives in the ingestion component package, not here.
+func (s *CanvasState) GetGlobal(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.Globals[key]
+	return v, ok
+}
+
+// SetGlobal writes a value into the workflow-wide Globals bag. It is the
+// single, lock-safe mutation point for Globals so callers never touch the map
+// field directly.
+func (s *CanvasState) SetGlobal(key string, val any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
+	s.Globals[key] = val
+}
+
 // GetRetrievalChunks returns a snapshot of the chunks recorded in
 // state.Retrieval["chunks"]. The Retrieval map is the canvas-level
 // aggregate that the Retrieval tool populates during the ReAct loop;
@@ -339,6 +369,76 @@ func (s *CanvasState) GetRetrievalChunks() []map[string]any {
 	return out
 }
 
+// GetRetrievalReference returns the run-level reference payload consumed by
+// the agent chat stream. It mirrors Python canvas.py's message_end.reference
+// shape while keeping doc_aggs as a list for the current Go frontend path.
+func (s *CanvasState) GetRetrievalReference() map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.Retrieval) == 0 {
+		return nil
+	}
+
+	chunks := copyRetrievalList(s.Retrieval["chunks"])
+	docAggs := copyRetrievalDocAggs(s.Retrieval["doc_aggs"])
+	if len(chunks) == 0 && len(docAggs) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"chunks":   chunks,
+		"doc_aggs": docAggs,
+		"total":    len(chunks),
+	}
+}
+
+func copyRetrievalList(value any) []any {
+	switch list := value.(type) {
+	case []any:
+		out := make([]any, len(list))
+		copy(out, list)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func copyRetrievalDocAggs(value any) []any {
+	switch aggs := value.(type) {
+	case []any:
+		out := make([]any, len(aggs))
+		copy(out, aggs)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(aggs))
+		for _, item := range aggs {
+			out = append(out, item)
+		}
+		return out
+	case map[string]any:
+		keys := make([]string, 0, len(aggs))
+		for key := range aggs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make([]any, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, aggs[key])
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 // SetRetrievalChunks records the supplied chunks into
 // state.Retrieval["chunks"]. Existing entries are replaced
 // (last-writer-wins) so a multi-tool canvas reflects the most
@@ -358,6 +458,90 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 		asAny = append(asAny, c)
 	}
 	s.Retrieval["chunks"] = asAny
+}
+
+// SetRetrievalReferences records the chunks and document aggregates emitted by
+// a canvas search component. It is the lock-safe counterpart of Python
+// Graph.add_reference for components that produce externally sourced results.
+func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	chunkValues, _ := s.Retrieval["chunks"].([]any)
+	if chunkValues == nil {
+		chunkValues = make([]any, 0, len(chunks))
+	}
+	seenChunkIDs := make(map[string]struct{}, len(chunkValues)+len(chunks))
+	for _, value := range chunkValues {
+		chunk, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := retrievalReferenceID(chunk); ok {
+			seenChunkIDs[id] = struct{}{}
+		}
+	}
+	for _, chunk := range chunks {
+		if id, ok := retrievalReferenceID(chunk); ok {
+			if _, exists := seenChunkIDs[id]; exists {
+				continue
+			}
+			seenChunkIDs[id] = struct{}{}
+		}
+		chunkValues = append(chunkValues, chunk)
+	}
+
+	docAggValues, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if docAggValues == nil {
+		docAggValues = make(map[string]any, len(docAggs))
+	}
+	for _, docAgg := range docAggs {
+		docName, _ := docAgg["doc_name"].(string)
+		if docName == "" {
+			continue
+		}
+		// Match Python Graph.add_reference: retain the first aggregate for
+		// a document name across the run-level reference set.
+		if _, exists := docAggValues[docName]; !exists {
+			docAggValues[docName] = docAgg
+		}
+	}
+	s.Retrieval["chunks"] = chunkValues
+	s.Retrieval["doc_aggs"] = docAggValues
+}
+
+func retrievalReferenceID(chunk map[string]any) (string, bool) {
+	value, ok := chunk["id"]
+	if !ok || value == nil {
+		return "", false
+	}
+	id := fmt.Sprint(value)
+	return id, id != ""
+}
+
+// GetRetrievalDocAggs returns a shallow snapshot keyed by document name.
+func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if raw == nil {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(raw))
+	for name, item := range raw {
+		if agg, ok := item.(map[string]any); ok {
+			out[name] = agg
+		}
+	}
+	return out
 }
 
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or

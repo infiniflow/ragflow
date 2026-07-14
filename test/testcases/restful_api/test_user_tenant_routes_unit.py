@@ -651,7 +651,7 @@ def _load_user_app(monkeypatch):
     settings_mod.EMBEDDING_MDL = "embd-mdl"
     settings_mod.ASR_MDL = "asr-mdl"
     settings_mod.PARSERS = []
-    settings_mod.IMAGE2TEXT_MDL = "img-mdl"
+    settings_mod.VISION_MDL = "img-mdl"
     settings_mod.RERANK_MDL = "rerank-mdl"
     settings_mod.REGISTER_ENABLED = True
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
@@ -1402,7 +1402,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
 
     constants_mod = ModuleType("common.constants")
-    constants_mod.LLMType = SimpleNamespace(CHAT="chat", IMAGE2TEXT="image2text", RERANK="rerank", SPEECH2TEXT="speech2text", TTS="tts")
+    constants_mod.LLMType = SimpleNamespace(CHAT="chat", VISION="vision", RERANK="rerank", ASR="asr", TTS="tts")
     constants_mod.RetCode = SimpleNamespace(SUCCESS=0, DATA_ERROR=102, OPERATING_ERROR=103, AUTHENTICATION_ERROR=109)
     constants_mod.StatusEnum = SimpleNamespace(VALID=SimpleNamespace(value="1"), INVALID=SimpleNamespace(value="0"))
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
@@ -1532,7 +1532,7 @@ def _load_chat_routes_unit_module(monkeypatch):
         "TenantService",
         (),
         {
-            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4"))),
+            "get_by_id": staticmethod(lambda _tenant_id: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id"))),
             "get_joined_tenants_by_user_id": staticmethod(lambda _user_id: [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]),
         },
     )
@@ -1599,7 +1599,7 @@ def test_create_chat_uses_tenant_default_llm_when_llm_id_is_null_unit(monkeypatc
 
     res = _run(module.create.__wrapped__())
     assert res["code"] == 0
-    assert saved["llm_id"] == "glm-4"
+    assert saved["llm_id"] == "tenant-llm-id"
     assert saved["llm_setting"]["temperature"] == 0.8
 
 

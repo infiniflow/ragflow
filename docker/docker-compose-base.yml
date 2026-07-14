@@ -255,7 +255,7 @@ services:
       - ragflow-go
     image: nats:2.14.2
     ports:
-      - ${NATS_PORT}:4222
+      - ${NATS_PORT:-4222}:4222
       - "8222:8222"
     volumes:
       - nats_data:/data
@@ -265,10 +265,25 @@ services:
       - ragflow
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${NATS_PORT}"]
+      test: ["CMD", "nats-server", "--health-check"]
       interval: 10s
       timeout: 10s
-      retries: 120
+      retries: 30
+
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
 
   tei-cpu:
     profiles:

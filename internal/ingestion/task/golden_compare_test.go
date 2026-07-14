@@ -29,7 +29,7 @@ func TestProcessPipelineOutputForGolden_Markdown(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForDataflow_StableFields(t *testing.T) {
+func TestProcessChunksForPipeline_StableFields(t *testing.T) {
 	now := time.Date(2026, 7, 3, 20, 0, 0, 0, time.FixedZone("CST", 8*3600))
 	chunks := []map[string]any{
 		{
@@ -41,7 +41,7 @@ func TestProcessChunksForDataflow_StableFields(t *testing.T) {
 		},
 	}
 
-	meta := ProcessChunksForDataflow(chunks, "doc-1", "kb-1", "sample.md", now)
+	meta := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "sample.md", now)
 
 	chunk := chunks[0]
 	if chunk["doc_id"] != "doc-1" {

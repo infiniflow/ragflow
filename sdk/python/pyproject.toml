@@ -8,7 +8,6 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = ["requests>=2.30.0,<3.0.0", "beartype>=0.20.0,<1.0.0"]
 
-
 [dependency-groups]
 test = [
     "hypothesis>=6.131.9",
@@ -22,10 +21,14 @@ test = [
     "requests-toolbelt>=1.0.0",
 ]
 
-
 [tool.pytest.ini_options]
 markers = [
     "p1: high priority test cases",
     "p2: medium priority test cases",
     "p3: low priority test cases",
+]
+
+[tool.uv]
+constraint-dependencies = [
+    "urllib3>=2.7.0",
 ]

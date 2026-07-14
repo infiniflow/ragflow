@@ -1,5 +1,4 @@
-//go:build manual
-// +build manual
+//go:build integration
 
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
@@ -20,31 +19,23 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/nats"
 	"ragflow/internal/entity"
-
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // TestRealProducerConsumer exercises the project's real producer and consumer code paths:
 //
-//	Producer: document.go pattern — CheckAndCreate(IngestionTask) → PublishTask(NATS)
+//	Producer: document.go pattern — Create(IngestionTask) → PublishTask(NATS)
 //	Consumer: Ingestor.Start() core logic — calls each actual function in sequence
 func TestRealProducerConsumer(t *testing.T) {
-	// ── 1. NATS ──
-	natsEngine := nats.NewNatsEngine("localhost", 4222)
-	if err := natsEngine.Init(); err != nil {
-		t.Fatalf("NATS Init: %v", err)
-	}
+	// ── 1. NATS (embedded in-process server) ──
+	natsEngine := testutil.SetupNatsEngine(t)
 	if err := natsEngine.InitConsumer("tasks.>"); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
@@ -59,27 +50,14 @@ func TestRealProducerConsumer(t *testing.T) {
 	}
 
 	// ── 2. SQLite DB ──
-	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{TranslateError: true})
-	if err != nil {
-		t.Fatalf("failed to open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("failed to get sql DB: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	db.AutoMigrate(
-		&entity.IngestionTask{}, &entity.Task{},
-		&entity.Document{}, &entity.Knowledgebase{}, &entity.Tenant{},
-	)
-	origDB := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = origDB })
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
 
-	db.Create(&entity.Tenant{ID: "t1", LLMID: "gpt-4", Status: ptr("1")})
-	db.Create(&entity.Knowledgebase{ID: "kb1", TenantID: "t1", EmbdID: "e1", Status: ptr("1"), ParserConfig: entity.JSONMap{}})
-	db.Create(&entity.Document{ID: "doc-real", KbID: "kb1", ParserID: "naive", ParserConfig: entity.JSONMap{}})
+	db.Create(&entity.Tenant{ID: "t1", LLMID: "gpt-4", Status: testutil.StrPtr("1")})
+	db.Create(&entity.Knowledgebase{ID: "kb1", TenantID: "t1", EmbdID: "e1", Status: testutil.StrPtr("1"), ParserConfig: entity.JSONMap{}})
+	docName := "doc-real.pdf"
+	db.Create(&entity.Document{ID: "doc-real", KbID: "kb1", ParserID: "naive", ParserConfig: entity.JSONMap{}, Name: &docName})
 
 	// ── 3. Producer: Mirrors document.go:1062-1085 exactly ──
 	ingestionTask := &entity.IngestionTask{
@@ -89,9 +67,9 @@ func TestRealProducerConsumer(t *testing.T) {
 		DatasetID:  "kb1",
 		Status:     common.CREATED,
 	}
-	created, err := dao.NewIngestionTaskDAO().CheckAndCreate(ingestionTask)
+	created, err := dao.NewIngestionTaskDAO().Create(ingestionTask)
 	if err != nil {
-		t.Fatalf("CheckAndCreate: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
 	t.Logf("Producer: IngestionTask created id=%s status=%s", created.ID, created.Status)
 
@@ -123,18 +101,22 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("unexpected task type: %s", taskMsg.TaskType)
 	}
 
-	// Mirrors Start():142-143 — SetRunningByIngestor
+	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	task, err := ingestionTaskDAO.SetRunningByIngestor(taskMsg.TaskID)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
-		if errors.Is(err, common.ErrTaskNotFound) {
-			t.Logf("Consumer: task %s not found in ingestion_task table — skipped", taskMsg.TaskID)
-			taskHandle.Ack()
-			return
-		}
-		t.Fatalf("SetRunningByIngestor: %v", err)
+		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
-	t.Logf("Consumer: SetRunningByIngestor status=%s", task.Status)
+	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if task == nil {
+		t.Logf("Consumer: task %s not found in ingestion_task table — skipped", taskMsg.TaskID)
+		taskHandle.Ack()
+		return
+	}
+	t.Logf("Consumer: UpdateStatusIfCurrent status=%s", task.Status)
 
 	// Mirrors Start():167-180 — status check
 	switch task.Status {
@@ -148,24 +130,39 @@ func TestRealProducerConsumer(t *testing.T) {
 	}
 
 	// ── 5. executeTask (our modified version) ──
-	// executeTask needs DB data for TaskHandler
-	db.Create(&entity.Task{ID: task.ID, DocID: "doc-real", FromPage: 0, ToPage: 100000})
-
-	tc, err := LoadTaskContext(task.ID)
-	if err != nil {
-		t.Fatalf("LoadTaskContext: %v", err)
+	// Set a pipeline ID so the handler can resolve the canvas.
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-real").Update("pipeline_id", "pipeline-real").Error; err != nil {
+		t.Fatalf("set pipeline_id: %v", err)
 	}
+
+	tc, err := LoadFromIngestionTask(task)
+	if err != nil {
+		t.Fatalf("LoadFromIngestionTask: %v", err)
+	}
+	tc.Ctx = context.Background()
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
-	handler := NewTaskHandler(tc)
-	if err := handler.Handle(); err != nil {
-		t.Fatalf("Handle: %v", err)
+	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0)
+	if err != nil {
+		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
-	t.Log("Consumer: TaskHandler.Handle() — OK")
+	svc.WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+		return `{"nodes":[{"id":"test","type":"parser"}],"edges":[]}`, canvasID, nil
+	})
+	svc.WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+		return nil, "", nil
+	})
+	svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+		return nil, nil
+	})
+	if _, err := svc.Execute(tc.Ctx); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if err := ingestionTaskDAO.UpdateStatus(task.ID, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(task.ID, common.RUNNING, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 

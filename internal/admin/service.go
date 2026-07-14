@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -33,6 +32,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
+	servicepkg "ragflow/internal/service"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
@@ -62,6 +62,7 @@ type Service struct {
 	llmDAO              *dao.LLMDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
+	ingestionTaskSvc    *servicepkg.IngestionTaskService
 }
 
 // NewService create admin service
@@ -86,6 +87,7 @@ func NewService() *Service {
 		llmDAO:              dao.NewLLMDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
 	}
 }
 
@@ -101,92 +103,15 @@ func (s *Service) Logout(user interface{}) error {
 
 // ListTasks
 func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-
-	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	showTasks := []map[string]interface{}{}
-	for _, task := range ingestionTasks {
-		var user *entity.User
-		user, err = s.userDAO.GetByTenantID(task.UserID)
-		if err != nil {
-			return nil, err
-		}
-		//var document *entity.Document
-		//document, err = s.documentDAO.GetByID(task.DocumentID)
-		//if err != nil {
-		//	return nil, err
-		//}
-
-		var showTask map[string]interface{}
-		var latestLog *entity.IngestionTaskLog
-		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
-		showTask = map[string]interface{}{
-			"id":          task.ID,
-			"user_id":     task.UserID,
-			"user":        user.Email,
-			"document_id": task.DocumentID,
-			"status":      task.Status,
-		}
-		if err == nil && latestLog != nil && latestLog.Checkpoint != nil {
-			step, ok := latestLog.Checkpoint["current_step"].(float64)
-			if !ok {
-				showTasks = append(showTasks, showTask)
-				continue
-			}
-			showTask = map[string]interface{}{
-				"id":          task.ID,
-				"user_id":     task.UserID,
-				"user":        user.Email,
-				"document_id": task.DocumentID,
-				"status":      task.Status,
-				"step":        int(step),
-			}
-		}
-
-		showTasks = append(showTasks, showTask)
-	}
-	return showTasks, nil
+	return s.ingestionTaskSvc.ListAllForAdmin()
 }
 
 func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	var deletedTasks []map[string]string
-	for _, taskID := range tasks {
-		taskRecord := map[string]string{
-			"task_id": taskID,
-		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
-		if err != nil {
-			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
-		} else {
-			taskRecord["remove"] = "success"
-		}
-		deletedTasks = append(deletedTasks, taskRecord)
-	}
-	return deletedTasks, nil
+	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
 }
 
 func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	var taskResponses []*entity.IngestionTask
-	for _, taskID := range tasks {
-		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
-		if err != nil {
-			return nil, err
-		}
-
-		if task.Status == common.STOPPING {
-			msgQueueEngine := engine.GetMessageQueueEngine()
-			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		taskResponses = append(taskResponses, task)
-	}
-	return taskResponses, nil
+	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
 }
 
 // GetUserByToken get user by access token
@@ -215,8 +140,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(page*pageSize, pageSize)
+func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(pageIndex*pageSize, pageSize, name, status, sort, orderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1191,7 +1116,7 @@ func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 // getESClusterStats gets Elasticsearch cluster stats
 func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
 	// Check if Elasticsearch is the doc engine
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1428,6 +1353,13 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]interface{}, error) {
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
+	if msgQueueEngine == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "Message queue engine not initialized",
+		}, nil
+	}
+
 	status := msgQueueEngine.CheckStatus()
 
 	return map[string]interface{}{
@@ -1564,7 +1496,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := common.GetEnv(common.EnvDocEngine)
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
@@ -1574,17 +1506,17 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"env":   common.EnvDefaultSuperuserEmail,
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := os.Getenv("DB_TYPE")
+	dbType := common.GetEnv(common.EnvDBType)
 	if dbType == "" {
 		dbType = "mysql"
 	}
@@ -1594,7 +1526,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DEVICE
-	device := os.Getenv("DEVICE")
+	device := common.GetEnv(common.EnvDevice)
 	if device == "" {
 		device = "cpu"
 	}
@@ -1604,12 +1536,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := os.Getenv("STORAGE_IMPL")
+	storageImpl := common.GetEnv(common.EnvStorageImpl)
 	if storageImpl == "" {
 		storageImpl = "MINIO"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE_IMPL",
+		"env":   common.EnvStorageImpl,
 		"value": storageImpl,
 	})
 
@@ -1619,8 +1551,8 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 // Version methods
 
 // GetVersion get RAGFlow version
-func (s *Service) GetVersion() string {
-	return utility.GetRAGFlowVersion()
+func (s *Service) GetVersion() (string, string) {
+	return common.GetRAGFlowVersion(), common.GetRAGFlowType()
 }
 
 // Sandbox methods
@@ -1678,8 +1610,9 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
+
 	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
-	return common.CodeLicenseValid, ""
+	return CheckLicense()
 }
 
 // InitDefaultAdmin initialize default admin user

@@ -23,10 +23,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"math"
-	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -38,42 +36,16 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-var tokenizerPoolInitErr error
-
-// TestMain initializes the tokenizer pool before any test runs.
-// The tokenizer package needs the C++ RAGAnalyzer dictionaries
-// (see internal/tokenizer.Init) for `Tokenize` /
-// `FineGrainedTokenize`; without it, `tokenizeChunks` errors out
-// with "tokenizer pool not initialized". Tests in other packages
-// initialize the pool at startup; this package must do the same
-// because the Tokenizer component touches tokenizer.Tokenize.
-//
-// If Init fails (e.g., dict path missing in some CI sandboxes),
-// we log the failure but still run the tests. Cases that exercise
-// tokenizeChunks will fail rather than skip when the pool is not
-// initialized.
-func TestMain(m *testing.M) {
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),
+func requireTokenizerPool(t *testing.T) {
+	t.Helper()
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerPoolInitErr = tokenizer.Init(cfg)
-	if tokenizerPoolInitErr != nil {
-		fmt.Fprintf(os.Stderr, "tokenizer pool init failed (tests will skip tokenize-dependent cases): %v\n", tokenizerPoolInitErr)
-	}
-	os.Exit(m.Run())
-}
-
-func requireTokenizerPool(t *testing.T) {
-	t.Helper()
-	if tokenizerPoolInitErr != nil {
-		t.Skipf("tokenizer pool unavailable: %v", tokenizerPoolInitErr)
+	}); err != nil {
+		t.Skipf("tokenizer pool unavailable: %v", err)
 	}
 }
 
@@ -239,9 +211,6 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 	}
 	if out["embedding_token_consumption"] == nil {
 		t.Error("embedding_token_consumption missing")
-	}
-	if out["_elapsed_time"] == nil {
-		t.Error("_elapsed_time missing")
 	}
 }
 
@@ -498,7 +467,8 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 }
 
 // TestTokenizerComponent_Invoke_EmbedNoResolver covers the
-// "embedding requested but resolver is unset" branch — must
+// "embedding requested but no embedder resolver configured" branch
+// (explicit resolver nil and DefaultEmbedderResolver unset) — must
 // return a clear error, not panic.
 func TestTokenizerComponent_Invoke_EmbedNoResolver(t *testing.T) {
 	requireTokenizerPool(t)
@@ -577,12 +547,10 @@ func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, err
 // asserts the component returns context.DeadlineExceeded.
 func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 	requireTokenizerPool(t)
-	prevTimeout := tokenizerTimeout
-	tokenizerTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { tokenizerTimeout = prevTimeout })
+	t.Setenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER", "1")
 
 	c, stub := withStubEmbedder(t, 4)
-	stub.delay = 500 * time.Millisecond
+	stub.delay = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -620,15 +588,6 @@ func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := ins[key]; !ok {
 			t.Errorf("Inputs() missing %q", key)
 		}
-	}
-}
-
-// TestTokenizerComponent_Parallelism locks the fan-out to 1 (plan
-// §AD-5a: "embedding calls batched, not fanned").
-func TestTokenizerComponent_Parallelism(t *testing.T) {
-	c, _ := NewTokenizerComponent(map[string]any{})
-	if got := c.(*TokenizerComponent).Parallelism(); got != 1 {
-		t.Errorf("Parallelism() = %d, want 1", got)
 	}
 }
 
@@ -1012,5 +971,62 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	vecB := outB["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
 	if reflect.DeepEqual(vecA, vecB) {
 		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
+	}
+}
+
+func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T) {
+	// Simulates a chunk whose Text is a symbol/punctuation character that
+	// the C++ RAGAnalyzer tokenizer cannot produce tokens for (e.g. "·", ")", "(").
+	// After tokenizeChunks runs, ContentLtks and ContentSmLtks remain empty,
+	// and validateTokenizerOutputs must detect this as a failure.
+	ck := schema.ChunkDoc{
+		Text:          ")",
+		ContentLtks:   "",
+		ContentSmLtks: "",
+	}
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"})
+	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
+		t.Fatalf("err = %v, want missing full_text tokens", err)
+	}
+}
+
+func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Text: "·"}, // middle dot · — seen in production chunk[15]
+		{Text: ")"},
+		{Text: "("},
+		{Text: "*"},
+	}
+	err := tokenizeChunks(chunks, "test")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	for i, ck := range chunks {
+		t.Logf("chunk[%d]: text=%q content_ltks=%q content_sm_ltks=%q",
+			i, ck.Text, ck.ContentLtks, ck.ContentSmLtks)
+		// After fix: Tokenize returns empty for symbol-only text,
+		// but the fallback sets ContentLtks = raw text.
+		if strings.TrimSpace(ck.ContentLtks) == "" {
+			t.Errorf("chunk[%d]: expected non-empty ContentLtks (raw text fallback) for %q, got empty",
+				i, ck.Text)
+		}
+	}
+}
+
+func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Summary: "   ", Text: "real content here"},
+	}
+	err := tokenizeChunks(chunks, "test")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	// After fix: TrimSpace("   ") is empty, so the Summary branch is skipped.
+	// The Text branch is entered and "real content here" is tokenized normally.
+	if strings.TrimSpace(chunks[0].ContentLtks) == "" {
+		t.Errorf("whitespace Summary should be skipped, Text %q should be tokenized, but ContentLtks is empty",
+			chunks[0].Text)
 	}
 }

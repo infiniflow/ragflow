@@ -97,6 +97,18 @@ func (p *Parser) parseAdminPingServer() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminLiveServer() (*Command, error) {
+	p.nextToken() // consume LIVE
+	cmd := NewCommand("admin_live_server")
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminHealthServer() (*Command, error) {
+	p.nextToken() // consume HEALTH
+	cmd := NewCommand("admin_health_server")
+	return cmd, nil
+}
+
 // endregion
 
 // region LIST commands
@@ -2601,15 +2613,36 @@ commandLoop:
 	return cmd, nil
 }
 
+// SHOW USERS PLAN SUMMARY;
 func (p *Parser) parseAdminShowUsersPlan() (*Command, error) {
 	p.nextToken() // consume PLAN
 
-	if p.curToken.Type != TokenSummary {
-		return nil, fmt.Errorf("expected SUMMARY")
-	}
-	p.nextToken()
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenSummary:
+		p.nextToken()
+		cmd = NewCommand("admin_show_users_plan_summary")
+	case TokenQuota:
+		p.nextToken()
+		cmd = NewCommand("admin_show_users_plan_quota")
 
-	cmd := NewCommand("admin_show_users_plan_command")
+		if p.curToken.Type != TokenNumber {
+			return nil, fmt.Errorf("expected QUOTA")
+		}
+		quotaInt, err := p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+		if quotaInt < 0 || quotaInt > 100 {
+			return nil, fmt.Errorf("invalid quota value")
+		}
+
+		cmd.Params["quota"] = quotaInt
+	default:
+		return nil, fmt.Errorf("expected SUMMARY or QUOTA")
+	}
+
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}

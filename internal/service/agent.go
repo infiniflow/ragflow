@@ -437,12 +437,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		dslMap, ok := dsl.(map[string]interface{})
 		if !ok {
 			if typed, ok := dsl.(entity.JSONMap); ok {
-				dslMap = map[string]interface{}(typed)
+				dslMap = typed
 			} else {
 				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
 			}
 		}
-		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(entity.JSONMap(dslMap)))
+		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
 	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
@@ -488,7 +488,7 @@ func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) 
 	if err != nil {
 		return nil, err
 	}
-	reset := dslpkg.ResetForCanvas(map[string]any(row.DSL))
+	reset := dslpkg.ResetForCanvas(row.DSL)
 	// Re-normalize through the same entry point UpdateAgent uses so
 	// any front-end that reads `graph.nodes` / `components[*].obj`
 	// right after the response sees a renderable shape, not a partial
@@ -524,10 +524,10 @@ func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string)
 		return ErrAgentNotOwner
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.versionDAO.DeleteByCanvasIDTx(tx, canvasID); err != nil {
+		if _, err = s.versionDAO.DeleteByCanvasIDTx(tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent: cascade versions: %w", err)
 		}
-		if err := s.canvasDAO.DeleteTx(tx, canvasID); err != nil {
+		if err = s.canvasDAO.DeleteTx(tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent %s: %w", canvasID, err)
 		}
 		return nil
@@ -783,7 +783,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			// `get_agent_dsl_with_release(...release_mode=False)`
 			// fallback in completion().
 			if len(canvasRow.DSL) > 0 {
-				dsl = dslpkg.NormalizeForRun(map[string]any(canvasRow.DSL))
+				dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
 			}
 		default:
 			// Wrap DB-side errors with ErrAgentStorageError
@@ -1115,7 +1115,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
 		var answer string
-		var reference []interface{}
+		var legacyReference []interface{}
+		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
 			if v, ok := bucket["answer"].(string); ok && v != "" {
@@ -1130,9 +1131,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				answer = v
 			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
-				reference = append(reference, v...)
+				legacyReference = append(legacyReference, v...)
+			}
+			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
+				downloads = v
 			}
 		}
+		referencePayload := agentRunReferencePayload(state, legacyReference)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1145,36 +1150,36 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message", string(msgData))
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message", string(msgData))
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message_end", string(meData))
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      answer,
+					"outputs":      workflowOutputs(answer, downloads),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -1192,15 +1197,15 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message", string(msgData))
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message_end", string(meData))
 
@@ -1208,7 +1213,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      answer,
+			"outputs":      workflowOutputs(answer, downloads),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -1234,7 +1239,30 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference []interface{}) {
+func workflowOutputs(content string, downloads any) any {
+	if emptyDownloadValue(downloads) {
+		return content
+	}
+	return map[string]any{
+		"content":   content,
+		"downloads": downloads,
+	}
+}
+
+func emptyDownloadValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return v.Len() == 0
+	default:
+		return false
+	}
+}
+
+func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return
 	}
@@ -1256,12 +1284,28 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 		session.Message = raw
 	}
 	references := parseAgentSessionReferences(session.Reference)
-	references = append(references, normalizeAgentReferenceEntry(map[string]interface{}{"chunks": reference}))
+	references = append(references, normalizeAgentReferenceEntry(reference))
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
 	}
 	if err := s.api4ConversationDAO.Update(session); err != nil {
 		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+	}
+}
+
+func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	if state != nil {
+		if reference := state.GetRetrievalReference(); len(reference) > 0 {
+			return reference
+		}
+	}
+	if len(legacyChunks) == 0 {
+		return nil
+	}
+	return map[string]interface{}{
+		"chunks":   legacyChunks,
+		"doc_aggs": []interface{}{},
+		"total":    len(legacyChunks),
 	}
 }
 
@@ -1340,7 +1384,7 @@ func normalisedDSLForRun(v *entity.UserCanvasVersion) map[string]any {
 	if v == nil || len(v.DSL) == 0 {
 		return nil
 	}
-	return dslpkg.NormalizeForRun(map[string]any(v.DSL))
+	return dslpkg.NormalizeForRun(v.DSL)
 }
 
 // CancelAgent signals the in-flight run (if any) for the given canvas to
