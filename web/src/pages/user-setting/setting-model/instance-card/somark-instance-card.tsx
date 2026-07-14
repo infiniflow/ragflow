@@ -104,7 +104,7 @@ interface SoMarkInstanceCardProps {
   instance: IProviderInstance;
   isDraft?: boolean;
   onSaved?: (values: Record<string, any>) => void | Promise<void>;
-  onNameSaved?: () => void;
+  onNameSaved?: (instanceName: string) => void;
   onDelete?: () => void;
   /**
    * When true, this card starts expanded and fetches its instance
@@ -355,7 +355,7 @@ export function SoMarkInstanceCard({
       instance_name: trimmed,
     } as any);
     if (ret?.code === 0) {
-      onNameSaved?.();
+      onNameSaved?.(trimmed);
     }
   }, [draftName, addProviderInstance, providerName, onNameSaved]);
 

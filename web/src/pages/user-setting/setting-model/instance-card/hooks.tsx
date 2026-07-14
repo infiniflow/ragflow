@@ -336,7 +336,7 @@ export function useVerifyProvider(
 export function useSaveInstanceName(
   providerName: string,
   draftName: string,
-  onNameSaved?: () => void,
+  onNameSaved?: (instanceName: string) => void,
 ) {
   const { addProviderInstance } = useAddProviderInstance();
   return useCallback(async () => {
@@ -347,7 +347,7 @@ export function useSaveInstanceName(
       instance_name: trimmed,
     } as any);
     if (ret?.code === 0) {
-      onNameSaved?.();
+      onNameSaved?.(trimmed);
     }
   }, [draftName, addProviderInstance, providerName, onNameSaved]);
 }
