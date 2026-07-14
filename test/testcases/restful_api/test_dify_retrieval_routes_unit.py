@@ -307,7 +307,7 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
     assert "score" in top, res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_kb_not_found(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-missing", "query": "hello"})

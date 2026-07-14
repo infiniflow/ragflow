@@ -192,7 +192,7 @@ def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, cr
     assert isinstance(choice_msg["reference"], list), payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_stream_shape_and_done_semantics(rest_client, create_chat):
     chat_id = create_chat("restful_openai_stream_chat")
     res = rest_client.post(
