@@ -210,6 +210,15 @@ constraint-dependencies = [
     # encounters (fixed in trio 0.26 by skipping non-callables). Pulled in transitively
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
+    # CVE-2026-44431: Cross-origin redirects in urllib3's low-level API may forward sensitive credential
+    # headers to unintended hosts. (CVSS 5.3)
+    # CVE-2026-44432: Decompression flaw in urllib3's streaming API can lead to client-side denial of service
+    # through excessive resource consumption. (CVSS 8.9)
+    # urllib3 < 2.7.0 is vulnerable, pulled in transitively via requests, minio, akshare, and others
+    "urllib3>=2.7.0",
+
+
+
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

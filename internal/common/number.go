@@ -16,7 +16,10 @@
 
 package common
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // PyFloat64 is a float64 that serializes to JSON using the same format as Python's json.dumps.
 // Python uses the "shortest unique representation" algorithm (dtoa) for float64,
@@ -170,4 +173,9 @@ func IsZeroVector(v []float64) bool {
 		}
 	}
 	return true
+}
+
+func AlmostEqual64(a, b float64) bool {
+	const epsilon = 1e-9
+	return math.Abs(a-b) <= epsilon
 }
