@@ -113,16 +113,16 @@ func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, userID, quest
 
 // StreamWithOptions runs Stream while allowing callers such as saved Search
 // apps to pass search_config retrieval options through to RetrievalTest.
-func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string, opts AskStreamOptions) <-chan AskDelta {
+func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
 	out := make(chan AskDelta, 32)
 	go func() {
 		defer close(out)
-		s.run(ctx, llm, userID, question, kbIDs, opts, out)
+		s.run(ctx, llm, userID, question, datasetIDs, opts, out)
 	}()
 	return out
 }
 
-func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
+func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	// Phase 1: Retrieval.
 	topK := DefaultAskTopK
 	if opts.TopK != nil {
@@ -138,7 +138,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	}
 
 	req := &RetrievalTestRequest{
-		Datasets:               common.StringSlice(kbIDs),
+		Datasets:               common.StringSlice(datasetIDs),
 		Question:               question,
 		DocIDs:                 opts.DocIDs,
 		UseKG:                  opts.UseKG,

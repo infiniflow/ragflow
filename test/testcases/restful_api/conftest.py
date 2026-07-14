@@ -247,3 +247,20 @@ def ensure_parsed_document(rest_client, create_document):
         return dataset_id, document_id
 
     return _ensure
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    import time
+    start = time.perf_counter()
+    yield
+    duration = time.perf_counter() - start
+    if duration >= 10:
+        color = "****"  # 4 stars
+    elif duration >= 5:
+        color = "***"  # 3 stars
+    elif duration >= 1:
+        color = "**"  # 2 stars
+    else:
+        color = ""
+    print(f" {color} [{duration:.3f}s]")
