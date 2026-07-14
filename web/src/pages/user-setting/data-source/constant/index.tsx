@@ -1087,6 +1087,14 @@ export const DataSourceFormFields = {
       placeholder: '/',
       tooltip: t('setting.webdavRemotePathTip'),
     },
+    {
+      label: 'Custom CA Certificate Path',
+      name: 'config.ca_cert_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/etc/ssl/certs/webdav-ca.pem',
+      tooltip: t('setting.webdavCaCertPathTip'),
+    },
   ],
   [DataSourceKey.DROPBOX]: [
     {
