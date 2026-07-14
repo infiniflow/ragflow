@@ -1,13 +1,20 @@
 """Research Agent — inner tool-calling loop for high/ultra modes.
 
-Uses prompt-based tool selection: LLM outputs tool decisions as JSON in its
-response text, which the harness parses and executes. This avoids dependency
-on the LLMBundle's tool-calling protocol.
+Native tool-calling: a chat model deep-copied from ``tools.chat_mdl`` is bound
+(via ``bind_tools``) to the phase-gated tool schemas plus ``think_tool`` /
+``generate_report``, and a lightweight session routes each tool call to the
+harness pipeline. Binding onto a *copy* keeps the shared ``tools.chat_mdl``
+(used by the other graph nodes) free of any tool schema.
+
+Models without native tool-calling fall back to prompt-based tool selection:
+the tools are described in the prompt and the model emits ``<tool_call>`` JSON
+that the loop parses.
 """
 
 import json
 import logging
 import re
+from copy import deepcopy
 
 from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 from rag.advanced_rag.harness.pipeline import Pipeline
@@ -16,9 +23,56 @@ from rag.advanced_rag.harness.tools.gating import (
     determine_current_phase,
     SEARCH_PHASES,
 )
-from rag.advanced_rag.harness.prompts.research_agent_prompt import RESEARCH_AGENT_PROMPT
+from rag.advanced_rag.harness.tools.registry import _generate_report_schema, _think_schema
+from rag.advanced_rag.harness.prompts.research_agent_prompt import (
+    RESEARCH_AGENT_PROMPT,
+    RESEARCH_AGENT_TEXT_PROMPT,
+)
 
 _LOG = logging.getLogger(__name__)
+
+
+class ResearchToolSession:
+    """ToolCallSession adapter routing native tool calls to the harness pipeline.
+
+    - regular tools run through :func:`execute_with_fallback`;
+    - ``think_tool`` is a no-op reasoning step that just lets the loop continue;
+    - ``generate_report`` is *captured* (not executed) so the agent loop can
+      return its structured arguments as the claim result.
+    """
+
+    def __init__(self, pipeline: Pipeline, phase: str):
+        self.pipeline = pipeline
+        self.phase = phase
+        self.report: dict | None = None
+        self.got_evidence = False
+
+    async def tool_call_async(self, name: str, arguments: dict, request_timeout: float | int = 300):
+        arguments = arguments or {}
+        if name == "generate_report":
+            self.report = dict(arguments)
+            return "Report received. Stop calling tools now."
+        if name == "think_tool":
+            return "Noted. Proceed with the next tool call."
+        result = await execute_with_fallback(self.pipeline, name, self.phase, **arguments)
+        if result.chunks:
+            self.got_evidence = True
+        return _fmt_tool_result(result)
+
+    def tool_call(self, name: str, arguments: dict, timeout: float | int = 300):
+        # The tool loop always prefers ``tool_call_async``; this is only here to
+        # satisfy the ToolCallSession shape.
+        raise NotImplementedError("ResearchToolSession only supports async tool calls")
+
+
+def _build_tool_schemas(gated_defs: list[dict]) -> list[dict]:
+    """Phase-gated schemas (minus harness-only ``x_*`` keys) + the control tools."""
+    schemas: list[dict] = []
+    for d in gated_defs:
+        schemas.append({k: v for k, v in d.items() if not k.startswith("x_")})
+    schemas.append(_think_schema())
+    schemas.append(_generate_report_schema())
+    return schemas
 
 
 async def research_agent_loop(
@@ -29,10 +83,9 @@ async def research_agent_loop(
     mode: ExecutionStrategy,
     compilation_map: dict,
 ) -> dict:
-    """Inner loop: prompt-based tool selection for a single claim."""
+    """Inner loop for a single claim — native tool-calling with a text fallback."""
     phase = determine_current_phase(context)
     phase_config = SEARCH_PHASES.get(phase, {})
-
     gated_defs = get_gated_tools(
         phase=phase,
         available_tools=mode.available_tools,
@@ -40,12 +93,79 @@ async def research_agent_loop(
         context=context,
     )
 
-    tool_list_text = _fmt_tool_list(gated_defs)
+    # Deep-copy so binding tools never leaks onto the shared chat model.
+    agent_mdl = deepcopy(tools.chat_mdl)
+    if getattr(agent_mdl, "is_tools", False):
+        return await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode)
+
+    _LOG.info("research_agent: model lacks native tool support; falling back to text-based tool selection")
+    return await _research_text(claim, tools, pipeline, phase, phase_config, gated_defs, mode)
+
+
+async def _research_native(
+    claim: ClaimTarget,
+    agent_mdl,
+    pipeline: Pipeline,
+    phase: str,
+    phase_config: dict,
+    gated_defs: list[dict],
+    mode: ExecutionStrategy,
+) -> dict:
+    """Bind tools onto ``agent_mdl`` and let its native tool loop drive research."""
+    schemas = _build_tool_schemas(gated_defs)
+    session = ResearchToolSession(pipeline, phase)
+    agent_mdl.bind_tools(session, schemas)
+    # Bound the model's internal tool loop to the mode's agent-cycle budget.
+    if hasattr(agent_mdl, "mdl") and hasattr(agent_mdl.mdl, "max_rounds"):
+        agent_mdl.mdl.max_rounds = max(1, mode.max_agent_cycles)
+
     system = RESEARCH_AGENT_PROMPT.format(
         claim_description=claim.description,
         phase=phase,
         phase_hint=phase_config.get("tool_hint", ""),
-        tool_list=tool_list_text,
+        max_cycles=mode.max_agent_cycles,
+    )
+    history = [{"role": "user", "content": f"Research task: {claim.description}\nBegin."}]
+
+    final_text = ""
+    try:
+        final_text = await agent_mdl.async_chat(system, history, {"temperature": 0.3})
+        if isinstance(final_text, tuple):
+            final_text = final_text[0]
+    except Exception:
+        _LOG.exception("research_agent(native): tool loop failed")
+
+    if session.report is not None:
+        return session.report
+
+    # The model finished without calling generate_report — synthesize a report
+    # from its final free-text turn so the claim still yields something usable.
+    _LOG.info("research_agent(native): no generate_report call; using final text as report")
+    return {
+        "report": (final_text or "").strip(),
+        "is_verified": session.got_evidence,
+        "confidence": 0.5 if session.got_evidence else 0.0,
+        "evidence_ids": [],
+        "gaps": [] if session.got_evidence else ["no generate_report emitted"],
+        "discovered_claims": [],
+    }
+
+
+async def _research_text(
+    claim: ClaimTarget,
+    tools,
+    pipeline: Pipeline,
+    phase: str,
+    phase_config: dict,
+    gated_defs: list[dict],
+    mode: ExecutionStrategy,
+) -> dict:
+    """Fallback: prompt-based tool selection for models without native tools."""
+    system = RESEARCH_AGENT_TEXT_PROMPT.format(
+        claim_description=claim.description,
+        phase=phase,
+        phase_hint=phase_config.get("tool_hint", ""),
+        tool_list=_fmt_tool_list(gated_defs),
         max_cycles=mode.max_agent_cycles,
     )
 
@@ -57,7 +177,7 @@ async def research_agent_loop(
             if isinstance(ans, tuple):
                 ans = ans[0]
         except Exception:
-            _LOG.exception("research_agent: LLM call failed cycle %d", cycle)
+            _LOG.exception("research_agent(text): LLM call failed cycle %d", cycle)
             continue
 
         history.append({"role": "assistant", "content": ans})
@@ -70,28 +190,19 @@ async def research_agent_loop(
         if tool_call.get("name") == "generate_report":
             return tool_call.get("arguments", {})
 
-        elif tool_call.get("name") == "think_tool":
+        if tool_call.get("name") == "think_tool":
             history.append({"role": "user", "content": "[continue]"})
             continue
 
-        else:
-            args = tool_call.get("arguments", {})
-            result = await execute_with_fallback(
-                pipeline,
-                tool_call["name"],
-                phase,
-                **args,
-            )
-            result_text = _fmt_tool_result(result)
-            history.append({"role": "user", "content": result_text})
+        args = tool_call.get("arguments", {})
+        result = await execute_with_fallback(pipeline, tool_call["name"], phase, **args)
+        history.append({"role": "user", "content": _fmt_tool_result(result)})
 
-    # Max cycles — force report
     return await _force_generate_report(history, tools, claim.claim_id)
 
 
 def _parse_tool_call(text: str) -> dict | None:
-    """Parse tool call from LLM response text."""
-    # Try JSON in <tool_call> tags
+    """Parse tool call from LLM response text (text-fallback path)."""
     m = re.search(r"<tool_call>(.*?)</tool_call>", text, re.DOTALL)
     if m:
         try:
@@ -99,7 +210,6 @@ def _parse_tool_call(text: str) -> dict | None:
         except Exception:
             pass
 
-    # Try standalone JSON block
     m = re.search(r"```(?:json)?\s*({.*?})\s*```", text, re.DOTALL)
     if m:
         try:
@@ -107,7 +217,6 @@ def _parse_tool_call(text: str) -> dict | None:
         except Exception:
             pass
 
-    # Try raw JSON object
     m = re.search(r'\{\s*"name"\s*:', text)
     if m:
         try:
@@ -155,7 +264,7 @@ async def _force_generate_report(
     tools,
     claim_id: str,
 ) -> dict:
-    """Force generate report when max cycles reached."""
+    """Force generate report when max cycles reached (text-fallback path)."""
     try:
         ans = await tools.chat_mdl.async_chat(
             "",

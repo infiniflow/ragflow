@@ -1,11 +1,20 @@
-"""Planner decompose prompts: one per question type."""
+"""Planner decompose prompts: one per question type.
+
+Each prompt is grounded in a preliminary hybrid search: ``{retrieved}`` carries
+the (keyword-narrowed) chunks retrieved for the user's question, so the
+decomposition reflects what the corpus actually contains rather than guessing.
+"""
 
 DECOMPOSE_FACTUAL = """This is a factual question. List all atomic facts that need to be retrieved.
 If there are multiple facts, list them one by one. If there is only one fact, output exactly one item.
+Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
+
+Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
+{retrieved}
 
 Output format (JSON):
 {{
@@ -24,10 +33,14 @@ DECOMPOSE_COMPARATIVE = """This is a comparative question. It needs to be decomp
 1. Information about entity A for the comparison dimension.
 2. Information about entity B for the comparison dimension.
 3. Optional information that directly compares the two entities.
+Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
+
+Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
+{retrieved}
 
 Output format (JSON):
 {{
@@ -53,10 +66,14 @@ Output format (JSON):
 
 
 DECOMPOSE_PROCEDURAL = """This is a procedural question. Decompose it into the information needed for each step required to complete the operation.
+Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
+
+Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
+{retrieved}
 
 Output format (JSON):
 {{
@@ -77,10 +94,14 @@ Output format (JSON):
 
 
 DECOMPOSE_EXPLORATORY = """This is an analytical or exploratory question. Decompose it into the main aspects or dimensions that need to be researched.
+Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
+
+Preliminary retrieved context for this question (use it to ground each aspect in what the corpus actually contains; do not invent aspects it cannot support):
+{retrieved}
 
 Output format (JSON):
 {{

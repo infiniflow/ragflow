@@ -58,6 +58,7 @@ class AgenticState(TypedDict, total=False):
     messages: list
     question: str
     keywords: str  # search keywords + close synonyms for the formalized question
+    seed_chunks: list  # preliminary hybrid_search chunks used to ground the plan
     route: dict  # RouteDecision serialized
     plan: dict  # WorkflowPlan serialized
     claims: list  # ClaimTarget[] serialized
@@ -128,6 +129,30 @@ async def _strip_think_stream(stream):
 # ── Graph construction ──
 
 
+def _merge_result_into_kbinfos(tools, result: dict) -> None:
+    """Merge a search result's chunks/doc_aggs into ``tools.kbinfos``, deduped.
+
+    Mirrors the orchestrators' merge so seed evidence and orchestrator evidence
+    share one deduplicated pool.
+    """
+    if not result or not result.get("chunks"):
+        return
+    kb = tools.kbinfos
+    seen = {c.get("chunk_id") or c.get("id") or id(c) for c in kb.get("chunks", [])}
+    for c in result.get("chunks", []):
+        k = c.get("chunk_id") or c.get("id") or id(c)
+        if k in seen:
+            continue
+        seen.add(k)
+        kb.setdefault("chunks", []).append(c)
+    dseen = {d.get("doc_id") for d in kb.get("doc_aggs", [])}
+    for d in result.get("doc_aggs", []):
+        if d.get("doc_id") in dseen:
+            continue
+        dseen.add(d.get("doc_id"))
+        kb.setdefault("doc_aggs", []).append(d)
+
+
 def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None = None):
     """Compile the 4-node agentic-search graph."""
     answer_conf = dict(gen_conf) if gen_conf else {"temperature": 0.3}
@@ -154,6 +179,36 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         from rag.advanced_rag.harness.route import route_node
 
         return await route_node(state, tools)
+
+    # ── Node: pre_search ──
+    async def pre_search(state: AgenticState) -> dict:
+        """Preliminary hybrid_search to ground the planner's decomposition.
+
+        Only runs for decomposition modes (direct/low mode retrieves in
+        orchestrator_loop anyway, so we skip the duplicate search). The result
+        is narrowed by keywords inside ``hybrid_search`` and merged into the
+        shared citation pool so it also enriches the final answer.
+        """
+        route = state.get("route")
+        if not route or not getattr(route, "requires_decomposition", False):
+            _LOG.info("[pre_search] SKIP | direct/low mode (no decomposition)")
+            return {"seed_chunks": []}
+
+        from rag.advanced_rag.harness.tools.search import hybrid_search
+
+        q = state.get("question", "")
+        kw = state.get("keywords", "")
+        _LOG.info("[pre_search] IN | question=%s | keywords=%s", _snip(q), _snip(kw))
+        try:
+            result = await hybrid_search(tools, query=q, keywords=kw)
+        except Exception:
+            _LOG.exception("[pre_search] hybrid_search failed")
+            return {"seed_chunks": []}
+
+        chunks = result.get("chunks", []) or []
+        _merge_result_into_kbinfos(tools, result)
+        _LOG.info("[pre_search] OUT | %d seed chunk(s), kbinfos now %d", len(chunks), len(tools.kbinfos.get("chunks", [])))
+        return {"seed_chunks": chunks}
 
     # ── Node: planner ──
     async def planner(state: AgenticState) -> dict:
@@ -228,13 +283,15 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     g = StateGraph(AgenticState)
     g.add_node("formalize_question", formalize_question)
     g.add_node("route", route)
+    g.add_node("pre_search", pre_search)
     g.add_node("planner", planner)
     g.add_node("orchestrator_loop", orchestrator_loop)
     g.add_node("formalize_answer", formalize_answer)
 
     g.add_edge(START, "formalize_question")
     g.add_edge("formalize_question", "route")
-    g.add_edge("route", "planner")
+    g.add_edge("route", "pre_search")
+    g.add_edge("pre_search", "planner")
     g.add_edge("planner", "orchestrator_loop")
     g.add_edge("orchestrator_loop", "formalize_answer")
     g.add_edge("formalize_answer", END)

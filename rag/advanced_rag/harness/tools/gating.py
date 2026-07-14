@@ -1,14 +1,14 @@
-"""Tool selection gating: phase-based filtering + fallback chain."""
+"""Tool selection gating: phase-based filtering and fallback chain."""
 
 from rag.advanced_rag.harness.types import OrchestratorContext
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
 
 
-# ── Search phase definitions ──
+# Search phase definitions
 
 SEARCH_PHASES = {
     "locate": {
-        "goal": "定位——找到可能包含答案的文档/区域",
+        "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
             "toc_navigate",
             "mindmap_navigate",
@@ -18,10 +18,10 @@ SEARCH_PHASES = {
             "bm25_search",
         ],
         "max_returned": 5,
-        "tool_hint": "优先使用导航工具定位文档区域，而不是直接搜索关键词",
+        "tool_hint": "Prefer navigation tools to locate document regions before directly searching keywords.",
     },
     "explore": {
-        "goal": "探索——在已定位的区域内深入搜索",
+        "goal": "Explore deeply within the already located region.",
         "tools_priority": [
             "hybrid_search",
             "vector_search",
@@ -31,10 +31,10 @@ SEARCH_PHASES = {
             "inspector_request_adjacent",
         ],
         "max_returned": 4,
-        "tool_hint": "优先使用检索工具在已定位区域内获取详细信息",
+        "tool_hint": "Prefer retrieval tools to gather detailed information within the located region.",
     },
     "verify": {
-        "goal": "验证——确认多个来源的一致性",
+        "goal": "Verify consistency across multiple sources.",
         "tools_priority": [
             "inspector_open_context",
             "inspector_compare",
@@ -43,10 +43,10 @@ SEARCH_PHASES = {
             "web_search",
         ],
         "max_returned": 4,
-        "tool_hint": "优先使用 Inspector 工具对比已有证据，而非搜索新内容",
+        "tool_hint": "Prefer inspector tools to compare existing evidence before searching for new content.",
     },
     "cross_domain": {
-        "goal": "跨域——探索已发现实体的跨领域关联",
+        "goal": "Explore cross-domain relationships for discovered entities.",
         "tools_priority": [
             "graph_explore",
             "wiki_query",
@@ -54,7 +54,7 @@ SEARCH_PHASES = {
             "web_search",
         ],
         "max_returned": 3,
-        "tool_hint": "优先在图谱上行走发现跨领域关联",
+        "tool_hint": "Prefer walking the graph to discover cross-domain relationships.",
     },
 }
 
@@ -89,7 +89,7 @@ def get_gated_tools(
     compilation_map: dict[str, set[str]],
     context: OrchestratorContext,
 ) -> list[dict]:
-    """Filter, sort, and gate tools by phase priority + context."""
+    """Filter, sort, and gate tools by phase priority and context."""
     phase_config = SEARCH_PHASES.get(phase)
     if not phase_config:
         return _default_defs(available_tools)

@@ -1,4 +1,4 @@
-"""Exploration tools: KG, wiki."""
+"""Exploration tools: knowledge graph and wiki lookup."""
 
 import logging
 
@@ -6,9 +6,10 @@ _LOG = logging.getLogger(__name__)
 
 
 async def graph_explore(tools, entity: str, relation: str | None = None, depth: int = 1) -> dict:
-    """知识图谱关联探索。
+    """Explore relationships in the knowledge graph.
 
-    当前为占位符——实际实现需要调用知识图谱存储。
+    This is currently a placeholder. The final implementation should call the
+    knowledge graph store.
     """
     _LOG.info("graph_explore: entity=%s relation=%s depth=%d", entity, relation, depth)
     # TODO: implement actual KG walk
@@ -19,9 +20,10 @@ async def graph_explore(tools, entity: str, relation: str | None = None, depth: 
 
 
 async def wiki_query(tools, topic: str) -> dict:
-    """编译的 Wiki 查询。
+    """Query compiled wiki knowledge.
 
-    当前为占位符——实际实现需要编译的 Wiki 存储。
+    This is currently a placeholder. The final implementation should call the
+    compiled wiki store.
     """
     _LOG.info("wiki_query: topic=%s", topic)
     # TODO: implement actual wiki lookup

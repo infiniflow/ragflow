@@ -1850,12 +1850,23 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
+    # "reasoning" arrives as "1".."4" mapping to the ordered THINKING_MODES
+    # (low, medium, high, ultra); fall back to "medium" on anything else.
+    from rag.advanced_rag.harness.config import THINKING_MODES
+
+    _mode_labels = list(THINKING_MODES.keys())
+    try:
+        _n = int(str(kwargs.get("reasoning")).strip())
+        thinking_mode = _mode_labels[_n - 1] if 1 <= _n <= len(_mode_labels) else "medium"
+    except (TypeError, ValueError):
+        thinking_mode = "medium"
     rag_tools = RAGTools(tenant_ids,
                          chat_mdl,
                          embed_mdl=embd_mdl,
                          kb_ids=dialog.kb_ids,
                          tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None,
-                         do_refer = False
+                         do_refer = False,
+                         thinking_mode=thinking_mode,
                          )
 
     async def decorate_answer(answer):

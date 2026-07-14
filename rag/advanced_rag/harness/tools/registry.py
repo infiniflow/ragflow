@@ -1,12 +1,12 @@
-"""Tool registry — all available tools with metadata and function schemas."""
+"""Tool registry: all available tools with metadata and function schemas."""
 
 from typing import Any
 
-# Tool registry: tool_name → {metadata, function_schema, fn}
+# Tool registry: tool_name -> {metadata, function_schema, fn}
 # 'fn' filled at registration time; schema used for LLM tool definitions.
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
 
-# ── Executor interface ──
+# Executor interface
 # Each tool registers a callable with signature:
 #   async def fn(tools, **kwargs) -> dict  # {"chunks": [...], ...}
 
@@ -31,8 +31,7 @@ def get_function_schemas(tool_names: list[str]) -> list[dict]:
     return [TOOL_REGISTRY[n]["function_schema"] for n in tool_names if n in TOOL_REGISTRY]
 
 
-# ── Common schema builders ──
-
+# Common schema builders
 
 def _search_schema(name: str, desc: str) -> dict:
     return {
@@ -43,7 +42,8 @@ def _search_schema(name: str, desc: str) -> dict:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "搜索查询"},
+                    "query": {"type": "string", "description": "the original user's question."},
+                    "keywords": {"type": "string", "description": "the keywords used for searching split by space or ','."},
                 },
                 "required": ["query"],
             },
@@ -60,7 +60,7 @@ def _navigate_schema(name: str, desc: str) -> dict:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {"type": "string", "description": "要定位的主题"},
+                    "topic": {"type": "string", "description": "navigate by topic"},
                 },
                 "required": ["topic"],
             },
@@ -92,13 +92,13 @@ def _think_schema() -> dict:
         "type": "function",
         "function": {
             "name": "think_tool",
-            "description": "内部推理。分析已收集的结果，规划下一步。不要在推理时输出物化内容，只做推理。",
+            "description": "Internal reasoning. Analyze the collected results and plan the next step. Do not output final user-facing content while reasoning.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "reasoning": {
                         "type": "string",
-                        "description": "推理内容——分析已找到什么、还缺什么、下一步怎么做",
+                        "description": "Reasoning content: what has been found, what is still missing, and what to do next.",
                     },
                 },
                 "required": ["reasoning"],
@@ -112,27 +112,27 @@ def _generate_report_schema() -> dict:
         "type": "function",
         "function": {
             "name": "generate_report",
-            "description": "研究完成时调用。输出研究报告和声明级验证结果。",
+            "description": "Call when the research is complete. Output the research report and claim-level verification results.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "report": {"type": "string", "description": "研究结果报告（事实性，无格式）"},
-                    "is_verified": {"type": "boolean", "description": "是否找到充分证据"},
-                    "confidence": {"type": "number", "description": "0-1 置信度"},
+                    "report": {"type": "string", "description": "Research result report, factual and unformatted."},
+                    "is_verified": {"type": "boolean", "description": "Whether sufficient evidence was found."},
+                    "confidence": {"type": "number", "description": "Confidence from 0 to 1."},
                     "evidence_ids": {
                         "type": "array",
                         "items": {"type": "integer"},
-                        "description": "引用的 chunk IDs",
+                        "description": "Referenced chunk IDs.",
                     },
                     "gaps": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "未找到的信息",
+                        "description": "Information that was not found.",
                     },
                     "discovered_claims": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "研究中发现的新研究方向",
+                        "description": "New research directions discovered during research.",
                     },
                 },
                 "required": ["report", "is_verified", "confidence"],

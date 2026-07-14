@@ -1,13 +1,13 @@
 """Inspector tools: operate on already-returned results."""
 
 import logging
-import re
+from copy import deepcopy
 
 _LOG = logging.getLogger(__name__)
 
 
 async def open_context(tools, chunk_id: str, width: int = 500) -> dict:
-    """展开一条 chunk 周围的上下文。在已有 kbinfos 中查找相邻 chunk。"""
+    """Expand context around a chunk by looking up adjacent chunks in kbinfos."""
     chunks = tools.kbinfos.get("chunks", [])
     idx = _find_chunk_index(chunks, chunk_id)
     if idx is None:
@@ -20,7 +20,7 @@ async def open_context(tools, chunk_id: str, width: int = 500) -> dict:
 
 
 async def compare_sources(tools, chunk_ids: list[str]) -> dict:
-    """对比多个 chunk。在已有的 kbinfos 中查找这些 chunk 并列出它们的 doc 来源。"""
+    """Find chunks in kbinfos and list the document sources they come from."""
     if not chunk_ids:
         return {"chunks": [], "doc_aggs": []}
     chunks = tools.kbinfos.get("chunks", [])
@@ -29,20 +29,23 @@ async def compare_sources(tools, chunk_ids: list[str]) -> dict:
 
 
 async def grep_within(tools, doc_id: str, pattern: str) -> dict:
-    """在文档内精确搜索关键词。"""
-    chunks = tools.kbinfos.get("chunks", [])
-    matched = []
-    for c in chunks:
-        if c.get("doc_id") != doc_id:
-            continue
-        content = c.get("content_with_weight", c.get("text", ""))
-        if re.search(pattern, content, re.IGNORECASE):
-            matched.append(c)
+    """Find a keyword within a document and return its chunks narrowed to the
+    matching sentences (+/- 1 neighbour).
+
+    ``pattern`` is treated as the keyword string (comma-separate for several).
+    Delegates to :func:`_narrow_by_keywords`, which keeps only keyword-bearing
+    sentences and drops chunks with no match. Operates on copies so the shared
+    ``kbinfos`` citation pool is never mutated.
+    """
+    from rag.advanced_rag.harness.tools.search import _narrow_by_keywords
+
+    chunks = [deepcopy(c) for c in tools.kbinfos.get("chunks", []) if c.get("doc_id") == doc_id]
+    matched = _narrow_by_keywords(chunks, pattern)
     return {"chunks": matched, "doc_aggs": _collect_doc_aggs(tools, matched)}
 
 
 async def request_adjacent(tools, chunk_id: str, direction: str = "next", count: int = 3) -> dict:
-    """获取 chunk 前后的相邻条目。"""
+    """Get adjacent entries before or after a chunk."""
     chunks = tools.kbinfos.get("chunks", [])
     idx = _find_chunk_index(chunks, chunk_id)
     if idx is None:
@@ -59,7 +62,7 @@ async def request_adjacent(tools, chunk_id: str, direction: str = "next", count:
     return {"chunks": adjacent, "doc_aggs": _collect_doc_aggs(tools, adjacent)}
 
 
-# ── Helpers ──
+# Helpers
 
 
 def _find_chunk_index(chunks: list[dict], chunk_id: str) -> int | None:

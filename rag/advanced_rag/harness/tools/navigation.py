@@ -1,4 +1,4 @@
-"""Navigation tools: TOC, page index, mindmap."""
+"""Navigation tools: TOC, page index, and mindmap."""
 
 import logging
 
@@ -6,10 +6,11 @@ _LOG = logging.getLogger(__name__)
 
 
 async def toc_navigate(tools, topic: str, doc_scope: list[str] | None = None) -> dict:
-    """按文档目录定位。需要 KB 有 toc 编译产物。
+    """Locate by document table of contents.
 
-    当前为占位符——当知识编译的 TOC 工具可用时，替换为实际实现。
-    回退到 hybrid_search。
+    Requires a KB with a compiled TOC artifact. This is currently a placeholder.
+    Replace it with the real implementation when the knowledge compilation TOC
+    tool is available. Falls back to hybrid search for now.
     """
     _LOG.info("toc_navigate called for topic=%s", topic)
     # TODO: replace with actual TOC navigation when compilation layer is ready
@@ -20,7 +21,7 @@ async def toc_navigate(tools, topic: str, doc_scope: list[str] | None = None) ->
 
 
 async def page_index_navigate(tools, topic: str, kb_ids: list[str] | None = None) -> dict:
-    """按页面索引导航。"""
+    """Navigate by page index."""
     _LOG.info("page_index_navigate called for topic=%s", topic)
     from rag.advanced_rag.harness.tools.search import hybrid_search
 
@@ -28,7 +29,7 @@ async def page_index_navigate(tools, topic: str, kb_ids: list[str] | None = None
 
 
 async def mindmap_navigate(tools, concept: str, kb_ids: list[str] | None = None) -> dict:
-    """按概念脑图定位。"""
+    """Locate by concept mindmap."""
     _LOG.info("mindmap_navigate called for concept=%s", concept)
     from rag.advanced_rag.harness.tools.search import hybrid_search
 

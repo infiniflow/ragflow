@@ -57,12 +57,14 @@ async def planner_node(state: dict, tools) -> dict:
     mode = get_mode(route.thinking_mode)
     max_claims = _get_max_claims(mode.label)
     detail_level = _get_detail_level(mode.label)
+    retrieved = _format_seed_chunks(state.get("seed_chunks"), tools)
 
     try:
         prompt = decompose_prompt.format(
             question=route.question,
             max_claims=max_claims,
             detail_level=detail_level,
+            retrieved=retrieved,
         )
         system, user = prompt.split("Output format", 1)
         system = system.strip()
@@ -106,6 +108,21 @@ async def planner_node(state: dict, tools) -> dict:
     _LOG.info("[Planner] OUT | plan type=%s | claims=%d", plan_type, len(plan.claims))
 
     return {"plan": plan, "claims": plan.claims}
+
+
+def _format_seed_chunks(seed_chunks, tools) -> str:
+    """Render preliminary-search chunks as grounding context for the planner."""
+    if not seed_chunks:
+        return "(no preliminary results)"
+    try:
+        from rag.prompts.generator import kb_prompt
+
+        blocks = kb_prompt({"chunks": seed_chunks, "doc_aggs": []}, tools.chat_mdl.max_length)
+        text = "\n".join(blocks).strip()
+        return text or "(no preliminary results)"
+    except Exception:
+        _LOG.exception("planner: failed to format seed chunks")
+        return "(no preliminary results)"
 
 
 def _direct_plan(question: str) -> dict:
