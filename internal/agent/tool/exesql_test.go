@@ -189,6 +189,19 @@ func TestExeSQL_RejectsEmptyArgs(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatementsPreservesStringLiterals(t *testing.T) {
+	statements := splitSQLStatements("SELECT * FROM orders WHERE status = 'Completed'; SELECT '2025-01-01'")
+	if len(statements) != 2 {
+		t.Fatalf("len(statements) = %d, want 2", len(statements))
+	}
+	if statements[0] != "SELECT * FROM orders WHERE status = 'Completed'" {
+		t.Fatalf("first statement = %q, string literal was changed", statements[0])
+	}
+	if statements[1] != " SELECT '2025-01-01'" {
+		t.Fatalf("second statement = %q, string literal was changed", statements[1])
+	}
+}
+
 func TestExeSQL_Info(t *testing.T) {
 	t.Parallel()
 

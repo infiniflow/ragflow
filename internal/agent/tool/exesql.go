@@ -431,13 +431,11 @@ func isBadFloat(f float64) bool {
 	return false
 }
 
-// splitSQLStatements splits on `;`, ignoring semicolons inside string
-// literals and line/block comments. This matches what the Python
-// tool does with `sqls = sql.split(";")` — a naive split, but safe
-// enough for read-only statements the LLM is expected to produce.
+// splitSQLStatements matches Python's `sql.split(";")` behavior. Keep the
+// original statement text intact: stripping quoted strings before execution
+// changes valid predicates such as `status = 'Completed'`.
 func splitSQLStatements(s string) []string {
-	cleaned := stripSQLStrings(stripSQLComments(s))
-	return strings.Split(cleaned, ";")
+	return strings.Split(s, ";")
 }
 
 // stripChunkIDMarkers drops the [ID:123] tokens the RAGFlow chunker
