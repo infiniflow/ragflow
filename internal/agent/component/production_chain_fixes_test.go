@@ -626,6 +626,52 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 	}
 }
 
+func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   "532",
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(num):\n" +
+			"    return num\n",
+		"arguments": map[string]any{
+			"num": "sys.query",
+		},
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "String",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
+	state.Sys["query"] = "532"
+	ctx := runtime.WithState(context.Background(), state)
+	out, err := c.Invoke(ctx, nil)
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := recorder.req.Arguments["num"]; got != "532" {
+		t.Fatalf("sandbox arguments[num] = %#v, want \"532\"", got)
+	}
+	if got := out["result"]; got != "532" {
+		t.Fatalf("CodeExec result = %v, want 532", got)
+	}
+}
+
 func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 	prev := agenttool.GetSandboxClient()
 	recorder := &codeExecSandboxRecorder{
