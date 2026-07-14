@@ -1138,7 +1138,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				downloads = v
 			}
 		}
-		reference := agentRunReferencePayload(state, legacyReference)
+		referencePayload := agentRunReferencePayload(state, legacyReference)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1151,30 +1151,30 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message", string(msgData))
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message", string(msgData))
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message_end", string(meData))
 
@@ -1198,15 +1198,15 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message", string(msgData))
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message_end", string(meData))
 
