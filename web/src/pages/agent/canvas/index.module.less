@@ -1,14 +1,26 @@
 .canvasWrapper {
   position: relative;
   height: calc(100% - 64px);
-  :global(.react-flow__node-iterationNode) {
+
+  :global(.react-flow__edgelabel-renderer) {
+    z-index: 1002;
+  }
+
+  :global(.react-flow__node-iterationNode),
+  :global(.react-flow__node-loopNode) {
     .commonNode();
     border-radius: 0 0 10px 10px;
     padding: 0;
     border: 0;
     background-color: transparent;
+    pointer-events: none;
+
+    :global(.react-flow__node) {
+      pointer-events: all;
+    }
   }
-  :global(.react-flow__node-iterationNode.selectable.selected) {
+  :global(.react-flow__node-iterationNode.selectable.selected),
+  :global(.react-flow__node-loopNode.selectable.selected) {
     box-shadow: none;
   }
 }

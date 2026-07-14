@@ -87,12 +87,13 @@ export function CommonHandle({
 
 export function LeftEndHandle({
   isConnectable,
+  className,
   ...props
 }: Omit<HandleProps, 'type' | 'position'>) {
   return (
     <Handle
       isConnectable={isConnectable}
-      className="!bg-accent-primary !size-2"
+      className={cn('!bg-accent-primary !size-2', className)}
       id={NodeHandleId.End}
       type="target"
       position={Position.Left}

@@ -1,5 +1,5 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { Node, OnBeforeDelete } from '@xyflow/react';
+import { Edge, Node, OnBeforeDelete } from '@xyflow/react';
 import { Operator } from '../constant';
 import useGraphStore, { collectDeletionNodeIds } from '../store';
 import { deleteAllDownstreamAgentsAndTool } from '../utils/delete-node';
@@ -53,7 +53,7 @@ export function useBeforeDelete() {
     if (nodes.some(agentPredicate)) {
       nodes.filter(agentPredicate).forEach((node) => {
         const { downstreamAgentAndToolNodeIds } =
-          deleteAllDownstreamAgentsAndTool(node.id, edges);
+          deleteAllDownstreamAgentsAndTool(node.id, graphEdges);
 
         downstreamAgentAndToolNodeIds.forEach((nodeId) => {
           const currentNode = getNode(nodeId);
@@ -67,11 +67,37 @@ export function useBeforeDelete() {
     const toBeDeletedNodeIdSet = new Set(
       toBeDeletedNodes.map((node) => node.id),
     );
-    const toBeDeletedEdges = graphEdges.filter(
-      (edge) =>
-        toBeDeletedNodeIdSet.has(edge.source) ||
-        toBeDeletedNodeIdSet.has(edge.target),
+    const discardedNodeIds = new Set(
+      nodes
+        .filter((node) => !toBeDeletedNodeIdSet.has(node.id))
+        .map((node) => node.id),
     );
+
+    const edgeIdSet = new Set<string>();
+    const toBeDeletedEdges: Edge[] = [];
+
+    const pushEdge = (edge: Edge) => {
+      if (edgeIdSet.has(edge.id)) {
+        return;
+      }
+      if (
+        discardedNodeIds.has(edge.source) ||
+        discardedNodeIds.has(edge.target)
+      ) {
+        return;
+      }
+      edgeIdSet.add(edge.id);
+      toBeDeletedEdges.push(edge);
+    };
+
+    edges.forEach(pushEdge);
+    graphEdges
+      .filter(
+        (edge) =>
+          toBeDeletedNodeIdSet.has(edge.source) ||
+          toBeDeletedNodeIdSet.has(edge.target),
+      )
+      .forEach(pushEdge);
 
     return {
       nodes: toBeDeletedNodes,

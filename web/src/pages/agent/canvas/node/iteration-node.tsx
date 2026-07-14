@@ -20,32 +20,43 @@ export function InnerIterationNode({
   selected,
 }: NodeProps<IIterationNode>) {
   return (
-    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
+    <ToolBar
+      selected={selected}
+      id={id}
+      label={data.label}
+      showRun={false}
+      passThrough
+    >
       <section
         className={cn(
-          'h-full bg-transparent rounded-b-md group border border-border-button border-t-0',
+          'h-full bg-transparent rounded-b-md group border border-border-button border-t-0 pointer-events-none',
           {
             ['border-x border-accent-primary']: selected,
           },
         )}
       >
-        <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
+        <NodeResizeControl
+          style={{ ...controlStyle, pointerEvents: 'all' }}
+          minWidth={100}
+          minHeight={50}
+        >
           <ResizeIcon />
         </NodeResizeControl>
-        <LeftEndHandle></LeftEndHandle>
+        <LeftEndHandle className="!pointer-events-auto"></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
           nodeId={id}
+          className="!pointer-events-auto"
         ></CommonHandle>
         <NodeHeader
           id={id}
           name={data.name}
           label={data.label}
           wrapperClassName={cn(
-            'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-38px] left-[-0.3px] border-x border-t border-border-button',
+            'pointer-events-auto bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-38px] left-[-0.3px] border-x border-t border-border-button',
             {
               ['border-x border-t border-accent-primary']: selected,
             },

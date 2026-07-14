@@ -8,6 +8,7 @@ import {
   useContext,
   useState,
 } from 'react';
+import { cn } from '@/lib/utils';
 import { BaseNode } from './base-node';
 
 /* TOOLTIP CONTEXT ---------------------------------------------------------- */
@@ -18,13 +19,14 @@ const TooltipContext = createContext(false);
 
 export type TooltipNodeProps = Partial<NodeProps> & {
   children?: ReactNode;
+  className?: string;
 };
 
 /**
  * A component that wraps a node and provides tooltip visibility context.
  */
 export const TooltipNode = forwardRef<HTMLDivElement, TooltipNodeProps>(
-  ({ selected, children }, ref) => {
+  ({ selected, children, className }, ref) => {
     const [isTooltipVisible, setTooltipVisible] = useState(false);
 
     const showTooltip = useCallback(() => setTooltipVisible(true), []);
@@ -40,7 +42,7 @@ export const TooltipNode = forwardRef<HTMLDivElement, TooltipNodeProps>(
           onBlur={hideTooltip}
           tabIndex={0}
           selected={selected}
-          className="h-full bg-transparent"
+          className={cn('h-full bg-transparent', className)}
         >
           {children}
         </BaseNode>
