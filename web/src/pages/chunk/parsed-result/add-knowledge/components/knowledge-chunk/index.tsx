@@ -213,7 +213,10 @@ function Chunk() {
               </article>
             </ResizablePanel>
 
-            <ResizableHandle withHandle />
+            <ResizableHandle
+              withHandle
+              className="bg-border-button w-[0.5px]"
+            />
 
             <ResizablePanel defaultSize={60} minSize={30}>
               <article className="h-full flex flex-col">
