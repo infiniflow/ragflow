@@ -98,6 +98,20 @@ func TestMessage_NoTemplate(t *testing.T) {
 	}
 }
 
+func TestMessage_RuntimeContentInput(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-4", "task-4")
+	ctx := withStateForTest(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{"content": "from upstream", "stream": false})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "from upstream" {
+		t.Errorf("content: got %q, want %q", got, "from upstream")
+	}
+}
+
 // withStateForTest is a thin alias for canvas.WithState kept for
 // readability at the test call sites (also defined in begin_test.go).
 // Same package → same symbol; defining it twice is a compile error,
