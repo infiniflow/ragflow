@@ -528,8 +528,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
-				provider.GET("/", r.providerHandler.ListProviders)
-				provider.PUT("/", r.providerHandler.AddProvider)
+				provider.GET("", r.providerHandler.ListProviders)
+				provider.PUT("", r.providerHandler.AddProvider)
 				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
 				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
@@ -561,8 +561,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				// GET /models returns the tenant's added models across
 				// all instances. Front-end useFetchAllAddedModels consumes this.
-				model.GET("/", r.providerHandler.ListTenantAddedModels)
-				model.PATCH("/", r.tenantHandler.SetModels)
+				model.GET("", r.providerHandler.ListTenantAddedModels)
+				model.PATCH("", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
@@ -595,8 +595,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			connectors := v1.Group("/connectors")
 			{
-				connectors.GET("/", r.connectorHandler.ListConnectors)
-				connectors.POST("/", r.connectorHandler.CreateConnector)
+				connectors.GET("", r.connectorHandler.ListConnectors)
+				connectors.POST("", r.connectorHandler.CreateConnector)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
