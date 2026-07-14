@@ -30,8 +30,8 @@ pytestmark = pytest.mark.p2
 class _StubModelTypeBinary(IntEnum):
     CHAT = 1
     EMBEDDING = 2
-    SPEECH2TEXT = 4
-    IMAGE2TEXT = 8
+    ASR = 4
+    VISION = 8
     RERANK = 16
     TTS = 32
     OCR = 64

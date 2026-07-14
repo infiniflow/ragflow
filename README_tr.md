@@ -326,6 +326,8 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
    uv run python3 ragflow_deps/download_deps.py
+   git config --local --unset core.hooksPath
+   uv tool install lefthook
    lefthook install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:

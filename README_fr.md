@@ -322,6 +322,8 @@ docker build --platform linux/amd64 \
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 ragflow_deps/download_deps.py
+   git config --local --unset core.hooksPath
+   uv tool install lefthook
    lefthook install
    ```
 3. Lancez les services dépendants (MinIO, Elasticsearch, Redis et MySQL) avec Docker Compose :

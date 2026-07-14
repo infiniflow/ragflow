@@ -19,6 +19,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   LlmKeys,
   useAddProviderInstance,
+  useFetchAddedProviders,
   useFetchProviderInstances,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
@@ -55,15 +56,23 @@ const SettingModelV2: FC = () => {
   // cancelled independently; saving removes the draft from this list and
   // triggers a refetch that surfaces the newly-saved instance above.
   const [draftIds, setDraftIds] = useState<string[]>([]);
+
+  const [newlySavedInstanceName, setNewlySavedInstanceName] = useState<
+    string | null
+  >(null);
   // Monotonic counter so each draft card has a stable, unique React key.
   const draftIdCounterRef = useRef(0);
   // Tracks whether the user explicitly cancelled the auto-shown draft
   // for the current selection. Reset on every selection change.
   const cancelledRef = useRef(false);
 
-  // Always re-fetch when the selection changes. Passing an empty string
-  // disables the query.
-  const providerQueryName = selection === 'default' ? '' : selection;
+  const { data: addedProviders } = useFetchAddedProviders();
+  const providerQueryName = useMemo(() => {
+    if (selection === 'default') return '';
+    return addedProviders.some((p) => p.name === selection && p.has_instance)
+      ? selection
+      : '';
+  }, [selection, addedProviders]);
   const { data: instances, loading: instancesLoading } =
     useFetchProviderInstances(providerQueryName);
   const queryClient = useQueryClient();
@@ -85,6 +94,7 @@ const SettingModelV2: FC = () => {
   useEffect(() => {
     cancelledRef.current = false;
     setDraftIds([]);
+    setNewlySavedInstanceName(null);
   }, [selection]);
 
   // If the user switches to a provider with no existing instances and
@@ -130,6 +140,7 @@ const SettingModelV2: FC = () => {
         // and `draftIds` are empty and would otherwise re-trigger
         // `addDraft()`).
         cancelledRef.current = true;
+        setNewlySavedInstanceName(values.instance_name);
         removeDraft(id);
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(providerQueryName),
@@ -149,10 +160,12 @@ const SettingModelV2: FC = () => {
   // "Save name" button inside the draft card). Remove the draft and
   // pin the auto-show guard so a new placeholder draft is not
   // auto-injected during the brief window between draft removal and
-  // the providerInstances refetch landing.
+  // the providerInstances refetch landing. Remember the saved name so
+  // the persisted card mounts expanded.
   const handleNameSaved = useCallback(
-    (id: string) => {
+    (id: string, instanceName: string) => {
       cancelledRef.current = true;
+      setNewlySavedInstanceName(instanceName);
       removeDraft(id);
     },
     [removeDraft],
@@ -202,7 +215,10 @@ const SettingModelV2: FC = () => {
                   key={instance.instance_name}
                   providerName={selection as string}
                   instance={instance}
-                  defaultOpen={index === 0}
+                  defaultOpen={
+                    index === 0 ||
+                    instance.instance_name === newlySavedInstanceName
+                  }
                 />
               ))}
               {draftIds.map((id) => (
@@ -212,7 +228,9 @@ const SettingModelV2: FC = () => {
                   instance={draftInstance}
                   isDraft
                   onDelete={() => handleDraftCancel(id)}
-                  onNameSaved={() => handleNameSaved(id)}
+                  onNameSaved={(instanceName) =>
+                    handleNameSaved(id, instanceName)
+                  }
                   onSaved={(values) => handleDraftSave(id, values)}
                 />
               ))}

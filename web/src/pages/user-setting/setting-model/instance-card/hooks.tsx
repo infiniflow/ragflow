@@ -336,7 +336,7 @@ export function useVerifyProvider(
 export function useSaveInstanceName(
   providerName: string,
   draftName: string,
-  onNameSaved?: () => void,
+  onNameSaved?: (instanceName: string) => void,
 ) {
   const { addProviderInstance } = useAddProviderInstance();
   return useCallback(async () => {
@@ -347,7 +347,7 @@ export function useSaveInstanceName(
       instance_name: trimmed,
     } as any);
     if (ret?.code === 0) {
-      onNameSaved?.();
+      onNameSaved?.(trimmed);
     }
   }, [draftName, addProviderInstance, providerName, onNameSaved]);
 }
@@ -655,6 +655,7 @@ export function useSavedAutoSave({
     if (isDraft) return;
     const resolvedId = instanceDetails?.id || instanceId;
     if (!resolvedId) return;
+    if (hasSyncedInstanceRef.current) return;
     // Match the api_key shape performAutoSave produces (extra credential
     // fields nested inside api_key) so the first blur after mount
     // doesn't see a signature diff and fire a redundant save. model_info
@@ -802,12 +803,15 @@ export function useFormFields(
     () => fields.filter((f) => f.name !== 'instance_name'),
     [fields],
   );
+
+  const defaultValuesKey = JSON.stringify(defaultValues);
   const formDefaultValues = useMemo(() => {
     const { instance_name: _ignored, ...rest } = (defaultValues ??
       {}) as Record<string, any>;
     void _ignored;
     return rest;
-  }, [defaultValues]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultValuesKey]);
 
   return { formFields, formDefaultValues };
 }

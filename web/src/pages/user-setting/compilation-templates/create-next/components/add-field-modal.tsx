@@ -9,7 +9,7 @@ import { startCase } from 'lodash';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldLabelKeyMap } from '@/pages/user-setting/compilation-templates/edit-template/utils';
+import { FieldLabelKeyMap } from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { useAddFieldForm } from '../hooks/use-add-field-form';
 
@@ -50,6 +50,14 @@ export function AddFieldModal({
     onOpenChange(false);
   }, [onOpenChange]);
 
+  const handleConfirm = useCallback(
+    (field: Record<string, string>) => {
+      onAdd(field);
+      onOpenChange(false);
+    },
+    [onAdd, onOpenChange],
+  );
+
   const getFieldLabel = useCallback(
     (key: string) => {
       return FieldLabelKeyMap[key] ? t(FieldLabelKeyMap[key]) : startCase(key);
@@ -68,7 +76,7 @@ export function AddFieldModal({
           <Button type="button" variant="outline" onClick={handleClose}>
             {t('common.cancel')}
           </Button>
-          <Button type="button" onClick={handleSubmit(onAdd)}>
+          <Button type="button" onClick={handleSubmit(handleConfirm)}>
             {t('common.confirm')}
           </Button>
         </div>

@@ -221,7 +221,7 @@ func main() {
 	}
 
 	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		return
 	}
 
@@ -368,6 +368,12 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
+	if err = server.StartServer(); err != nil {
+		common.Error("Failed to start EE server", err)
+		os.Exit(1)
+	}
+	defer server.ShutdownServer()
+
 	if arguments.name == nil {
 		arguments.name = &serverName
 	}
@@ -449,7 +455,7 @@ func runAdmin(args *serverArgs) error {
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
 	// Start HTTP server in a goroutine
 	go func() {
@@ -509,7 +515,7 @@ func runIngestor(args *serverArgs) error {
 		"          /____/\n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -551,10 +557,10 @@ func runIngestor(args *serverArgs) error {
 	}
 
 	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ingestor.Stop()
+	ingestor.Stop(shutdownCtx)
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
@@ -584,7 +590,7 @@ func runSyncer(args *serverArgs) error {
 		"                           /____/    \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -863,7 +869,7 @@ func startServer(config *server.Config) {
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
+		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
