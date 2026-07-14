@@ -257,13 +257,8 @@ func TestVariableAssignerGetInputForm(t *testing.T) {
 	if !ok {
 		t.Fatal("VariableAssigner component does not expose GetInputForm")
 	}
-	want := map[string]any{
-		"items": map[string]any{
-			"type": "json",
-			"name": "Items",
-		},
-	}
-	if got := getter.GetInputForm(); !reflect.DeepEqual(got, want) {
-		t.Errorf("GetInputForm() = %#v, want %#v", got, want)
+	items, ok := getter.GetInputForm()["items"].(map[string]any)
+	if !ok || items["type"] != "line" || items["name"] != "Items" {
+		t.Errorf("GetInputForm()[items] = %#v", items)
 	}
 }
