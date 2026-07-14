@@ -53,6 +53,7 @@ type Config struct {
 	Language         string                 `mapstructure:"language"`
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
+	OTel             OtelConfig             `mapstructure:"otel"`
 }
 
 // AdminConfig admin server configuration
@@ -79,6 +80,14 @@ type TaskExecutorConfig struct {
 type FileSyncerConfig struct {
 	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
 	SyncInterval       int `mapstructure:"sync_interval"`
+}
+
+type OtelConfig struct {
+	Host        string  `mapstructure:"host"`
+	Port        int     `mapstructure:"port"`
+	SampleRatio float64 `mapstructure:"sample_ratio"`
+	Secure      bool    `mapstructure:"secure"`
+	Stdout      bool    `mapstructure:"stdout"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
