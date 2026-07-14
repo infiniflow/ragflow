@@ -379,27 +379,9 @@ func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {
 				"(db_type/host/port/database/username/password)",
 		)
 	}
-	conn := exesqlConnParams{}
-	if v, ok := stringParam(params, "db_type"); ok {
-		conn.DBType = v
-	}
-	if v, ok := stringParam(params, "database"); ok {
-		conn.Database = v
-	}
-	if v, ok := stringParam(params, "username"); ok {
-		conn.Username = v
-	}
-	if v, ok := stringParam(params, "host"); ok {
-		conn.Host = v
-	}
-	if v, ok := intParam(params, "port"); ok {
-		conn.Port = v
-	}
-	if v, ok := stringParam(params, "password"); ok {
-		conn.Password = v
-	}
-	if v, ok := intParam(params, "max_records"); ok {
-		conn.MaxRecords = v
+	conn, err := NewExeSQLConnParams(params)
+	if err != nil {
+		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)
 	}
 	if err := conn.check(); err != nil {
 		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)

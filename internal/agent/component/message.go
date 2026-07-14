@@ -175,7 +175,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		return nil, fmt.Errorf("Message: nil canvas state")
 	}
 
-	text, _ := inputs["text"].(string)
+	text := extractMessageText(inputs)
 	if text == "" {
 		text = m.text
 	}
@@ -190,9 +190,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
-	var downloads []DownloadInfo
-	for _, v := range inputs {
-		downloads = append(downloads, ExtractDownloads(v)...)
+	downloads := ExtractDownloads(resolved)
+	if len(downloads) > 0 && downloadInfoString(resolved) {
+		resolved = ""
+	}
+	for key, v := range inputs {
+		if key == "text" {
+			continue
+		}
+		downloads = appendUniqueDownloads(downloads, ExtractDownloads(v))
 	}
 
 	// Pick the effective output format. inputs["output_format"]
@@ -203,11 +209,13 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		format = OutputFormat(v)
 	}
 
-	rendered := Render(RenderRequest{
-		Format:    format,
-		Text:      resolved,
-		Downloads: downloads,
-	})
+	rendered := ""
+	if resolved != "" {
+		rendered = Render(RenderRequest{
+			Format: format,
+			Text:   resolved,
+		})
+	}
 
 	out := map[string]any{"content": rendered}
 	if len(downloads) > 0 {

@@ -259,9 +259,9 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail
 // 2. If user is the owner tenant, return true
 // 3. If permission is "me", only owner tenant can access
 // 4. If permission is "team", user must be a member of the tenant
-func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
+func (dao *KnowledgebaseDAO) Accessible(datasetID, userID string) bool {
 	var kb entity.Knowledgebase
-	err := DB.Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error
+	err := DB.Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return false
 	}
