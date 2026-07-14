@@ -317,6 +317,10 @@ type duckDuckGoInvoker interface {
 	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
 }
 
+type keenableInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
@@ -572,6 +576,199 @@ func (c *duckDuckGoComponent) Invoke(ctx context.Context, inputs map[string]any)
 
 func (c *duckDuckGoComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// keenableSearchComponent delegates to internal/agent/tool/KeenableTool.
+type keenableSearchComponent struct {
+	inner  keenableInvoker
+	apiKey string
+	mode   string
+	topN   int
+	site   string
+}
+
+func newKeenableSearchComponent(params map[string]any) (Component, error) {
+	apiKey := stringParam(params["api_key"])
+	return newKeenableSearchComponentWithInvoker(agenttool.NewKeenableToolWithAPIKey(nil, apiKey), params), nil
+}
+
+func newKeenableSearchComponentWithInvoker(inner keenableInvoker, params map[string]any) Component {
+	if inner == nil {
+		inner = agenttool.NewKeenableTool()
+	}
+	mode := strings.TrimSpace(stringParam(params["mode"]))
+	if mode == "" {
+		mode = "pro"
+	}
+	topN := toIntParam(params["top_n"])
+	if topN <= 0 {
+		topN = 10
+	}
+	return &keenableSearchComponent{
+		inner:  inner,
+		apiKey: stringParam(params["api_key"]),
+		mode:   mode,
+		topN:   topN,
+		site:   stringParam(params["site"]),
+	}
+}
+
+func (c *keenableSearchComponent) Name() string { return "KeenableSearch" }
+
+func (c *keenableSearchComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"site":    "Optional single-domain filter.",
+		"api_key": "Optional Keenable API key.",
+		"mode":    "Search mode: pro or realtime.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *keenableSearchComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"site": map[string]any{
+			"name": "Site",
+			"type": "line",
+		},
+	}
+}
+
+func (c *keenableSearchComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw Keenable result list.",
+	}
+}
+
+func (c *keenableSearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+
+	args := map[string]any{
+		"query": query,
+		"mode":  c.mode,
+		"top_n": c.topN,
+	}
+	if mode := strings.TrimSpace(stringParam(inputs["mode"])); mode != "" {
+		args["mode"] = mode
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	site := strings.TrimSpace(stringParam(inputs["site"]))
+	if site == "" {
+		site = strings.TrimSpace(c.site)
+	}
+	if site != "" {
+		args["site"] = site
+	}
+
+	invoker := c.inner
+	if apiKey := strings.TrimSpace(stringParam(inputs["api_key"])); apiKey != "" && apiKey != strings.TrimSpace(c.apiKey) {
+		invoker = agenttool.NewKeenableToolWithAPIKey(nil, apiKey)
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := invoker.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	results := anySlice(decoded["results"])
+	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
+		return map[string]any{
+			"formalized_content": "",
+			"json":               results,
+			"_ERROR":             existing,
+		}, nil
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               results,
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: KeenableSearch: %w", err)
+	}
+	chunks, docAggs := buildKeenableReferences(results)
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		state.SetRetrievalReferences(chunks, docAggs)
+	}
+	return map[string]any{
+		"formalized_content": renderKeenableReferences(chunks),
+		"json":               results,
+	}, nil
+}
+
+func (c *keenableSearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func buildKeenableReferences(results []any) ([]map[string]any, []map[string]any) {
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateRunes(strings.TrimSpace(keenableValueString(m["description"])), 10000)
+		if content == "" || content == "None" {
+			continue
+		}
+		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		title := keenableValueString(m["title"])
+		url := keenableValueString(m["url"])
+		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           url,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      url,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderKeenableReferences(chunks []map[string]any) string {
+	if len(chunks) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + keenableValueString(chunk["id"]),
+			"├── Title: " + keenableValueString(chunk["docnm_kwd"]),
+			"├── URL: " + keenableValueString(chunk["url"]),
+			"└── Content:\n" + keenableValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func keenableValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func renderDuckDuckGoResults(results []any) string {

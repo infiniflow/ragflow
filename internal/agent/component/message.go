@@ -175,7 +175,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		return nil, fmt.Errorf("Message: nil canvas state")
 	}
 
-	text, _ := inputs["text"].(string)
+	text := extractMessageText(inputs)
 	if text == "" {
 		text = m.text
 	}

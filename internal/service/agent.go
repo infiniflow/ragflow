@@ -1115,7 +1115,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
 		var answer string
-		var reference []interface{}
+		var legacyReference []interface{}
 		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
@@ -1131,12 +1131,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				answer = v
 			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
-				reference = append(reference, v...)
+				legacyReference = append(legacyReference, v...)
 			}
 			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
 				downloads = v
 			}
 		}
+		referencePayload := agentRunReferencePayload(state, legacyReference)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1149,30 +1150,30 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message", string(msgData))
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message", string(msgData))
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message_end", string(meData))
 
@@ -1196,15 +1197,15 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message", string(msgData))
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message_end", string(meData))
 
@@ -1261,7 +1262,7 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference []interface{}) {
+func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return
 	}
@@ -1283,12 +1284,28 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 		session.Message = raw
 	}
 	references := parseAgentSessionReferences(session.Reference)
-	references = append(references, normalizeAgentReferenceEntry(map[string]interface{}{"chunks": reference}))
+	references = append(references, normalizeAgentReferenceEntry(reference))
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
 	}
 	if err := s.api4ConversationDAO.Update(session); err != nil {
 		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+	}
+}
+
+func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	if state != nil {
+		if reference := state.GetRetrievalReference(); len(reference) > 0 {
+			return reference
+		}
+	}
+	if len(legacyChunks) == 0 {
+		return nil
+	}
+	return map[string]interface{}{
+		"chunks":   legacyChunks,
+		"doc_aggs": []interface{}{},
+		"total":    len(legacyChunks),
 	}
 }
 
