@@ -217,6 +217,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		}
 
 		common.SuccessWithData(c, users, "List users")
+		return
 	case common.EnterpriseEdition:
 		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaInt)
 		if err != nil {
@@ -227,9 +228,6 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
-
-	common.SuccessWithData(c, users, "List users")
-	return
 }
 
 // CreateUserHTTPRequest create user request
