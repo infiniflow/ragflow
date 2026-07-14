@@ -733,6 +733,12 @@ int32_t RAGAnalyzer::Load() {
                 int32_t freq = std::stoi(results[1]);
                 freq = int32_t(std::log(float(freq) / DENOMINATOR) + 0.5);
                 int32_t pos_idx = pos_table_->GetPOSIndex(results[2]);
+                // If the POS tag is not in the POS table (e.g. "eng" for
+                // English words), default to index 0.  Using -1 would cause
+                // Encode() to produce a negative int32_t which the darts
+                // trie rejects.
+                if (pos_idx < 0)
+                    pos_idx = 0;
                 int value = Encode(freq, pos_idx);
                 trie_->Add(results[0], value);
                 std::string rkey = RKey(results[0]);
