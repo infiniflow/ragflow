@@ -92,8 +92,17 @@ def test_video_description_is_tokenized_once():
     tokenized_texts = []
     picture = _load_picture_module(tokenized_texts)
 
-    chunks = picture.chunk("clip.mp4", b"video bytes", "tenant", "English", callback=lambda *_args, **_kwargs: None)
+    callback_calls = []
+    chunks = picture.chunk(
+        "clip.mp4",
+        b"video bytes",
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
 
+    errors = [kwargs.get("msg") for args, kwargs in callback_calls if kwargs.get("prog") == -1]
+    assert not errors, f"chunk() reported an error instead of producing a chunk: {errors}"
     assert len(chunks) == 1
     assert chunks[0]["doc_type_kwd"] == "video"
     assert tokenized_texts == ["A concise video description."]
