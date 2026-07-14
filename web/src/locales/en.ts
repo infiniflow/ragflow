@@ -1118,6 +1118,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
+      thinkingLevelLow: 'Low',
+      thinkingLevelMedium: 'Medium',
+      thinkingLevelHigh: 'High',
+      thinkingLevelUltra: 'Ultra',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',

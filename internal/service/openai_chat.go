@@ -358,6 +358,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)
 					fullContent = finalContent
+					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
 						if chunks, ok := ref.([]map[string]interface{}); ok {
 							finalReference = formatChunks(chunks)
@@ -397,6 +398,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			}
 
 			if finalReference == nil && openaiReq.NeedReference {
+				finalReference = []FormattedChunk{}
 				if ref, ok := lastResult.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
 						finalReference = formatChunks(chunks)
@@ -441,6 +443,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			TotalTokens:      promptTokens + completionTokens,
 		}
 		if openaiReq.NeedReference {
+			resp.Reference = []FormattedChunk{}
 			if ref, ok := finalResult.Reference["chunks"]; ok {
 				if chunks, ok := ref.([]map[string]interface{}); ok {
 					resp.Reference = formatChunks(chunks)

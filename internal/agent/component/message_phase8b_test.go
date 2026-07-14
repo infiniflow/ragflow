@@ -121,6 +121,31 @@ func TestMessage_DownloadsExtraction(t *testing.T) {
 	}
 }
 
+func TestMessage_DownloadJSONStringSuppressesContent(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"text": "unused"})
+	state := canvas.NewCanvasState("r1", "t1")
+	ctx := withStateForTest(context.Background(), state)
+	downloadJSON := `{"doc_id":"d-1","filename":"report.md","mime_type":"text/markdown","url":"/api/v1/agents/attachments/d-1/download","include_download_info_in_content":true}`
+
+	out, err := c.Invoke(ctx, map[string]any{
+		"text":   downloadJSON,
+		"stream": false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	dls, ok := out["downloads"].([]DownloadInfo)
+	if !ok {
+		t.Fatalf("downloads key missing or wrong type: %T", out["downloads"])
+	}
+	if len(dls) != 1 || dls[0].DocID != "d-1" || dls[0].Filename != "report.md" {
+		t.Fatalf("unexpected downloads: %+v", dls)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty download-only message", got)
+	}
+}
+
 // TestMessage_AutoPlay_NoEngine: when auto_play is enabled but no
 // real synthesizer is registered, the textual content is still
 // returned and outputs["audio_error"] surfaces the deferred
