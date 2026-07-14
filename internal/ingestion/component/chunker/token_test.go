@@ -284,3 +284,42 @@ func TestTokenChunker_NewAcceptsDefaults(t *testing.T) {
 		t.Errorf("default delimiter_mode = %q, want token_size", got)
 	}
 }
+
+// TestTokenChunker_PrefersUpstreamChunks is the Go port of the Python
+// regression test for #16812 (PR #16825). When a TitleChunker feeds
+// this TokenChunker with output_format == "chunks" AND both a "chunks"
+// list and a raw "json" list on the wire, the TokenChunker must
+// consume the upstream chunks (CHAPTER-AWARE) and must NOT fall through
+// to the raw parser json_result (RAW-PARSER-JSON).
+func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.md",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "CHAPTER-AWARE", "doc_type_kwd": "text"}},
+		"json":          []map[string]any{{"text": "RAW-PARSER-JSON", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if text == "RAW-PARSER-JSON" {
+			t.Fatalf("chunk[%d] consumed the raw parser json_result instead of upstream chunks: %q", i, text)
+		}
+		if text == "CHAPTER-AWARE" {
+			return // happy path: upstream chunk preserved
+		}
+	}
+	t.Fatalf("upstream chunk 'CHAPTER-AWARE' was not found in output: %v", out["chunks"])
+}

@@ -17,10 +17,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -61,20 +63,33 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
 	}
 	modelID, _ := config.SearchConfig["chat_id"].(string)
-	if modelID == "" && config.TenantSvc != nil {
-		defaultModel, err := config.TenantSvc.GetDefaultModelName(modelTenantID, entity.ModelTypeChat)
-		if err == nil {
-			modelID = defaultModel
+	messages := []modelModule.Message{{Role: "system", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// search_config chat_id can be a stale tenant_model ID that no longer
+	// exists. ResolveModelConfig tries ID lookup first, then falls back to
+	// composite-name parsing which fails for bare IDs. If the configured
+	// model can't be resolved, fall back to the tenant's default chat model
+	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
+	ch, streamErr := config.LLM.ChatStream(ctx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
+	if streamErr != nil && config.TenantSvc != nil {
+		if defaultModel, err := config.TenantSvc.GetDefaultModelName(modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
+			ch, streamErr = config.LLM.ChatStream(ctx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}
-	response, err := config.LLM.Chat(modelTenantID, modelID, []modelModule.Message{{Role: "user", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}, &modelModule.ChatConfig{})
-	if err != nil {
-		return mindMapNode{}, err
+	if streamErr != nil {
+		return mindMapNode{}, streamErr
 	}
-	if response == nil || response.Answer == nil {
+	var sb strings.Builder
+	for delta := range ch {
+		sb.WriteString(delta)
+	}
+	fullText := sb.String()
+	if fullText == "" {
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
 	}
-	return parseMindMapMarkdown(*response.Answer), nil
+	return parseMindMapMarkdown(fullText), nil
 }
 
 func searchConfigFromDetail(detail map[string]interface{}) map[string]interface{} {
@@ -232,22 +247,20 @@ type mindMapNode struct {
 
 var mindMapHeadingRe = regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
 var mindMapListRe = regexp.MustCompile(`^(\s*)(?:[-*+]|\d+\.)\s+(.+)$`)
+var mindMapThinkRe = regexp.MustCompile(`(?s)<think>.*?(?:</think>|$)`)
+var mindMapFenceRe = regexp.MustCompile("(?m)^```[^\n]*$")
 
 func parseMindMapMarkdown(text string) mindMapNode {
+	text = mindMapThinkRe.ReplaceAllString(text, "")
+	text = mindMapFenceRe.ReplaceAllString(text, "")
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	root := mindMapNode{ID: "root", Children: []mindMapNode{}}
 	stack := []*mindMapNode{&root}
-	inFence := false
 	listBaseLevel := 1
 	lastWasList := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			inFence = !inFence
-			lastWasList = false
-			continue
-		}
-		if inFence || trimmed == "" {
+		if trimmed == "" {
 			lastWasList = false
 			continue
 		}

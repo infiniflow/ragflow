@@ -1,11 +1,17 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import isEmpty from 'lodash/isEmpty';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { type ArtifactForceGraphProps } from './types';
+import { renderNodeLabel } from './node-label';
+import {
+  getNodeColor as defaultGetNodeColor,
+  getNodeRadius as defaultGetNodeRadius,
+  MinNodeRadius,
+} from './node-style';
+import { type ArtifactForceGraphProps, type ArtifactGraphNode } from './types';
+import { useArtifactGraphData } from './use-artifact-graph-data';
 import { useContainerDimensions } from './use-container-dimensions';
-import { defaultMapNodeToValue, renderNodeLabel } from './utils';
+import { defaultMapNodeToValue } from './utils';
 
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
@@ -15,31 +21,22 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     node: IArtifactGraphEntity,
   ) => TNodeValue,
   getNodeId = (node) => node.slug,
+  getNodeColor = defaultGetNodeColor,
+  getNodeRadius = defaultGetNodeRadius,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<ForceGraphMethods<IArtifactGraphEntity> | undefined>(
+  const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
     undefined,
   );
   const hasFittedRef = useRef(false);
   const dimensions = useContainerDimensions(containerRef, show);
 
-  const graphData = useMemo(() => {
-    if (isEmpty(data) || !data) {
-      return { nodes: [], links: [] };
-    }
-
-    const nodes = (data.entities || []).map((entity) => ({
-      ...entity,
-      id: getNodeId(entity),
-    }));
-
-    const links = (data.relations || []).map((relation) => ({
-      source: relation.from,
-      target: relation.to,
-    }));
-
-    return { nodes, links };
-  }, [data, getNodeId]);
+  const graphData = useArtifactGraphData({
+    data,
+    getNodeId,
+    getNodeColor,
+    getNodeRadius,
+  });
 
   useEffect(() => {
     hasFittedRef.current = false;
@@ -69,6 +66,13 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
       .trim();
   }, []);
 
+  const nodeColor = useCallback((node: ArtifactGraphNode) => node.__color, []);
+
+  const nodeVal = useCallback(
+    (node: ArtifactGraphNode) => node.__radius ?? MinNodeRadius,
+    [],
+  );
+
   return (
     <div
       ref={containerRef}
@@ -80,7 +84,9 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeAutoColorBy="type"
+          nodeRelSize={1}
+          nodeColor={nodeColor}
+          nodeVal={nodeVal}
           cooldownTicks={100}
           nodeLabel={''}
           onEngineStop={handleEngineStop}

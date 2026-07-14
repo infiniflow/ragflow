@@ -209,6 +209,19 @@ func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
+func (k *KeenableTool) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"site": map[string]any{
+			"name": "Site",
+			"type": "line",
+		},
+	}
+}
+
 // InvokableRun performs the Keenable search.
 func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var p keenableParams
