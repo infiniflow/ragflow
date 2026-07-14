@@ -155,7 +155,6 @@ type CheckConnectionRequest struct {
 
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -227,7 +226,10 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 			}
 			return nil, common.CodeServerError, err
 		}
-		provider["name"] = providerName
+		// provider["name"] is the catalog name from GetProviderByName (e.g.,
+		// "SILICONFLOW"), which matches Python's factory_info["name"]. Do NOT
+		// override it with providerName (the DB value), which may differ in
+		// case from historical ToLower writes.
 
 		// Set has_instance flag. Mirrors Python's:
 		//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
@@ -312,7 +314,6 @@ func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) 
 
 func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -397,7 +398,6 @@ type CreateInstanceModelInfo struct {
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -476,7 +476,6 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 // create_name_only_provider_instance in provider_api_service.py:536.
 func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	if instanceName == "default" {
 		return common.CodeBadRequest, errors.New("instance name cannot be 'default'")
@@ -629,7 +628,6 @@ func (m *ModelProviderService) addModelToInstance(tenantID, providerName, instan
 
 func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1239,7 +1237,6 @@ func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID stri
 
 func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
