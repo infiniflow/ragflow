@@ -121,20 +121,28 @@ def _select_extractor_type(graphrag_config: dict):
     return graphrag_config.get("method", "light")
 
 
-def _select_extractor(graphrag_config: dict):
-    """Return the extractor class matching ``graphrag_config["method"]``.
+def _select_extractor(graphrag_config):
+    """
+    Select GraphRAG extractor using registry.
 
-    Supported values:
-    - ``"general"``  – Microsoft GraphRAG LLM-based extractor.
-    - ``"light"``   – LightRAG-style LLM-based extractor (default).
-    - ``"ner"``     – NER-based extractor using spaCy.
+    Falls back to light extractor when method is unknown.
     """
 
     method = graphrag_config.get("method", "light")
 
-    return (
-        get_graphrag_extractor(method)
-        or get_graphrag_extractor("light")
+    extractor = get_graphrag_extractor(method)
+
+    if extractor:
+        return extractor
+
+    extractor = get_graphrag_extractor("light")
+
+    if extractor:
+        return extractor
+
+    raise RuntimeError(
+        "No GraphRAG extractor available. "
+        "Please ensure extractor registry is initialized correctly."
     )
 
 
