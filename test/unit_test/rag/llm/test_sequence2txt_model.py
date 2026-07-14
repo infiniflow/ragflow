@@ -104,6 +104,17 @@ def test_fun_asr_flash_stream_closes_response_when_consumer_stops_early():
     response.close.assert_called_once_with()
 
 
+def test_fun_asr_flash_handles_top_level_text_response():
+    response = MagicMock()
+    response.json.return_value = {"text": "transcribed text"}
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response):
+        model = QWenSeq2txt("test-key", "fun-asr-flash-2026-06-15")
+        text, _ = model.transcription("data:audio/wav;base64,dGVzdA==")
+
+    assert text == "transcribed text"
+
+
 def test_fun_asr_flash_derives_format_from_data_uri():
     response = MagicMock()
     response.json.return_value = {"output": {"text": "transcribed text"}}
