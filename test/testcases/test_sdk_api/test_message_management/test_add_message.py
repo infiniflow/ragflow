@@ -17,7 +17,10 @@ import time
 import uuid
 import pytest
 from ragflow_sdk import RAGFlow, Memory
-from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
+
+
+MESSAGE_USER_ID = "sdk-api-test-user" if IS_GO_PROXY else ""
 
 
 class TestAuthorization:
@@ -25,14 +28,14 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
         client = RAGFlow(invalid_auth, HOST_ADDRESS)
         with pytest.raises(Exception) as exception_info:
-            client.add_message(**{"memory_id": [""], "agent_id": "", "session_id": "", "user_id": "", "user_input": "what is pineapple?", "agent_response": ""})
+            client.add_message(**{"memory_id": [""], "agent_id": "", "session_id": "", "user_id": MESSAGE_USER_ID, "user_input": "what is pineapple?", "agent_response": ""})
         assert str(exception_info.value) == expected_message, str(exception_info.value)
 
 
@@ -47,7 +50,7 @@ class TestAddRawMessage:
             "memory_id": [memory_id],
             "agent_id": agent_id,
             "session_id": session_id,
-            "user_id": "",
+            "user_id": MESSAGE_USER_ID,
             "user_input": "what is pineapple?",
             "agent_response": """
 A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:
@@ -82,7 +85,7 @@ class TestAddMultipleTypeMessage:
             "memory_id": [memory_id],
             "agent_id": agent_id,
             "session_id": session_id,
-            "user_id": "",
+            "user_id": MESSAGE_USER_ID,
             "user_input": "what is pineapple?",
             "agent_response": """
 A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:
@@ -117,7 +120,7 @@ class TestAddToMultipleMemory:
             "memory_id": memory_ids,
             "agent_id": agent_id,
             "session_id": session_id,
-            "user_id": "",
+            "user_id": MESSAGE_USER_ID,
             "user_input": "what is pineapple?",
             "agent_response": """
 A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:

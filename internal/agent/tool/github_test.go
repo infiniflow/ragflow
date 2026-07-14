@@ -40,14 +40,14 @@ func TestGitHub_BuildURL(t *testing.T) {
 			name:        "default",
 			query:       "ragflow",
 			max:         0,
-			wantPerPage: "5",
+			wantPerPage: "10",
 			wantHost:    "api.github.com",
 		},
 		{
-			name:        "clamped high",
+			name:        "preserves configured top n",
 			query:       "x",
 			max:         99,
-			wantPerPage: "30",
+			wantPerPage: "99",
 			wantHost:    "api.github.com",
 		},
 		{
@@ -79,6 +79,12 @@ func TestGitHub_BuildURL(t *testing.T) {
 			if q.Get("per_page") != tc.wantPerPage {
 				t.Errorf("per_page = %q, want %q", q.Get("per_page"), tc.wantPerPage)
 			}
+			if q.Get("sort") != "stars" {
+				t.Errorf("sort = %q, want stars", q.Get("sort"))
+			}
+			if q.Get("order") != "desc" {
+				t.Errorf("order = %q, want desc", q.Get("order"))
+			}
 		})
 	}
 }
@@ -86,14 +92,16 @@ func TestGitHub_BuildURL(t *testing.T) {
 func TestGitHub_ParseResponse(t *testing.T) {
 	t.Parallel()
 
-	var gotAuth string
+	var gotContentType, gotAPIVersion, gotPerPage string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		gotAPIVersion = r.Header.Get("X-GitHub-Api-Version")
+		gotPerPage = r.URL.Query().Get("per_page")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"items": [
-				{"full_name":"infiniflow/ragflow","html_url":"https://github.com/infiniflow/ragflow","description":"RAG engine","stargazers_count":12000},
-				{"full_name":"foo/bar","html_url":"https://github.com/foo/bar","description":"","stargazers_count":5}
+				{"name":"ragflow","html_url":"https://github.com/infiniflow/ragflow","description":"RAG engine","watchers":12000,"private":false},
+				{"name":"bar","html_url":"https://github.com/foo/bar","description":"","watchers":5}
 			]
 		}`))
 	}))
@@ -102,9 +110,9 @@ func TestGitHub_ParseResponse(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewGitHubToolWith(helper)
+	tool := NewGitHubToolWithDefaults(helper, githubParams{TopN: 17})
 	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"ragflow","max_results":5,"token":"ghp_xyz"}`)
+		`{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -119,17 +127,23 @@ func TestGitHub_ParseResponse(t *testing.T) {
 	if len(env.Results) != 2 {
 		t.Fatalf("Results len = %d, want 2", len(env.Results))
 	}
-	if env.Results[0].FullName != "infiniflow/ragflow" {
-		t.Errorf("Results[0].FullName = %q, want infiniflow/ragflow", env.Results[0].FullName)
+	if env.Results[0]["name"] != "ragflow" {
+		t.Errorf("Results[0].name = %v, want ragflow", env.Results[0]["name"])
 	}
-	if env.Results[0].StargazersCount != 12000 {
-		t.Errorf("Results[0].StargazersCount = %d, want 12000", env.Results[0].StargazersCount)
+	if env.Results[0]["watchers"] != float64(12000) {
+		t.Errorf("Results[0].watchers = %v, want 12000", env.Results[0]["watchers"])
 	}
-	if env.Results[1].Description != "" {
-		t.Errorf("Results[1].Description = %q, want empty", env.Results[1].Description)
+	if env.Results[1]["description"] != "" {
+		t.Errorf("Results[1].description = %q, want empty", env.Results[1]["description"])
 	}
-	if gotAuth != "Bearer ghp_xyz" {
-		t.Errorf("Authorization = %q, want Bearer ghp_xyz", gotAuth)
+	if gotContentType != "application/vnd.github+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.github+json", gotContentType)
+	}
+	if gotAPIVersion != "2022-11-28" {
+		t.Errorf("X-GitHub-Api-Version = %q, want 2022-11-28", gotAPIVersion)
+	}
+	if gotPerPage != "17" {
+		t.Errorf("per_page = %q, want 17 from the component top_n default", gotPerPage)
 	}
 }
 
@@ -146,6 +160,38 @@ func TestGitHub_RequiresQuery(t *testing.T) {
 	}
 }
 
+func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
+	built, err := BuildByName("github", map[string]any{"top_n": float64(17)})
+	if err != nil {
+		t.Fatalf("BuildByName(github): %v", err)
+	}
+	github, ok := built.(*GitHubTool)
+	if !ok {
+		t.Fatalf("BuildByName(github) returned %T, want *GitHubTool", built)
+	}
+	if github.defaults.TopN != 17 {
+		t.Errorf("defaults.TopN = %d, want 17", github.defaults.TopN)
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 100}); err != nil {
+		t.Errorf("BuildByName(github) rejected GitHub's maximum top_n: %v", err)
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 0}); err == nil {
+		t.Fatal("BuildByName(github) accepted non-positive top_n")
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 1.5}); err == nil {
+		t.Fatal("BuildByName(github) accepted fractional top_n")
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": "10"}); err == nil {
+		t.Fatal("BuildByName(github) accepted string top_n")
+	}
+	if _, err := BuildByName("github", map[string]any{"top_n": 101}); err == nil {
+		t.Fatal("BuildByName(github) accepted top_n above GitHub's per_page limit")
+	}
+	if _, err := BuildByName("github", map[string]any{"max_results": 5}); err == nil {
+		t.Fatal("BuildByName(github) accepted removed max_results parameter")
+	}
+}
+
 func TestGitHub_Info(t *testing.T) {
 	t.Parallel()
 
@@ -154,8 +200,8 @@ func TestGitHub_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "github" {
-		t.Errorf("Name = %q, want github", info.Name)
+	if info.Name != "github_search" {
+		t.Errorf("Name = %q, want github_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "GitHub") {
 		t.Errorf("Desc = %q, want to mention GitHub", info.Desc)

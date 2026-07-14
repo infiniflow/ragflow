@@ -17,10 +17,10 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
-  llm_id: ['chat', 'image2text'],
+  llm_id: ['chat', 'vision'],
   embd_id: ['embedding'],
-  img2txt_id: ['image2text'],
-  asr_id: ['speech2text'],
+  img2txt_id: ['vision'],
+  asr_id: ['asr'],
   rerank_id: ['rerank'],
   tts_id: ['tts'],
 };

@@ -216,7 +216,7 @@ function buildLocalConfig(
     {
       name: 'api_key',
       label: 'apiKey',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: false,
       placeholder: 'apiKeyMessage',
       shouldRender: 'hideWhenInstanceExists',

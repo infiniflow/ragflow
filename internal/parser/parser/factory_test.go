@@ -37,7 +37,6 @@ func TestGetParserByID_AllKnownIDs(t *testing.T) {
 		{string(entity.ParserTypeResume), false},
 		{string(entity.ParserTypePicture), false},
 		{string(entity.ParserTypeOne), false},
-		{string(entity.ParserTypeKG), false},
 		{string(entity.ParserTypeTag), false},
 		// Office parsers
 		{string(entity.ParserTypePresentation), false},
