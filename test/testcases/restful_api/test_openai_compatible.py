@@ -241,4 +241,5 @@ def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_c
     choice_msg = payload["choices"][0]["message"]
     skip_if_go_proxy_upstream_error(choice_msg)
     assert "reference" in choice_msg, payload
+    print(payload)
     assert isinstance(choice_msg["reference"], list), payload
