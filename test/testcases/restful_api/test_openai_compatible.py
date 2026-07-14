@@ -168,7 +168,7 @@ def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_cli
     assert payload["choices"][0].get("finish_reason") == "stop", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, create_chat):
     chat_id = create_chat("restful_openai_reference_chat")
     res = rest_client.post(
