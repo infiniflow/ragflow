@@ -118,6 +118,39 @@ export function SingleChatBox({
               sendLoading={sendLoading}
             />
           ))}
+          {/*
+            业务规则：用户按发送键后，derivedMessages 在 addNewestQuestion 阶段已经把
+            assistant 占位一起追加进去了（content=''），理想情况下 MessageItem
+            的 showWaitingForResponse 条件会立即满足并渲染"AI 正在思考"气泡。
+            但当前端在弱网、慢模型或 SSE 第一个事件延迟（>1s）时，从用户按下
+            到看到首字的体感仍然偏长。这里加一道显式兜底：sendLoading=true
+            且消息列表末位不是 assistant 时，直接渲染一个乐观占位气泡，
+            确保按下到反馈的间隔 < 16ms（一帧）。
+          */}
+          {sendLoading &&
+            (!derivedMessages?.length ||
+              derivedMessages[derivedMessages.length - 1].role !==
+                MessageType.Assistant) && (
+              <MessageItem
+                loading={true}
+                key="__optimistic_assistant_placeholder__"
+                item={{
+                  id: '__optimistic_assistant_placeholder__',
+                  role: MessageType.Assistant,
+                  content: '',
+                  conversationId: conversationId ?? '',
+                }}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={{ chunks: [], doc_aggs: [], total: 0 }}
+                clickDocumentButton={clickDocumentButton}
+                index={derivedMessages?.length ?? 0}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage}
+                sendLoading={true}
+              />
+            )}
         </div>
         <div ref={scrollRef} />
       </div>

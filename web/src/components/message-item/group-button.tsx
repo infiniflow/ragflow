@@ -56,10 +56,7 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <div
-        className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-        role="toolbar"
-      >
+      <div className="flex gap-1" role="toolbar">
         <CopyToClipboard
           text={content}
           className="border-0"
