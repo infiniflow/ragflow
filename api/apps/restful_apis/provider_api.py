@@ -641,9 +641,7 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
     verify = data.get("verify", True)
 
     try:
-        success, msg = await provider_api_service.update_provider_instance(
-            tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify
-        )
+        success, msg = await provider_api_service.update_provider_instance(tenant_id, provider_id_or_name, instance_id_or_name, instance_name, api_key, base_url, region, model_info, verify)
         if success:
             return get_result(message=msg)
         else:
@@ -961,13 +959,12 @@ async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, 
         return get_error_data_result(message="Internal server error")
 
 
-
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def alter_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
-    Enable or disable a model, or update max_tokens
+    Alter a model's status, max_tokens, model_type, or extra fields.
     ---
     tags:
       - Providers
@@ -996,35 +993,40 @@ async def alter_model(tenant_id: str = None, provider_id_or_name: str = None, in
         description: Bearer token for authentication.
       - in: body
         name: body
-        description: Model status update.
+        description: Model update parameters.
         required: true
         schema:
           type: object
-          required:
-            - status
           properties:
             status:
               type: string
               enum: ["active", "inactive"]
               description: Model status.
+            max_tokens:
+              type: integer
+              description: Maximum number of tokens.
+            model_type:
+              type: string
+              description: Model type (e.g. "chat", "embedding").
+            extra:
+              type: object
+              description: Additional model configuration.
     responses:
       200:
-        description: Model status updated.
+        description: Model updated.
         schema:
           type: object
     """
     data = await request.get_json()
-    if not data or ("status" not in data and "max_tokens" not in data):
-        return get_error_argument_result(message="status or max_tokens required.")
+    if not data or not any(k in data for k in ("status", "max_tokens", "model_type", "extra")):
+        return get_error_argument_result(message="At least one of status, max_tokens, model_type, or extra is required.")
 
     update_dict = {k: data[k] for k in ["status", "max_tokens", "model_type", "extra"] if k in data}
     if update_dict.get("status") and update_dict["status"] not in ("active", "inactive"):
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model(
-            tenant_id, provider_id_or_name, instance_id_or_name, model_name, update_dict
-        )
+        success, msg = provider_api_service.update_model(tenant_id, provider_id_or_name, instance_id_or_name, model_name, update_dict)
         if success:
             return get_result(message=msg)
         else:

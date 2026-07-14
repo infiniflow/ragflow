@@ -3106,11 +3106,11 @@ wheels = [
 
 [[package]]
 name = "json-repair"
-version = "0.35.0"
+version = "0.60.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/95/9c/5ef83a13541c3444e0b949e88b3aa0f4e364e37acf4ffa9de476d36a3de0/json_repair-0.35.0.tar.gz", hash = "sha256:e70f834865a4ae5fe64352c23c1c16d3b70c5dd62dc544a169d8b0932bdbdcaa" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5e/a6/d69888cb4ffde30e80db1e6c32caaadd2f984a80067d5ea72c2cb3f61c3f/json_repair-0.60.1.tar.gz", hash = "sha256:841661cdd2df507c9a4e189097f38ca6bc372e06d4b4e36d72e590f68176c290" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/4e/c7/9a63ff79f2f6350c0f5e504bad940386015381b4d171bd73077465a7dbbc/json_repair-0.35.0-py3-none-any.whl", hash = "sha256:1d429407158474d28a996e745b8f8f7dc78957cb2cfbc92120b9f580b5230a9e" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/32/1f/2a2b5eea8ef5762a86ad3f8fddddaaba2c0d76dd44e644b9158900868bec/json_repair-0.60.1-py3-none-any.whl", hash = "sha256:ba6ff974f2a8bef2f7768144a7f03f870a816443f03da27a49cdd0ec31a78049" },
 ]
 
 [[package]]
@@ -8092,7 +8092,7 @@ requires-dist = [
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.7.0" },
     { name = "jira", specifier = "==3.10.5" },
-    { name = "json-repair", specifier = "==0.35.0" },
+    { name = "json-repair", specifier = "==0.60.1" },
     { name = "langfuse", specifier = ">=4.0.1" },
     { name = "lark-oapi", specifier = ">=1.2.0" },
     { name = "line-bot-sdk", specifier = ">=3.0.0" },
