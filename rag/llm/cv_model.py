@@ -679,7 +679,7 @@ class OpenRouterCV(GptV4):
 class LocalAICV(GptV4):
     _FACTORY_NAME = "LocalAI"
 
-    def __init__(self, key, model_name, base_url, lang="Chinese", **kwargs):
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local cv model url cannot be None")
         base_url = ensure_v1(base_url)
