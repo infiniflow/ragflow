@@ -197,11 +197,6 @@ func buildGoogleTool(params map[string]any) (einotool.BaseTool, error) {
 
 func buildGitHubTool(params map[string]any) (einotool.BaseTool, error) {
 	topN := defaultGitHubTopN
-	for key := range params {
-		if key != "top_n" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
-		}
-	}
 	if raw, exists := params["top_n"]; exists {
 		value, ok := intParam(params, "top_n")
 		if !ok {

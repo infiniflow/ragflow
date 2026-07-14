@@ -30,13 +30,16 @@ package component
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
@@ -719,14 +722,14 @@ func buildKeenableReferences(results []any) ([]map[string]any, []map[string]any)
 		if !ok {
 			continue
 		}
-		content := truncateRunes(strings.TrimSpace(keenableValueString(m["description"])), 10000)
+		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(m["description"])), 10000)
 		if content == "" || content == "None" {
 			continue
 		}
-		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
 		title := keenableValueString(m["title"])
 		url := keenableValueString(m["url"])
-		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		displayID := strconv.FormatInt(keenableHashInt(documentID, 500), 10)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -770,6 +773,19 @@ func keenableValueString(value any) string {
 		return "None"
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func keenableHashInt(value string, modulus int64) int64 {
+	sum := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(sum[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateKeenableRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func renderDuckDuckGoResults(results []any) string {
