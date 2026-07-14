@@ -133,7 +133,7 @@ func (v *VariableAssignerComponent) Name() string { return v.name }
 func (v *VariableAssignerComponent) GetInputForm() map[string]any {
 	return map[string]any{
 		"items": map[string]any{
-			"type": "json",
+			"type": "line",
 			"name": "Items",
 		},
 	}
