@@ -156,7 +156,6 @@ type CheckConnectionRequest struct {
 
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -2670,7 +2669,7 @@ type AddModelRequest struct {
 	ProviderName string                 `json:"provider_name"`
 	InstanceName string                 `json:"instance_name"`
 	ModelName    string                 `json:"model_name"`
-	ModelTypes   []string               `json:"model_types"`
+	ModelTypes   []string               `json:"model_type"`
 	MaxTokens    int                    `json:"max_tokens"`
 	Extra        map[string]interface{} `json:"extra"`
 }
