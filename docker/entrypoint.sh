@@ -294,7 +294,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting RAGFlow go server..."
-            bin/ragflow_server --api --migrate
+            bin/ragflow_server --api
             echo "RAGFlow go server started."
             sleep 1;
         done &
