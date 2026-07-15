@@ -16,6 +16,7 @@
 import asyncio
 from functools import partial
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -157,11 +158,12 @@ class Retrieval(ToolBase, ABC):
 
         doc_ids = self._resolve_document_ids(document_ids)
         if doc_ids:
+            logging.info("Retrieval resolved document_ids=%s", doc_ids)
             kb_doc_ids = KnowledgebaseService.list_documents_by_ids(filtered_kb_ids)
             for doc_id in doc_ids:
                 if doc_id not in kb_doc_ids:
                     raise Exception(f"The datasets don't own the document {doc_id}")
-        elif self._param.meta_data_filter != {}:
+        if self._param.meta_data_filter != {}:
             # Defer the (potentially expensive) metadata table load — manual
             # filters served by ES push-down never need it. The loader is
             # invoked at most once per request by ``apply_meta_data_filter``.
@@ -207,11 +209,7 @@ class Retrieval(ToolBase, ABC):
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 tenant_id = self._canvas.get_tenant_id()
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(
-                    tenant_id,
-                    chat_model_config,
-                    user_id=self._canvas.globals.get("sys.user_id"),
-                )
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
