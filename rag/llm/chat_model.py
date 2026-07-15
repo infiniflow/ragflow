@@ -155,6 +155,14 @@ def _apply_model_family_policies(
             SupportedLiteLLMProvider.Dashscope,
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
+        elif backend == "litellm" and provider == SupportedLiteLLMProvider.Ollama:
+            # litellm's ollama_chat transformation does not understand
+            # `enable_thinking` (that's the Dashscope/Tongyi-Qianwen native
+            # param name); it only maps the standard `reasoning_effort`
+            # completion kwarg onto Ollama's native `think` request field.
+            # Without this, native-reasoning Ollama models (e.g. Qwen3/3.5)
+            # ignore the Agent's Thinking toggle and keep reasoning enabled.
+            sanitized_gen_conf["reasoning_effort"] = "medium" if enable_thinking else "none"
         else:
             _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
 
