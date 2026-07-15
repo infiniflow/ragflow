@@ -617,15 +617,13 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	_, err := s.kbDAO.GetByID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
 
 	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
 	successCount := 0
-	ctx := context.Background()
-	indexName := service.IndexName(kb.TenantID)
 
 	for _, docID := range docIDs {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(docID, datasetID)
@@ -644,31 +642,10 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 		if err := s.cancelAllTasksOfDoc(doc); err != nil {
 			return nil, common.CodeServerError, err
 		}
-
-		updates := map[string]interface{}{
-			"run":       string(entity.TaskStatusCancel),
-			"progress":  0,
-			"chunk_num": 0,
-		}
-		if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
-		}
-
-		if s.docEngine != nil {
-			exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
-			if err != nil {
-				return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
-			}
-			if exists {
-				if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
-					return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
-				}
-			} else {
-				common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
-			}
-		} else {
-			common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
-		}
+		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
+		// RequestStop (STOPPING) and updates doc.run=CANCEL. Defer
+		// destruction (chunk deletion, counter reset) until the worker
+		// detects STOPPING and reaches a terminal state.
 
 		successCount++
 	}

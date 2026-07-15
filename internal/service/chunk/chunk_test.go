@@ -906,6 +906,7 @@ type parseTestDocEngine struct {
 	deleteChunksCondition map[string]interface{}
 	deleteIndexName       string
 	deleteDatasetID       string
+	chunkStoreExists      bool // if true, ChunkStoreExists returns true
 }
 
 func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
@@ -941,7 +942,7 @@ func (e *parseTestDocEngine) DropChunkStore(context.Context, string, string) err
 }
 
 func (e *parseTestDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
-	return false, nil
+	return e.chunkStoreExists, nil
 }
 
 func (e *parseTestDocEngine) CreateMetadataStore(context.Context, string) error {
@@ -1454,5 +1455,51 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 	}
 	if called {
 		t.Fatal("cancel should not be called for doc without ingestion task")
+	}
+}
+
+func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	// Pre-set counters on the doc so we can verify they are NOT reset.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"token_num": int64(10),
+		"chunk_num": int64(5),
+	}).Error; err != nil {
+		t.Fatalf("set counters: %v", err)
+	}
+	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := newParseTestService(t)
+	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error {
+		// Simulate CancelDocParse: set doc.run=CANCEL.
+		return dao.DB.Model(&entity.Document{}).Where("id = ?", doc.ID).
+			Update("run", string(entity.TaskStatusCancel)).Error
+	}
+	engine := &parseTestDocEngine{chunkStoreExists: true}
+	svc.docEngine = engine
+
+	_, _, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	if err != nil {
+		t.Fatalf("StopParsing: %v", err)
+	}
+
+	// Counters must NOT be reset.
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if doc.TokenNum != 10 {
+		t.Fatalf("token_num = %d, want 10 (not reset)", doc.TokenNum)
+	}
+	if doc.ChunkNum != 5 {
+		t.Fatalf("chunk_num = %d, want 5 (not reset)", doc.ChunkNum)
+	}
+
+	// Chunks must NOT be deleted during cancel.
+	if engine.deleteChunksCalls != 0 {
+		t.Fatalf("DeleteChunks called %d times, want 0", engine.deleteChunksCalls)
 	}
 }
