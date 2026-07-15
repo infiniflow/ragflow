@@ -494,7 +494,7 @@ func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("RecordComponentProgress failed: %v", err)
 	}
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID("task-1")
@@ -505,7 +505,7 @@ func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
 		t.Fatalf("expected 1 log row, got %d", len(logs))
 	}
 	row := logs[0]
-	if row.Component != "Parser" || row.ComponentIndex != 0 || row.Phase != 1 || row.Message != "Parser Done" {
+	if row.Component != "Parser" || row.Phase != 1 || row.Message != "Parser Done" {
 		t.Fatalf("unexpected log row: %+v", row)
 	}
 	if len(row.Checkpoint) != 0 {
@@ -519,10 +519,10 @@ func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, 0, "Chunker Started"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Chunker", 0, "Chunker Started"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
 	agg, err := svc.AggregateTaskProgress("task-1", 2)
@@ -546,7 +546,7 @@ func TestIngestionTaskServiceIncrementRunCountInitializesAndBumps(t *testing.T) 
 	if err := svc.IncrementRunCount("task-1"); err != nil {
 		t.Fatalf("IncrementRunCount (first call) failed: %v", err)
 	}
-	run, ok := findLastRunCount(t, "task-1")
+	run, ok := svc.lastRunCount("task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
@@ -555,7 +555,7 @@ func TestIngestionTaskServiceIncrementRunCountInitializesAndBumps(t *testing.T) 
 	if err := svc.IncrementRunCount("task-1"); err != nil {
 		t.Fatalf("IncrementRunCount (second call) failed: %v", err)
 	}
-	run, _ = findLastRunCount(t, "task-1")
+	run, _ = svc.lastRunCount("task-1")
 	if run != 2 {
 		t.Fatalf("run_count after second bump = %v, want 2", run)
 	}
@@ -577,7 +577,7 @@ func TestIngestionTaskServiceIncrementRunCountSkippedCorruptedRunCount(t *testin
 	if err := svc.IncrementRunCount("task-1"); err != nil {
 		t.Fatalf("IncrementRunCount should skip corrupted value, got: %v", err)
 	}
-	run, ok := findLastRunCount(t, "task-1")
+	run, ok := svc.lastRunCount("task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
@@ -591,10 +591,10 @@ func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t
 	// Simulate a previous run that created some component-progress logs
 	// but died before recording a run_count row. The latest log has no run_count.
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, 1, "Chunker Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, "Chunker Done"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
 	// Verify latest log has empty checkpoint (no run_count).
@@ -610,7 +610,7 @@ func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t
 	if err := svc.IncrementRunCount("task-1"); err != nil {
 		t.Fatalf("IncrementRunCount failed: %v", err)
 	}
-	run, ok := findLastRunCount(t, "task-1")
+	run, ok := svc.lastRunCount("task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
@@ -638,7 +638,7 @@ func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testin
 		t.Fatalf("first IncrementRunCount: %v", err)
 	}
 	// Simulate first run: some components progress, then failure.
-	if err := svc.RecordComponentProgress("task-1", "Parser", 0, 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
 
@@ -647,7 +647,7 @@ func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testin
 		t.Fatalf("second IncrementRunCount: %v", err)
 	}
 	// More progress, then failure.
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, 1, "Chunker Done"); err != nil {
+	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, "Chunker Done"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
 
@@ -656,17 +656,34 @@ func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testin
 		t.Fatalf("third IncrementRunCount: %v", err)
 	}
 
-	run, ok := findLastRunCount(t, "task-1")
+	run, ok := svc.lastRunCount("task-1")
 	if !ok || run != 3 {
 		t.Fatalf("run_count = %v (ok=%v), want 3", run, ok)
 	}
 
 	// ListAllForAdmin should still pick up the correct run_count.
-	allLogs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID("task-1")
-	if err != nil {
-		t.Fatalf("list all logs: %v", err)
+	status := "1"
+	if err := dao.DB.Create(&entity.User{
+		ID:              "user-1",
+		Email:           "user-1@test.com",
+		Nickname:        "user-1",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+		Status:          &status,
+	}).Error; err != nil {
+		t.Fatalf("insert user: %v", err)
 	}
-	t.Logf("total log rows: %d", len(allLogs))
+	adminTasks, err := svc.ListAllForAdmin()
+	if err != nil {
+		t.Fatalf("ListAllForAdmin: %v", err)
+	}
+	if len(adminTasks) != 1 || adminTasks[0]["id"] != "task-1" {
+		t.Fatalf("ListAllForAdmin = %+v, want single task task-1", adminTasks)
+	}
+	if adminTasks[0]["run_count"] != 3 {
+		t.Fatalf("ListAllForAdmin run_count = %v, want 3", adminTasks[0]["run_count"])
+	}
 }
 
 func TestIngestionTaskServiceMarkStoppedTransitionsStoppingTask(t *testing.T) {
@@ -708,6 +725,36 @@ func TestIngestionTaskServiceMarkStoppedIdempotentOnAlreadyStopped(t *testing.T)
 	}
 }
 
+func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.COMPLETED).Error; err != nil {
+		t.Fatalf("set task COMPLETED: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.MarkFailed("task-1"); err != nil {
+		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
+	}
+}
+
+func TestIngestionTaskServiceMarkCompletedIdempotentOnAlreadyTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.FAILED).Error; err != nil {
+		t.Fatalf("set task FAILED: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.MarkCompleted("task-1"); err != nil {
+		t.Fatalf("MarkCompleted on already FAILED task should be idempotent, got: %v", err)
+	}
+}
+
 func TestDocumentServiceUpdateRunProgressMirrorsFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -730,21 +777,4 @@ func TestDocumentServiceUpdateRunProgressMirrorsFields(t *testing.T) {
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
 	}
-}
-
-// findLastRunCount scans all logs for a task and returns the latest run_count.
-// It avoids non-deterministic LatestLogByTaskID ordering when multiple rows
-// share the same create_time.
-func findLastRunCount(t *testing.T, taskID string) (int, bool) {
-	t.Helper()
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
-	if err != nil {
-		t.Fatalf("list logs for %s: %v", taskID, err)
-	}
-	for i := len(logs) - 1; i >= 0; i-- {
-		if count, ok := common.GetInt(logs[i].Checkpoint[stepKeyRunCount]); ok {
-			return count, true
-		}
-	}
-	return 0, false
 }

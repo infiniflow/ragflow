@@ -52,6 +52,7 @@ type PipelineExecutor struct {
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
+	requireResume   bool // when true, defaultRunPipeline passes WithRequireResume to the pipeline
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -134,6 +135,14 @@ func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *Pipe
 	return s
 }
 
+// WithRequireResume makes the pipeline refuse to start when no checkpoint
+// store is resolvable (Redis down or not configured). Production ingestion
+// sets this; tests skip it so they can exercise runPlain without Redis.
+func (s *PipelineExecutor) WithRequireResume() *PipelineExecutor {
+	s.requireResume = true
+	return s
+}
+
 func (s *PipelineExecutor) KB() *entity.Knowledgebase { return &s.taskCtx.KB }
 func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
@@ -173,7 +182,6 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 }
 
 func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any) (*PipelineResult, error) {
-	taskStart := time.Now()
 	if pipelineOutput == nil {
 		return nil, nil
 	}
@@ -182,25 +190,25 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	chunks := NormalizeChunks(pipelineOutput)
-	if chunks == nil {
+	if len(chunks) == 0 {
 		return nil, nil
 	}
 
 	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
-	metadata := ProcessChunksForPipeline(
+	metadata, err := ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
 		s.taskCtx.Doc.KbID,
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
+	if err != nil {
+		return nil, err
+	}
 
-	indexStart := time.Now()
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
-	_ = time.Since(indexStart)
-	_ = time.Since(taskStart)
 
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,

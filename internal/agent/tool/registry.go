@@ -51,11 +51,11 @@ var registry = map[string]Factory{
 	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
 	"search_my_dateset":     noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"searxng":               noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
+	"searxng":               buildSearXNGTool,
 	"tavily":                noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
 	"tavily_extract":        noConfig("tavily_extract", func() einotool.BaseTool { return NewTavilyExtractTool() }),
 	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":                noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
+	"wencai":                buildWencaiTool,
 	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":             buildWikipediaTool,
 	"wikipedia_search":      buildWikipediaTool,
@@ -278,6 +278,58 @@ func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
 
+func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := defaultSearXNGParams()
+	for key := range params {
+		switch key {
+		case "top_n", "searxng_url":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "searxng", key)
+		}
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := parseSearXNGTopN(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "searxng")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["searxng_url"]; ok {
+		searxngURL, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param searxng_url", "searxng")
+		}
+		defaults.SearXNGURL = searxngURL
+	}
+	return newSearXNGToolWithDefaults(nil, defaults), nil
+}
+
+func buildWencaiTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := wencaiParams{}
+	for key := range params {
+		switch key {
+		case "top_n", "query_type":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "wencai", key)
+		}
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "wencai")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["query_type"]; ok {
+		queryType, valid := value.(string)
+		if !valid || !isWencaiQueryTypeSupported(queryType) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported query_type %q", "wencai", queryType)
+		}
+		defaults.QueryType = queryType
+	}
+	return newWencaiTool(defaults), nil
+}
+
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 	if len(params) == 0 {
 		return NewKeenableTool(), nil
@@ -327,27 +379,9 @@ func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {
 				"(db_type/host/port/database/username/password)",
 		)
 	}
-	conn := exesqlConnParams{}
-	if v, ok := stringParam(params, "db_type"); ok {
-		conn.DBType = v
-	}
-	if v, ok := stringParam(params, "database"); ok {
-		conn.Database = v
-	}
-	if v, ok := stringParam(params, "username"); ok {
-		conn.Username = v
-	}
-	if v, ok := stringParam(params, "host"); ok {
-		conn.Host = v
-	}
-	if v, ok := intParam(params, "port"); ok {
-		conn.Port = v
-	}
-	if v, ok := stringParam(params, "password"); ok {
-		conn.Password = v
-	}
-	if v, ok := intParam(params, "max_records"); ok {
-		conn.MaxRecords = v
+	conn, err := NewExeSQLConnParams(params)
+	if err != nil {
+		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)
 	}
 	if err := conn.check(); err != nil {
 		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)
@@ -377,6 +411,29 @@ func intParam(params map[string]any, key string) (int, bool) {
 	case int64:
 		return int(x), true
 	case float64:
+		return int(x), true
+	default:
+		return 0, false
+	}
+}
+
+func strictInt(value any) (int, bool) {
+	switch x := value.(type) {
+	case int:
+		return x, true
+	case int32:
+		return int(x), true
+	case int64:
+		if int64(int(x)) != x {
+			return 0, false
+		}
+		return int(x), true
+	case float64:
+		maxInt := int(^uint(0) >> 1)
+		minInt := -maxInt - 1
+		if math.Trunc(x) != x || x >= float64(maxInt) || x <= float64(minInt) {
+			return 0, false
+		}
 		return int(x), true
 	default:
 		return 0, false

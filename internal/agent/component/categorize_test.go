@@ -199,46 +199,6 @@ func TestSplitCompositeLLMID(t *testing.T) {
 	}
 }
 
-func TestCategorize_ResolvesTenantLLMCredentials(t *testing.T) {
-	db := setupComponentTestDB(t)
-	pushComponentDB(t, db)
-	apiKey := "tenant-llm-key"
-	apiBase := "https://tenant-llm.example"
-	modelName := "Qwen/Qwen3-8B"
-	if err := db.Create(&entity.TenantLLM{
-		TenantID:   "tenant-1",
-		LLMFactory: "SILICONFLOW",
-		LLMName:    &modelName,
-		APIKey:     &apiKey,
-		APIBase:    &apiBase,
-		Status:     "1",
-	}).Error; err != nil {
-		t.Fatalf("create tenant_llm: %v", err)
-	}
-
-	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "support", Model: "stub"}}
-	withStubInvoker(t, stub)
-
-	c := NewCategorizeComponent(CategorizeParam{
-		ModelID:         "Qwen/Qwen3-8B@default@SILICONFLOW",
-		Categories:      []string{"sales", "support"},
-		DefaultCategory: "support",
-	})
-	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if stub.captured == nil {
-		t.Fatal("invoker not called")
-	}
-	if stub.captured.APIKey != apiKey {
-		t.Fatalf("APIKey=%q, want %q", stub.captured.APIKey, apiKey)
-	}
-	if stub.captured.BaseURL != apiBase {
-		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, apiBase)
-	}
-}
-
 func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)
@@ -387,9 +347,9 @@ func setupComponentTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
-		&entity.TenantLLM{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

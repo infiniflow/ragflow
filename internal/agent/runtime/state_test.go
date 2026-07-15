@@ -85,6 +85,27 @@ func TestCanvasState_MarshalJSON_DoesNotLeakMutex(t *testing.T) {
 	}
 }
 
+func TestCanvasState_EnsureSysDate(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("r", "t")
+	if got, _ := state.Sys["date"].(string); got == "" {
+		t.Fatal("NewCanvasState did not initialize sys.date")
+	}
+
+	state.Sys["date"] = ""
+	state.EnsureSysDate()
+	if got, _ := state.Sys["date"].(string); got == "" {
+		t.Fatal("EnsureSysDate left blank sys.date unchanged")
+	}
+
+	state.Sys["date"] = "custom-date"
+	state.EnsureSysDate()
+	if got := state.Sys["date"]; got != "custom-date" {
+		t.Fatalf("EnsureSysDate overwrote non-empty sys.date: %v", got)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 
@@ -94,40 +115,65 @@ func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 		[]map[string]any{{"doc_name": "doc-1", "count": 1}},
 	)
 	state.SetRetrievalReferences(
-		[]map[string]any{{"id": "chunk-2"}},
+		[]map[string]any{
+			{"id": "chunk-1", "content": "duplicate"},
+			{"id": "chunk-2"},
+			{"content": "chunk without an ID"},
+		},
 		[]map[string]any{
 			{"doc_name": "doc-1", "count": 99},
 			{"doc_name": "doc-2", "count": 2},
+			{"doc_name": "", "count": 3},
 		},
 	)
 
 	chunks := state.GetRetrievalChunks()
-	if len(chunks) != 2 {
-		t.Fatalf("chunks length = %d, want 2", len(chunks))
+	if len(chunks) != 3 {
+		t.Fatalf("chunks length = %d, want 3", len(chunks))
 	}
 	if chunks[0]["id"] != "chunk-1" || chunks[1]["id"] != "chunk-2" {
 		t.Errorf("chunk IDs = [%v %v], want [chunk-1 chunk-2]", chunks[0]["id"], chunks[1]["id"])
 	}
-
-	state.mu.RLock()
-	rawDocAggs := state.Retrieval["doc_aggs"]
-	docAggs, ok := rawDocAggs.(map[string]any)
-	state.mu.RUnlock()
-	if !ok {
-		t.Fatalf("doc_aggs type = %T, want map[string]any", rawDocAggs)
+	if chunks[2]["content"] != "chunk without an ID" {
+		t.Errorf("chunk without ID was not retained: %#v", chunks[2])
 	}
+
+	docAggs := state.GetRetrievalDocAggs()
 	if len(docAggs) != 2 {
 		t.Fatalf("doc_aggs length = %d, want 2", len(docAggs))
 	}
-	firstDoc, ok := docAggs["doc-1"].(map[string]any)
-	if !ok {
-		t.Fatalf("doc_aggs[doc-1] type = %T, want map[string]any", docAggs["doc-1"])
-	}
+	firstDoc := docAggs["doc-1"]
 	if firstDoc["count"] != 1 {
 		t.Errorf("doc_aggs[doc-1].count = %v, want first value 1", firstDoc["count"])
 	}
 	if _, ok := docAggs["doc-2"]; !ok {
 		t.Error("doc_aggs missing doc-2 from the second call")
+	}
+	if _, ok := docAggs[""]; ok {
+		t.Error("doc_aggs retained an empty document name")
+	}
+}
+
+func TestCanvasState_GetRetrievalReferenceReturnsFrontendPayload(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-1", "document_name": "Doc 1"}},
+		[]map[string]any{{"doc_name": "Doc 1", "doc_id": "doc-1", "count": 1}},
+	)
+
+	reference := state.GetRetrievalReference()
+	chunks, _ := reference["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks length = %d, want 1", len(chunks))
+	}
+	docAggs, _ := reference["doc_aggs"].([]any)
+	if len(docAggs) != 1 {
+		t.Fatalf("doc_aggs length = %d, want 1", len(docAggs))
+	}
+	if reference["total"] != 1 {
+		t.Fatalf("total = %v, want 1", reference["total"])
 	}
 }
 

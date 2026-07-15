@@ -15,7 +15,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
@@ -27,6 +26,7 @@ import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import SvgIcon from '../svg-icon';
@@ -82,7 +82,6 @@ function MessageItem({
   isShare,
   nickname,
 }: IProps) {
-  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -147,7 +146,7 @@ function MessageItem({
         {hasCustomChildren ? (
           children
         ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && t('common.running')}</>
+          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
         ) : (
           <MarkdownContent
             loading={loading}
@@ -168,7 +167,6 @@ function MessageItem({
     messageContent,
     reference,
     sendLoading,
-    t,
     theme,
   ]);
 

@@ -788,26 +788,19 @@ func (s *Service) ShowUsersActivity(days, windows *int) (map[string]interface{},
 	return result, nil
 }
 
-func (s *Service) ListUsersEnterprise(pageIndex, pageSize int, status, orderBy, plan *string, top, days, quota *int) ([]map[string]interface{}, error) {
+func (s *Service) ListUsersEE(pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days, quota int) ([]map[string]interface{}, error) {
 	item := map[string]interface{}{}
-	if status != nil {
-		item["status"] = *status
-	}
-	if orderBy != nil {
-		item["order_by"] = *orderBy
-	}
-	if plan != nil {
-		item["plan"] = *plan
-	}
-	if top != nil {
-		item["top"] = *top
-	}
-	if days != nil {
-		item["days"] = *days
-	}
-	if quota != nil {
-		item["quota"] = *quota
-	}
+	item["pageIndex"] = pageIndex
+	item["pageSize"] = pageSize
+	item["name"] = name
+	item["status"] = status
+	item["role"] = role
+	item["sort"] = sort
+	item["order_by"] = orderBy
+	item["plan"] = plan
+	item["top"] = top
+	item["days"] = days
+	item["quota"] = quota
 
 	var result []map[string]interface{}
 	result = append(result, item)

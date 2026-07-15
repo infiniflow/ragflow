@@ -89,16 +89,7 @@ function SystemSetting() {
       const modelType = FieldToModelType[field];
       if (!modelType) return;
 
-      if (!value) {
-        await setDefaultModel({
-          model_id: '',
-          model_type: modelType,
-        });
-      } else {
-        // const parsed = parseModelValue(value);
-        // if (!parsed) return;
-        await setDefaultModel({ model_id: value, model_type: modelType });
-      }
+      await setDefaultModel({ model_id: value, model_type: modelType });
     },
     [setDefaultModel],
   );
@@ -109,37 +100,37 @@ function SystemSetting() {
         id: 'llm_id',
         label: t('chatModel'),
         isRequired: true,
-        value: defaultModelDictionary.llm_id,
+        value: defaultModelDictionary.llm_id ?? '',
         tooltip: t('chatModelTip'),
       },
       {
         id: 'embd_id',
         label: t('embeddingModel'),
-        value: defaultModelDictionary.embd_id,
+        value: defaultModelDictionary.embd_id ?? '',
         tooltip: t('embeddingModelTip'),
       },
       {
         id: 'img2txt_id',
         label: t('img2txtModel'),
-        value: defaultModelDictionary.img2txt_id,
+        value: defaultModelDictionary.img2txt_id ?? '',
         tooltip: t('img2txtModelTip'),
       },
       {
         id: 'asr_id',
         label: t('sequence2txtModel'),
-        value: defaultModelDictionary.asr_id,
+        value: defaultModelDictionary.asr_id ?? '',
         tooltip: t('sequence2txtModelTip'),
       },
       {
         id: 'rerank_id',
         label: t('rerankModel'),
-        value: defaultModelDictionary.rerank_id,
+        value: defaultModelDictionary.rerank_id ?? '',
         tooltip: t('rerankModelTip'),
       },
       {
         id: 'tts_id',
         label: t('ttsModel'),
-        value: defaultModelDictionary.tts_id,
+        value: defaultModelDictionary.tts_id ?? '',
         tooltip: t('ttsModelTip'),
       },
     ];

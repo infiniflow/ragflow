@@ -19,7 +19,6 @@ import { Input, NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
@@ -33,7 +32,6 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
-import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -85,7 +83,6 @@ export type AgentFormSchemaType = z.infer<typeof FormSchema>;
 
 function AgentForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
   const { edges, deleteEdgesBySourceAndSourceHandle } = useGraphStore(
     (state) => state,
   );
@@ -160,10 +157,8 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel ownerTenantId={ownerTenantId}></LargeModelFormField>
-          {findLlmByUuid(llmId)?.model_type?.includes(
-            LlmModelType.Image2text,
-          ) && (
+          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
+          {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
               label={t('flow.visualInputFile')}

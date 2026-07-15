@@ -1,4 +1,3 @@
-//
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,23 +15,9 @@
 
 package common
 
-// CoalesceInt returns *val if val is non-nil and positive; otherwise returns
-// defaultVal. It is useful for optional int parameters (e.g. pagination)
-// where nil or a value <= 0 means "use the default".
-func CoalesceInt(val *int, defaultVal int) int {
-	if val != nil && *val > 0 {
-		return *val
-	}
-	return defaultVal
-}
+var OpenSourceVersion = "open source"
+var EnterpriseEdition = "enterprise edition"
 
-// IsZeroVector reports whether every element of v is zero. An empty or nil
-// slice is considered a zero vector.
-func IsZeroVector(v []float64) bool {
-	for _, x := range v {
-		if x != 0 {
-			return false
-		}
-	}
-	return true
+func GetRAGFlowType() string {
+	return OpenSourceVersion
 }

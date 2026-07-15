@@ -1533,8 +1533,10 @@ class ModelTypeMergeStage(MigrationStage):
     MODEL_TYPE_STR_TO_INT = {
         "chat": 1,  # 0b0000001
         "embedding": 2,  # 0b0000010
-        "speech2text": 4,  # 0b0000100
-        "image2text": 8,  # 0b0001000
+        "asr": 4,  # 0b0000100
+        "speech2text": 4,  # 0b0000100 legacy alias
+        "vision": 8,  # 0b0001000
+        "image2text": 8,  # 0b0001000 legacy alias
         "rerank": 16,  # 0b0010000
         "tts": 32,  # 0b0100000
         "ocr": 64,  # 0b1000000
@@ -1739,7 +1741,9 @@ class TenantModelIdMigrationStage(MigrationStage):
     MODEL_TYPE_TO_INT = {
         "chat": 1,
         "embedding": 2,
+        "asr": 4,
         "speech2text": 4,
+        "vision": 8,
         "image2text": 8,
         "rerank": 16,
         "tts": 32,

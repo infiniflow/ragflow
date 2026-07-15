@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"ragflow/internal/agent/canvas"
@@ -30,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -79,8 +79,8 @@ func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan §6.a
-// M4 方案 A: a deployment that cannot persist checkpoints must not silently
+// resolved (no injected store AND no global Redis client). This is plan A: a
+// deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
 // Production ingestion wiring sets this; unit tests leave it off to exercise
@@ -99,17 +99,15 @@ func WithDocumentID(docID string) PipelineOption {
 }
 
 // ProgressEvent is a structured component lifecycle event emitted by the
-// pipeline to a ProgressSink. The pipeline fills every field - including the
-// ingestion-proprietary Index (from its componentIndexMap) and the Total
-// denominator - so the sink needs no canvas knowledge to persist it.
+// pipeline to a ProgressSink. The pipeline fills the task/document/component
+// identity and phase/status message; the sink caches the denominator (total)
+// from OnComponentTotal and needs no canvas knowledge.
 type ProgressEvent struct {
 	TaskID     string
 	DocumentID string
 	Component  string
 	Message    string
-	Index      int
 	Phase      int
-	Total      int
 }
 
 // ProgressSink receives pipeline progress for durable persistence. It is the
@@ -294,7 +292,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 	// is nil when the DB is not initialized (unit tests, headless
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
-	runCtx = runtime.WithProgressCallback(runCtx, p.taskLogProgressCallback())
+	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback())
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -351,17 +349,17 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				_ = tracker.MarkCancelled(runCtx, p.taskID)
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			_ = tracker.MarkFailed(runCtx, p.taskID, err.Error())
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		_ = tracker.MarkSucceeded(runCtx, p.taskID)
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -398,8 +396,11 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
-				_ = tracker.ClearInterruptID(ctx, cpID)
-				_ = tracker.MarkSucceeded(ctx, cpID)
+				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+			}
+			if store != nil {
+				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
@@ -408,14 +409,14 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			p.cleanupCheckpoint(ctx, store, tracker, cpID)
 			if tracker != nil {
-				_ = tracker.MarkCancelled(ctx, cpID)
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
 			if tracker != nil {
-				_ = tracker.MarkFailed(ctx, cpID, invokeErr.Error())
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}
@@ -459,37 +460,17 @@ func finalizeResult(current, out map[string]any, runState *canvas.CanvasState) m
 	return merged
 }
 
-// componentIndexMap builds a deterministic cpnID → 0-based-index map for
-// the task's canvas. Map iteration order is non-deterministic in Go, so
-// the cpnIDs are sorted to keep the index stable across runs. The index is
-// ingestion-proprietary and computed here, then carried on the pipeline-local
-// ProgressEvent so the sink needs no canvas knowledge.
-func (p *Pipeline) componentIndexMap() map[string]int {
-	ids := make([]string, 0, len(p.canvas.Components))
-	for id := range p.canvas.Components {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	m := make(map[string]int, len(ids))
-	for i, id := range ids {
-		m[id] = i
-	}
-	return m
-}
-
-// taskLogProgressCallback returns a runtime.ProgressCallback that forwards
+// componentProgressCallback returns a runtime.ProgressCallback that forwards
 // every component lifecycle event (start/done/fail) to the pipeline's
 // ProgressSink. The sink owns all persistence; this callback only shapes the
-// event - deriving the message string the frontend expects and the
-// ingestion-proprietary component index - so the pipeline never touches the
-// DAO layer. Returns nil when no sink is attached, leaving TrackProgress a
-// no-op and the pipeline DB-independent (unit tests, headless runs).
-func (p *Pipeline) taskLogProgressCallback() runtime.ProgressCallback {
+// event - deriving the message string the frontend expects - so the pipeline
+// never touches the DAO layer. Returns nil when no sink is attached, leaving
+// TrackProgress a no-op and the pipeline DB-independent (unit tests, headless
+// runs).
+func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 	if p.sink == nil {
 		return nil
 	}
-	indexMap := p.componentIndexMap()
-	total := len(p.canvas.Components)
 	return func(ev runtime.ProgressEvent) {
 		var msg string
 		switch ev.Phase {
@@ -509,9 +490,7 @@ func (p *Pipeline) taskLogProgressCallback() runtime.ProgressCallback {
 			DocumentID: p.documentID,
 			Component:  ev.Component,
 			Message:    msg,
-			Index:      indexMap[ev.Component],
 			Phase:      int(ev.Phase),
-			Total:      total,
 		})
 	}
 }

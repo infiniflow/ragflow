@@ -18,6 +18,7 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/mail"
 	"net/url"
 	"strconv"
@@ -52,6 +53,7 @@ type Config struct {
 	Language         string                 `mapstructure:"language"`
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
+	OTel             OtelConfig             `mapstructure:"otel"`
 }
 
 // AdminConfig admin server configuration
@@ -78,6 +80,14 @@ type TaskExecutorConfig struct {
 type FileSyncerConfig struct {
 	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
 	SyncInterval       int `mapstructure:"sync_interval"`
+}
+
+type OtelConfig struct {
+	Host        string  `mapstructure:"host"`
+	Port        int     `mapstructure:"port"`
+	SampleRatio float64 `mapstructure:"sample_ratio"`
+	Secure      bool    `mapstructure:"secure"`
+	Stdout      bool    `mapstructure:"stdout"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
@@ -554,7 +564,7 @@ func FromEnvironments() error {
 	// Minio
 	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
 	if minioHost != "" {
-		globalConfig.StorageEngine.Minio.Host = minioHost
+		globalConfig.StorageEngine.Minio.Host = minioEndpoint(minioHost, globalConfig.StorageEngine.Minio.Host)
 	}
 
 	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
@@ -571,6 +581,19 @@ func FromEnvironments() error {
 	}
 
 	return nil
+}
+
+func minioEndpoint(host, configuredEndpoint string) string {
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return host
+	}
+
+	port := "9000"
+	if _, configuredPort, err := net.SplitHostPort(configuredEndpoint); err == nil && configuredPort != "" {
+		port = configuredPort
+	}
+
+	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
 
 func FromConfigFile(configPath string) error {

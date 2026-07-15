@@ -214,8 +214,8 @@ def _load_chunk_module(monkeypatch):
         EMBEDDING = SimpleNamespace(value="embedding")
         CHAT = SimpleNamespace(value="chat")
         RERANK = SimpleNamespace(value="rerank")
-        SPEECH2TEXT = SimpleNamespace(value="speech2text")
-        IMAGE2TEXT = SimpleNamespace(value="image2text")
+        ASR = SimpleNamespace(value="asr")
+        VISION = SimpleNamespace(value="vision")
         TTS = SimpleNamespace(value="tts")
         OCR = SimpleNamespace(value="ocr")
 

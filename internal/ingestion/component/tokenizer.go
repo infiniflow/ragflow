@@ -94,8 +94,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,15 +105,25 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const ComponentNameTokenizer = "Tokenizer"
 
-// tokenizerTimeout bounds the batched embedding call. Mirrors the
-// python `@timeout(60)` decorator on `Tokenizer._embedding.embed_limiter`
-// + `batch_encode` in tokenizer.py:92-104. Declared as a var so tests
-// can shrink it; production wiring uses 60s.
-var tokenizerTimeout = 60 * time.Second
+// tokenizerTimeout returns the per-batch timeout for embedding API calls.
+// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 600s
+// (10 min) to match the canvas-level component timeout default.
+// Invalid / non-positive values fall back to the default.
+func tokenizerTimeout() time.Duration {
+	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return defaultTokenizerTimeout
+}
+
+var defaultTokenizerTimeout = 600 * time.Second
 
 // tokenizerEmbeddingBatchSize mirrors Python's
 // settings.EMBEDDING_BATCH_SIZE default.
@@ -461,7 +473,7 @@ func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) (
 		results []EmbeddingResult
 		encErr  error
 	)
-	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout, func(timeoutCtx context.Context) error {
+	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
 		results, encErr = embedder.Encode(texts)
 		return encErr
 	})
@@ -637,7 +649,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			if err := ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
+			if err := ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
 				return fmt.Errorf("Tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tokenizer.Tokenize(kw)

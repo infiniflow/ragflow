@@ -171,10 +171,10 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
         case LLMType.EMBEDDING.value:
             model_id = tenant.tenant_embd_id
             model_name = tenant.embd_id
-        case LLMType.SPEECH2TEXT.value:
+        case LLMType.ASR.value:
             model_id = tenant.tenant_asr_id
             model_name = tenant.asr_id
-        case LLMType.IMAGE2TEXT.value:
+        case LLMType.VISION.value:
             model_id = tenant.tenant_img2txt_id
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
@@ -403,8 +403,8 @@ _MODEL_NAME_TO_ID_FIELD_MAP: dict[str, tuple[str, str]] = {
     "llm_id": (LLMType.CHAT, "tenant_llm_id"),
     "embd_id": (LLMType.EMBEDDING, "tenant_embd_id"),
     "rerank_id": (LLMType.RERANK, "tenant_rerank_id"),
-    "asr_id": (LLMType.SPEECH2TEXT, "tenant_asr_id"),
-    "img2txt_id": (LLMType.IMAGE2TEXT, "tenant_img2txt_id"),
+    "asr_id": (LLMType.ASR, "tenant_asr_id"),
+    "img2txt_id": (LLMType.VISION, "tenant_img2txt_id"),
     "tts_id": (LLMType.TTS, "tenant_tts_id"),
 }
 

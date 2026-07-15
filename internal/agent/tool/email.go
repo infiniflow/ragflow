@@ -18,10 +18,14 @@ package tool
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -30,6 +34,11 @@ import (
 const emailToolName = "email"
 
 const emailToolDescription = "Send an email via SMTP. Returns success/failure status."
+
+const (
+	emailDialTimeout    = 10 * time.Second
+	emailSessionTimeout = 30 * time.Second
+)
 
 // emailParams is the JSON shape the model sends into InvokableRun.
 type emailParams struct {
@@ -119,7 +128,7 @@ func buildEmailMessage(from string, to []string, subject, body string) []byte {
 	var b strings.Builder
 	b.WriteString("From: " + from + "\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("Subject: " + stripEmailHeaderLineBreaks(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	b.WriteString("\r\n")
@@ -128,9 +137,15 @@ func buildEmailMessage(from string, to []string, subject, body string) []byte {
 	return []byte(b.String())
 }
 
-// InvokableRun sends the email. We delegate to smtp.SendMail which
-// handles EHLO, STARTTLS, and AUTH transparently when an *smtp.Auth is
-// supplied; with nil auth it sends unauthenticated.
+func stripEmailHeaderLineBreaks(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+}
+
+type emailSender func(ctx context.Context, p emailParams, msg []byte) error
+
+var sendEmail = sendEmailSMTP
+
+// InvokableRun sends the email.
 func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var p emailParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
@@ -141,26 +156,136 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return emailErrJSON(err), err
 	}
 
-	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
 	msg := buildEmailMessage(p.FromAddr, p.ToAddrs, p.Subject, p.Body)
-
-	var auth smtp.Auth
-	if p.Username != "" {
-		auth = smtp.PlainAuth("", p.Username, p.Password, p.SMTPHost)
-	}
-
-	if err := smtp.SendMail(addr, auth, p.FromAddr, p.ToAddrs, msg); err != nil {
+	if err := sendEmail(ctx, p, msg); err != nil {
 		return emailErrJSON(fmt.Errorf("email: send: %w", err)),
 			fmt.Errorf("email: send: %w", err)
 	}
 
-	// Honor context cancellation if the caller passed a deadline. The
-	// underlying smtp.SendMail is blocking, so we check after the call;
-	// a stricter impl would select on ctx.Done() around the call.
 	if err := ctx.Err(); err != nil {
 		return emailErrJSON(err), err
 	}
 	return emailJSON(emailEnvelope{OK: true}), nil
+}
+
+func sendEmailSMTP(ctx context.Context, p emailParams, msg []byte) error {
+	if p.SMTPPort == 465 {
+		return sendEmailSMTPS(ctx, p, msg)
+	}
+	return sendEmailSTARTTLS(ctx, p, msg)
+}
+
+func sendEmailSTARTTLS(ctx context.Context, p emailParams, msg []byte) error {
+	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	setEmailDeadline(ctx, conn)
+	stopWatch := watchEmailContext(ctx, conn)
+	defer stopWatch()
+
+	client, err := smtp.NewClient(conn, p.SMTPHost)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+	return submitEmail(ctx, client, p, msg)
+}
+
+func sendEmailSMTPS(ctx context.Context, p emailParams, msg []byte) error {
+	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	rawConn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	setEmailDeadline(ctx, rawConn)
+	stopWatch := watchEmailContext(ctx, rawConn)
+	defer stopWatch()
+
+	conn := tls.Client(rawConn, &tls.Config{ServerName: p.SMTPHost, MinVersion: tls.VersionTLS12})
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = rawConn.Close()
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, p.SMTPHost)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	return submitEmail(ctx, client, p, msg)
+}
+
+func submitEmail(ctx context.Context, client *smtp.Client, p emailParams, msg []byte) error {
+	if p.Username != "" {
+		if err := client.Auth(smtp.PlainAuth("", p.Username, p.Password, p.SMTPHost)); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(p.FromAddr); err != nil {
+		return err
+	}
+	for _, addr := range p.ToAddrs {
+		if err := client.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+	wc, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(msg); err != nil {
+		_ = wc.Close()
+		return err
+	}
+	if err := wc.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := client.Quit(); err != nil && err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func setEmailDeadline(ctx context.Context, conn net.Conn) {
+	deadline := time.Now().Add(emailSessionTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+}
+
+func watchEmailContext(ctx context.Context, conn net.Conn) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 // validateEmailParams guards against obviously broken inputs. The
