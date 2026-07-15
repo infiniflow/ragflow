@@ -38,6 +38,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.VolcEngine,
   LLMFactory.Xinference,
   LLMFactory.LocalAI,
+  LLMFactory.FunASR,
   LLMFactory.BaiduYiYan,
   LLMFactory.NewAPI,
 
