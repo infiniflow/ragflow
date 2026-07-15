@@ -60,7 +60,7 @@ var registry = map[string]Factory{
 	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":             buildWikipediaTool,
 	"wikipedia_search":      buildWikipediaTool,
-	"yahoo_finance":         func(map[string]any) (einotool.BaseTool, error) { return NewYahooFinanceTool(), nil },
+	"yahoo_finance":         buildYahooFinanceTool,
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -526,6 +526,32 @@ func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q unsupported node-level param language %q", "wikipedia", language)
 	}
 	return NewWikipediaToolWithParams(nil, topN, language), nil
+}
+
+func buildYahooFinanceTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := defaultYahooFinanceParams()
+	booleanParams := map[string]*bool{
+		"info":                &defaults.Info,
+		"history":             &defaults.History,
+		"count":               &defaults.Count,
+		"financials":          &defaults.Financials,
+		"income_stmt":         &defaults.IncomeStmt,
+		"balance_sheet":       &defaults.BalanceSheet,
+		"cash_flow_statement": &defaults.CashFlowStatement,
+		"news":                &defaults.News,
+	}
+	for key, destination := range booleanParams {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
+		flag, valid := value.(bool)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param %s", "yahoo_finance", key)
+		}
+		*destination = flag
+	}
+	return NewYahooFinanceToolWithDefaults(nil, defaults), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

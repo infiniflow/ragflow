@@ -467,3 +467,48 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 		t.Fatalf("recorded references = %#v", chunks)
 	}
 }
+
+func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
+	serverCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		serverCalls++
+		if symbols := request.URL.Query().Get("symbols"); symbols != "AAPL" {
+			t.Errorf("symbols = %q", symbols)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"quoteResponse":{"result":[{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD"}],"error":null}}`))
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	helper := agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	yahoo := agenttool.NewYahooFinanceToolWith(helper)
+	component := &ToolBackedComponent{name: "YahooFinance", tool: yahoo, spec: yahoo.ComponentSpec()}
+
+	empty, err := component.Invoke(context.Background(), map[string]any{"stock_code": ""})
+	if err != nil {
+		t.Fatalf("Invoke(empty stock_code): %v", err)
+	}
+	if serverCalls != 0 || empty["report"] != "" {
+		t.Fatalf("empty result = %#v, server calls = %d", empty, serverCalls)
+	}
+
+	out, err := component.Invoke(context.Background(), map[string]any{"stock_code": "AAPL"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	report, ok := out["report"].(string)
+	if !ok || !strings.Contains(report, "# Information:") || !strings.Contains(report, "| symbol | AAPL |") {
+		t.Fatalf("report = %#v", out["report"])
+	}
+	if serverCalls != 1 {
+		t.Fatalf("server calls = %d, want 1", serverCalls)
+	}
+}
