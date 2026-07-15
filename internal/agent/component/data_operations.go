@@ -270,13 +270,12 @@ func (d *DataOperationsComponent) Inputs() map[string]string {
 }
 
 func (d *DataOperationsComponent) GetInputForm() map[string]any {
+	res := make(map[string]any)
 	for _, input := range d.param.Query {
 		for k, v := range getInputElementsFromText(input) {
-			return map[string]any{
-				k: map[string]any{
-					"name": v["name"],
-					"type": "line",
-				},
+			res[k] = map[string]any{
+				"name": v["name"],
+				"type": "line",
 			}
 		}
 	}
