@@ -731,19 +731,6 @@ class MinerUParser(RAGFlowPdfParser):
                     outputs[idx]["vlm_description"] = desc
 
     def parse_pdf(
-            self,
-            filepath: str | PathLike[str],
-            binary: BytesIO | bytes,
-            callback: Optional[Callable] = None,
-            *,
-            output_dir: Optional[str] = None,
-            backend: str = "pipeline",
-            server_url: Optional[str] = None,
-            delete_output: bool = True,
-            parse_method: str = "raw",
-            from_page: int = 0,
-            to_page: int = MAXIMUM_PAGE_NUMBER,
-            **kwargs,
         self,
         filepath: str | PathLike[str],
         binary: BytesIO | bytes,
@@ -754,6 +741,8 @@ class MinerUParser(RAGFlowPdfParser):
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
+        from_page: int = 0,
+        to_page: int = MAXIMUM_PAGE_NUMBER,
         **kwargs,
     ) -> tuple:
         import shutil
@@ -762,12 +751,12 @@ class MinerUParser(RAGFlowPdfParser):
         temp_pdf = None
         created_tmp_dir = False
 
-        parser_cfg = kwargs.get('parser_config', {})
-        lang = parser_cfg.get('mineru_lang') or kwargs.get('lang', 'English')
-        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Defaults to Chinese if not matched
-        mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
-        enable_formula = parser_cfg.get('mineru_formula_enable', True)
-        enable_table = parser_cfg.get('mineru_table_enable', True)
+        parser_cfg = kwargs.get("parser_config", {})
+        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang", "English")
+        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, "ch")  # Defaults to Chinese if not matched
+        mineru_method_raw_str = parser_cfg.get("mineru_parse_method", "auto")
+        enable_formula = parser_cfg.get("mineru_formula_enable", True)
+        enable_table = parser_cfg.get("mineru_table_enable", True)
         try:
             start_page_id = max(0, int(from_page or 0))
         except (TypeError, ValueError):
@@ -777,13 +766,6 @@ class MinerUParser(RAGFlowPdfParser):
         except (TypeError, ValueError):
             raw_to_page = MAXIMUM_PAGE_NUMBER
         end_page_id = 99999 if raw_to_page >= MAXIMUM_PAGE_NUMBER else max(start_page_id, raw_to_page - 1)
-        parser_cfg = kwargs.get("parser_config", {})
-        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang", "English")
-        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, "ch")  # Defaults to Chinese if not matched
-        mineru_method_raw_str = parser_cfg.get("mineru_parse_method", "auto")
-        enable_formula = parser_cfg.get("mineru_formula_enable", True)
-        enable_table = parser_cfg.get("mineru_table_enable", True)
-
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
         pdf_file_name = file_path.stem.replace(" ", "") + ".pdf"
