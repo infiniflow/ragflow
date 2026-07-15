@@ -804,6 +804,7 @@ func startServer(config *server.Config) {
 	)
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
+	pipelineHandler := handler.NewPipelineHandler()
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -834,7 +835,8 @@ func startServer(config *server.Config) {
 		fileCommitHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler)
+		componentsHandler,
+		pipelineHandler)
 
 	// Create Gin enginegit diff
 

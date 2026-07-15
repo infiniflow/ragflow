@@ -10,6 +10,7 @@ import {
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
+import kbService from '@/services/knowledge-service';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -102,51 +103,43 @@ export const useSelectParserList = (): Array<{
   const { data: tenantInfo } = useFetchTenantInfo(true);
   const { t } = useTranslation();
 
-  const defaultParsers = useMemo(
-    () => [
-      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
-      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
-      {
-        value: 'resume',
-        label: t('knowledgeConfiguration.parserLabel.resume'),
-      },
-      {
-        value: 'manual',
-        label: t('knowledgeConfiguration.parserLabel.manual'),
-      },
-      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
-      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
-      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
-      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
-      {
-        value: 'presentation',
-        label: t('knowledgeConfiguration.parserLabel.presentation'),
-      },
-      {
-        value: 'picture',
-        label: t('knowledgeConfiguration.parserLabel.picture'),
-      },
-      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
-      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
-      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
-      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
-    ],
-    [t],
-  );
+  // Fetch the builtin pipeline catalog from the backend (embed-registry),
+  // replacing the old hardcoded parser list.
+  const { data: pipelineListData } = useQuery({
+    queryKey: ['listPipelines'],
+    queryFn: async () => {
+      const { data } = await kbService.listPipelines();
+      return data;
+    },
+    staleTime: Infinity,
+  });
+  const pipelineList: Array<{ parser_id: string; title: string }> =
+    pipelineListData?.data ?? [];
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     const filteredArray = parserArray.filter((x) => x.trim() !== '');
 
-    if (filteredArray.length === 0) {
-      return defaultParsers;
+    // Tenant-level parser_ids filter (if configured), otherwise all builtins.
+    if (filteredArray.length > 0) {
+      return filteredArray.map((x) => {
+        const arr = x.split(':');
+        return { value: arr[0], label: arr[1] };
+      });
     }
 
-    return filteredArray.map((x) => {
-      const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
-    });
-  }, [tenantInfo, defaultParsers]);
+    // Map API pipeline list to { value, label }; prefer i18n label,
+    // fallback to the API title when the i18n key is missing.
+    const labelFromAPI = (parserId: string, title: string) => {
+      const key = `knowledgeConfiguration.parserLabel.${parserId}`;
+      const translated = t(key);
+      return translated !== key ? translated : title;
+    };
+    return pipelineList.map((item) => ({
+      value: item.parser_id,
+      label: labelFromAPI(item.parser_id, item.title),
+    }));
+  }, [tenantInfo, pipelineList, t]);
 
   return parserList;
 };

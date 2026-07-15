@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
 
@@ -698,16 +699,36 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
-	if docTaskCtx.PipelineID == "" {
-		return fmt.Errorf("ingestion task %s: no pipeline_id configured for document %s or dataset %s", ingestionTask.ID, docTaskCtx.Doc.ID, docTaskCtx.KB.ID)
+
+	pipelineID := strings.TrimSpace(docTaskCtx.PipelineID)
+	parserID := strings.TrimSpace(docTaskCtx.Doc.ParserID)
+	isBuiltin := pipelineID == ""
+
+	if pipelineID == "" {
+		if parserID == "" {
+			return fmt.Errorf("ingestion task %s: no pipeline_id or parser_id configured for document %s", ingestionTask.ID, docTaskCtx.Doc.ID)
+		}
+		pipelineID = parserID // builtin: parser_id acts as the logical pipeline identifier
 	}
+
 	docTaskCtx.Ctx = ctx
 	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
 	// writes for this run; inject it into the executor so the pipeline reports
 	// progress to the service layer instead of touching the DAO directly.
-	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, strings.TrimSpace(docTaskCtx.PipelineID), 0)
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, 0)
 	if err != nil {
 		return err
+	}
+	if isBuiltin {
+		// Builtin path: load DSL from the embedded registry, skipping canvas DB lookup.
+		executor.WithLoadDSLFunc(func(ctx context.Context, _ string) (string, string, error) {
+			common.Info(fmt.Sprintf("load built in DSL for: %s", parserID))
+			dsl, lerr := pipelinepkg.LoadBuiltinDSL(parserID)
+			if lerr != nil {
+				return "", "", lerr
+			}
+			return dsl, parserID, nil
+		})
 	}
 	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
