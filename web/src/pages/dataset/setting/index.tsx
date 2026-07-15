@@ -1,4 +1,5 @@
-import { Button } from '@/components/ui/button';
+import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -8,12 +9,12 @@ import {
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
-import { IConnector } from '@/interfaces/database/dataset';
-import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
-import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
+import { FormLayout } from '@/constants/form';
+import { ParseType } from '@/constants/knowledge';
+import { ParseTypeItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useCallback, useEffect, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import LinkDataSource, {
@@ -21,7 +22,15 @@ import LinkDataSource, {
 } from './components/link-data-source';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
-import { useFetchDatasetSettingOnMount } from './hooks';
+import {
+  useActiveTab,
+  useConnectorHandlers,
+  useFetchDatasetSettingOnMount,
+  usePipelineDataList,
+  usePipelineOperatorNodes,
+  useSaveDatasetSetting,
+} from './hooks';
+import PipelineOperatorTabs from './pipeline-operator-tabs';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -29,6 +38,11 @@ export default function DatasetSetting() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      parse_type: ParseType.BuiltIn,
+      pipeline_id: '',
+      pipeline_name: '',
+      pipeline_avatar: '',
+      parser_config: {},
       name: '',
       description: '',
       avatar: null,
@@ -39,79 +53,72 @@ export default function DatasetSetting() {
     },
   });
 
-  const { dataSourceInfo } = useDataSourceInfo();
-  const { knowledgeDetails, loading: datasetSettingLoading } =
-    useFetchDatasetSettingOnMount(form);
-  const [sourceData, setSourceData] = useState<IDataSourceNodeProps[]>();
+  const {
+    knowledgeDetails,
+    loading: datasetSettingLoading,
+    sourceData,
+  } = useFetchDatasetSettingOnMount(form);
+  const { handleSave, loading: saveLoading } = useSaveDatasetSetting();
+
+  const [sourceDataState, setSourceDataState] =
+    useState<IDataSourceNodeProps[]>();
 
   useEffect(() => {
-    if (knowledgeDetails) {
-      const source_data: IDataSourceNodeProps[] = (
-        knowledgeDetails?.connectors ?? []
-      ).map((connector: IConnector) => {
-        return {
-          ...connector,
-          icon:
-            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
-              ?.icon || '',
-        };
-      });
+    setSourceDataState(sourceData);
+  }, [sourceData]);
 
-      setSourceData(source_data);
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parse_type',
+    defaultValue: ParseType.BuiltIn,
+  });
+  const pipelineId = useWatch({
+    control: form.control,
+    name: 'pipeline_id',
+    defaultValue: '',
+  });
+
+  const pipelineParserConfig = knowledgeDetails?.parser_config as
+    | Record<string, any>
+    | undefined;
+
+  const { operatorNodes } = usePipelineOperatorNodes(
+    parseType === ParseType.Pipeline ? pipelineId : undefined,
+    pipelineParserConfig,
+  );
+
+  const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
+
+  useEffect(() => {
+    if (parseType === ParseType.BuiltIn) {
+      form.setValue('pipeline_id', '');
+      form.setValue('pipeline_name', '');
+      form.setValue('pipeline_avatar', '');
     }
-  }, [knowledgeDetails, dataSourceInfo]);
+  }, [parseType, form]);
 
-  async function onSubmit(data: z.infer<typeof formSchema>) {
-    console.log('Form validation passed, submit data', data);
-  }
+  const handleSubmit = useCallback(
+    async (data: z.infer<typeof formSchema>) => {
+      await handleSave(data);
+    },
+    [handleSave],
+  );
 
-  const handleLinkOrEditSubmit = (data: IDataSourceBase[] | undefined) => {
-    if (data) {
-      const connectors = data.map((connector) => {
-        return {
-          ...(connector as IConnector),
-          auto_parse: (connector as IConnector).auto_parse === '0' ? '0' : '1',
-          icon:
-            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
-              ?.icon || '',
-        };
+  const { handleLinkOrEditSubmit, unbindFunc, handleAutoParse } =
+    useConnectorHandlers(form, sourceDataState, setSourceDataState);
+
+  const handleOperatorValuesChange = useCallback(
+    (operatorId: string, values: any) => {
+      const currentParserConfig = form.getValues('parser_config') || {};
+      form.setValue('parser_config', {
+        ...currentParserConfig,
+        [operatorId]: values,
       });
-      setSourceData(connectors as IDataSourceNodeProps[]);
-      form.setValue('connectors', connectors || []);
-    }
-  };
+    },
+    [form],
+  );
 
-  const unbindFunc = (data: IDataSourceNodeProps) => {
-    if (data) {
-      const connectors = sourceData?.filter((connector) => {
-        return connector.id !== data.id;
-      });
-      setSourceData(connectors as IDataSourceNodeProps[]);
-      form.setValue('connectors', connectors || []);
-    }
-  };
-
-  const handleAutoParse = ({
-    source_id,
-    isAutoParse,
-  }: {
-    source_id: string;
-    isAutoParse: boolean;
-  }) => {
-    if (source_id) {
-      const connectors = sourceData?.map((connector) => {
-        if (connector.id === source_id) {
-          return {
-            ...connector,
-            auto_parse: isAutoParse ? '1' : '0',
-          };
-        }
-        return connector;
-      });
-      setSourceData(connectors as IDataSourceNodeProps[]);
-      form.setValue('connectors', connectors || []);
-    }
-  };
+  const pipelineDataList = usePipelineDataList(sourceDataState);
 
   return (
     <div className="pr-5 pb-5">
@@ -130,7 +137,7 @@ export default function DatasetSetting() {
         <CardContent className="p-0 flex-1 h-0 flex">
           <Form {...form}>
             <form
-              onSubmit={form.handleSubmit(onSubmit)}
+              onSubmit={form.handleSubmit(handleSubmit)}
               className="flex flex-col"
             >
               <div className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto">
@@ -141,8 +148,32 @@ export default function DatasetSetting() {
                   <GeneralForm></GeneralForm>
 
                   <Divider />
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.dataPipeline')}
+                  </div>
+                  <ParseTypeItem line={1} name="parse_type" />
+                  {parseType === ParseType.Pipeline && (
+                    <DataFlowSelect
+                      isMult={false}
+                      showToDataPipeline={true}
+                      formFieldName="pipeline_id"
+                      layout={FormLayout.Horizontal}
+                    />
+                  )}
+                  {parseType === ParseType.Pipeline &&
+                    pipelineId &&
+                    operatorNodes.length > 0 && (
+                      <PipelineOperatorTabs
+                        nodes={operatorNodes}
+                        value={activeTab}
+                        onValueChange={setActiveTab}
+                        onOperatorValuesChange={handleOperatorValuesChange}
+                      />
+                    )}
+
+                  <Divider />
                   <LinkDataSource
-                    data={sourceData}
+                    data={pipelineDataList}
                     handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                     unbindFunc={unbindFunc}
                     handleAutoParse={handleAutoParse}
@@ -161,9 +192,12 @@ export default function DatasetSetting() {
                   {t('knowledgeConfiguration.cancel')}
                 </Button>
 
-                <Button type="submit" disabled={datasetSettingLoading}>
+                <ButtonLoading
+                  type="submit"
+                  loading={datasetSettingLoading || saveLoading}
+                >
                   {t('knowledgeConfiguration.save')}
-                </Button>
+                </ButtonLoading>
               </div>
             </form>
           </Form>

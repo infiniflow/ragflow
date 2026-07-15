@@ -199,6 +199,7 @@ export type BaseNodeData<TForm = any> = {
   name: string; // operator name
   color?: string;
   form?: TForm;
+  operatorId?: string;
 };
 
 export type BaseNode<T = any> = Node<BaseNodeData<T>>;

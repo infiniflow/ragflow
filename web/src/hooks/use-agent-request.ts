@@ -77,6 +77,7 @@ export const enum AgentApiAction {
   FetchSharedAgent = 'fetchSharedAgent',
   FetchAgentTags = 'fetchAgentTags',
   UpdateAgentTags = 'updateAgentTags',
+  FetchPipelineNodes = 'fetchPipelineNodes',
 }
 
 export const useFetchAgentTemplates = () => {
@@ -1115,4 +1116,20 @@ export const useExportAgentLog = () => {
   });
 
   return { exportLogs: mutateAsync, loading };
+};
+
+export const useFetchPipelineDslByPipelineId = (pipelineId?: string) => {
+  const { data: dsl, isFetching: loading } = useQuery({
+    queryKey: [AgentApiAction.FetchPipelineNodes, pipelineId],
+    initialData: {},
+    gcTime: 0,
+    enabled: !!pipelineId,
+    queryFn: async () => {
+      const { data } = await agentService.getAgent(pipelineId!);
+      const flow = data?.data;
+      return flow?.dsl ?? {};
+    },
+  });
+
+  return { dsl, loading };
 };

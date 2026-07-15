@@ -22,6 +22,7 @@ import {
   initialTitleChunkerValues,
   TitleChunkerMethod,
 } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -212,7 +213,11 @@ function RulesFieldArray({ name }: RulesFieldArrayProps) {
   );
 }
 
-const TitleChunkerForm = ({ node }: INextOperatorForm) => {
+const TitleChunkerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const initialValues = useFormValues(initialTitleChunkerValues, node);
 
@@ -233,6 +238,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   const hierarchyOptions = useDynamicHierarchyOptions(form, activeRulesName);
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -349,9 +355,11 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
         </div>
         {/* )} */}
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

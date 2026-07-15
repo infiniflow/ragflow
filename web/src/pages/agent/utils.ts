@@ -202,10 +202,10 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
-function transformParserParams(params: ParserFormSchemaType) {
+export function transformParserParams(params: ParserFormSchemaType) {
   const setups = params.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
-  >((pre, cur) => {
+  >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
@@ -318,7 +318,10 @@ function transformParserParams(params: ParserFormSchemaType) {
           break;
       }
 
-      pre[cur.fileFormat] = filteredSetup;
+      pre[cur.fileFormat] = {
+        ...filteredSetup,
+        order_index: index,
+      } as any;
     }
     return pre;
   }, {});
@@ -326,7 +329,9 @@ function transformParserParams(params: ParserFormSchemaType) {
   return { ...params, setups };
 }
 
-function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
+export function transformTokenChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -349,7 +354,9 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   };
 }
 
-function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
+export function transformTitleChunkerParams(
+  params: TitleChunkerFormSchemaType,
+) {
   const activeRules =
     (params.method === TitleChunkerMethod.Group
       ? params.groupRules
@@ -379,7 +386,7 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   };
 }
 
-function transformExtractorParams(params: ExtractorFormSchemaType) {
+export function transformExtractorParams(params: ExtractorFormSchemaType) {
   return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
 }
 
