@@ -26,6 +26,7 @@ import os
 import re
 from io import BytesIO
 from os import PathLike
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -34,6 +35,7 @@ import requests
 from PIL import Image
 
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER, RAGFlowPdfParser
+from deepdoc.parser.utils import extract_pdf_outlines
 
 # RAGFlow internal layout types the rest of the pipeline understands.
 _KNOWN_INTERNAL_TYPES = {"text", "image", "table", "equation", "code"}
@@ -426,3 +428,43 @@ class MistralParser(RAGFlowPdfParser):
                           json=payload, timeout=self.timeout)
         self._raise_for_status(r, "OCR")
         return r.json()
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw",
+                  from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple:
+        # Load bytes.
+        if binary is not None:
+            pdf_bytes = binary.getvalue() if hasattr(binary, "getvalue") else bytes(binary)
+        else:
+            pdf_bytes = Path(filepath).read_bytes()
+
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
+
+        # Render the WHOLE document locally: _line_tag/crop index page_images in
+        # absolute page order, so a sliced render would crop the wrong page.
+        self.__images__(binary if binary is not None else filepath, zoomin=1)
+
+        # pages is a selector: include only when the caller restricted the range.
+        pages: Optional[list[int]] = None
+        if from_page > 0 or to_page < MAXIMUM_PAGE_NUMBER:
+            total = len(self.page_images) if getattr(self, "page_images", None) else to_page
+            end = min(to_page, total)
+            pages = list(range(from_page, end))
+            if not pages:
+                return [], []
+
+        if callback:
+            callback(0.15, "[Mistral OCR] submitting document")
+
+        response = self._call_ocr(pdf_bytes, Path(filepath).name, pages, callback=callback)
+        norm = self._normalize_pages(response)
+
+        if callback:
+            n_blocks = sum(len(p.get("blocks") or []) for p in norm)
+            callback(0.75, f"[Mistral OCR] parsed {n_blocks} blocks across {len(norm)} pages")
+
+        sections = self._transfer_to_sections(norm, parse_method)
+        tables = self._transfer_to_tables(norm)
+        return sections, tables

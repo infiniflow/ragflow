@@ -385,3 +385,47 @@ def test_call_ocr_delete_failure_does_not_mask_error(monkeypatch):
         assert False, "expected RuntimeError"
     except RuntimeError as e:
         assert "422" in str(e)  # the real OCR error, not the swallowed delete error
+
+
+def _patch_render(m, p, n_pages):
+    from PIL import Image
+    p.page_images = [Image.new("RGB", (100, 140), "white") for _ in range(n_pages)]
+    # neuter __images__ so parse_pdf doesn't touch pdfplumber
+    p.__images__ = lambda *a, **k: None
+
+
+def test_parse_pdf_whole_document_omits_pages(monkeypatch, tmp_path):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    seen = {}
+    p._call_ocr = lambda pdf_bytes, filename, pages, callback=None: seen.update(pages=pages) or _ocr_response()
+    _patch_render(m, p, 2)
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 minimal")
+    secs, tables = p.parse_pdf(str(pdf))
+    assert seen["pages"] is None  # whole doc -> no selector
+    assert tables == []
+    assert any("hello world" in s[0] for s in secs)
+
+
+def test_parse_pdf_restricted_range_sends_absolute_pages(monkeypatch, tmp_path):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    seen = {}
+    p._call_ocr = lambda pdf_bytes, filename, pages, callback=None: seen.update(pages=pages) or {"pages": []}
+    _patch_render(m, p, 10)
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 minimal")
+    p.parse_pdf(str(pdf), from_page=4, to_page=8)
+    assert seen["pages"] == [4, 5, 6, 7]  # 0-based, half-open, absolute
+
+
+def test_parse_pdf_pipeline_returns_3_tuples(monkeypatch, tmp_path):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    p._call_ocr = lambda *a, **k: _ocr_response()
+    _patch_render(m, p, 2)
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 minimal")
+    secs, _ = p.parse_pdf(str(pdf), parse_method="pipeline")
+    assert all(len(s) == 3 for s in secs)
