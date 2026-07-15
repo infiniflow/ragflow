@@ -158,7 +158,7 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 
 	var taskCount int64
-	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+	if err = dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount != 1 {
@@ -169,8 +169,11 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
-	if doc.Run != nil {
+	if doc.Run == nil {
 		t.Fatalf("expected doc run to remain nil, got %q", *doc.Run)
+	}
+	if *doc.Run != "0" {
+		t.Fatalf("expected doc run status is '1', got %q", *doc.Run)
 	}
 	if doc.ChunkNum != 7 {
 		t.Fatalf("expected chunk_num to remain 7, got %d", doc.ChunkNum)
