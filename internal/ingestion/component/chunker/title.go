@@ -86,6 +86,10 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 		n := int(v)
 		p.TitleChunkerParam.Hierarchy = &n
 	}
+	if v, ok := numericFromAny(conf["chunk_token_num"]); ok {
+		n := int(v)
+		p.TitleChunkerParam.ChunkTokenNum = &n
+	}
 	if v, ok := conf["include_heading_content"].(bool); ok {
 		p.TitleChunkerParam.IncludeHeadingContent = v
 	}

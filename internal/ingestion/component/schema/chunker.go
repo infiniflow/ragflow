@@ -262,6 +262,11 @@ type TitleChunkerParam struct {
 	// RootChunkAsHeading, when true, prepends the root chunk's text
 	// to every emitted chunk (and drops the root chunk itself).
 	RootChunkAsHeading bool `json:"root_chunk_as_heading"`
+
+	// ChunkTokenNum caps the token size of an emitted chunk. When set, a grouped
+	// title chunk is split at line boundaries up to the cap; a single line longer
+	// than the cap is emitted whole. Pointer distinguishes nil (unset) from 0.
+	ChunkTokenNum *int `json:"chunk_token_num,omitempty"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is

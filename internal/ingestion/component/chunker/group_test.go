@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -131,6 +132,36 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	}
 }
 
+// A single group has no root/body split, so root_chunk_as_heading must stay a
+// no-op even when chunk_token_num splits the group into several pieces.
+func TestGroupTitleChunker_SingleGroupSplit_RootHeadingNoop(t *testing.T) {
+	run := func(root bool) []map[string]any {
+		c, err := NewGroupTitleChunker(map[string]any{
+			"levels":                [][]string{{`^# `}},
+			"root_chunk_as_heading": root,
+			"chunk_token_num":       1, // force capChunkText to split per line
+		})
+		if err != nil {
+			t.Fatalf("new: %v", err)
+		}
+		out, err := c.Invoke(context.Background(), map[string]any{"name": "doc.md", "text": "alpha line here\nbravo line here\ncharlie line here"})
+		if err != nil {
+			t.Fatalf("invoke: %v", err)
+		}
+		chunks, _ := out["chunks"].([]map[string]any)
+		return chunks
+	}
+	withRoot, plain := run(true), run(false)
+	if len(withRoot) != len(plain) {
+		t.Fatalf("root heading changed chunk count for a single group: %d vs %d", len(withRoot), len(plain))
+	}
+	for i := range plain {
+		if toString(withRoot[i]["text"]) != toString(plain[i]["text"]) {
+			t.Errorf("chunk %d differs with vs without root heading: %q vs %q", i, withRoot[i]["text"], plain[i]["text"])
+		}
+	}
+}
+
 // TestResolveGroupTargetLevel_UsesMostLevelDirectly pins Gap F: when
 // `hierarchy` is unset the group target level is `most_level` DIRECTLY,
 // not resolve_target_level (which would re-rank the distinct heading
@@ -228,4 +259,51 @@ func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestCapChunkText covers chunk_token_num enforcement: capChunkText splits a
+// grouped chunk so no piece exceeds the configured token budget.
+func TestCapChunkText(t *testing.T) {
+	t.Run("unset returns text unchanged", func(t *testing.T) {
+		got := capChunkText("a\nb\nc", 0)
+		if len(got) != 1 || got[0] != "a\nb\nc" {
+			t.Errorf("maxTok=0 -> %q, want single unchanged", got)
+		}
+	})
+	t.Run("under cap is one chunk", func(t *testing.T) {
+		got := capChunkText("short text", 1000)
+		if len(got) != 1 {
+			t.Errorf("under cap -> %d chunks, want 1", len(got))
+		}
+	})
+	t.Run("over cap splits on lines", func(t *testing.T) {
+		// 20 lines; each line is a few tokens. A small cap must yield >1 piece,
+		// none exceeding the cap.
+		var lines []string
+		for i := 0; i < 20; i++ {
+			lines = append(lines, "lorem ipsum dolor sit amet")
+		}
+		text := strings.Join(lines, "\n")
+		maxTok := 10
+		got := capChunkText(text, maxTok)
+		if len(got) < 2 {
+			t.Fatalf("over cap -> %d chunks, want >= 2", len(got))
+		}
+		for i, piece := range got {
+			if tokenizeStr(piece) > maxTok && strings.Count(piece, "\n") > 0 {
+				t.Errorf("piece %d has %d tokens > maxTok %d (and is multi-line)", i, tokenizeStr(piece), maxTok)
+			}
+		}
+		// no content lost
+		if strings.Join(got, "\n") != text {
+			t.Errorf("content changed across split")
+		}
+	})
+	t.Run("single oversized line is not split mid-line", func(t *testing.T) {
+		line := "one two three four five six seven eight nine ten eleven twelve"
+		got := capChunkText(line, 3)
+		if len(got) != 1 || got[0] != line {
+			t.Errorf("single line -> %q, want emitted whole", got)
+		}
+	})
 }
