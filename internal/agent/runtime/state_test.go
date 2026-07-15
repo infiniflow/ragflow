@@ -85,6 +85,27 @@ func TestCanvasState_MarshalJSON_DoesNotLeakMutex(t *testing.T) {
 	}
 }
 
+func TestCanvasState_EnsureSysDate(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("r", "t")
+	if got, _ := state.Sys["date"].(string); got == "" {
+		t.Fatal("NewCanvasState did not initialize sys.date")
+	}
+
+	state.Sys["date"] = ""
+	state.EnsureSysDate()
+	if got, _ := state.Sys["date"].(string); got == "" {
+		t.Fatal("EnsureSysDate left blank sys.date unchanged")
+	}
+
+	state.Sys["date"] = "custom-date"
+	state.EnsureSysDate()
+	if got := state.Sys["date"]; got != "custom-date" {
+		t.Fatalf("EnsureSysDate overwrote non-empty sys.date: %v", got)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 
