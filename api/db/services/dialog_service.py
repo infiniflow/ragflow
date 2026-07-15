@@ -1922,17 +1922,79 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
     chat_mdl.bind_tools(None, rag_tools.tools)
+    # `rag` composes the full cited answer itself, so treat it as terminal: once
+    # the model calls it, stream its result and stop — otherwise the model would
+    # have to relay the (citation-bearing) answer through another round, which
+    # small models mangle or drop, so the client receives nothing.
+    if getattr(chat_mdl, "mdl", None) is not None:
+        chat_mdl.mdl.terminal_tools = {"rag"}
     gen_conf = dialog.llm_setting
     if stream:
-        stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), messages, gen_conf)
+        # Surface the agentic pipeline's bracket-tagged progress logs to the
+        # client as <think> content, interleaved with the real token stream.
+        from rag.advanced_rag.think_log import install_think_log_handler, set_think_log_sink, reset_think_log_sink
+
+        install_think_log_handler()
+        event_queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _log_sink(msg):
+            try:
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("log", msg))
+            except RuntimeError:
+                pass
+
+        async def _drive_stream():
+            try:
+                stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), messages, gen_conf)
+                async for kind, value, state in _stream_with_think_delta(stream_iter):
+                    event_queue.put_nowait(("stream", kind, value, state))
+            except Exception:
+                logging.exception("rag_agent: agentic stream failed")
+            finally:
+                event_queue.put_nowait(("stream_done",))
+
+        token = set_think_log_sink(_log_sink)
+        drive = asyncio.create_task(_drive_stream())
         last_state = None
-        async for kind, value, state in _stream_with_think_delta(stream_iter):
-            last_state = state
-            if kind == "marker":
-                flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
-                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
-                continue
-            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+        log_think_open = False
+        try:
+            while True:
+                item = await event_queue.get()
+                if item[0] == "log":
+                    if not log_think_open:
+                        yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                        log_think_open = True
+                    yield {"answer": item[1] + "\n", "reference": {}, "audio_binary": None, "final": False}
+                    continue
+                if item[0] == "stream_done":
+                    break
+                _, kind, value, state = item
+                if state is not None:
+                    last_state = state
+                # A real stream event follows the logs -> close the log think block.
+                if log_think_open:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    log_think_open = False
+                if kind == "marker":
+                    flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
+                    continue
+                yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+            if log_think_open:
+                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                log_think_open = False
+        finally:
+            reset_think_log_sink(token)
+            if not drive.done():
+                drive.cancel()
+            try:
+                await drive
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logging.exception("rag_agent: drive task error")
+
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
             final = await decorate_answer(_extract_visible_answer(full_answer))

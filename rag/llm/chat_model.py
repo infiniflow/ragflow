@@ -681,6 +681,20 @@ class Base(ABC):
                             args = {}
                         yield f"<think>Executing {tc.function.name} with args: {tc.function.arguments}</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: stream a terminal tool's
+                    # result (already the final answer) and stop the loop.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[ToolLoop] terminal tool {name!r} called; streaming result and stopping")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
@@ -2124,6 +2138,21 @@ class LiteLLMBase(ABC):
                             args = {}
                         yield f"<think>Executing {tc.function.name} with args: {tc.function.arguments}</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: a terminal tool already
+                    # produces the final answer, so stream its result and stop
+                    # instead of feeding it back for another LLM round.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[ToolLoop] terminal tool {name!r} called; streaming result and stopping")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(
                         history,
                         results,

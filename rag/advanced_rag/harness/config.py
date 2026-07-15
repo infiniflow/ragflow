@@ -47,7 +47,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         allows_dynamic_claims=False,
         allows_replan=False,
         max_orchestrator_cycles=3,
-        max_agent_cycles=3,
+        max_agent_cycles=2,
         max_parallel_agents=2,
         available_tools=[
             "hybrid_search",
@@ -72,7 +72,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         allows_dynamic_claims=True,
         allows_replan=True,
         max_orchestrator_cycles=4,
-        max_agent_cycles=4,
+        max_agent_cycles=2,
         max_parallel_agents=3,
         available_tools=[
             "hybrid_search",
