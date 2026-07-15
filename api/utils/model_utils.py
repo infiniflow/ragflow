@@ -28,7 +28,7 @@ _LEGACY_MODEL_TYPE_ALIASES = {
 }
 
 
-def calculate_model_type(model_type_name_list: List[str]|str) -> int:
+def calculate_model_type(model_type_name_list: List[str] | str) -> int:
     model_type = 0
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]

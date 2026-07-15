@@ -158,6 +158,11 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -341,6 +346,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -496,6 +506,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -595,6 +610,11 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -723,6 +743,11 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -827,6 +852,11 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -915,6 +945,11 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1011,6 +1046,11 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1071,6 +1111,11 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1147,6 +1192,11 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1219,6 +1269,11 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1346,6 +1401,11 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1448,6 +1508,11 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
