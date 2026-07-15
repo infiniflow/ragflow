@@ -306,6 +306,74 @@ func TestAgent_AllRegisteredToolsConfigPassesToRunner(t *testing.T) {
 	}
 }
 
+func TestAgent_AcceptsCanvasToolObjects(t *testing.T) {
+	var captured AgentParam
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		captured = p
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	_, err := c.Invoke(context.Background(), map[string]any{
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"name":           "Docs Retrieval",
+				"params": map[string]any{
+					"kb_ids": []any{"kb-1"},
+					"top_n":  float64(3),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(captured.Tools) != 1 || captured.Tools[0] != "Retrieval" {
+		t.Fatalf("captured.Tools = %#v, want [Retrieval]", captured.Tools)
+	}
+	params := captured.ToolParams["retrieval"]
+	if params == nil {
+		t.Fatalf("captured.ToolParams missing retrieval: %#v", captured.ToolParams)
+	}
+	ids, ok := params["kb_ids"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "kb-1" {
+		t.Fatalf("retrieval kb_ids = %#v, want [kb-1]", params["kb_ids"])
+	}
+}
+
+func TestAgent_NewAcceptsCanvasToolObjects(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"params": map[string]any{
+					"dataset_ids": []any{"kb-1"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	if len(agent.param.Tools) != 1 || agent.param.Tools[0] != "Retrieval" {
+		t.Fatalf("agent.param.Tools = %#v, want [Retrieval]", agent.param.Tools)
+	}
+	if agent.param.ToolParams["retrieval"] == nil {
+		t.Fatalf("agent.param.ToolParams missing retrieval: %#v", agent.param.ToolParams)
+	}
+	if _, err := buildAgentTools(agent.param); err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+}
+
 type fakeToolCallingChatModel struct {
 	tools []*schema.ToolInfo
 }

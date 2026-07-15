@@ -49,9 +49,9 @@ var registry = map[string]Factory{
 	"keenable":              buildKeenableTool,
 	"pubmed":                buildPubMedTool,
 	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
-	"retrieval":             noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dataset":     noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dateset":     noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
+	"retrieval":             buildRetrievalTool,
+	"search_my_dataset":     buildRetrievalTool,
+	"search_my_dateset":     buildRetrievalTool,
 	"searxng":               buildSearXNGTool,
 	"tavily":                buildTavilyTool,
 	"tavily_extract":        buildTavilyExtractTool,
@@ -350,6 +350,58 @@ func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
 	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
 
+func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := retrievalArgs{}
+	for key := range params {
+		switch key {
+		case "dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold",
+			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
+			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
+			"kb_vars", "cross_languages", "function_name", "description", "meta",
+			"inputs", "outputs":
+		default:
+			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
+		}
+	}
+
+	if ids, ok, err := stringSliceParam(params, "dataset_ids"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.DatasetIDs = ids
+	}
+	if ids, ok, err := stringSliceParam(params, "kb_ids"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.KBIDs = ids
+		if len(defaults.DatasetIDs) == 0 {
+			defaults.DatasetIDs = ids
+		}
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		defaults.TopN = v
+	}
+	if raw, exists := params["top_k"]; exists {
+		value, ok := strictInt(raw)
+		if !ok || value <= 0 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires positive integer node-level param top_k")
+		}
+		defaults.TopK = value
+	}
+	if v, ok := boolParam(params, "use_kg"); ok {
+		defaults.UseKG = v
+	}
+	if v, ok := floatParam(params, "similarity_threshold"); ok {
+		defaults.SimilarityThreshold = v
+	}
+	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
+		if v < 0 || v > 1 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires node-level param keywords_similarity_weight in [0,1]")
+		}
+		defaults.KeywordsSimilarityWeight = &v
+	}
+	return NewRetrievalToolWithDefaults(defaults), nil
+}
+
 func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := defaultSearXNGParams()
 	if value, ok := params["top_n"]; ok {
@@ -582,6 +634,52 @@ func intParam(params map[string]any, key string) (int, bool) {
 		return int(x), true
 	default:
 		return 0, false
+	}
+}
+
+func floatParam(params map[string]any, key string) (float64, bool) {
+	v, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	default:
+		return 0, false
+	}
+}
+
+func stringSliceParam(params map[string]any, key string) ([]string, bool, error) {
+	v, ok := params[key]
+	if !ok {
+		return nil, false, nil
+	}
+	switch x := v.(type) {
+	case []string:
+		return append([]string(nil), x...), true, nil
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, item := range x {
+			s, ok := item.(string)
+			if !ok {
+				return nil, true, fmt.Errorf("%s must be a string list", key)
+			}
+			if strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out, true, nil
+	default:
+		return nil, true, fmt.Errorf("%s must be a string list", key)
 	}
 }
 
