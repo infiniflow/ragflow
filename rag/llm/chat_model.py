@@ -196,6 +196,19 @@ def _apply_model_family_policies(
         elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
+        elif provider == SupportedLiteLLMProvider.Ollama and "frequency_penalty" in sanitized_gen_conf:
+            # litellm's ollama_chat integration maps the top-level
+            # `frequency_penalty` completion kwarg onto Ollama's native
+            # `repeat_penalty` option, but sending it that way corrupts the
+            # response for at least some Ollama models/versions - observed
+            # failures include an empty response and a response that echoes
+            # the system prompt back verbatim instead of actually answering.
+            # Passing the same value through `extra_body.repeat_penalty`
+            # instead sidesteps the broken code path and produces a correct
+            # response, matching how the Moonshot/ZHIPU-AI branches above
+            # route provider-specific fields through extra_body.
+            repeat_penalty = sanitized_gen_conf.pop("frequency_penalty")
+            _merge_extra_body(sanitized_gen_conf, {"repeat_penalty": repeat_penalty})
 
         return sanitized_gen_conf, sanitized_kwargs
 
