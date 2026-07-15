@@ -16,18 +16,16 @@
 
 package entity
 
-// UserTenant user tenant relationship model
-type UserTenant struct {
-	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	UserID    string  `gorm:"column:user_id;size:32;not null;index" json:"user_id"`
-	TenantID  string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Role      string  `gorm:"column:role;size:32;not null;index" json:"role"`
-	InvitedBy string  `gorm:"column:invited_by;size:32;not null;index" json:"invited_by"`
-	Status    *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+// TenantLangfuse tenant langfuse model
+type TenantLangfuse struct {
+	TenantID  string `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
+	SecretKey string `gorm:"column:secret_key;size:2048;not null;index" json:"secret_key"`
+	PublicKey string `gorm:"column:public_key;size:2048;not null;index" json:"public_key"`
+	Host      string `gorm:"column:host;size:128;not null;index" json:"host"`
 	BaseModel
 }
 
 // TableName specify table name
-func (UserTenant) TableName() string {
-	return "user_tenant"
+func (TenantLangfuse) TableName() string {
+	return "tenant_langfuse"
 }
