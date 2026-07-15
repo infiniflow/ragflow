@@ -597,6 +597,10 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 		return err
 	}
 
+	if err := validateDocumentIngestionStateUpdate(document, req); err != nil {
+		return err
+	}
+
 	if req.Name != nil {
 		document.Name = req.Name
 	}
@@ -617,6 +621,32 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 	}
 
 	return s.documentDAO.Update(document)
+}
+
+func validateDocumentIngestionStateUpdate(document *entity.Document, req *UpdateDocumentRequest) error {
+	if req.Run != nil && !stringPtrEqual(req.Run, document.Run) {
+		return errors.New("Can't change `run`.")
+	}
+	if req.TokenNum != nil && *req.TokenNum != document.TokenNum {
+		return errors.New("Can't change `token_num`.")
+	}
+	if req.ChunkNum != nil && *req.ChunkNum != document.ChunkNum {
+		return errors.New("Can't change `chunk_num`.")
+	}
+	if req.Progress != nil && math.Abs(*req.Progress-document.Progress) > 1e-9 {
+		return errors.New("Can't change `progress`.")
+	}
+	if req.ProgressMsg != nil && !stringPtrEqual(req.ProgressMsg, document.ProgressMsg) {
+		return errors.New("Can't change `progress_msg`.")
+	}
+	return nil
+}
+
+func stringPtrEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 // IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction

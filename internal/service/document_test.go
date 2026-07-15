@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -582,6 +583,145 @@ func TestCreateDocumentIncrementsKBDocNum(t *testing.T) {
 		t.Fatalf("unexpected doc: %+v", doc)
 	}
 	assertKBDocNum(t, "kb-create", 1)
+}
+
+func TestUpdateDocumentRejectsIngestionStateMutation(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 100, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
+
+	run := string(entity.TaskStatusRunning)
+	progressMsg := "Task is running..."
+	if err := dao.DB.Model(&entity.Document{}).
+		Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{
+			"run":          run,
+			"progress":     0.5,
+			"progress_msg": progressMsg,
+		}).Error; err != nil {
+		t.Fatalf("seed document ingestion state: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		req     *UpdateDocumentRequest
+		wantErr string
+	}{
+		{
+			name:    "run",
+			req:     &UpdateDocumentRequest{Run: sptr(string(entity.TaskStatusCancel))},
+			wantErr: "Can't change `run`.",
+		},
+		{
+			name:    "progress_msg",
+			req:     &UpdateDocumentRequest{ProgressMsg: sptr("Task is done.")},
+			wantErr: "Can't change `progress_msg`.",
+		},
+		{
+			name: "token_num",
+			req: func() *UpdateDocumentRequest {
+				tokenNum := int64(101)
+				return &UpdateDocumentRequest{TokenNum: &tokenNum}
+			}(),
+			wantErr: "Can't change `token_num`.",
+		},
+		{
+			name: "chunk_num",
+			req: func() *UpdateDocumentRequest {
+				chunkNum := int64(11)
+				return &UpdateDocumentRequest{ChunkNum: &chunkNum}
+			}(),
+			wantErr: "Can't change `chunk_num`.",
+		},
+		{
+			name: "progress",
+			req: func() *UpdateDocumentRequest {
+				progress := 0.75
+				return &UpdateDocumentRequest{Progress: &progress}
+			}(),
+			wantErr: "Can't change `progress`.",
+		},
+	}
+
+	svc := testDocumentService(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.UpdateDocument("doc-1", tt.req)
+			if err == nil {
+				t.Fatal("expected immutable field error")
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("err = %q, want %q", err.Error(), tt.wantErr)
+			}
+
+			doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+			if doc.Run == nil || *doc.Run != run {
+				t.Fatalf("run = %v, want %q", doc.Run, run)
+			}
+			if doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg {
+				t.Fatalf("progress_msg = %v, want %q", doc.ProgressMsg, progressMsg)
+			}
+			if doc.TokenNum != 100 || doc.ChunkNum != 10 || math.Abs(doc.Progress-0.5) > 1e-9 {
+				t.Fatalf("ingestion fields changed: token=%d chunk=%d progress=%f", doc.TokenNum, doc.ChunkNum, doc.Progress)
+			}
+		})
+	}
+}
+
+func TestUpdateDocumentAllowsMatchingIngestionState(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 100, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
+
+	run := string(entity.TaskStatusRunning)
+	progressMsg := "Task is running..."
+	if err := dao.DB.Model(&entity.Document{}).
+		Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{
+			"run":          run,
+			"progress":     0.5,
+			"progress_msg": progressMsg,
+		}).Error; err != nil {
+		t.Fatalf("seed document ingestion state: %v", err)
+	}
+
+	tokenNum := int64(100)
+	chunkNum := int64(10)
+	progress := 0.5
+	name := "renamed.txt"
+	svc := testDocumentService(t)
+	if err := svc.UpdateDocument("doc-1", &UpdateDocumentRequest{
+		Name:        &name,
+		Run:         &run,
+		TokenNum:    &tokenNum,
+		ChunkNum:    &chunkNum,
+		Progress:    &progress,
+		ProgressMsg: &progressMsg,
+	}); err != nil {
+		t.Fatalf("UpdateDocument failed: %v", err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if doc.Name == nil || *doc.Name != name {
+		t.Fatalf("name = %v, want %q", doc.Name, name)
+	}
+	if doc.Run == nil || *doc.Run != run {
+		t.Fatalf("run = %v, want %q", doc.Run, run)
+	}
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg {
+		t.Fatalf("progress_msg = %v, want %q", doc.ProgressMsg, progressMsg)
+	}
+	if doc.TokenNum != tokenNum || doc.ChunkNum != chunkNum || math.Abs(doc.Progress-progress) > 1e-9 {
+		t.Fatalf("ingestion fields changed unexpectedly: token=%d chunk=%d progress=%f", doc.TokenNum, doc.ChunkNum, doc.Progress)
+	}
 }
 
 func TestDeleteDocumentFull_Basic(t *testing.T) {

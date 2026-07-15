@@ -481,6 +481,8 @@ class UpdateDocumentReq(Base):
     chunk_count: Annotated[int | None, Field(default=None, ge=0)]
     token_count: Annotated[int | None, Field(default=None, ge=0)]
     progress: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)]
+    run: Annotated[str | None, Field(default=None, max_length=1)]
+    progress_msg: Annotated[str | None, Field(default=None, max_length=65535)]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     meta_fields: Annotated[dict | None, Field(default={})]
 
@@ -1082,6 +1084,12 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):
             return "Can't change `progress`.", RetCode.DATA_ERROR
+
+    if update_doc_req.run is not None and update_doc_req.run != getattr(doc, "run", None):
+        return "Can't change `run`.", RetCode.DATA_ERROR
+
+    if update_doc_req.progress_msg is not None and update_doc_req.progress_msg != getattr(doc, "progress_msg", None):
+        return "Can't change `progress_msg`.", RetCode.DATA_ERROR
 
     return None, None
 

@@ -98,6 +98,36 @@ def test_validate_immutable_fields_progress_matches():
     assert error_code is None
 
 
+def test_validate_immutable_fields_run_matches():
+    """Test when run matches the document's run state."""
+    update_doc_req = UpdateDocumentReq(run="1")
+    doc = Mock()
+    doc.chunk_num = 10
+    doc.token_num = 100
+    doc.progress = 0.5
+    doc.run = "1"
+    doc.progress_msg = "Task is running..."
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg is None
+    assert error_code is None
+
+
+def test_validate_immutable_fields_progress_msg_matches():
+    """Test when progress_msg matches the document's current message."""
+    update_doc_req = UpdateDocumentReq(progress_msg="Task is running...")
+    doc = Mock()
+    doc.chunk_num = 10
+    doc.token_num = 100
+    doc.progress = 0.5
+    doc.run = "1"
+    doc.progress_msg = "Task is running..."
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg is None
+    assert error_code is None
+
+
 def test_validate_immutable_fields_chunk_count_mismatch():
     """Test when chunk_count doesn't match the document's chunk_num."""
     update_doc_req = UpdateDocumentReq(chunk_count=15)
@@ -134,6 +164,36 @@ def test_validate_immutable_fields_progress_mismatch():
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg == "Can't change `progress`."
+    assert error_code == RetCode.DATA_ERROR
+
+
+def test_validate_immutable_fields_run_mismatch():
+    """Test when run doesn't match the document's run state."""
+    update_doc_req = UpdateDocumentReq(run="3")
+    doc = Mock()
+    doc.chunk_num = 10
+    doc.token_num = 100
+    doc.progress = 0.5
+    doc.run = "1"
+    doc.progress_msg = "Task is running..."
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "Can't change `run`."
+    assert error_code == RetCode.DATA_ERROR
+
+
+def test_validate_immutable_fields_progress_msg_mismatch():
+    """Test when progress_msg doesn't match the document's current message."""
+    update_doc_req = UpdateDocumentReq(progress_msg="Task is done.")
+    doc = Mock()
+    doc.chunk_num = 10
+    doc.token_num = 100
+    doc.progress = 0.5
+    doc.run = "1"
+    doc.progress_msg = "Task is running..."
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "Can't change `progress_msg`."
     assert error_code == RetCode.DATA_ERROR
 
 
