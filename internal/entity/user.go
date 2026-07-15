@@ -34,7 +34,7 @@ type User struct {
 	IsActive        string     `gorm:"column:is_active;size:1;not null;default:1;index" json:"is_active"`
 	IsAnonymous     string     `gorm:"column:is_anonymous;size:1;not null;default:0;index" json:"is_anonymous"`
 	LoginChannel    *string    `gorm:"column:login_channel;index" json:"login_channel,omitempty"`
-	Status          *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
+	Status          *string    `gorm:"column:status;size:1;index" json:"status"`
 	IsSuperuser     *bool      `gorm:"column:is_superuser;index" json:"is_superuser,omitempty"`
 	RoleID          int64      `gorm:"column:role_id;index;default:1;not null;" json:"role_id,omitempty"`
 	BaseModel
