@@ -40,7 +40,6 @@ func TestListVersions_Success(t *testing.T) {
 
 	// Migrate tables needed for agent versions
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -285,7 +284,6 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -345,7 +343,6 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -404,7 +401,6 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -510,7 +506,6 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -574,7 +569,6 @@ func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserTenant{},
 	); err != nil {
@@ -621,8 +615,7 @@ func setupAgentSessionServiceTest(t *testing.T) {
 		t.Fatalf("failed to access sqlite handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := testDB.AutoMigrate(
-		&entity.User{},
+	if err = testDB.AutoMigrate(
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},

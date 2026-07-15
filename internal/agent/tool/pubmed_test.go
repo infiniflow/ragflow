@@ -191,16 +191,17 @@ func TestPubMed_InvokableRunEmptyResults(t *testing.T) {
 	}
 }
 
-func TestPubMed_InvokableRunRequiresQuery(t *testing.T) {
+func TestPubMed_InvokableRunEmptyQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewPubMedTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Fatalf("err = %q, want query validation", err.Error())
+	var envelope pubmedEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
@@ -212,8 +213,8 @@ func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "pubmed" {
-		t.Fatalf("Name = %q, want pubmed", info.Name)
+	if info.Name != "pubmed_search" {
+		t.Fatalf("Name = %q, want pubmed_search", info.Name)
 	}
 	schema, err := info.ParamsOneOf.ToJSONSchema()
 	if err != nil {
@@ -238,7 +239,9 @@ func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
 func TestPubMed_BuildByNameAcceptsNodeParams(t *testing.T) {
 	t.Parallel()
 
-	built, err := BuildByName("pubmed", map[string]any{"top_n": 8, "email": "node@example.com"})
+	built, err := BuildByName("pubmed", map[string]any{
+		"top_n": 8, "email": "node@example.com", "outputs": map[string]any{"json": map[string]any{}},
+	})
 	if err != nil {
 		t.Fatalf("BuildByName: %v", err)
 	}
@@ -251,6 +254,33 @@ func TestPubMed_BuildByNameAcceptsNodeParams(t *testing.T) {
 	}
 	if tool.defaults.Email != "node@example.com" {
 		t.Fatalf("defaults.Email = %q, want node@example.com", tool.defaults.Email)
+	}
+}
+
+func TestPubMed_ComponentReferencesAndOutputs(t *testing.T) {
+	t.Parallel()
+
+	pubmed := NewPubMedTool()
+	spec := pubmed.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Paper", "url": "https://pubmed.ncbi.nlm.nih.gov/1", "content": "Title: Paper\nAbstract: Evidence.",
+	}}}
+	chunks, docAggs := pubmed.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["document_name"] != "Paper" {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := pubmed.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Abstract: Evidence.") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
 	}
 }
 
@@ -275,5 +305,15 @@ func TestPubMed_BuildByNameRejectsInvalidTopN(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "positive integer") {
 		t.Fatalf("err = %q, want positive integer validation", err.Error())
+	}
+}
+
+func TestPubMed_BuildByNameRejectsInvalidNodeTypes(t *testing.T) {
+	t.Parallel()
+
+	for _, params := range []map[string]any{{"top_n": 1.5}, {"email": 1}, {"email": ""}} {
+		if _, err := BuildByName("pubmed", params); err == nil {
+			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
 	}
 }

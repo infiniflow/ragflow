@@ -725,6 +725,36 @@ func TestIngestionTaskServiceMarkStoppedIdempotentOnAlreadyStopped(t *testing.T)
 	}
 }
 
+func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.COMPLETED).Error; err != nil {
+		t.Fatalf("set task COMPLETED: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.MarkFailed("task-1"); err != nil {
+		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
+	}
+}
+
+func TestIngestionTaskServiceMarkCompletedIdempotentOnAlreadyTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.FAILED).Error; err != nil {
+		t.Fatalf("set task FAILED: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.MarkCompleted("task-1"); err != nil {
+		t.Fatalf("MarkCompleted on already FAILED task should be idempotent, got: %v", err)
+	}
+}
+
 func TestDocumentServiceUpdateRunProgressMirrorsFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

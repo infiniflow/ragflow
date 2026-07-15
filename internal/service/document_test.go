@@ -385,7 +385,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	}
 
 	// Migrate tables used by deleteDocumentFull + DeleteDocuments
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
 		&entity.Task{},

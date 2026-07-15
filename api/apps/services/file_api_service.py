@@ -565,10 +565,13 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
             FileService.update_by_id(source_file_entry.id, updates)
 
         if override_name:
-            informs = File2DocumentService.get_by_file_id(source_file_entry.id)
-            if informs:
-                if not DocumentService.update_by_id(informs[0].document_id, {"name": override_name}):
-                    raise RuntimeError("Database error (Document rename)!")
+            _rename_linked_documents(source_file_entry.id, override_name)
+
+    def _rename_linked_documents(file_id, name):
+        informs = File2DocumentService.get_by_file_id(file_id)
+        for inform in informs:
+            if not DocumentService.update_by_id(inform.document_id, {"name": name}):
+                raise RuntimeError("Database error (Document rename)!")
 
     def _move_or_rename_sync():
         if dest_folder:
@@ -579,10 +582,10 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
             file = files[0]
             if not FileService.update_by_id(file.id, {"name": new_name}):
                 return False, "Database error (File rename)!"
-            informs = File2DocumentService.get_by_file_id(file.id)
-            if informs:
-                if not DocumentService.update_by_id(informs[0].document_id, {"name": new_name}):
-                    return False, "Database error (Document rename)!"
+            try:
+                _rename_linked_documents(file.id, new_name)
+            except RuntimeError as e:
+                return False, str(e)
         return True, True
 
     return await thread_pool_exec(_move_or_rename_sync)
