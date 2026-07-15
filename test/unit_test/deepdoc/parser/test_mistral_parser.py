@@ -208,3 +208,19 @@ def test_transfer_to_tables_is_empty(monkeypatch):
     p = _make_parser(m)
     pages = p._normalize_pages(_ocr_response())
     assert p._transfer_to_tables(pages) == []
+
+
+def test_crop_returns_none_without_positions(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    assert p.crop("plain text with no tag") is None
+
+
+def test_crop_reads_page_images_for_tagged_text(monkeypatch):
+    from PIL import Image
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    p.page_images = [Image.new("RGB", (200, 300), "white")]
+    tag = "@@1\t10.0\t100.0\t20.0\t60.0##"
+    out = p.crop("caption" + tag, need_position=True)
+    assert isinstance(out, tuple) and len(out) == 2

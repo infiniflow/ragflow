@@ -23,9 +23,15 @@ SoMark produces so the proven section-building contract is reused verbatim.
 import logging
 import os
 import re
+from io import BytesIO
+from os import PathLike
 from typing import Optional
 
-from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+import numpy as np
+import pdfplumber
+from PIL import Image
+
+from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER, RAGFlowPdfParser
 
 # RAGFlow internal layout types the rest of the pipeline understands.
 _KNOWN_INTERNAL_TYPES = {"text", "image", "table", "equation", "code"}
@@ -69,6 +75,27 @@ class MistralParser(RAGFlowPdfParser):
         self.inline_max_bytes = int(inline_max_bytes)
         self.outlines: list = []
         self.logger = logging.getLogger(self.__class__.__name__)
+        # RAGFlowPdfParser.__init__ sets this default; MistralParser skips
+        # that heavy __init__, so crop() needs it set before __images__ runs.
+        self.page_from = 0
+
+    # ------------------------------------------------------------------
+    # Page image rendering
+    # ------------------------------------------------------------------
+    def __images__(self, fnm, zoomin: int = 1, page_from: int = 0,
+                   page_to: int = MAXIMUM_PAGE_NUMBER, callback=None):
+        self.page_from = page_from
+        self.page_to = page_to
+        try:
+            ctx = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm))
+            with ctx as pdf:
+                self.pdf = pdf
+                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original
+                                    for _, p in enumerate(self.pdf.pages[page_from:page_to])]
+        except Exception as exc:
+            self.page_images = None
+            self.total_page = 0
+            self.logger.exception(exc)
 
     # ------------------------------------------------------------------
     # Block classification
@@ -167,6 +194,121 @@ class MistralParser(RAGFlowPdfParser):
             left, right, top, bottom = float(left), float(right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
+
+    def crop(self, text, ZM=1, need_position=False):
+        """Image crop based on tags."""
+        imgs = []
+        poss = self.extract_positions(text)
+        if not poss:
+            return (None, None) if need_position else None
+        if not getattr(self, "page_images", None):
+            self.logger.warning("[SoMark] crop called without page images; skip.")
+            return (None, None) if need_position else None
+
+        page_count = len(self.page_images)
+        filtered = []
+        for pns, left, right, top, bottom in poss:
+            valid_pns = [p for p in pns if 0 <= p < page_count]
+            if valid_pns:
+                filtered.append((valid_pns, left, right, top, bottom))
+        if not filtered:
+            return (None, None) if need_position else None
+        poss = filtered
+
+        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
+        GAP = 6
+        first = poss[0]
+        poss.insert(
+            0,
+            (
+                [first[0][0]],
+                first[1],
+                first[2],
+                max(0, first[3] - 120),
+                max(first[3] - GAP, 0),
+            ),
+        )
+        last = poss[-1]
+        last_pn = last[0][-1]
+        if not (0 <= last_pn < page_count):
+            return (None, None) if need_position else None
+        last_h = self.page_images[last_pn].size[1]
+        poss.append(
+            (
+                [last_pn],
+                last[1],
+                last[2],
+                min(last_h, last[4] + GAP),
+                min(last_h, last[4] + 120),
+            )
+        )
+
+        positions = []
+        for ii, (pns, left, right, top, bottom) in enumerate(poss):
+            right = left + max_width
+            if bottom <= top:
+                bottom = top + 2
+            for pn in pns[1:]:
+                if 0 <= pn - 1 < page_count:
+                    bottom += self.page_images[pn - 1].size[1]
+            if not (0 <= pns[0] < page_count):
+                continue
+            base_img = self.page_images[pns[0]]
+            x0, y0, x1, y1 = (
+                int(left),
+                int(top),
+                int(right),
+                int(min(bottom, base_img.size[1])),
+            )
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            if x1 <= x0 or y1 <= y0:
+                continue
+            imgs.append(base_img.crop((x0, y0, x1, y1)))
+            if 0 < ii < len(poss) - 1:
+                positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
+            bottom -= base_img.size[1]
+            for pn in pns[1:]:
+                if not (0 <= pn < page_count):
+                    continue
+                page = self.page_images[pn]
+                x0, y0, x1, y1 = (
+                    int(left),
+                    0,
+                    int(right),
+                    int(min(bottom, page.size[1])),
+                )
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= page.size[1]
+                    continue
+                imgs.append(page.crop((x0, y0, x1, y1)))
+                if 0 < ii < len(poss) - 1:
+                    positions.append((pn + self.page_from, x0, x1, y0, y1))
+                bottom -= page.size[1]
+
+        if not imgs:
+            return (None, None) if need_position else None
+
+        height = sum(img.size[1] + GAP for img in imgs)
+        width = int(np.max([i.size[0] for i in imgs]))
+        pic = Image.new("RGB", (width, int(height)), (245, 245, 245))
+        offset = 0
+        for ii, img in enumerate(imgs):
+            if ii == 0 or ii + 1 == len(imgs):
+                img = img.convert("RGBA")
+                overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                overlay.putalpha(128)
+                img = Image.alpha_composite(img, overlay).convert("RGB")
+            pic.paste(img, (0, int(offset)))
+            offset += img.size[1] + GAP
+
+        return (pic, positions) if need_position else pic
 
     # ------------------------------------------------------------------
     # Sections / tables
