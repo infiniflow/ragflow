@@ -353,15 +353,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         fails = []
         question, answer = "", ""
         res = []
-        # QUOTE_NONE keeps one physical line per record so the reader's row
-        # index stays aligned with lines[i] below; otherwise a field opening
-        # with a quote swallows following lines and desyncs the two.
-        reader = csv.reader(lines, delimiter=delimiter, quoting=csv.QUOTE_NONE)
+        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
+        prev_line_num = 0
 
+        # line_num tracks the physical span when quoted fields cross lines.
         for i, row in enumerate(reader):
+            raw = "\n".join(lines[prev_line_num : reader.line_num])
+            prev_line_num = reader.line_num
             if len(row) != 2:
                 if question:
-                    answer += "\n" + lines[i]
+                    answer += "\n" + raw
                 else:
                     fails.append(str(i + 1))
             elif len(row) == 2:
