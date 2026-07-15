@@ -18,7 +18,7 @@ import logging
 import re
 import csv
 from copy import deepcopy
-from io import BytesIO
+from io import BytesIO, StringIO
 from timeit import default_timer as timer
 from openpyxl import load_workbook
 
@@ -348,28 +348,33 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
+        line_count = max(len(lines), 1)
         delimiter = "\t" if any("\t" in line for line in lines) else ","
 
         fails = []
         question, answer = "", ""
+        row_num = -1
         res = []
-        reader = csv.reader(lines, delimiter=delimiter)
+        reader = csv.reader(StringIO(txt), delimiter=delimiter)
 
-        for i, row in enumerate(reader):
+        for row in reader:
+            current_line = reader.line_num
             if len(row) != 2:
                 if question:
-                    answer += "\n" + lines[i]
+                    answer += "\n" + delimiter.join(row)
+                    row_num = current_line
                 else:
-                    fails.append(str(i + 1))
+                    fails.append(str(current_line))
             elif len(row) == 2:
                 if question and answer:
-                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
+                    res.append(beAdoc(deepcopy(doc), question, answer, eng, row_num))
                 question, answer = row
+                row_num = current_line
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / line_count, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, row_num))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res

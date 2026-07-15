@@ -52,3 +52,19 @@ def test_csv_final_pair_uses_last_line_number():
     assert len(chunks) == 2
     assert chunks[0]["top_int"] == [1]
     assert chunks[1]["top_int"] == [2]
+
+
+@pytest.mark.p2
+def test_csv_multiline_quoted_answer_preserves_pairs_and_source_lines():
+    chunks = qa.chunk(
+        "qa.csv",
+        binary=b'First prompt,"first line\nsecond line"\nSecond prompt,second answer',
+        lang="English",
+        callback=_noop_callback,
+    )
+
+    assert len(chunks) == 2
+    assert chunks[0]["content_with_weight"] == "Question: First prompt\tAnswer: first line\nsecond line"
+    assert chunks[0]["top_int"] == [2]
+    assert chunks[1]["content_with_weight"] == "Question: Second prompt\tAnswer: second answer"
+    assert chunks[1]["top_int"] == [3]
