@@ -41,6 +41,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.FunASR,
   LLMFactory.BaiduYiYan,
   LLMFactory.NewAPI,
+  LLMFactory.RAGcon,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,
