@@ -334,7 +334,7 @@ func (e *Ingestor) markStopped(taskID string) bool {
 		return false
 	}
 	if rc := redis2.Get(); rc != nil {
-		common.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
+		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
 			rc.Delete(fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
 		})
@@ -377,7 +377,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	// a genuine concurrent cancel sets the task to STOPPING in DB.
 	if rc := redis2.Get(); rc != nil {
 		key := fmt.Sprintf("%s-cancel", task.ID)
-		common.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
+		utility.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
 			rc.Delete(key)
 			return nil // Delete returns bool; false may mean "key not found" or "error"
 		})

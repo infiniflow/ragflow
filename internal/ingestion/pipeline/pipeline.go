@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -348,17 +349,17 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				common.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			common.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		common.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -395,11 +396,11 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
-				common.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
-				common.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
 			}
 			if store != nil {
-				common.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
@@ -408,14 +409,14 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			p.cleanupCheckpoint(ctx, store, tracker, cpID)
 			if tracker != nil {
-				common.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
 			if tracker != nil {
-				common.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}
