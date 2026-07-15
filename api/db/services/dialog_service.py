@@ -20,6 +20,7 @@ import time
 import uuid
 from copy import deepcopy
 from rag.advanced_rag.agentic_rag import RAGTools
+
 logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
@@ -716,7 +717,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
         # replaced by extension of reasoning: 0, 1, 2
-        if False: #prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
+        if False:  # prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
@@ -1860,14 +1861,16 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         thinking_mode = _mode_labels[_n - 1] if 1 <= _n <= len(_mode_labels) else "medium"
     except (TypeError, ValueError):
         thinking_mode = "medium"
-    rag_tools = RAGTools(tenant_ids,
-                         chat_mdl,
-                         embed_mdl=embd_mdl,
-                         kb_ids=dialog.kb_ids,
-                         tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None,
-                         do_refer = False,
-                         thinking_mode=thinking_mode,
-                         )
+
+    rag_tools = RAGTools(
+        tenant_ids,
+        chat_mdl,
+        embed_mdl=embd_mdl,
+        kb_ids=dialog.kb_ids,
+        tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None,
+        do_refer=False,
+        thinking_mode=thinking_mode,
+    )
 
     async def decorate_answer(answer):
         nonlocal rag_tools, messages
@@ -1919,7 +1922,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     # The agentic-search graph composes the final cited answer itself, so we
     # stream its tokens straight to the client instead of relaying a tool
     # result through a second outer-LLM pass.
-    from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
     chat_mdl.bind_tools(None, rag_tools.tools)
     # `rag` composes the full cited answer itself, so treat it as terminal: once
