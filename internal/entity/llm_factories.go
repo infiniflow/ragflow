@@ -22,7 +22,7 @@ type LLMFactories struct {
 	Logo   *string `gorm:"column:logo;type:longtext" json:"logo,omitempty"`
 	Tags   string  `gorm:"column:tags;size:255;not null;index" json:"tags"`
 	Rank   int64   `gorm:"column:rank;default:0" json:"rank"`
-	Status *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	Status *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
 

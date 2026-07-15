@@ -24,7 +24,7 @@ type LLM struct {
 	MaxTokens int64   `gorm:"column:max_tokens;default:0" json:"max_tokens"`
 	Tags      string  `gorm:"column:tags;size:255;not null;index" json:"tags"`
 	IsTools   bool    `gorm:"column:is_tools;default:false" json:"is_tools"`
-	Status    *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	Status    *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
 

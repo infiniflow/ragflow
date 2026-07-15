@@ -23,7 +23,7 @@ type UserTenant struct {
 	TenantID  string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Role      string  `gorm:"column:role;size:32;not null;index" json:"role"`
 	InvitedBy string  `gorm:"column:invited_by;size:32;not null;index" json:"invited_by"`
-	Status    *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	Status    *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
 

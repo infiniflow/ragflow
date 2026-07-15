@@ -26,15 +26,15 @@ type User struct {
 	Password        *string    `gorm:"column:password;size:255;index" json:"-"`
 	Email           string     `gorm:"column:email;size:255;not null;unique" json:"email"`
 	Avatar          *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
-	Language        *string    `gorm:"column:language;size:32;index;default:'English'" json:"language,omitempty"`
-	ColorSchema     *string    `gorm:"column:color_schema;size:32;index;default:'Bright'" json:"color_schema,omitempty"`
-	Timezone        *string    `gorm:"column:timezone;size:64;index;default:'UTC+8\tAsia/Shanghai'" json:"timezone,omitempty"`
+	Language        *string    `gorm:"column:language;size:32;index" json:"language,omitempty"`
+	ColorSchema     *string    `gorm:"column:color_schema;size:32;index" json:"color_schema,omitempty"`
+	Timezone        *string    `gorm:"column:timezone;size:64;index" json:"timezone,omitempty"`
 	LastLoginTime   *time.Time `gorm:"column:last_login_time;index" json:"last_login_time,omitempty"`
 	IsAuthenticated string     `gorm:"column:is_authenticated;size:1;not null;default:1;index" json:"is_authenticated"`
 	IsActive        string     `gorm:"column:is_active;size:1;not null;default:1;index" json:"is_active"`
 	IsAnonymous     string     `gorm:"column:is_anonymous;size:1;not null;default:0;index" json:"is_anonymous"`
 	LoginChannel    *string    `gorm:"column:login_channel;index" json:"login_channel,omitempty"`
-	Status          *string    `gorm:"column:status;size:1;default:1;index" json:"status"`
+	Status          *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	IsSuperuser     *bool      `gorm:"column:is_superuser;index" json:"is_superuser,omitempty"`
 	RoleID          int64      `gorm:"column:role_id;index;default:1;not null;" json:"role_id,omitempty"`
 	BaseModel
