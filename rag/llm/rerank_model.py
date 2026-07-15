@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import time
 from abc import ABC
 from urllib.parse import urljoin
 from typing import Tuple, List
@@ -305,6 +306,12 @@ class CoHereRerank(Base):
 class BedrockRerank(Base):
     _FACTORY_NAME = "Bedrock"
 
+    # Hard limits of the bedrock-agent-runtime Rerank API: each document text
+    # (RerankTextDocument.text) is capped at 32,000 characters, and a single
+    # request accepts at most 1,000 sources / numberOfResults.
+    _MAX_DOC_CHARS = 32000
+    _MAX_SOURCES = 1000
+
     def __init__(self, key, model_name, **kwargs):
         import boto3
 
@@ -347,27 +354,47 @@ class BedrockRerank(Base):
             self.client = boto3.client("bedrock-agent-runtime", region_name=self.bedrock_region)
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, self.doc_max_tokens) for t in texts]
+        # Truncate to the model token window, then enforce the API's hard 32k-char
+        # per-document limit (a longer RerankTextDocument.text is rejected).
+        texts = [truncate(t, self.doc_max_tokens)[: self._MAX_DOC_CHARS] for t in texts]
         # Bedrock does not report token usage; count locally like CoHereRerank.
         token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(t) for t in texts)
-        sources = [{"type": "INLINE", "inlineDocumentSource": {"type": "TEXT", "textDocument": {"text": t}}} for t in texts]
-        res = self.client.rerank(
-            queries=[{"type": "TEXT", "textQuery": {"text": query}}],
-            sources=sources,
-            rerankingConfiguration={
-                "type": "BEDROCK_RERANKING_MODEL",
-                "bedrockRerankingConfiguration": {
-                    "numberOfResults": len(texts),
-                    "modelConfiguration": {"modelArn": self.model_arn},
-                },
-            },
-        )
+
         rank = np.zeros(len(texts), dtype=float)
-        try:
-            for d in res.get("results", []):
-                rank[d["index"]] = d["relevanceScore"]
-        except Exception as _e:
-            log_exception(_e, res)
+        result_count = 0
+        started = time.perf_counter()
+        # Both `sources` and `numberOfResults` are capped at 1,000 per request;
+        # rerank in batches and map each score back to its global position.
+        for offset in range(0, len(texts), self._MAX_SOURCES):
+            batch = texts[offset : offset + self._MAX_SOURCES]
+            sources = [{"type": "INLINE", "inlineDocumentSource": {"type": "TEXT", "textDocument": {"text": t}}} for t in batch]
+            res = self.client.rerank(
+                queries=[{"type": "TEXT", "textQuery": {"text": query}}],
+                sources=sources,
+                rerankingConfiguration={
+                    "type": "BEDROCK_RERANKING_MODEL",
+                    "bedrockRerankingConfiguration": {
+                        "numberOfResults": len(batch),
+                        "modelConfiguration": {"modelArn": self.model_arn},
+                    },
+                },
+            )
+            try:
+                for d in res.get("results", []):
+                    rank[offset + d["index"]] = d["relevanceScore"]
+                    result_count += 1
+            except Exception as _e:
+                log_exception(_e, res)
+        # Safe diagnostics only: no query, document text or credentials.
+        logging.debug(
+            "BedrockRerank model=%s region=%s sources=%d tokens=%d results=%d elapsed=%.3fs",
+            self.model_name,
+            self.bedrock_region,
+            len(texts),
+            token_count,
+            result_count,
+            time.perf_counter() - started,
+        )
         return rank, token_count
 
 

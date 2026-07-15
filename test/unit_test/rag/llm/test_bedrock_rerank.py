@@ -117,3 +117,39 @@ def test_empty_input_short_circuits_without_calling_bedrock(query, texts):
     assert tokens == 0
     assert rank.size == len(texts)
     client.rerank.assert_not_called()
+
+
+def test_document_is_capped_at_32000_chars():
+    # RerankTextDocument.text is hard-capped at 32,000 chars; a longer doc would
+    # otherwise be rejected by the API. Amazon's 8k-token window can exceed it.
+    mdl, client = _make(model_name="amazon.rerank-v1:0")
+    client.rerank.return_value = _rerank_response([(0, 0.5)])
+    mdl.similarity("q", ["word " * 30000])  # 150k chars
+    sent = client.rerank.call_args.kwargs["sources"][0]["inlineDocumentSource"]["textDocument"]["text"]
+    assert len(sent) <= 32000
+
+
+def test_short_document_is_not_char_capped():
+    mdl, client = _make(model_name="amazon.rerank-v1:0")
+    client.rerank.return_value = _rerank_response([(0, 0.5)])
+    mdl.similarity("q", ["short document"])
+    sent = client.rerank.call_args.kwargs["sources"][0]["inlineDocumentSource"]["textDocument"]["text"]
+    assert sent == "short document"
+
+
+def test_batches_requests_over_the_1000_source_limit():
+    mdl, client = _make()
+
+    def _fake_rerank(**kwargs):
+        n = len(kwargs["sources"])
+        return {"results": [{"index": i, "relevanceScore": 0.5} for i in range(n)]}
+
+    client.rerank.side_effect = _fake_rerank
+    n = 2001
+    rank, _ = mdl.similarity("q", ["doc"] * n)
+    assert rank.shape == (n,)
+    assert client.rerank.call_count == 3  # 1000 + 1000 + 1
+    for call in client.rerank.call_args_list:
+        cfg = call.kwargs["rerankingConfiguration"]["bedrockRerankingConfiguration"]
+        assert len(call.kwargs["sources"]) <= 1000
+        assert cfg["numberOfResults"] <= 1000
