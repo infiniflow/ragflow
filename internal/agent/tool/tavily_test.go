@@ -303,8 +303,13 @@ func TestTavily_ComponentReferencesAndOutputs(t *testing.T) {
 
 	tavily := NewTavilyTool()
 	spec := tavily.ComponentSpec()
-	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["name"] != "Query" || query["type"] != "line" {
-		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	for key, name := range map[string]string{
+		"query": "Query", "topic": "Topic", "include_domains": "Include domains", "exclude_domains": "Exclude domains",
+	} {
+		field, ok := spec.InputForm[key].(map[string]any)
+		if !ok || field["name"] != name || field["type"] != "line" {
+			t.Fatalf("%s input form = %#v", key, spec.InputForm[key])
+		}
 	}
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title":       "RAGFlow",
@@ -459,9 +464,13 @@ func TestTavilyExtract_ComponentContract(t *testing.T) {
 	if _, ok := spec.Outputs["json"]; !ok {
 		t.Fatalf("component outputs missing json: %#v", spec.Outputs)
 	}
-	urls, ok := spec.InputForm["urls"].(map[string]any)
-	if !ok || urls["name"] != "URLs" || urls["type"] != "line" {
-		t.Fatalf("urls input form = %#v", spec.InputForm["urls"])
+	for key, name := range map[string]string{
+		"urls": "URLs", "extract_depth": "Extract depth", "format": "Format",
+	} {
+		field, ok := spec.InputForm[key].(map[string]any)
+		if !ok || field["name"] != name || field["type"] != "line" {
+			t.Fatalf("%s input form = %#v", key, spec.InputForm[key])
+		}
 	}
 
 	envelope := map[string]any{

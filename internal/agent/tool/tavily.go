@@ -391,7 +391,10 @@ func (t *TavilyTool) ComponentSpec() ComponentSpec {
 			"json":               "Raw Tavily result list.",
 		},
 		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
+			"query":           map[string]any{"name": "Query", "type": "line"},
+			"topic":           map[string]any{"name": "Topic", "type": "line"},
+			"include_domains": map[string]any{"name": "Include domains", "type": "line"},
+			"exclude_domains": map[string]any{"name": "Exclude domains", "type": "line"},
 		},
 	}
 }
@@ -589,10 +592,9 @@ func (t *TavilyExtractTool) ComponentSpec() ComponentSpec {
 			"json": "Raw Tavily Extract results.",
 		},
 		InputForm: map[string]any{
-			"urls": map[string]any{
-				"name": "URLs",
-				"type": "line",
-			},
+			"urls":          map[string]any{"name": "URLs", "type": "line"},
+			"extract_depth": map[string]any{"name": "Extract depth", "type": "line"},
+			"format":        map[string]any{"name": "Format", "type": "line"},
 		},
 	}
 }

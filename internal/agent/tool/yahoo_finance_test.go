@@ -159,14 +159,10 @@ func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
 func TestMergeYahooFinanceParamsKeepsStockCodeAndUsesNodeConfig(t *testing.T) {
 	t.Parallel()
 
-	defaults := yahooFinanceParams{
-		Info: true, History: false, Financials: true,
-		BalanceSheet: false, CashFlowStatement: true, News: false,
-	}
+	defaults := yahooFinanceParams{Info: true}
 	params := yahooFinanceParams{
 		StockCode: "AAPL",
-		Info:      false, History: true, Financials: false,
-		BalanceSheet: true, CashFlowStatement: false, News: true,
+		Info:      false,
 	}
 
 	got := mergeYahooFinanceParams(defaults, params)
@@ -283,7 +279,7 @@ func TestBuildYahooFinanceToolUsesNodeDefaults(t *testing.T) {
 	t.Parallel()
 
 	built, err := BuildByName("yahoo_finance", map[string]any{
-		"info": false, "history": true, "balance_sheet": true, "news": false,
+		"info": false, "history": true, "balance_sheet": true, "news": true,
 		"stock_code": "sys.query", "outputs": map[string]any{"report": map[string]any{}},
 	})
 	if err != nil {
@@ -293,7 +289,7 @@ func TestBuildYahooFinanceToolUsesNodeDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("tool type = %T", built)
 	}
-	if yahoo.defaults.Info || !yahoo.defaults.History || !yahoo.defaults.BalanceSheet || yahoo.defaults.News {
+	if yahoo.defaults.Info {
 		t.Fatalf("defaults = %#v", yahoo.defaults)
 	}
 	if yahoo.defaults.StockCode != "" {
@@ -301,18 +297,11 @@ func TestBuildYahooFinanceToolUsesNodeDefaults(t *testing.T) {
 	}
 }
 
-func TestBuildYahooFinanceToolRejectsInvalidBooleanParams(t *testing.T) {
+func TestBuildYahooFinanceToolRejectsInvalidInfoParam(t *testing.T) {
 	t.Parallel()
 
-	for _, key := range []string{
-		"info", "history", "financials", "balance_sheet",
-		"cash_flow_statement", "news",
-	} {
-		t.Run(key, func(t *testing.T) {
-			_, err := BuildByName("yahoo_finance", map[string]any{key: "true"})
-			if err == nil || !strings.Contains(err.Error(), "requires boolean node-level param "+key) {
-				t.Fatalf("err = %v", err)
-			}
-		})
+	_, err := BuildByName("yahoo_finance", map[string]any{"info": "true"})
+	if err == nil || !strings.Contains(err.Error(), "requires boolean node-level param info") {
+		t.Fatalf("err = %v", err)
 	}
 }

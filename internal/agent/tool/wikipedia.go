@@ -336,16 +336,18 @@ func renderWikipediaReferences(chunks []map[string]any, maxTokens int) string {
 	blocks := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
 		content := wikipediaText(chunk["content"])
-		usedTokens += tokenizer.NumTokensFromString(content)
-		blocks = append(blocks, strings.Join([]string{
+		block := strings.Join([]string{
 			"\nID: " + wikipediaText(chunk["id"]),
 			"├── Title: " + wikipediaNewlinePattern.ReplaceAllString(wikipediaText(chunk["document_name"]), " "),
 			"├── URL: " + wikipediaNewlinePattern.ReplaceAllString(wikipediaText(chunk["url"]), " "),
 			"└── Content:\n" + content,
-		}, "\n"))
-		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+		}, "\n")
+		blockTokens := tokenizer.NumTokensFromString(block)
+		if maxTokens > 0 && float64(usedTokens+blockTokens) > float64(maxTokens)*0.97 {
 			break
 		}
+		usedTokens += blockTokens
+		blocks = append(blocks, block)
 	}
 	return strings.Join(blocks, "\n")
 }

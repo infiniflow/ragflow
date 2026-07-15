@@ -328,7 +328,6 @@ func renderSearXNGReferences(chunks []map[string]any, maxTokens int) string {
 		if content == "" {
 			continue
 		}
-		usedTokens += tokenizer.NumTokensFromString(content)
 		var block strings.Builder
 		fmt.Fprintf(&block, "\nID: %s", searxngText(chunk["id"]))
 		if title := searxngPromptField(chunk["document_name"]); title != "" {
@@ -339,10 +338,13 @@ func renderSearXNGReferences(chunks []map[string]any, maxTokens int) string {
 		}
 		block.WriteString("\n└── Content:\n")
 		block.WriteString(content)
-		blocks = append(blocks, block.String())
-		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+		completeBlock := block.String()
+		blockTokens := tokenizer.NumTokensFromString(completeBlock)
+		if maxTokens > 0 && float64(usedTokens+blockTokens) > float64(maxTokens)*0.97 {
 			break
 		}
+		usedTokens += blockTokens
+		blocks = append(blocks, completeBlock)
 	}
 	return strings.Join(blocks, "\n")
 }

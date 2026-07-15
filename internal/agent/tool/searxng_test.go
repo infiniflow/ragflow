@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -261,24 +260,24 @@ func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 	}
 }
 
-func TestSearXNGPromptBoundaryMatchesPython(t *testing.T) {
+func TestRenderSearXNGReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
 	t.Parallel()
 
-	first := "small content"
-	second := strings.Repeat("cross the token budget ", 50)
 	chunks := []map[string]any{
-		{"id": "1", "content": first},
-		{"id": "2", "content": second},
-		{"id": "3", "content": "must not render"},
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
 	}
-	firstTokens := tokenizer.NumTokensFromString(first)
-	maxTokens := int(math.Ceil(float64(firstTokens)/0.97)) + 1
-	rendered := renderSearXNGReferences(chunks, maxTokens)
-	if !strings.Contains(rendered, "ID: 1") || !strings.Contains(rendered, "ID: 2") {
-		t.Fatalf("crossing chunk must be included like Python: %s", rendered)
+	firstBlock := renderSearXNGReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderSearXNGReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
 	}
-	if strings.Contains(rendered, "ID: 3") {
-		t.Fatalf("chunk after budget crossing must be excluded: %s", rendered)
+	if got := renderSearXNGReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderSearXNGReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
 	}
 }
 

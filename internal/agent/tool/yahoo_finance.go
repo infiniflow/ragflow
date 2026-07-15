@@ -35,16 +35,11 @@ const yahooFinanceToolDescription = "The Yahoo Finance service provides access t
 
 const yahooFinanceStockCodeDescription = "The stock code or company name."
 
-// yahooFinanceParams contains the model-emitted stock code and the
-// Canvas-side data-selection switches. Info exposes only StockCode.
+// yahooFinanceParams contains the model-emitted stock code and the supported
+// Canvas-side information switch. Info exposes only StockCode.
 type yahooFinanceParams struct {
-	StockCode         string `json:"stock_code"`
-	Info              bool   `json:"info"`
-	History           bool   `json:"history"`
-	Financials        bool   `json:"financials"`
-	BalanceSheet      bool   `json:"balance_sheet"`
-	CashFlowStatement bool   `json:"cash_flow_statement"`
-	News              bool   `json:"news"`
+	StockCode string `json:"stock_code"`
+	Info      bool   `json:"info"`
 }
 
 // yahooFinanceResponse is the upstream Yahoo Finance /v7/finance/quote
@@ -101,7 +96,7 @@ func NewYahooFinanceToolWithDefaults(h *HTTPHelper, defaults yahooFinanceParams)
 }
 
 func defaultYahooFinanceParams() yahooFinanceParams {
-	return yahooFinanceParams{Info: true, News: true}
+	return yahooFinanceParams{Info: true}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -148,7 +143,7 @@ func (y *YahooFinanceTool) InvokableRun(ctx context.Context, argsJSON string, _ 
 	}
 	p = mergeYahooFinanceParams(y.defaults, p)
 	p.StockCode = strings.TrimSpace(p.StockCode)
-	if p.StockCode == "" || !p.anySectionEnabled() {
+	if p.StockCode == "" || !p.Info {
 		return yahooFinanceJSON(yahooFinanceEnvelope{Report: ""}), nil
 	}
 
@@ -191,17 +186,7 @@ func (y *YahooFinanceTool) BuildComponentOutputs(envelope map[string]any) map[st
 
 func mergeYahooFinanceParams(defaults, params yahooFinanceParams) yahooFinanceParams {
 	params.Info = defaults.Info
-	params.History = defaults.History
-	params.Financials = defaults.Financials
-	params.BalanceSheet = defaults.BalanceSheet
-	params.CashFlowStatement = defaults.CashFlowStatement
-	params.News = defaults.News
 	return params
-}
-
-func (p yahooFinanceParams) anySectionEnabled() bool {
-	return p.Info || p.History || p.Financials || p.BalanceSheet ||
-		p.CashFlowStatement || p.News
 }
 
 // renderYahooFinanceReport keeps the existing public quote endpoint while

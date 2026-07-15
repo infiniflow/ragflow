@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 const cannedScholarHTML = `<html><body>
@@ -297,6 +299,27 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	}
 	if _, exists := envelope["chunks"]; exists {
 		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleScholarReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleScholarReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleScholarReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleScholarReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
 	}
 }
 
