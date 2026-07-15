@@ -65,7 +65,7 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -193,7 +193,7 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 		componentpkg.ResolveDocumentStorageOverride = origDocResolver
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -325,7 +325,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
