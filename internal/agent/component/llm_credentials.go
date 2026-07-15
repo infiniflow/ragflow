@@ -11,8 +11,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
-	"ragflow/internal/service"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -171,22 +169,53 @@ func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL s
 		return "", "", apiKey, baseURL, false, nil
 	}
 
-	driver, modelName, cfg, _, err := service.NewModelProviderService().GetModelConfigByID(tid, entity.ModelTypeChat, modelRef)
-	if err == nil {
-		return modelName, driver.Name(), apiKeyFromConfig(apiKey, cfg), baseURLFromConfig(baseURL, cfg), true, nil
+	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantChatModelByTenantModelID(tid, modelRef, apiKey, baseURL)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, err
 	}
-	if !isNotFoundModelIDError(err) {
-		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant chat model id %q: %w", modelRef, err)
+	if ok {
+		return modelName, provider, modelKey, modelBaseURL, true, nil
 	}
 
-	modelName, provider, instanceKey, instanceBaseURL, ok, instErr := resolveTenantChatModelByInstanceID(tid, modelRef, apiKey, baseURL)
-	if instErr != nil {
-		return "", "", apiKey, baseURL, false, instErr
+	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantChatModelByInstanceID(tid, modelRef, apiKey, baseURL)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, err
 	}
 	if ok {
 		return modelName, provider, instanceKey, instanceBaseURL, true, nil
 	}
-	return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant chat model id %q: %w", modelRef, err)
+	return "", "", apiKey, baseURL, false, fmt.Errorf("tenant chat model id %q not found", modelRef)
+}
+
+func resolveTenantChatModelByTenantModelID(tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	model, err := dao.NewTenantModelDAO().GetByID(modelID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", apiKey, baseURL, false, nil
+		}
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant model id %q: %w", modelID, err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s is disabled", modelID)
+	}
+	if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s cannot be used as chat model", modelID)
+	}
+
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve provider for tenant model id %q: %w", modelID, err)
+	}
+	if provider.TenantID != tid {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s has no access to model id %s", tid, modelID)
+	}
+
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve instance for tenant model id %q: %w", modelID, err)
+	}
+	apiKey, baseURL = fillInstanceCredentials(instance, apiKey, baseURL)
+	return model.ModelName, provider.ProviderName, apiKey, baseURL, true, nil
 }
 
 func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
@@ -228,6 +257,14 @@ func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string)
 	if len(candidates) > 1 {
 		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has %d active chat models; use tenant_model.id or model@instance@provider", instanceID, len(candidates))
 	}
+	apiKey, baseURL = fillInstanceCredentials(instance, apiKey, baseURL)
+	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, true, nil
+}
+
+func fillInstanceCredentials(instance *entity.TenantModelInstance, apiKey, baseURL string) (string, string) {
+	if instance == nil {
+		return apiKey, baseURL
+	}
 	if apiKey == "" {
 		apiKey = instance.APIKey
 	}
@@ -237,7 +274,7 @@ func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string)
 			baseURL = extra["base_url"]
 		}
 	}
-	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, true, nil
+	return apiKey, baseURL
 }
 
 func isBareTenantModelID(s string) bool {
@@ -255,24 +292,6 @@ func isBareTenantModelID(s string) bool {
 		}
 	}
 	return true
-}
-
-func apiKeyFromConfig(current string, cfg *models.APIConfig) string {
-	if current != "" || cfg == nil || cfg.ApiKey == nil {
-		return current
-	}
-	return *cfg.ApiKey
-}
-
-func baseURLFromConfig(current string, cfg *models.APIConfig) string {
-	if current != "" || cfg == nil || cfg.BaseURL == nil {
-		return current
-	}
-	return *cfg.BaseURL
-}
-
-func isNotFoundModelIDError(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), "not found")
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
