@@ -305,3 +305,83 @@ def test_call_ocr_uploads_when_over_inline_limit(monkeypatch):
     assert any(u.endswith("/files") for u in calls["post"])
     assert calls["get"] and calls["delete"]  # signed-url fetch + cleanup
     assert out["pages"][0]["index"] == 0
+
+
+def test_call_ocr_upload_files_error_no_delete(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
+    calls = {"delete": []}
+    monkeypatch.setattr(m.requests, "post",
+        lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(500, text="boom"))
+    monkeypatch.setattr(m.requests, "delete",
+        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    try:
+        p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "500" in str(e)
+    assert calls["delete"] == []  # file_id never set -> nothing to clean up
+
+
+def test_call_ocr_signed_url_error_triggers_cleanup(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
+    calls = {"delete": []}
+    monkeypatch.setattr(m.requests, "post",
+        lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(200, {"id": "file-1"}))
+    monkeypatch.setattr(m.requests, "get",
+        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(403, text="nope"))
+    monkeypatch.setattr(m.requests, "delete",
+        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    try:
+        p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "403" in str(e)
+    assert any("file-1" in u for u in calls["delete"])  # cleanup ran
+
+
+def test_call_ocr_post_upload_ocr_error_triggers_cleanup(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
+    calls = {"delete": []}
+
+    def fake_post(url, headers=None, json=None, data=None, files=None, timeout=None, **kw):
+        if url.endswith("/files"):
+            return _Resp(200, {"id": "file-9"})
+        return _Resp(422, text="bad ocr")
+
+    monkeypatch.setattr(m.requests, "post", fake_post)
+    monkeypatch.setattr(m.requests, "get",
+        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "delete",
+        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    try:
+        p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "422" in str(e)
+    assert any("file-9" in u for u in calls["delete"])  # finally cleanup ran despite OCR failure
+
+
+def test_call_ocr_delete_failure_does_not_mask_error(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
+
+    def fake_post(url, headers=None, json=None, data=None, files=None, timeout=None, **kw):
+        if url.endswith("/files"):
+            return _Resp(200, {"id": "file-x"})
+        return _Resp(422, text="bad ocr")
+
+    def boom_delete(url, headers=None, timeout=None, **kw):
+        raise RuntimeError("delete network error")
+
+    monkeypatch.setattr(m.requests, "post", fake_post)
+    monkeypatch.setattr(m.requests, "get",
+        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "delete", boom_delete)
+    try:
+        p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "422" in str(e)  # the real OCR error, not the swallowed delete error

@@ -371,6 +371,10 @@ class MistralParser(RAGFlowPdfParser):
             return False, "Mistral API key is not configured."
         return True, ""
 
+    def _raise_for_status(self, resp, action: str) -> None:
+        if resp.status_code != 200:
+            raise RuntimeError(f"Mistral {action} failed: {resp.status_code} {resp.text[:300]}")
+
     def _ocr_payload(self, document: dict, pages: Optional[list[int]]) -> dict:
         payload = {
             "model": self.model,
@@ -401,13 +405,11 @@ class MistralParser(RAGFlowPdfParser):
             r = requests.post(f"{self.base_url}/files", headers=self._headers(),
                               files={"file": (filename, pdf_bytes, "application/pdf")},
                               data={"purpose": "ocr"}, timeout=self.timeout)
-            if r.status_code != 200:
-                raise RuntimeError(f"Mistral /files upload failed: {r.status_code} {r.text[:300]}")
+            self._raise_for_status(r, "/files upload")
             file_id = r.json().get("id")
             r = requests.get(f"{self.base_url}/files/{file_id}/url",
                              headers=self._headers(), params={"expiry": 24}, timeout=self.timeout)
-            if r.status_code != 200:
-                raise RuntimeError(f"Mistral signed-url failed: {r.status_code} {r.text[:300]}")
+            self._raise_for_status(r, "signed-url fetch")
             signed = r.json().get("url")
             document = {"type": "document_url", "document_url": signed}
             return self._post_ocr(self._ocr_payload(document, pages))
@@ -422,6 +424,5 @@ class MistralParser(RAGFlowPdfParser):
     def _post_ocr(self, payload: dict) -> dict:
         r = requests.post(f"{self.base_url}/ocr", headers=self._headers(),
                           json=payload, timeout=self.timeout)
-        if r.status_code != 200:
-            raise RuntimeError(f"Mistral OCR API error: {r.status_code} {r.text[:300]}")
+        self._raise_for_status(r, "OCR")
         return r.json()
