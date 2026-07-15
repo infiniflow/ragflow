@@ -230,6 +230,55 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 	}
 }
 
+func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
+	keywordWeight := 0.25
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		TopN:                     3,
+		TopK:                     99,
+		KeywordsSimilarityWeight: &keywordWeight,
+		SimilarityThreshold:      0.42,
+	}, []string{"tenant-a"}, 3)
+
+	if got.Question != "hi" {
+		t.Fatalf("Question=%q want hi", got.Question)
+	}
+	if len(got.TenantIDs) != 1 || got.TenantIDs[0] != "tenant-a" {
+		t.Fatalf("TenantIDs=%v want [tenant-a]", got.TenantIDs)
+	}
+	if len(got.KbIDs) != 1 || got.KbIDs[0] != "kb-1" {
+		t.Fatalf("KbIDs=%v want [kb-1]", got.KbIDs)
+	}
+	if got.Page != 1 || got.PageSize != 3 {
+		t.Fatalf("Page/PageSize=%d/%d want 1/3", got.Page, got.PageSize)
+	}
+	if got.Top == nil || *got.Top != 99 {
+		t.Fatalf("Top=%v want 99", got.Top)
+	}
+	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0.42 {
+		t.Fatalf("SimilarityThreshold=%v want 0.42", got.SimilarityThreshold)
+	}
+	if got.VectorSimilarityWeight == nil || !floatEqual(*got.VectorSimilarityWeight, 0.75) {
+		t.Fatalf("VectorSimilarityWeight=%v want 0.75", got.VectorSimilarityWeight)
+	}
+}
+
+func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1"},
+		TopN:       3,
+	}, []string{"tenant-a"}, 3)
+
+	if got.Top == nil || *got.Top != 12 {
+		t.Fatalf("Top=%v want 12", got.Top)
+	}
+	if got.VectorSimilarityWeight != nil {
+		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+}
+
 func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
 	a := &NLPRetrievalAdapter{}
 	got, err := a.resolveTenantIDs(RetrievalRequest{

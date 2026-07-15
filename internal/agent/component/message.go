@@ -362,7 +362,8 @@ func fallbackMessageText(inputs map[string]any) string {
 
 func isMessageInfraInput(key string) bool {
 	switch key {
-	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time":
+	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
+		"output_format", "voice", "lang", "auto_play", "memory_save", "stream":
 		return true
 	default:
 		return false

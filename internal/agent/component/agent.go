@@ -1088,10 +1088,11 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 
 	rawParams, _ := item["params"].(map[string]any)
 	toolParams := cloneMap(rawParams)
-	if len(toolParams) != 0 {
-		if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
-			toolParams["function_name"] = strings.TrimSpace(fn)
+	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
+		if toolParams == nil {
+			toolParams = make(map[string]any)
 		}
+		toolParams["function_name"] = strings.TrimSpace(fn)
 	}
 	return toolName, toolParams, true
 }
@@ -1122,8 +1123,14 @@ func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[s
 		if len(params) == 0 {
 			continue
 		}
+		lower := strings.ToLower(strings.TrimSpace(name))
+		for k := range out {
+			if strings.ToLower(strings.TrimSpace(k)) == lower {
+				delete(out, k)
+			}
+		}
 		out[name] = cloneMap(params)
-		if lower := strings.ToLower(strings.TrimSpace(name)); lower != "" {
+		if lower != "" && lower != name {
 			out[lower] = cloneMap(params)
 		}
 	}

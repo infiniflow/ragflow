@@ -283,12 +283,12 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	for key := range params {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold",
-			"keywords_similarity_weight", "rerank_id", "empty_response",
-			"use_kg", "toc_enhance", "meta_data_filter", "retrieval_from",
-			"memory_ids", "kb_vars", "cross_languages", "function_name",
-			"description", "meta", "inputs", "outputs":
+			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
+			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
+			"kb_vars", "cross_languages", "function_name", "description", "meta",
+			"inputs", "outputs":
 		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "retrieval", key)
+			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
 		}
 	}
 
@@ -308,22 +308,24 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v
 	}
+	if raw, exists := params["top_k"]; exists {
+		value, ok := strictInt(raw)
+		if !ok || value <= 0 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires positive integer node-level param top_k")
+		}
+		defaults.TopK = value
+	}
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
-	}
-	if v, ok := boolParam(params, "toc_enhance"); ok {
-		defaults.TOCEnhance = v
-	}
-	if v, ok := stringParam(params, "rerank_id"); ok {
-		defaults.RerankID = strings.TrimSpace(v)
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = v
 	}
-	if v, ok, err := stringMapParam(params, "meta_data_filter"); err != nil {
-		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
-	} else if ok {
-		defaults.MetadataFilter = v
+	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
+		if v < 0 || v > 1 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires node-level param keywords_similarity_weight in [0,1]")
+		}
+		defaults.KeywordsSimilarityWeight = &v
 	}
 	return NewRetrievalToolWithDefaults(defaults), nil
 }
@@ -510,33 +512,6 @@ func stringSliceParam(params map[string]any, key string) ([]string, bool, error)
 		return out, true, nil
 	default:
 		return nil, true, fmt.Errorf("%s must be a string list", key)
-	}
-}
-
-func stringMapParam(params map[string]any, key string) (map[string]string, bool, error) {
-	v, ok := params[key]
-	if !ok {
-		return nil, false, nil
-	}
-	switch x := v.(type) {
-	case map[string]string:
-		out := make(map[string]string, len(x))
-		for k, value := range x {
-			out[k] = value
-		}
-		return out, true, nil
-	case map[string]any:
-		out := make(map[string]string, len(x))
-		for k, value := range x {
-			s, ok := value.(string)
-			if !ok {
-				return nil, true, fmt.Errorf("%s values must be strings", key)
-			}
-			out[k] = s
-		}
-		return out, true, nil
-	default:
-		return nil, true, fmt.Errorf("%s must be a string map", key)
 	}
 }
 

@@ -35,8 +35,12 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//                                       (Page=1, Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
+//                                       (fallback Top=TopN*4 so rerank
 //                                        has headroom)
+//   tool.RetrievalRequest.KeywordsSimilarityWeight
+//                                    → nlp.RetrievalRequest.VectorSimilarityWeight
+//                                       as 1-keyword weight
 //   tool.RetrievalRequest.UseKG      → ErrGraphRAGNotSupported (out of
 //                                       scope per plan  + §9 Q3)
 //
@@ -131,31 +135,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		topN = 8
 	}
 
-	// nlp.Retrieval applies its own defaults for SimilarityThreshold
-	// (0.2), VectorSimilarityWeight (0.3), RankFeature, etc. We
-	// surface only the fields the agent tool actually controls:
-	// Page=1, PageSize=TopN, KbIDs=DatasetIDs, Top=TopN*4 (rerank
-	// headroom — matches the chat_session.go call pattern).
 	tenantIDs, err := a.resolveTenantIDs(req)
 	if err != nil {
 		return nil, err
 	}
-	nlpReq := &nlp.RetrievalRequest{
-		Question:  req.Query,
-		TenantIDs: tenantIDs,
-		KbIDs:     append([]string(nil), req.DatasetIDs...),
-		Page:      1,
-		PageSize:  topN,
-		Aggs:      boolPtr(false),
-		Highlight: boolPtr(false),
-	}
-	if topN > 0 {
-		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
-	}
-	if req.SimilarityThreshold > 0 {
-		nlpReq.SimilarityThreshold = &req.SimilarityThreshold
-	}
+	nlpReq := nlpRequestFromRetrieval(req, tenantIDs, topN)
 
 	res, err := a.svc.Retrieval(ctx, nlpReq)
 	if err != nil {
@@ -169,6 +153,32 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		out = append(out, translateChunk(raw))
 	}
 	return out, nil
+}
+
+func nlpRequestFromRetrieval(req RetrievalRequest, tenantIDs []string, topN int) *nlp.RetrievalRequest {
+	nlpReq := &nlp.RetrievalRequest{
+		Question:  req.Query,
+		TenantIDs: append([]string(nil), tenantIDs...),
+		KbIDs:     append([]string(nil), req.DatasetIDs...),
+		Page:      1,
+		PageSize:  topN,
+		Aggs:      boolPtr(false),
+		Highlight: boolPtr(false),
+	}
+	if req.TopK > 0 {
+		nlpReq.Top = &req.TopK
+	} else if topN > 0 {
+		rerankBudget := topN * 4
+		nlpReq.Top = &rerankBudget
+	}
+	if req.SimilarityThreshold > 0 {
+		nlpReq.SimilarityThreshold = &req.SimilarityThreshold
+	}
+	if req.KeywordsSimilarityWeight != nil {
+		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight
+		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
+	}
+	return nlpReq
 }
 
 func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) ([]string, error) {

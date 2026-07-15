@@ -155,10 +155,11 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	built, err := BuildByName("retrieval", map[string]any{
-		"kb_ids":               []any{"kb-1"},
-		"top_n":                float64(3),
-		"similarity_threshold": 0.42,
-		"toc_enhance":          true,
+		"kb_ids":                     []any{"kb-1"},
+		"top_n":                      float64(3),
+		"top_k":                      float64(99),
+		"keywords_similarity_weight": 0.7,
+		"similarity_threshold":       0.42,
 	})
 	if err != nil {
 		t.Fatalf("BuildByName(retrieval): %v", err)
@@ -178,11 +179,39 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if svc.req.TopN != 3 {
 		t.Fatalf("TopN=%d want 3", svc.req.TopN)
 	}
+	if svc.req.TopK != 99 {
+		t.Fatalf("TopK=%d want 99", svc.req.TopK)
+	}
+	if svc.req.KeywordsSimilarityWeight == nil || *svc.req.KeywordsSimilarityWeight != 0.7 {
+		t.Fatalf("KeywordsSimilarityWeight=%v want 0.7", svc.req.KeywordsSimilarityWeight)
+	}
 	if svc.req.SimilarityThreshold != 0.42 {
 		t.Fatalf("SimilarityThreshold=%v want 0.42", svc.req.SimilarityThreshold)
 	}
-	if !svc.req.TOCEnhance {
-		t.Fatal("TOCEnhance=false want true")
+}
+
+func TestRetrieval_IgnoresPythonOnlyNodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("retrieval", map[string]any{
+		"rerank_id":        "rerank-1",
+		"toc_enhance":      true,
+		"meta_data_filter": map[string]any{"method": "manual"},
+		"empty_response":   "empty",
+		"retrieval_from":   "database",
+		"memory_ids":       []any{"memory-1"},
+		"kb_vars":          map[string]any{"x": "y"},
+		"cross_languages":  []any{"English"},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(retrieval): %v", err)
+	}
+	rt, ok := built.(*RetrievalTool)
+	if !ok {
+		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
+	}
+	if rt.defaults.TopN != 0 || rt.defaults.TopK != 0 || rt.defaults.KeywordsSimilarityWeight != nil {
+		t.Fatalf("python-only params should not mutate retrieval defaults: %#v", rt.defaults)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -469,9 +470,14 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
 		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, tc := range accumulatedToolCalls {
-			tcs = append(tcs, tc)
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
 		}
 		chatModelConfig.ToolCallsResult = &tcs
 	}

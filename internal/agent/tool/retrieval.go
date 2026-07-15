@@ -55,15 +55,14 @@ const retrievalToolDescription = "This tool can be utilized for relevant content
 // accept both `query` (canonical) and `dataset_ids` / `use_kg` etc. to
 // match the Python ToolMeta field set.
 type retrievalArgs struct {
-	Query               string            `json:"query"`
-	DatasetIDs          []string          `json:"dataset_ids,omitempty"`
-	KBIDs               []string          `json:"kb_ids,omitempty"`
-	TopN                int               `json:"top_n,omitempty"`
-	UseKG               bool              `json:"use_kg,omitempty"`
-	RerankID            string            `json:"rerank_id,omitempty"`
-	TOCEnhance          bool              `json:"toc_enhance,omitempty"`
-	MetadataFilter      map[string]string `json:"meta_data_filter,omitempty"`
-	SimilarityThreshold float64           `json:"similarity_threshold,omitempty"`
+	Query                    string   `json:"query"`
+	DatasetIDs               []string `json:"dataset_ids,omitempty"`
+	KBIDs                    []string `json:"kb_ids,omitempty"`
+	TopN                     int      `json:"top_n,omitempty"`
+	TopK                     int      `json:"top_k,omitempty"`
+	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
+	UseKG                    bool     `json:"use_kg,omitempty"`
+	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -137,6 +136,16 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "Number of top chunks to return. Defaults to 8 if omitted.",
 				Required: false,
 			},
+			"top_k": {
+				Type:     schema.Integer,
+				Desc:     "Maximum candidate chunks retrieved before final top_n trimming.",
+				Required: false,
+			},
+			"keywords_similarity_weight": {
+				Type:     schema.Number,
+				Desc:     "Keyword similarity weight in [0,1]; vector similarity weight is 1 - this value.",
+				Required: false,
+			},
 			"use_kg": {
 				Type:     schema.Boolean,
 				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
@@ -167,6 +176,8 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
 		zap.Int("top_n", args.TopN),
+		zap.Int("top_k", args.TopK),
+		zap.Float64p("keywords_similarity_weight", args.KeywordsSimilarityWeight),
 		zap.Bool("use_kg", args.UseKG),
 	)
 
@@ -186,16 +197,14 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// dev), the chunks flow through normally.
 	svc := GetRetrievalService()
 	chunks, err := svc.Search(ctx, RetrievalRequest{
-		Query:               args.Query,
-		DatasetIDs:          args.DatasetIDs,
-		TopN:                args.TopN,
-		UseKG:               args.UseKG,
-		UseRerank:           false, // future enhancement
-		RerankID:            args.RerankID,
-		TOCEnhance:          args.TOCEnhance,
-		MetadataFilter:      args.MetadataFilter,
-		SimilarityThreshold: args.SimilarityThreshold,
-		TenantID:            retrievalTenantID(ctx),
+		Query:                    args.Query,
+		DatasetIDs:               args.DatasetIDs,
+		TopN:                     args.TopN,
+		TopK:                     args.TopK,
+		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
+		UseKG:                    args.UseKG,
+		SimilarityThreshold:      args.SimilarityThreshold,
+		TenantID:                 retrievalTenantID(ctx),
 	})
 	if err != nil {
 		return stubJSON(retrievalResult{
@@ -246,20 +255,16 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.TopN <= 0 {
 		args.TopN = r.defaults.TopN
 	}
+	if args.TopK <= 0 {
+		args.TopK = r.defaults.TopK
+	}
+	if args.KeywordsSimilarityWeight == nil {
+		args.KeywordsSimilarityWeight = r.defaults.KeywordsSimilarityWeight
+	}
 	if args.SimilarityThreshold <= 0 {
 		args.SimilarityThreshold = r.defaults.SimilarityThreshold
 	}
-	if args.RerankID == "" {
-		args.RerankID = r.defaults.RerankID
-	}
-	if len(args.MetadataFilter) == 0 && len(r.defaults.MetadataFilter) != 0 {
-		args.MetadataFilter = make(map[string]string, len(r.defaults.MetadataFilter))
-		for k, v := range r.defaults.MetadataFilter {
-			args.MetadataFilter[k] = v
-		}
-	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
-	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
 	return args
 }
 
