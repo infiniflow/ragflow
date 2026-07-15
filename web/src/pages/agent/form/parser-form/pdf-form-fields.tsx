@@ -12,6 +12,7 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FlattenMediaToTextFormField,
   LanguageFormField,
@@ -37,6 +38,7 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function PdfFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
   const parseMethod = useWatch({
@@ -112,6 +114,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
+          ownerTenantId={ownerTenantId}
         />
       )}
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}

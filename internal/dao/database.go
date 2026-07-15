@@ -65,7 +65,7 @@ type LLMFactoriesFile struct {
 }
 
 // InitDB initialize database connection
-func InitDB() error {
+func InitDB(migrateDB bool) error {
 	cfg := server.GetConfig()
 	dbCfg := cfg.Database
 
@@ -154,21 +154,29 @@ func InitDB() error {
 		&entity.TenantModelGroup{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-		&entity.IngestionTasklet{},
-		&entity.IngestionTaskletLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 	}
 
-	for _, m := range dataModels {
-		if err = autoMigrateSafely(DB, m); err != nil {
-			return fmt.Errorf("failed to migrate model %T: %w", m, err)
+	if migrateDB {
+		common.Info("Migrating database schema...")
+		for _, m := range dataModels {
+			if err = autoMigrateSafely(DB, m); err != nil {
+				return fmt.Errorf("failed to migrate model %T: %w", m, err)
+			}
 		}
-	}
 
-	// Run manual migrations for complex schema changes
-	if err = RunMigrations(DB); err != nil {
-		return fmt.Errorf("failed to run manual migrations: %w", err)
+		// Run manual migrations for complex schema changes
+		if err = RunMigrations(DB); err != nil {
+			return fmt.Errorf("failed to run manual migrations: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
+	}
+	// Seed built-in agent templates so the Go backend can serve the
+	// "create agent from template" catalogue without relying on Python-side
+	// initialization.
+	if err = SeedCanvasTemplates(); err != nil {
+		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
 
 	common.Info("Database connected and migrated successfully")

@@ -9,6 +9,28 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.4
+
+Released on July 7, 2026.
+
+### New features
+
+- NLP/Tokenization: Adds a language-aware Snowball stemmer supporting 16 languages, integrates the dataset `language` parameter across the tokenization pipeline, and adds Dutch to the frontend. [#14140](https://github.com/infiniflow/ragflow/pull/14140)
+
+### Bug fixes
+
+- The system crashed with a `ValueError` when parsing LM-Studio model names containing an '@' symbol. [#16467](https://github.com/infiniflow/ragflow/pull/16467)
+- The MCP server crashed because the list_chats function expected a list from the `/chats` API but received a paginated dictionary instead. [#16639](https://github.com/infiniflow/ragflow/pull/16639)
+- The Docling parser silently dropped mathematical formulas from documents instead of extracting them. [#16645](https://github.com/infiniflow/ragflow/pull/16645)
+- The system failed to persist inline edits made to metadata values to the backend. [#16655](https://github.com/infiniflow/ragflow/pull/16655)
+- The system removed existing links when bulk-linking files to datasets. [#16587](https://github.com/infiniflow/ragflow/pull/16587)
+- The filter failed to use Chinese. [#16673](https://github.com/infiniflow/ragflow/pull/16673)
+- The system failed to enforce that tag weights must be greater than zero. [#16657](https://github.com/infiniflow/ragflow/pull/16657)
+- The layout of the agent prompt dropdown menu rendered incorrectly. [#16653](https://github.com/infiniflow/ragflow/pull/16653)
+- The Laws chunker incorrectly classified dotted-number cross-references as headings. [#16626](https://github.com/infiniflow/ragflow/pull/16626)
+- The system failed to prevent users from saving duplicate MCP server names during the editing process. [#16588](https://github.com/infiniflow/ragflow/pull/16588)
+- The system allowed users to export an empty MCP server selection. [#16589](https://github.com/infiniflow/ragflow/pull/16589)
+
 ## v0.26.3
 
 Released on July 2, 2026.
@@ -403,7 +425,7 @@ Released on December 31, 2025.
 
 ### Fixed issues
 
-- Memory: 
+- Memory:
   - The RAGFlow server failed to start if an empty memory object existed.
   - Unable to delete a newly created empty Memory.
 - RAG: MDX file parsing was not supported.
@@ -639,7 +661,7 @@ Ecommerce Customer Service Workflow: A template designed to handle enquiries abo
 
 ### Fixed issues
 
-- Dataset:  
+- Dataset:
   - Unable to share resources with the team.
   - Inappropriate restrictions on the number and size of uploaded files.
 - Chat:
@@ -655,13 +677,13 @@ Released on August 20, 2025.
 
 ### Improvements
 
-- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.
 - Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
 - Search: Supports creating search apps tailored to various business scenarios
 - Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
-- Agent:  
-  - Implements a toggle in the **Agent** component to enable or disable citation.  
-  - Introduces a drag-and-drop method for creating components.  
+- Agent:
+  - Implements a toggle in the **Agent** component to enable or disable citation.
+  - Introduces a drag-and-drop method for creating components.
 - Documentation: Corrects inaccuracies in the API reference.
 
 ### New Agent templates
@@ -671,8 +693,8 @@ Released on August 20, 2025.
 ### Fixed issues
 
 - The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
-- Predefined opening greeting in the **Agent** component was missing during conversations.  
-- An automatic line break issue in the prompt editor.  
+- Predefined opening greeting in the **Agent** component was missing during conversations.
+- An automatic line break issue in the prompt editor.
 - A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
 
 ### API changes
@@ -756,7 +778,7 @@ Released on June 23, 2025.
 
 ### Newly supported models
 
-- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
+- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184)
 - Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
 
 ## v0.19.0

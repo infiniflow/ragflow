@@ -18,8 +18,6 @@ package elasticsearch
 
 import (
 	"context"
-	"reflect"
-	"sort"
 	"testing"
 
 	"ragflow/internal/common"
@@ -217,11 +215,13 @@ func TestSearchAfterPaginateSkipsDeepOffset(t *testing.T) {
 	}
 	// The first returned hit must be h-10500, not h-0 — that is the
 	// entire point of the search_after path.
-	if id, _ := got[0]["id"].(int); id != offset {
-		t.Errorf("first hit id = %d, want %d (search_after must skip the deep offset)", id, offset)
+	wantFirstID := "h-" + itoa(offset)
+	if id, _ := got[0]["id"].(string); id != wantFirstID {
+		t.Errorf("first hit id = %s, want %s (search_after must skip the deep offset)", id, wantFirstID)
 	}
-	if id, _ := got[limit-1]["id"].(int); id != offset+limit-1 {
-		t.Errorf("last hit id = %d, want %d", id, offset+limit-1)
+	wantLastID := "h-" + itoa(offset+limit-1)
+	if id, _ := got[limit-1]["id"].(string); id != wantLastID {
+		t.Errorf("last hit id = %s, want %s", id, wantLastID)
 	}
 	// 12 fetches: 10 full skip + 1 partial-skip (trims scripted 510
 	// down to 500) + 1 partial-take (the 10 leftover hits the take
@@ -348,23 +348,13 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 		t.Errorf("expected 3 take fetches, got %d", m.idx)
 	}
 	// Hits should be in order h-0..h-2499.
-	wantIDs := make([]int, limit)
-	for i := range wantIDs {
-		wantIDs[i] = i
-	}
-	gotIDs := make([]int, len(got))
 	for i, h := range got {
-		gotIDs[i] = h["id"].(int)
+		wantID := "h-" + itoa(i)
+		if id, _ := h["id"].(string); id != wantID {
+			t.Errorf("hit[%d].id = %s, want %s", i, id, wantID)
+			break
+		}
 	}
-	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Errorf("hit order wrong: got %v, want %v", sortedCopy(gotIDs), wantIDs)
-	}
-}
-
-func sortedCopy(in []int) []int {
-	out := append([]int(nil), in...)
-	sort.Ints(out)
-	return out
 }
 
 // TestBuildBoolQueryFromConditionIDFilter is the regression for the

@@ -36,7 +36,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
@@ -150,21 +150,21 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
 
-                # Closes #14869: when the tenant has an IMAGE2TEXT model
+                # Closes #14869: when the tenant has a VISION model
                 # configured, let the MinerU parser enrich image chunks with
                 # VLM-generated semantic descriptions (parity with deepdoc's
                 # VisionFigureParser). Best-effort — fall back silently if
                 # no vision model is available.
                 if "vision_model" not in kwargs:
                     try:
-                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
                         kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
                     except Exception as vlm_err:
-                        logging.info(f"[MinerU] no IMAGE2TEXT model for tenant; skipping image VLM enhancement: {vlm_err}")
+                        logging.info(f"[MinerU] no VISION model for tenant; skipping image VLM enhancement: {vlm_err}")
 
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -228,7 +228,7 @@ def by_opendataloader(
 
         if opendataloader_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, opendataloader_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
@@ -282,7 +282,7 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -328,14 +328,7 @@ def by_somark(
 
         if somark_llm_name:
             try:
-                try:
-                    ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, somark_llm_name)
-                except Exception:
-                    if "@" in somark_llm_name:
-                        raise
-                    from api.db.services.tenant_llm_service import TenantLLMService
-
-                    ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, somark_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, somark_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -365,7 +358,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = resolve_model_config(tenant_id, LLMType.VISION, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,
@@ -978,7 +971,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.8, "Finish parsing.")
         st = timer()
 
-        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli))
+        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
@@ -1026,7 +1019,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
@@ -1048,7 +1041,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
-            res = tokenize_table(tables, doc, is_english)
+            res = tokenize_table(tables, doc, is_english, language=lang)
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
@@ -1084,7 +1077,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         is_markdown = True
 
         try:
-            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
             vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
@@ -1118,7 +1111,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 soup = markdown_parser.md_to_html(section_text)
                 hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
                 urls.update(hyperlink_urls)
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
@@ -1217,9 +1210,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         has_images = merged_images and any(img is not None for img in merged_images)
 
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
     else:
         if section_images:
             if all(image is None for image in section_images):
@@ -1227,11 +1220,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         if section_images:
             chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
             chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):

@@ -51,6 +51,12 @@ redis:
 nats:
   host: "localhost"
   port: 4222
+otel:
+  host: "localhost"
+  port: 4318
+  secure: false
+  sample_ratio: 1.0
+  stdout: true
 task_executor:
   message_queue_type: 'nats'
 file_syncer:
@@ -63,6 +69,10 @@ user_default_llm:
       factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
+gcs:
+  bucket: '${GCS_BUCKET:-ragflow}'
+  prefix_path: '${GCS_PREFIX_PATH:-}'
+  endpoint_url: '${GCS_ENDPOINT:-}'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

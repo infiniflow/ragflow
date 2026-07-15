@@ -123,18 +123,18 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	result["message_count"] = strconv.FormatUint(info.State.Msgs, 10)
 
 	consumer, err := n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing consumer: %w", err)
+	if err == nil {
+		var consumerInfo *jetstream.ConsumerInfo
+		consumerInfo, err = consumer.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get consumer info: %w", err)
+		}
+		result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
+		result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
+		result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
+		result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	}
 
-	consumerInfo, err := consumer.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get consumer info: %w", err)
-	}
-	result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
-	result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
-	result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
-	result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	return result, nil
 }
 
@@ -252,4 +252,8 @@ func (m *NatsMessageHandle) Ack() error {
 
 func (m *NatsMessageHandle) Nack() error {
 	return m.message.Nak()
+}
+
+func (m *NatsMessageHandle) InProgress() error {
+	return m.message.InProgress()
 }

@@ -52,12 +52,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
@@ -108,15 +107,15 @@ type NodeFinishedData struct {
 
 // MessageEvent is the JSON payload for Type=="message" frames.
 type MessageEvent struct {
-	Content   string        `json:"content"`
-	Reference []interface{} `json:"reference,omitempty"`
+	Content   string      `json:"content"`
+	Reference interface{} `json:"reference,omitempty"`
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
 type MessageEndEvent struct {
 	Status     *string       `json:"status,omitempty"`
 	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  []interface{} `json:"reference,omitempty"`
+	Reference  interface{}   `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -250,13 +249,13 @@ func (r *Runner) Run(
 	// message_id is generated per-run so the front-end can correlate
 	// all events for a single user turn. task_id is the published
 	// version id (if available) or a per-run UUID.
-	messageID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	messageID := utility.GenerateToken()
 	taskID := ""
 	if v, ok := root["version_id"].(string); ok && v != "" {
 		taskID = v
 	}
 	if taskID == "" {
-		taskID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		taskID = utility.GenerateToken()
 	}
 
 	// Inject the output channel + metadata so the RunFunc can emit

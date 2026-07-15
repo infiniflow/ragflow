@@ -130,33 +130,6 @@ func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_InvokeOneMode_EmitsSingleChunk confirms the
-// `delimiter_mode == "one"` branch collapses the input to a single
-// chunk.
-func TestTokenChunker_InvokeOneMode_EmitsSingleChunk(t *testing.T) {
-	c, err := NewTokenChunker(map[string]any{
-		"delimiter_mode": "one",
-	})
-	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
-	}
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc.txt",
-		"output_format": "text",
-		"text":          "first\n\nsecond\n\nthird",
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 1 {
-		t.Errorf("chunks = %d, want 1", len(chunks))
-	}
-	if text, _ := chunks[0]["text"].(string); text != "first\n\nsecond\n\nthird" {
-		t.Errorf("text = %q, want full input", text)
-	}
-}
-
 // TestTokenChunker_InvokeChildrenDelim asserts that the secondary
 // children_delimiter split produces chunks carrying the parent
 // ("mom") and child ("text") keys.
@@ -275,22 +248,6 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_Parallelism enforces the plan's row 2.3a
-// parallelism (4).
-func TestTokenChunker_Parallelism(t *testing.T) {
-	c, err := NewTokenChunker(nil)
-	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
-	}
-	tc, ok := c.(*TokenChunkerComponent)
-	if !ok {
-		t.Fatalf("NewTokenChunker returned %T, want *TokenChunkerComponent", c)
-	}
-	if got := tc.Parallelism(); got != 4 {
-		t.Errorf("Parallelism() = %d, want 4", got)
-	}
-}
-
 // TestTokenChunker_NewRejectsBadParam enforces the param validation
 // at construction time (mirrors python `check()`).
 func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
@@ -299,6 +256,7 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 		conf map[string]any
 	}{
 		{"bad delimiter_mode", map[string]any{"delimiter_mode": "nope"}},
+		{"one delimiter_mode (use OneChunker)", map[string]any{"delimiter_mode": "one"}},
 		{"zero chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 0}},
 		{"negative chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": -5}},
 		{"negative overlapped_percent", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "overlapped_percent": -0.1}},
@@ -325,4 +283,43 @@ func TestTokenChunker_NewAcceptsDefaults(t *testing.T) {
 	if got := c.(*TokenChunkerComponent).param.DelimiterMode; got != "token_size" {
 		t.Errorf("default delimiter_mode = %q, want token_size", got)
 	}
+}
+
+// TestTokenChunker_PrefersUpstreamChunks is the Go port of the Python
+// regression test for #16812 (PR #16825). When a TitleChunker feeds
+// this TokenChunker with output_format == "chunks" AND both a "chunks"
+// list and a raw "json" list on the wire, the TokenChunker must
+// consume the upstream chunks (CHAPTER-AWARE) and must NOT fall through
+// to the raw parser json_result (RAW-PARSER-JSON).
+func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc.md",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "CHAPTER-AWARE", "doc_type_kwd": "text"}},
+		"json":          []map[string]any{{"text": "RAW-PARSER-JSON", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if text == "RAW-PARSER-JSON" {
+			t.Fatalf("chunk[%d] consumed the raw parser json_result instead of upstream chunks: %q", i, text)
+		}
+		if text == "CHAPTER-AWARE" {
+			return // happy path: upstream chunk preserved
+		}
+	}
+	t.Fatalf("upstream chunk 'CHAPTER-AWARE' was not found in output: %v", out["chunks"])
 }

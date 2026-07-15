@@ -62,7 +62,7 @@ def factories():
             f["model_types"] = list(
                 mdl_types.get(
                     f["name"],
-                    [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK, LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS, LLMType.OCR],
+                    [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK, LLMType.VISION, LLMType.ASR, LLMType.TTS, LLMType.OCR],
                 )
             )
 
@@ -377,7 +377,7 @@ async def add_llm():
                 except Exception as e:
                     msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
-        case LLMType.IMAGE2TEXT.value:
+        case LLMType.VISION.value:
             from rag.utils.base64_image import test_image
 
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
@@ -419,7 +419,7 @@ async def add_llm():
                     raise RuntimeError(reason or "Model not available")
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
-        case LLMType.SPEECH2TEXT.value:
+        case LLMType.ASR.value:
             assert factory in Seq2txtModel, f"Speech model from {factory} is not supported yet."
             try:
                 mdl = Seq2txtModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)

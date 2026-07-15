@@ -70,7 +70,7 @@ func (m *ModelScopeModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (m *ModelScopeModel) Name() string {
-	return "modelscope"
+	return "ModelScope"
 }
 
 func normalizeModelScopeBaseURL(base string) string {

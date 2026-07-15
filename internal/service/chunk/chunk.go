@@ -37,7 +37,6 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/server"
 	"regexp"
 	"sort"
 	"strconv"
@@ -91,7 +90,6 @@ func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
 // ChunkService chunk service
 type ChunkService struct {
 	docEngine      engine.DocEngine
-	engineType     server.EngineType
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
@@ -117,10 +115,8 @@ type ChunkService struct {
 
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
-	cfg := server.GetConfig()
 	return &ChunkService{
 		docEngine:      engine.Get(),
-		engineType:     cfg.DocEngine.Type,
 		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
@@ -247,7 +243,7 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 			modelProviderSvc := service.NewModelProviderService()
 			if chatID != "" {
 				// Use chat_id from search_config (it's actually the model name)
-				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
 				if getErr != nil {
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
@@ -266,7 +262,7 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 				if err != nil || modelName == "" {
 					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
 				} else {
-					driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, modelName)
+					driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, modelName)
 					if getErr != nil {
 						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 					} else {
@@ -308,11 +304,11 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		tenantSvc := service.NewTenantService()
 		modelProviderSvc := service.NewModelProviderService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(tenantIDs[0], "chat")
+		llmModelName, err = tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
-			driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, llmModelName)
+			driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, llmModelName)
 			if getErr != nil {
 				common.Warn("Failed to get chat model for LLM transformations", zap.Error(getErr))
 			} else {
@@ -361,25 +357,21 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	modelProviderSvc := service.NewModelProviderService()
 	var embeddingModel *models.EmbeddingModel
 	var embdID string
-	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID > 0 {
-		_, embdID, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), *kbRecords[0].TenantEmbdID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", err)
-		}
-		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID != "" {
+		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigByID(tenantIDs[0], entity.ModelTypeEmbedding, *kbRecords[0].TenantEmbdID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", getErr)
 		}
 		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	} else if kbRecords[0].EmbdID != "" {
 		embdID = kbRecords[0].EmbdID
-		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
 		if getErr != nil {
 			_, embdID, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], kbRecords[0].EmbdID, entity.ModelTypeEmbedding)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 			}
-			driver, modelName, apiConfig, maxTokens, getErr = modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+			driver, modelName, apiConfig, maxTokens, getErr = modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, embdID)
 			if getErr != nil {
 				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 			}
@@ -404,37 +396,20 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
-	var rerankCompositeName string
 	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		tenantRerankIDInt, parseErr := strconv.ParseInt(*req.TenantRerankID, 10, 64)
-		if parseErr != nil {
-			return nil, fmt.Errorf("invalid tenant_rerank_id: %w", parseErr)
-		}
-		_, rerankCompositeName, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), tenantRerankIDInt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
-		}
-	} else if req.RerankID != nil && *req.RerankID != "" {
-		rerankCompositeName = *req.RerankID
-		if _, _, _, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName); getErr != nil {
-			_, rerankCompositeName, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], *req.RerankID, entity.ModelTypeRerank)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", getErr)
-			}
-		}
-	}
-	if rerankCompositeName != "" {
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
+		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigByID(tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
 		if getErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model: %w", getErr)
+			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
 		}
 		rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
-	}
-
-	if rerankModel != nil {
-		common.Info("Fetched rerank model",
-			zap.String("tenantID", tenantIDs[0]),
-			zap.String("rerankCompositeName", rerankCompositeName))
+	} else if req.RerankID != nil && *req.RerankID != "" {
+		rerankCompositeName := *req.RerankID
+		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
+		if getErr != nil {
+			rerankModel = nil
+		} else {
+			rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
+		}
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
@@ -484,8 +459,8 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 }
 
 func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase, tenantID string) string {
-	if kb.TenantEmbdID != nil && *kb.TenantEmbdID > 0 {
-		return fmt.Sprintf("tenant:%d", *kb.TenantEmbdID)
+	if kb.TenantEmbdID != nil && *kb.TenantEmbdID != "" {
+		return fmt.Sprintf("tenant:%s", *kb.TenantEmbdID)
 	}
 	if kb.EmbdID == "" {
 		return fmt.Sprintf("default:%s", tenantID)
@@ -795,7 +770,7 @@ func (s *ChunkService) buildParseTasks(doc *entity.Document, bucket, objectName 
 	}
 	tasks := make([]*entity.Task, 0, len(ranges))
 	for _, pageRange := range ranges {
-		taskID := common.GenerateUUID()
+		taskID := utility.GenerateUUID()
 		progressMsg := ""
 		digest := s.parseTaskDigest(doc, pageRange.from, pageRange.to)
 		chunkIDs := ""
@@ -842,7 +817,6 @@ func (s *ChunkService) pdfParseTaskRanges(doc *entity.Document, bucket, objectNa
 		pageSize = int64(parserConfigInt(doc.ParserConfig, "task_page_size", 22))
 	}
 	if doc.ParserID == string(entity.ParserTypeOne) ||
-		doc.ParserID == string(entity.ParserTypeKG) ||
 		parserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
 		parserConfigBool(doc.ParserConfig, "toc_extraction", false) {
 		pageSize = maximumTaskPageNumber

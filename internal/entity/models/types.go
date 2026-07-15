@@ -75,6 +75,8 @@ type ChatUsage struct {
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
+	// FIXME: add implementation
+	TokenCount int `json:"token_count"`
 }
 
 type RerankResult struct {
@@ -200,6 +202,7 @@ type OCRConfig struct {
 }
 
 type ParseFileConfig struct {
+	ParseMethod string `json:"parse_method"`
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration

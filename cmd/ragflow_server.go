@@ -26,10 +26,9 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/handler"
-	"ragflow/internal/ingestion"
+	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -39,6 +38,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -52,7 +52,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
-	_ "ragflow/internal/ingestion/wire" // single owner for ingestion-component registration (File / Parser / Tokenizer / Extractor + 4 Chunker variants)
+	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
@@ -62,6 +62,7 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
+	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -81,6 +82,8 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
+		case "--migrate":
+			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -219,7 +222,7 @@ func main() {
 	}
 
 	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		return
 	}
 
@@ -285,12 +288,12 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := common.GenerateUUID()
+			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
@@ -335,7 +338,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(); err != nil {
+	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -352,11 +355,12 @@ func main() {
 	defer redis.Close()
 
 	if err = storage.InitStorageFactory(); err != nil {
-		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+		common.Error("Failed to initialize storage factory", err)
 	}
+	defer storage.CloseStorage()
 
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -364,6 +368,12 @@ func main() {
 	if err = server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
+
+	if err = server.StartServer(); err != nil {
+		common.Error("Failed to start EE server", err)
+		os.Exit(1)
+	}
+	defer server.ShutdownServer()
 
 	if arguments.name == nil {
 		arguments.name = &serverName
@@ -377,17 +387,17 @@ func main() {
 		}
 	case "admin":
 		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start admin server: %v\n", err)
+			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(arguments); err != nil {
-			fmt.Printf("Failed to start syncer: %v\n", err)
+			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -397,6 +407,17 @@ func main() {
 }
 
 func runAdmin(args *serverArgs) error {
+
+	// Create HTTP server
+	config := server.GetConfig()
+
+	// Set Gin mode
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
@@ -420,8 +441,6 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
-	config := server.GetConfig()
 	addr := fmt.Sprintf(":%d", config.Admin.Port)
 	srv := &http.Server{
 		Addr:    addr,
@@ -437,7 +456,7 @@ func runAdmin(args *serverArgs) error {
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
 	// Start HTTP server in a goroutine
 	go func() {
@@ -469,8 +488,14 @@ func runAdmin(args *serverArgs) error {
 }
 
 func runIngestor(args *serverArgs) error {
+	// Initialize tokenizer (rag_analyzer)
+	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
+	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
+		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
+	}
+	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, int32(runtime.NumCPU()), []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()
@@ -491,7 +516,7 @@ func runIngestor(args *serverArgs) error {
 		"          /____/\n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -533,10 +558,10 @@ func runIngestor(args *serverArgs) error {
 	}
 
 	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ingestor.Stop()
+	ingestor.Stop(shutdownCtx)
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
@@ -566,7 +591,7 @@ func runSyncer(args *serverArgs) error {
 		"                           /____/    \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
@@ -623,13 +648,9 @@ func runAPI(args *serverArgs) error {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
-	if dictPath == "" {
-		dictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: dictPath,
-	}
+	// tokenizer.Init fills DictPath from env var or default, so
+	// tokenizerCfg.DictPath carries the resolved path for downstream use.
+	tokenizerCfg := &tokenizer.PoolConfig{}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
@@ -710,11 +731,11 @@ func startServer(config *server.Config) {
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
 		},
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
+		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListChats(chatService, userID, page, pageSize, orderBy, desc)
 		},
 		func(userID string, req mcp.RetrievalRequest) (string, error) {
 			return handler.MCPRetrieval(datasetsService, userID, req)
@@ -740,7 +761,7 @@ func startServer(config *server.Config) {
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
-	// BotService delegates the agentbot completion to agentService so
+	// BotService delegates the agentBot completion to agentService so
 	// both paths share the same canvas runner. Reuse the llmService
 	// already constructed above (line 222) — do NOT redeclare with
 	// `:=` since the variable is in scope.
@@ -781,24 +802,9 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-	// Per-tenant canvas-runtime override selector, backed by the
-	// existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at
-	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
-	// endpoint stays registered and returns the explicit
-	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
-	// Skipping handler construction when rdb == nil silently removed
-	// the route until the next process restart, so a transient
-	// Redis blip at boot stranded canary operators with a 404 they
-	// could not diagnose from the client side. Keep the route hot.
-	var adminRuntimeSelector *runtime.Selector
-	if redisClient := redis.Get(); redisClient != nil {
-		if rdb := redisClient.GetClient(); rdb != nil {
-			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
-		}
-	}
-	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
-	componentsHandler := handler.NewComponentsHandler(service.NewComponentsService())
+	componentsSvc := service.NewComponentsService()
+	componentsHandler := handler.NewComponentsHandler(componentsSvc)
+	pipelineHandler := handler.NewPipelineHandler()
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -827,10 +833,10 @@ func startServer(config *server.Config) {
 		pluginHandler,
 		modelHandler,
 		fileCommitHandler,
-		adminRuntimeHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler)
+		componentsHandler,
+		pipelineHandler)
 
 	// Create Gin enginegit diff
 
@@ -866,7 +872,7 @@ func startServer(config *server.Config) {
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
+		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))

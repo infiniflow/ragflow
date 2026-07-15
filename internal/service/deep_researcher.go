@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"sync"
@@ -35,7 +36,6 @@ import (
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 
-	"github.com/google/uuid"
 	"github.com/kaptinlin/jsonrepair"
 	"go.uber.org/zap"
 )
@@ -66,8 +66,8 @@ Requirements:
 4. The missing_information should only be filled when insufficient, otherwise empty array.
 `
 
-const multiQueriesGenTemplate = `You are a query optimization expert. 
-The user's original query failed to retrieve sufficient information; 
+const multiQueriesGenTemplate = `You are a query optimization expert.
+The user's original query failed to retrieve sufficient information;
 please generate multiple complementary improved questions and corresponding queries.
 
 Original query:
@@ -102,8 +102,8 @@ Requirements:
 1. Questions array contains 1-3 questions and corresponding queries.
 2. Each question length is between 5-200 characters.
 3. Each query length is between 1-5 keywords.
-4. Each query MUST be in the same language as the retrieved content in. 
-5. DO NOT generate question and query that is similar to the original query. 
+4. Each query MUST be in the same language as the retrieved content in.
+5. DO NOT generate question and query that is similar to the original query.
 6. Reasoning explains the generation strategy.
 `
 
@@ -459,7 +459,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, query string) (map
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := strings.ReplaceAll(uuid.New().String(), "-", "")
+		id := utility.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),

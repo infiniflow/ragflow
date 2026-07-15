@@ -8,7 +8,7 @@ A Go framework for building **stateful, multi-agent applications** with LLMs. It
 ---
 
 - [Quick Start](#quick-start)
-- [Two-Layer Architecture](#two-layer-architecture)
+- [Architecture Overview](#architecture-overview)
 - [Layer 1: Graph Engine (graphengine)](#layer-1-graph-engine-graphengine)
 - [Layer 2: Agent Development Kit (agentcore)](#layer-2-agent-development-kit-agentcore)
 - [Layer 3: Push-Based AgentLoop](#layer-3-push-based-agentloop)
@@ -17,6 +17,7 @@ A Go framework for building **stateful, multi-agent applications** with LLMs. It
 - [Cancellation System](#cancellation-system)
 - [Prebuilt Components](#prebuilt-components)
 - [Observability (OpenTelemetry)](#observability-opentelemetry)
+- [Event Sourcing & Replay](#event-sourcing--replay)
 - [Project Structure](#project-structure)
 - [Examples](#examples)
 - [Contributing](#contributing)
@@ -118,7 +119,7 @@ func main() {
 
 ---
 
-## Two-Layer Architecture
+## Architecture Overview
 
 The framework is organized into three logical layers:
 
@@ -724,7 +725,7 @@ idle ──beginPlanningTurn──▶ planning ──beginActiveTurn──▶ ac
 - **TurnContext** — per-turn Preempted/Stopped channels, StopCause
 - **Callbacks**: `GenInput`, `GenResume`, `PrepareAgent`, `OnAgentEvents`
 
-**Push options:** `WithPreempt`, `WithPreemptTimeout`, `WithPreemptDelay`  
+**Push options:** `WithPreempt`, `WithPreemptTimeout`, `WithPreemptDelay`
 **Stop options:** `WithGraceful`, `WithImmediate`, `WithGracefulTimeout`, `UntilIdleFor`, `WithSkipCheckpoint`, `WithStopCause`
 
 ---
@@ -864,6 +865,43 @@ The ReAct state machine runs: **Input → Model.Generate → ParseAction → (An
 
 ---
 
+## Event Sourcing & Replay
+
+The harness framework provides a **fourth layer** for event-driven agent introspection: append-only event logging, deterministic replay, and live metrics collection. All Layer 4 components integrate via the existing `CallbackManager`, requiring zero changes to Layers 1–3.
+
+### Event Sourcing
+
+An **append-only event log** records every granular action during agent execution as an immutable event — tool calls, state transitions, memory writes, approvals, LLM invocations, and checkpoint operations. Each event carries a monotonic logical clock, causal parent references, and a structured payload. This replaces a checkpoint-only approach with a full audit log that supports deterministic replay, forking, and postmortem analysis.
+
+**Three event store backends** are available:
+
+| Backend | Path | Use Case |
+|---------|------|----------|
+| `MemoryEventStore` | `events/memory.go` | In-memory, for testing/single-instance |
+| `LocalFileEventStore` | `events/localfile.go` | File-based with segment rotation (by time or size) |
+| `NATSEventStore` | `events/nats.go` | Production distributed via NATS JetStream |
+
+### Replay Engine
+
+The `ReplayEngine` replays a trace from the event log **deterministically**, supporting:
+
+- **Model substitution** — replay with a different LLM while keeping tool results frozen
+- **Tool result injection** — replace recorded tool outputs with live execution or synthetic data
+- **Fork** — branch a new execution from any point in the event log
+- **Diff** — compare two execution traces to detect regression or behavioral changes
+
+### Observability Metrics
+
+Automated metrics collection covers: tool success rate, approval latency, retry rate, checkpoint restore success, memory hit quality, cost per completed task, and fork replay pass rate. Metrics export to Prometheus.
+
+### Evaluation Loop
+
+A production trace can be automatically converted into a **regression dataset**. The `RunReplayEval` function replays each case with multiple model/strategy combinations, comparing results and raising regression alerts.
+
+> **Detailed design, type definitions, and source-level examples** are documented in [harness.md](harness.md).
+
+---
+
 ## Project Structure
 
 ```
@@ -901,7 +939,7 @@ harness-go/
 │   ├── instruction.go       # Instruction management
 │   │
 │   ├── backend/             # Filesystem backend abstraction
-│   ├── evals/               # Eval framework (LLM-as-judge, scorers)
+│   ├── evals/               # Eval framework (LLM-as-judge, scorers, replay-based eval)
 │   ├── internal/            # Internal helpers (default system prompt)
 │   ├── middlewares/         # 10 middleware implementations
 │   │   ├── subagent/        #   SubAgentMiddleware (LLM-driven delegation)
@@ -958,6 +996,29 @@ harness-go/
 │   ├── viemu/               # Visual emulation
 │   └── visualization/       # DOT graph output
 │
+├── events/                  # Event Sourcing (append-only event log)
+│   ├── event.go             #   Event, EventID, EventType, typed payloads
+│   ├── recorder.go          #   EventRecorder — GraphCallback → Event
+│   ├── clock.go             #   LogicalClock (monotonic uint64)
+│   ├── memory.go            #   MemoryEventStore
+│   ├── localfile.go         #   LocalFileEventStore
+│   └── nats.go              #   NATSEventStore
+│
+├── replay/                  # Replay Engine
+│   ├── replay.go            #   ReplayEngine — deterministic replay
+│   ├── fork.go              #   Fork — branch from any event
+│   ├── diff.go              #   Diff — compare two execution traces
+│   └── injector.go          #   ModelOverride / ToolOverride strategies
+│
+├── metrics/                 # Observability & Metrics
+│   ├── metrics.go           #   MetricsCollector, autoMetricCollector
+│   ├── aggregator.go        #   MetricsAggregator, MetricsWindow
+│   └── exporter.go          #   PrometheusExporter
+│
+├── graphengine/             # Graph Engine (Layer 1)
+│   ├── dataset.go           #   EventLog → 回归数据集转换
+│   └── replay_eval.go       #   Replay-based evaluation
+│
 ├── prebuilt/                # Prebuilt ReAct agent + node factories
 │   ├── prebuilt.go          #   ReAct agent state machine
 │   ├── tool_node.go         #   ToolNode factory
@@ -968,6 +1029,7 @@ harness-go/
 ├── server/                  # HTTP server *(removed in internal copy)*
 ├── telemetry/               # OpenTelemetry integration *(removed in internal copy)*
 │
+├── harness.md               # Event Sourcing & Replay design document
 ├── harness.go               # Top-level re-exports and init()
 ├── harness_test.go          # Integration tests
 ├── Makefile                 # Build, test, lint targets

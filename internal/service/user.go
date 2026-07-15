@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -270,11 +269,11 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	}
 
 	modelConfigs := map[string]server.ModelConfig{
-		string(entity.ModelTypeChat):        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		string(entity.ModelTypeEmbedding):   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		string(entity.ModelTypeSpeech2Text): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		string(entity.ModelTypeImage2Text):  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		string(entity.ModelTypeRerank):      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
+		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
+		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
+		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
 	}
 
 	seenFactories := make(map[string]bool)
@@ -443,33 +442,6 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, err
 	}, common.CodeSuccess, nil
 }
 
-// ListUsers list users
-func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, common.ErrorCode, error) {
-	offset := (page - 1) * pageSize
-	users, total, err := s.userDAO.List(offset, pageSize)
-	if err != nil {
-		return nil, 0, common.CodeServerError, err
-	}
-
-	responses := make([]*UserResponse, len(users))
-	for i, user := range users {
-		responses[i] = &UserResponse{
-			ID:       user.ID,
-			Email:    user.Email,
-			Nickname: user.Nickname,
-			Status:   user.Status,
-			CreatedAt: func() string {
-				if user.CreateTime != nil {
-					return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
-				}
-				return ""
-			}(),
-		}
-	}
-
-	return responses, total, common.CodeSuccess, nil
-}
-
 // VerifyPassword verify password
 // Supports both werkzeug pbkdf2 format (pbkdf2:sha256:iterations$salt$hash) and scrypt format
 func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
@@ -605,7 +577,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 func defaultUserLanguage() string {
-	if strings.Contains(os.Getenv("LANG"), "zh_CN") {
+	if strings.Contains(common.GetEnv(common.EnvLang), "zh_CN") {
 		return "Chinese"
 	}
 	return "English"

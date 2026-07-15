@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -905,24 +906,13 @@ func isSafePath(path string) bool {
 
 	// Check for parent directory references
 	parts := strings.Split(clean, string(filepath.Separator))
-	for _, part := range parts {
-		if part == ".." {
-			return false
-		}
-	}
-
-	return true
+	return !slices.Contains(parts, "..")
 }
 
 // isTextContent checks if content appears to be text (not binary)
 func isTextContent(data []byte) bool {
 	// Check for null bytes (indicates binary)
-	for _, b := range data {
-		if b == 0 {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(data, 0)
 }
 
 func min(a, b int) int {

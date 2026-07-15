@@ -45,7 +45,7 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id=1):
+    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1"):
         self.tenant_id = tenant_id
         self.embd_id = embd_id
         self.tenant_embd_id = tenant_embd_id
@@ -221,7 +221,7 @@ def _load_dify_retrieval_module(monkeypatch):
             }
 
     def _get_model_config_by_id(
-        tenant_model_id: int,
+        tenant_model_id: str,
         allowed_tenant_ids=None,
         requester_tenant_id=None,
     ) -> dict:
@@ -246,6 +246,7 @@ def _load_dify_retrieval_module(monkeypatch):
 
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
+    tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -326,7 +327,7 @@ def test_retrieval_kb_not_found(monkeypatch):
     assert "Knowledgebase not found" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_not_found_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})

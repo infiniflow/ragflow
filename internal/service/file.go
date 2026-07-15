@@ -26,7 +26,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -37,8 +36,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // FileService file service
@@ -199,7 +196,7 @@ func (s *FileService) initSkillsFolder(rootID, tenantID string) error {
 	}
 
 	folder := &entity.File{
-		ID:         s.generateUUID(),
+		ID:         utility.GenerateToken(),
 		ParentID:   rootID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -354,11 +351,12 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		return nil, fmt.Errorf("Can't find this folder!")
 	}
 
-	maxFileNumPerUser := os.Getenv("MAX_FILE_NUM_PER_USER")
+	maxFileNumPerUser := common.GetEnv(common.EnvMaxFileNumPerUser)
 	if maxFileNumPerUser != "" {
 		var maxNum int64
-		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
-			docCount, err := s.GetDocCount(tenantID)
+		if _, err = fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
+			var docCount int64
+			docCount, err = s.GetDocCount(tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get document count: %w", err)
 			}
@@ -385,7 +383,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 
 		fileObjNames := s.parseFilePath(filename)
 
-		idList, err := s.fileDAO.GetIDListByID(parentID, fileObjNames, 1, []string{parentID})
+		var idList []string
+		idList, err = s.fileDAO.GetIDListByID(parentID, fileObjNames, 1, []string{parentID})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get file ID list: %w", err)
 		}
@@ -397,7 +396,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			if err != nil {
 				return nil, fmt.Errorf("Folder not found!")
 			}
-			createdFolder, err := s.createFolderRecursive(lastFolder, fileObjNames, len(idList), tenantID)
+			var createdFolder *entity.File
+			createdFolder, err = s.createFolderRecursive(lastFolder, fileObjNames, len(idList), tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create folder: %w", err)
 			}
@@ -426,14 +426,14 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
 
-		if err := storageImpl.Put(lastFolder.ID, location, data); err != nil {
+		if err = storageImpl.Put(lastFolder.ID, location, data); err != nil {
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
 		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
-			ID:         s.generateUUID(),
+			ID:         utility.GenerateToken(),
 			ParentID:   lastFolder.ID,
 			TenantID:   tenantID,
 			CreatedBy:  tenantID,
@@ -444,7 +444,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			SourceType: "",
 		}
 
-		if err := s.fileDAO.Insert(fileRecord); err != nil {
+		if err = s.fileDAO.Insert(fileRecord); err != nil {
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}
 
@@ -549,11 +549,6 @@ func (s *FileService) getUniqueFilename(name, parentID, tenantID string) string 
 		}
 		counter++
 	}
-}
-
-func (s *FileService) generateUUID() string {
-	id := uuid.New().String()
-	return strings.ReplaceAll(id, "-", "")
 }
 
 // CreateFolder creates a new folder or virtual file
@@ -1135,9 +1130,7 @@ func parseFileContent(filename string, data []byte) string {
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	// Parser config — office_oxide for MS Office formats; other parsers ignore it.
-	parserCfg := map[string]string{"lib_type": "office_oxide"}
-	fp, err := parser.GetParser(fileType, parserCfg)
+	fp, err := parser.GetParser(fileType)
 	if err != nil {
 		return string(data)
 	}
@@ -1310,11 +1303,12 @@ func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
 	if filename == "" {
 		return fmt.Errorf("No file selected!")
 	}
-	maxFileNumPerUser := os.Getenv("MAX_FILE_NUM_PER_USER")
+	maxFileNumPerUser := common.GetEnv(common.EnvMaxFileNumPerUser)
 	if maxFileNumPerUser != "" {
 		var maxNum int64
 		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
-			docCount, err := s.GetDocCount(userID)
+			var docCount int64
+			docCount, err = s.GetDocCount(userID)
 			if err != nil {
 				return fmt.Errorf("failed to get document count: %w", err)
 			}
@@ -1330,7 +1324,7 @@ func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
 }
 
 func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
-	location := common.GenerateUUID()
+	location := utility.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	if err := storageImpl.Put(bucket, location, data); err != nil {
 		return nil, fmt.Errorf("failed to store file: %w", err)

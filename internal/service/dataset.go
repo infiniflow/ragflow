@@ -17,18 +17,12 @@
 package service
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -37,9 +31,8 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/server"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
 	"sort"
@@ -55,21 +48,6 @@ import (
 )
 
 var (
-	datasetAllowedChunkMethods = map[string]struct{}{
-		"naive":        {},
-		"book":         {},
-		"email":        {},
-		"laws":         {},
-		"manual":       {},
-		"one":          {},
-		"paper":        {},
-		"picture":      {},
-		"presentation": {},
-		"qa":           {},
-		"resume":       {},
-		"table":        {},
-		"tag":          {},
-	}
 	datasetSupportedAvatarMIMETypes = map[string]struct{}{
 		"image/jpeg": {},
 		"image/png":  {},
@@ -84,10 +62,9 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
-	validIndexTypes                = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType            = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName         = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
+	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
+	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
+	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
@@ -102,6 +79,47 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
+// validateDatasetEmbeddingModels checks that all given datasets use the same
+// embedding model (or all use none). Returns an error on mismatch.
+func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
+	embdIDs := make(map[string]struct{})
+	hasEmbd := false
+	noEmbd := false
+	for _, kb := range kbs {
+		if kb.EmbdID != "" {
+			hasEmbd = true
+			baseName := kb.EmbdID
+			if idx := strings.LastIndex(kb.EmbdID, "@"); idx > 0 {
+				baseName = kb.EmbdID[:idx]
+				// Strip the second-to-last @-segment too (instance name),
+				// matching Python's _base_model_name which uses rsplit("@", 2).
+				if idx2 := strings.LastIndex(baseName, "@"); idx2 > 0 {
+					baseName = baseName[:idx2]
+				}
+			}
+			embdIDs[baseName] = struct{}{}
+		} else {
+			noEmbd = true
+		}
+	}
+	if hasEmbd && noEmbd {
+		return fmt.Errorf("Cannot search across datasets where some have embedding models and others do not.")
+	}
+	if len(embdIDs) > 1 {
+		return fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	}
+	return nil
+}
+
+// getEmbdIDs extracts embedding IDs from knowledge bases.
+func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
+	ids := make([]string, len(kbs))
+	for i, kb := range kbs {
+		ids[i] = kb.EmbdID
+	}
+	return ids
+}
+
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetService struct {
 	kbDAO          *dao.KnowledgebaseDAO
@@ -115,16 +133,10 @@ type DatasetService struct {
 	searchService  *SearchService
 	docEngine      engine.DocEngine
 	embeddingCache *utility.EmbeddingLRU
-	engineType     server.EngineType
 }
 
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
-	cfg := server.GetConfig()
-	engineType := server.EngineType("")
-	if cfg != nil {
-		engineType = cfg.DocEngine.Type
-	}
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -137,7 +149,6 @@ func NewDatasetService() *DatasetService {
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
-		engineType:     engineType,
 	}
 }
 
@@ -224,7 +235,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		_, _ = hasher.Write([]byte{0})
 	}
 
-	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	taskID := utility.GenerateUUID()
 	beginAt := time.Now().Truncate(time.Second)
 	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
 
@@ -624,11 +635,6 @@ type embeddingCheckSample struct {
 	QuestionKeywords  []string
 }
 
-type datasetParsePageRange struct {
-	from int64
-	to   int64
-}
-
 // RunEmbedding runs embedding for all documents in a dataset.
 func (d *DatasetService) RunEmbedding(userID, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
@@ -676,10 +682,21 @@ func (d *DatasetService) RunEmbedding(userID, datasetID string) (map[string]inte
 }
 
 func (d *DatasetService) runEmbeddingDocument(kb *entity.Knowledgebase, doc *entity.Document, tableDoneCountByKB map[string]int64) error {
+	// Determine the flow ID: pipeline_id takes precedence, parser_id acts as
+	// fallback (builtin DSL from registry). Both paths go through the unified
+	// DSL ingestion worker.
+	flowID := ""
 	if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
-		return d.queueDatasetDataflowTask(kb, doc, strings.TrimSpace(*doc.PipelineID), 0)
+		flowID = strings.TrimSpace(*doc.PipelineID)
+	} else if doc.ParserID != "" {
+		flowID = doc.ParserID
+	}
+	if flowID == "" {
+		return fmt.Errorf("document %s: no pipeline_id or parser_id configured", doc.ID)
 	}
 
+	// Invalidate the cached column schema (field_map) when re-running table
+	// documents so the schema is rebuilt from the fresh parse result.
 	if doc.ParserID == string(entity.ParserTypeTable) {
 		doneCount, ok := tableDoneCountByKB[doc.KbID]
 		if !ok {
@@ -697,32 +714,7 @@ func (d *DatasetService) runEmbeddingDocument(kb *entity.Knowledgebase, doc *ent
 		}
 	}
 
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	if d.docEngine != nil {
-		if _, err := d.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
-			return err
-		}
-	}
-	if _, err := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
-		return err
-	}
-
-	bucket, objectName, err := NewDocumentService().GetDocumentStorageAddress(doc)
-	if err != nil {
-		return err
-	}
-	if err := d.queueDatasetParseTasks(doc, bucket, objectName, 0); err != nil {
-		return err
-	}
-	if err := d.beginDatasetParseDocument(doc.ID); err != nil {
-		if _, delErr := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); delErr != nil {
-			common.Warn("Failed to clean parse tasks after document state update failure",
-				zap.String("docID", doc.ID),
-				zap.Error(delErr))
-		}
-		return err
-	}
-	return nil
+	return d.queueDatasetDataflowTask(kb, doc, flowID, 0)
 }
 
 func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, flowID string, priority int64) error {
@@ -735,7 +727,7 @@ func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc 
 
 	now := time.Now()
 	task := &entity.Task{
-		ID:       common.GenerateUUID(),
+		ID:       utility.GenerateUUID(),
 		DocID:    doc.ID,
 		FromPage: 0,
 		ToPage:   maximumTaskPageNumber,
@@ -766,62 +758,6 @@ func (d *DatasetService) countDoneDocuments(datasetID string) (int64, error) {
 		Where("kb_id = ? AND run = ?", datasetID, string(entity.TaskStatusDone)).
 		Count(&count).Error
 	return count, err
-}
-
-func (d *DatasetService) queueDatasetParseTasks(doc *entity.Document, bucket, objectName string, priority int64) error {
-	tasks, err := d.buildDatasetParseTasks(doc, bucket, objectName, priority)
-	if err != nil {
-		return err
-	}
-	if len(tasks) == 0 {
-		return nil
-	}
-	if err := d.taskDAO.CreateMany(tasks); err != nil {
-		return err
-	}
-	queueName := datasetParseQueueName(doc, priority)
-	for _, task := range tasks {
-		if task.Progress >= 1 {
-			continue
-		}
-		if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(queueName, datasetParseTaskMessage(task)) {
-			if _, delErr := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); delErr != nil {
-				common.Warn("Failed to clean parse tasks after Redis enqueue failure",
-					zap.String("docID", doc.ID),
-					zap.Error(delErr))
-			}
-			return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
-		}
-	}
-	return nil
-}
-
-func (d *DatasetService) buildDatasetParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
-	ranges, err := datasetParseTaskRanges(doc, bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	tasks := make([]*entity.Task, 0, len(ranges))
-	for _, pageRange := range ranges {
-		progressMsg := ""
-		digest := datasetParseTaskDigest(doc, pageRange.from, pageRange.to)
-		chunkIDs := ""
-		tasks = append(tasks, &entity.Task{
-			ID:          common.GenerateUUID(),
-			DocID:       doc.ID,
-			FromPage:    pageRange.from,
-			ToPage:      pageRange.to,
-			TaskType:    "",
-			Priority:    priority,
-			BeginAt:     &now,
-			Progress:    0,
-			ProgressMsg: &progressMsg,
-			Digest:      &digest,
-			ChunkIDs:    &chunkIDs,
-		})
-	}
-	return tasks, nil
 }
 
 func (d *DatasetService) beginDatasetParseDocument(docID string) error {
@@ -864,7 +800,7 @@ func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *CheckEmbe
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -1283,336 +1219,6 @@ func datasetParseTaskMessage(task *entity.Task) map[string]interface{} {
 	}
 }
 
-func datasetParseTaskDigest(doc *entity.Document, fromPage, toPage int64) string {
-	hasher := xxhash.New()
-	config := datasetChunkingConfigForDigest(doc)
-	keys := make([]string, 0, len(config))
-	for key := range config {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		hasher.WriteString(datasetStableString(config[key]))
-	}
-	hasher.WriteString(doc.ID)
-	hasher.WriteString(strconv.FormatInt(fromPage, 10))
-	hasher.WriteString(strconv.FormatInt(toPage, 10))
-	return fmt.Sprintf("%x", hasher.Sum64())
-}
-
-func datasetChunkingConfigForDigest(doc *entity.Document) map[string]interface{} {
-	return map[string]interface{}{
-		"doc_id":        doc.ID,
-		"kb_id":         doc.KbID,
-		"parser_id":     doc.ParserID,
-		"parser_config": datasetCopyParserConfigForDigest(doc.ParserConfig),
-	}
-}
-
-func datasetCopyParserConfigForDigest(config map[string]interface{}) map[string]interface{} {
-	copied := make(map[string]interface{}, len(config))
-	for key, value := range config {
-		if key == "raptor" || key == "graphrag" {
-			continue
-		}
-		copied[key] = value
-	}
-	return copied
-}
-
-func datasetStableString(value interface{}) string {
-	binary, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Sprint(value)
-	}
-	return string(binary)
-}
-
-func datasetParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
-	if doc.Type == "pdf" {
-		return datasetPDFParseTaskRanges(doc, bucket, objectName)
-	}
-	if doc.ParserID == string(entity.ParserTypeTable) {
-		return datasetTableParseTaskRanges(doc, bucket, objectName)
-	}
-	return []datasetParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
-}
-
-func datasetPDFParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
-	binary, err := datasetStorageBinary(bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	pages := datasetEstimatePDFPageCount(binary)
-	pageSize := int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 12))
-	if doc.ParserID == string(entity.ParserTypePaper) {
-		pageSize = int64(datasetParserConfigInt(doc.ParserConfig, "task_page_size", 22))
-	}
-	if doc.ParserID == string(entity.ParserTypeOne) ||
-		doc.ParserID == string(entity.ParserTypeKG) ||
-		datasetParserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
-		datasetParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
-		pageSize = maximumTaskPageNumber
-	}
-	if pageSize <= 0 {
-		pageSize = 12
-	}
-
-	pageRanges := datasetParserConfigPageRanges(doc.ParserConfig)
-	ranges := make([]datasetParsePageRange, 0)
-	for _, configuredRange := range pageRanges {
-		start := configuredRange.from - 1
-		if start < 0 {
-			start = 0
-		}
-		end := configuredRange.to - 1
-		if pages >= 0 && end > pages {
-			end = pages
-		}
-		for page := start; page < end; page += pageSize {
-			to := page + pageSize
-			if to > end {
-				to = end
-			}
-			ranges = append(ranges, datasetParsePageRange{from: page, to: to})
-		}
-	}
-	if len(ranges) == 0 {
-		ranges = append(ranges, datasetParsePageRange{from: 0, to: maximumTaskPageNumber})
-	}
-	return ranges, nil
-}
-
-func datasetTableParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]datasetParsePageRange, error) {
-	binary, err := datasetStorageBinary(bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	rows := datasetEstimateTableRowCount(datasetDocName(doc), binary)
-	if rows <= 0 {
-		return []datasetParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
-	}
-	ranges := make([]datasetParsePageRange, 0, (rows+2999)/3000)
-	for row := int64(0); row < int64(rows); row += 3000 {
-		to := row + 3000
-		if to > int64(rows) {
-			to = int64(rows)
-		}
-		ranges = append(ranges, datasetParsePageRange{from: row, to: to})
-	}
-	return ranges, nil
-}
-
-func datasetStorageBinary(bucket, objectName string) ([]byte, error) {
-	storageImpl := storage.GetStorageFactory().GetStorage()
-	if storageImpl == nil {
-		return nil, fmt.Errorf("storage not initialized")
-	}
-	return storageImpl.Get(bucket, objectName)
-}
-
-func datasetDocName(doc *entity.Document) string {
-	if doc == nil || doc.Name == nil {
-		return ""
-	}
-	return *doc.Name
-}
-
-func datasetParserConfigInt(config map[string]interface{}, key string, fallback int) int {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	switch typedValue := value.(type) {
-	case int:
-		return typedValue
-	case int64:
-		return int(typedValue)
-	case float64:
-		return int(typedValue)
-	case json.Number:
-		if intValue, err := typedValue.Int64(); err == nil {
-			return int(intValue)
-		}
-	case string:
-		if intValue, err := strconv.Atoi(strings.TrimSpace(typedValue)); err == nil {
-			return intValue
-		}
-	}
-	return fallback
-}
-
-func datasetParserConfigString(config map[string]interface{}, key, fallback string) string {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	if stringValue, ok := value.(string); ok {
-		return stringValue
-	}
-	return fmt.Sprint(value)
-}
-
-func datasetParserConfigBool(config map[string]interface{}, key string, fallback bool) bool {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	switch typedValue := value.(type) {
-	case bool:
-		return typedValue
-	case string:
-		switch strings.ToLower(strings.TrimSpace(typedValue)) {
-		case "true", "1", "yes", "on":
-			return true
-		case "false", "0", "no", "off":
-			return false
-		}
-	}
-	return fallback
-}
-
-func datasetParserConfigPageRanges(config map[string]interface{}) []datasetParsePageRange {
-	defaultRanges := []datasetParsePageRange{{from: 1, to: maximumPageNumber}}
-	raw, ok := config["pages"]
-	if !ok || raw == nil {
-		return defaultRanges
-	}
-	rawRanges, ok := raw.([]interface{})
-	if !ok || len(rawRanges) == 0 {
-		return defaultRanges
-	}
-
-	ranges := make([]datasetParsePageRange, 0, len(rawRanges))
-	for _, rawRange := range rawRanges {
-		rangeValues, ok := rawRange.([]interface{})
-		if !ok || len(rangeValues) < 2 {
-			continue
-		}
-		from, okFrom := datasetToInt64(rangeValues[0])
-		to, okTo := datasetToInt64(rangeValues[1])
-		if okFrom && okTo && to > from {
-			ranges = append(ranges, datasetParsePageRange{from: from, to: to})
-		}
-	}
-	if len(ranges) == 0 {
-		return defaultRanges
-	}
-	return ranges
-}
-
-func datasetToInt64(value interface{}) (int64, bool) {
-	switch typedValue := value.(type) {
-	case int:
-		return int64(typedValue), true
-	case int64:
-		return typedValue, true
-	case float64:
-		return int64(typedValue), true
-	case json.Number:
-		intValue, err := typedValue.Int64()
-		return intValue, err == nil
-	case string:
-		intValue, err := strconv.ParseInt(strings.TrimSpace(typedValue), 10, 64)
-		return intValue, err == nil
-	default:
-		return 0, false
-	}
-}
-
-var datasetPDFPagePattern = regexp.MustCompile(`/Type\s*/Page\b`)
-
-func datasetEstimatePDFPageCount(binary []byte) int64 {
-	if len(binary) == 0 {
-		return 0
-	}
-	return int64(len(datasetPDFPagePattern.FindAll(binary, -1)))
-}
-
-func datasetEstimateTableRowCount(name string, binary []byte) int {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".xlsx":
-		if rows, err := datasetCountXLSXRows(binary); err == nil {
-			return rows
-		}
-	case ".csv", ".tsv", ".txt":
-		return datasetCountDelimitedRows(name, binary)
-	}
-	return 0
-}
-
-func datasetCountDelimitedRows(name string, binary []byte) int {
-	reader := csv.NewReader(bytes.NewReader(binary))
-	reader.FieldsPerRecord = -1
-	reader.ReuseRecord = true
-	if strings.EqualFold(filepath.Ext(name), ".tsv") {
-		reader.Comma = '\t'
-	}
-	rows := 0
-	for {
-		_, err := reader.Read()
-		if err == nil {
-			rows++
-			continue
-		}
-		if err == io.EOF {
-			break
-		}
-		rows += bytes.Count(binary, []byte{'\n'})
-		if len(binary) > 0 && binary[len(binary)-1] != '\n' {
-			rows++
-		}
-		break
-	}
-	return rows
-}
-
-func datasetCountXLSXRows(binary []byte) (int, error) {
-	zipReader, err := zip.NewReader(bytes.NewReader(binary), int64(len(binary)))
-	if err != nil {
-		return 0, err
-	}
-	maxRows := 0
-	for _, file := range zipReader.File {
-		if !strings.HasPrefix(file.Name, "xl/worksheets/") || !strings.HasSuffix(file.Name, ".xml") {
-			continue
-		}
-		rows, err := datasetCountWorksheetRows(file)
-		if err != nil {
-			return 0, err
-		}
-		if rows > maxRows {
-			maxRows = rows
-		}
-	}
-	return maxRows, nil
-}
-
-func datasetCountWorksheetRows(file *zip.File) (int, error) {
-	reader, err := file.Open()
-	if err != nil {
-		return 0, err
-	}
-	defer reader.Close()
-
-	decoder := xml.NewDecoder(reader)
-	rows := 0
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-		start, ok := token.(xml.StartElement)
-		if ok && start.Name.Local == "row" {
-			rows++
-		}
-	}
-	return rows, nil
-}
-
 func (d *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
@@ -1872,13 +1478,8 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}
 
 	// Check if all kbs have the same embedding model
-	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
-		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("Datasets use different embedding models.")
-			}
-		}
+	if err := validateDatasetEmbeddingModels(kbRecords); err != nil {
+		return nil, err
 	}
 
 	// Override request fields with values from saved search config (if search_id is provided)
@@ -1954,7 +1555,7 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
@@ -2045,41 +1646,28 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Determine embedding model
 	var embeddingModel *models.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
 		if embErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
 		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	} else {
-		driver, modelName, apiConfig, maxTokens, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
-		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+		common.Info("Fetched embedding model for retrieval",
+			zap.String("tenantID", tenantIDs[0]),
+			zap.String("modelName", modelName))
+
 	}
-	modelNameStr := ""
-	if embeddingModel.ModelName != nil {
-		modelNameStr = *embeddingModel.ModelName
-	}
-	common.Info("Fetched embedding model for retrieval",
-		zap.String("tenantID", tenantIDs[0]),
-		zap.String("modelName", modelNameStr))
 
 	// Get rerank model if rerankID is specified
 	var rerankModel *models.RerankModel
-
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
 		rerankModel = models.NewRerankModel(driver, &modelName, apiConfig)
-	}
-
-	if rerankModel != nil {
 		common.Info("Fetched rerank model",
 			zap.String("tenantID", tenantIDs[0]),
-			zap.String("modelName", *rerankModel.ModelName))
+			zap.String("modelName", modelName))
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
@@ -2300,7 +1888,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	}
 	if req.ChunkMethod != nil {
 		parserID = strings.TrimSpace(*req.ChunkMethod)
-		if err := validateDatasetChunkMethod(parserID); err != nil {
+		if err := validateParserID(parserID); err != nil {
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = nil
@@ -2392,10 +1980,10 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		case "chunk_method", "parser_id":
 			parserIDValue, ok := value.(string)
 			if !ok {
-				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+				return nil, common.CodeDataError, parserIDError()
 			}
 			parserIDValue = strings.TrimSpace(parserIDValue)
-			if err := validateDatasetChunkMethod(parserIDValue); err != nil {
+			if err := validateParserID(parserIDValue); err != nil {
 				return nil, common.CodeDataError, err
 			}
 			parserID = parserIDValue
@@ -2446,12 +2034,22 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	parserConfig["llm_id"] = tenant.LLMID
 
 	embdID := tenant.EmbdID
+	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
 		embdID = embeddingModel
+		tenantEmbdID = ""
+	}
+	if embdID != "" && tenantEmbdID == "" {
+		resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+		if err == nil {
+			tenantEmbdID = resolvedID
+		} else {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	kbID := utility.GenerateToken()
@@ -2476,6 +2074,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		ParserConfig: parserConfig,
 		Permission:   permission,
 		EmbdID:       embdID,
+		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
 	}
 
@@ -2729,10 +2328,10 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if extParserID, ok := updates["parser_id"]; ok {
 			parserIDValue, ok := extParserID.(string)
 			if !ok {
-				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+				return nil, common.CodeDataError, parserIDError()
 			}
 			parserID = strings.TrimSpace(parserIDValue)
-			if err := validateDatasetChunkMethod(parserID); err != nil {
+			if err := validateParserID(parserID); err != nil {
 				return nil, common.CodeDataError, err
 			}
 			parserIDProvided = true
@@ -2762,14 +2361,24 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 	if embdIDProvided {
+		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
 		if embdID == "" {
 			embdID = kb.EmbdID
+		} else {
+			tenantEmbdID = ""
 		}
 		ok, message := d.verifyEmbeddingAvailability(embdID, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
+		if embdID != "" && tenantEmbdID == "" {
+			resolvedID, err := NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+			if err == nil {
+				tenantEmbdID = resolvedID
+			}
+		}
 		updates["embd_id"] = embdID
+		updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 	}
 
 	if req.AutoMetadataConfig != nil {
@@ -2789,7 +2398,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
 		}
-		if d.engineType == server.EngineInfinity {
+		if !d.docEngine.SupportsPageRank() {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
@@ -2887,7 +2496,7 @@ func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateDatasetChunkMethod(parserID); err != nil {
+	if err := validateParserID(parserID); err != nil {
 		return "", true, err
 	}
 	return parserID, true, nil
@@ -3522,11 +3131,47 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	})
 }
 
-func validateDatasetChunkMethod(chunkMethod string) error {
-	if _, ok := datasetAllowedChunkMethods[chunkMethod]; !ok {
-		return errors.New(datasetChunkMethodErrorMessage)
+// validateParserID validates parser_id against the built-in
+// pipeline registry. The registry is the single source of truth, so the
+// legacy hardcoded allow-list is gone. Legacy values (e.g. "naive") are
+// accepted via registry aliases.
+func validateParserID(chunkMethod string) error {
+	registry, err := pipelinepkg.DefaultRegistry()
+	if err != nil || registry == nil {
+		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	return nil
+	if registry.IsValid(chunkMethod) {
+		return nil
+	}
+	return parserIDError()
+}
+
+// parserIDError builds a validation error that lists the valid
+// canonical parser_ids from the registry, mirroring the shape of the old
+// hardcoded message but driven by the embedded templates.
+func parserIDError() error {
+	registry, err := pipelinepkg.DefaultRegistry()
+	if err != nil || registry == nil {
+		return errors.New("invalid parser_id")
+	}
+	refs := registry.Refs()
+	switch len(refs) {
+	case 0:
+		return errors.New("invalid parser_id")
+	case 1:
+		return fmt.Errorf("Input should be '%s'", refs[0])
+	default:
+		return fmt.Errorf("Input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
+	}
+}
+
+// quoteList renders ["a", "b"] as "'a', 'b'".
+func quoteList(items []string) string {
+	quoted := make([]string, len(items))
+	for i, v := range items {
+		quoted[i] = "'" + v + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func validateDatasetAvatar(avatar string) error {
@@ -3549,14 +3194,23 @@ func validateDatasetAvatar(avatar string) error {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if embeddingModel == "" {
-		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+		return errors.New("Embedding model identifier is required")
 	}
 
-	modelName, provider, ok := strings.Cut(embeddingModel, "@")
-	if !ok {
+	if !strings.Contains(embeddingModel, "@") {
+		return nil
+	}
+
+	parts := strings.Split(embeddingModel, "@")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return errors.New("Both model_name and provider must be non-empty strings")
+		}
+	}
+	if len(parts) < 2 {
 		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
 	}
-	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(provider) == "" {
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
 		return errors.New("Both model_name and provider must be non-empty strings")
 	}
 
@@ -3614,7 +3268,7 @@ func normalizeDatasetID(id string) (string, error) {
 }
 
 func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeEmbedding, embdID)
+	_, _, _, _, err := NewModelProviderService().ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}
