@@ -217,7 +217,9 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	}
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
-	outputs, err := comp.Invoke(invokeCtx, inputs)
+	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {
+		return comp.Invoke(invokeCtx, inputs)
+	})
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "invoke: "+err.Error())
 		return
