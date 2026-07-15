@@ -53,6 +53,7 @@ type Router struct {
 	fileCommitHandler    *handler.FileCommitHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
+	pipelineHandler      *handler.PipelineHandler
 }
 
 // NewRouter create router
@@ -86,6 +87,7 @@ func NewRouter(
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
+	pipelineHandler *handler.PipelineHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -117,6 +119,7 @@ func NewRouter(
 		fileCommitHandler:    fileCommitHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
+		pipelineHandler:      pipelineHandler,
 	}
 }
 
@@ -156,6 +159,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+
+		// Pipeline catalog. Public static data (shipped with the binary),
+		// no auth required. The front end uses it to populate the parser
+		// picker without hard-coding the parser_id list.
+		// Query: ?type=builtin returns built-in templates (default).
+		if r.pipelineHandler != nil {
+			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+		}
 
 		// searchbots
 		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)

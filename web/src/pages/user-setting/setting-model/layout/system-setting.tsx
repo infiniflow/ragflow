@@ -27,9 +27,7 @@ import {
   useSetDefaultModel,
 } from '@/hooks/use-llm-request';
 import { CircleQuestionMark } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-const STORAGE_KEY = 'ragflow-system-model-settings';
+import { useCallback, useMemo } from 'react';
 
 interface ModelFieldItemProps {
   id: string;
@@ -38,25 +36,6 @@ interface ModelFieldItemProps {
   tooltip?: string;
   isRequired?: boolean;
   onChange: (id: string, value: string) => void;
-}
-
-/** Read persisted model selections from localStorage */
-function loadPersistedValues(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-/** Persist model selections to localStorage */
-function savePersistedValues(values: Record<string, string>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
-  } catch {
-    // Silently fail if storage is full/disabled
-  }
 }
 
 function ModelFieldItem({
@@ -105,47 +84,14 @@ function SystemSetting() {
   const defaultModelDictionary = useFetchDefaultModelDictionary();
   const { setDefaultModel } = useSetDefaultModel();
 
-  // Local state synced with localStorage for persistence across page refreshes.
-  // This handles the case where the Go backend hasn't been rebuilt yet and
-  // doesn't return TTS/ASR/VLM defaults from the API (same pattern as ASR/VLM).
-  const [persistedValues, setPersistedValues] =
-    useState<Record<string, string>>(loadPersistedValues);
-
-  // Sync localStorage whenever persistedValues changes
-  useEffect(() => {
-    savePersistedValues(persistedValues);
-  }, [persistedValues]);
-
   const handleFieldChange = useCallback(
     async (field: string, value: string) => {
-      // Update local state immediately so selection shows right away and persists
-      setPersistedValues((prev) => ({ ...prev, [field]: value || '' }));
-
       const modelType = FieldToModelType[field];
       if (!modelType) return;
 
-      if (!value) {
-        await setDefaultModel({
-          model_id: '',
-          model_type: modelType,
-        });
-      } else {
-        // const parsed = parseModelValue(value);
-        // if (!parsed) return;
-        await setDefaultModel({ model_id: value, model_type: modelType });
-      }
+      await setDefaultModel({ model_id: value, model_type: modelType });
     },
     [setDefaultModel],
-  );
-
-  // Resolution order (same for ALL model types including ASR/VLM/TTS):
-  //   1. localStorage (user's latest selection, survives refresh)
-  //   2. API response (from Go backend GET /api/v1/models/default)
-  //   3. empty string (fallback)
-  const getValue = useCallback(
-    (field: string) =>
-      persistedValues[field] || defaultModelDictionary[field] || '',
-    [persistedValues, defaultModelDictionary],
   );
 
   const llmList = useMemo(() => {
@@ -154,41 +100,41 @@ function SystemSetting() {
         id: 'llm_id',
         label: t('chatModel'),
         isRequired: true,
-        value: getValue('llm_id'),
+        value: defaultModelDictionary.llm_id ?? '',
         tooltip: t('chatModelTip'),
       },
       {
         id: 'embd_id',
         label: t('embeddingModel'),
-        value: getValue('embd_id'),
+        value: defaultModelDictionary.embd_id ?? '',
         tooltip: t('embeddingModelTip'),
       },
       {
         id: 'img2txt_id',
         label: t('img2txtModel'),
-        value: getValue('img2txt_id'),
+        value: defaultModelDictionary.img2txt_id ?? '',
         tooltip: t('img2txtModelTip'),
       },
       {
         id: 'asr_id',
         label: t('sequence2txtModel'),
-        value: getValue('asr_id'),
+        value: defaultModelDictionary.asr_id ?? '',
         tooltip: t('sequence2txtModelTip'),
       },
       {
         id: 'rerank_id',
         label: t('rerankModel'),
-        value: getValue('rerank_id'),
+        value: defaultModelDictionary.rerank_id ?? '',
         tooltip: t('rerankModelTip'),
       },
       {
         id: 'tts_id',
         label: t('ttsModel'),
-        value: getValue('tts_id'),
+        value: defaultModelDictionary.tts_id ?? '',
         tooltip: t('ttsModelTip'),
       },
     ];
-  }, [getValue, t]);
+  }, [defaultModelDictionary, t]);
 
   return (
     <article className="rounded-lg w-full">

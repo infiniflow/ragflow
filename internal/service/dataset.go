@@ -31,6 +31,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
 	"regexp"
@@ -47,21 +48,6 @@ import (
 )
 
 var (
-	datasetAllowedChunkMethods = map[string]struct{}{
-		"naive":        {},
-		"book":         {},
-		"email":        {},
-		"laws":         {},
-		"manual":       {},
-		"one":          {},
-		"paper":        {},
-		"picture":      {},
-		"presentation": {},
-		"qa":           {},
-		"resume":       {},
-		"table":        {},
-		"tag":          {},
-	}
 	datasetSupportedAvatarMIMETypes = map[string]struct{}{
 		"image/jpeg": {},
 		"image/png":  {},
@@ -76,10 +62,9 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
-	validIndexTypes                = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType            = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName         = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
+	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
+	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
+	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
@@ -1736,7 +1721,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	}
 	if req.ChunkMethod != nil {
 		parserID = strings.TrimSpace(*req.ChunkMethod)
-		if err := validateDatasetChunkMethod(parserID); err != nil {
+		if err := validateParserID(parserID); err != nil {
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = nil
@@ -1828,10 +1813,10 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		case "chunk_method", "parser_id":
 			parserIDValue, ok := value.(string)
 			if !ok {
-				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+				return nil, common.CodeDataError, parserIDError()
 			}
 			parserIDValue = strings.TrimSpace(parserIDValue)
-			if err := validateDatasetChunkMethod(parserIDValue); err != nil {
+			if err := validateParserID(parserIDValue); err != nil {
 				return nil, common.CodeDataError, err
 			}
 			parserID = parserIDValue
@@ -2176,10 +2161,10 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if extParserID, ok := updates["parser_id"]; ok {
 			parserIDValue, ok := extParserID.(string)
 			if !ok {
-				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+				return nil, common.CodeDataError, parserIDError()
 			}
 			parserID = strings.TrimSpace(parserIDValue)
-			if err := validateDatasetChunkMethod(parserID); err != nil {
+			if err := validateParserID(parserID); err != nil {
 				return nil, common.CodeDataError, err
 			}
 			parserIDProvided = true
@@ -2344,7 +2329,7 @@ func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateDatasetChunkMethod(parserID); err != nil {
+	if err := validateParserID(parserID); err != nil {
 		return "", true, err
 	}
 	return parserID, true, nil
@@ -2979,11 +2964,47 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	})
 }
 
-func validateDatasetChunkMethod(chunkMethod string) error {
-	if _, ok := datasetAllowedChunkMethods[chunkMethod]; !ok {
-		return errors.New(datasetChunkMethodErrorMessage)
+// validateParserID validates parser_id against the built-in
+// pipeline registry. The registry is the single source of truth, so the
+// legacy hardcoded allow-list is gone. Legacy values (e.g. "naive") are
+// accepted via registry aliases.
+func validateParserID(chunkMethod string) error {
+	registry, err := pipelinepkg.DefaultRegistry()
+	if err != nil || registry == nil {
+		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	return nil
+	if registry.IsValid(chunkMethod) {
+		return nil
+	}
+	return parserIDError()
+}
+
+// parserIDError builds a validation error that lists the valid
+// canonical parser_ids from the registry, mirroring the shape of the old
+// hardcoded message but driven by the embedded templates.
+func parserIDError() error {
+	registry, err := pipelinepkg.DefaultRegistry()
+	if err != nil || registry == nil {
+		return errors.New("invalid parser_id")
+	}
+	refs := registry.Refs()
+	switch len(refs) {
+	case 0:
+		return errors.New("invalid parser_id")
+	case 1:
+		return fmt.Errorf("Input should be '%s'", refs[0])
+	default:
+		return fmt.Errorf("Input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
+	}
+}
+
+// quoteList renders ["a", "b"] as "'a', 'b'".
+func quoteList(items []string) string {
+	quoted := make([]string, len(items))
+	for i, v := range items {
+		quoted[i] = "'" + v + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func validateDatasetAvatar(avatar string) error {
