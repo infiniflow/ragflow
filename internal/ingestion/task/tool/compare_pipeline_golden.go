@@ -64,7 +64,7 @@ func runActual(input map[string]any, docID string, kbID string, docName string) 
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
-	return task.ProcessPipelineOutputForGolden(input, docID, kbID, docName), nil
+	return task.ProcessPipelineOutputForGolden(input, docID, kbID, docName)
 }
 
 func reportProcessErrorOutcome(expected map[string]any, hasExpected bool, actualErr error) {
