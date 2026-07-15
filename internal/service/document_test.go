@@ -518,13 +518,18 @@ func insertTestTask(t *testing.T, id, docID string) {
 
 func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
 	t.Helper()
+	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
+}
+
+func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetID, status string) {
+	t.Helper()
 	task := &entity.IngestionTask{
 		ID:         id,
 		UserID:     userID,
 		DocumentID: docID,
 		DatasetID:  datasetID,
 		Schema:     entity.JSONMap{},
-		Status:     common.CREATED,
+		Status:     status,
 	}
 	if err := dao.DB.Create(task).Error; err != nil {
 		t.Fatalf("insert test ingestion task: %v", err)
@@ -1077,12 +1082,16 @@ func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64
 	}
 }
 
-func TestQueueDocumentDataflowTask_PublishesIngestionTaskMessage(t *testing.T) {
+func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	// GetDocumentStorageAddress requires a non-empty document location.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
 
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
@@ -1097,8 +1106,8 @@ func TestQueueDocumentDataflowTask_PublishesIngestionTaskMessage(t *testing.T) {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	if err := svc.queueDocumentDataflowTask(kb, doc, "user-1"); err != nil {
-		t.Fatalf("queueDocumentDataflowTask: %v", err)
+	if err := svc.StartParseDocuments(doc, kb, "user-1", StartParseOptions{}); err != nil {
+		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
 	if publisher.subject != "tasks.RAGFLOW" {
@@ -1805,12 +1814,12 @@ func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
 	}
 }
 
-func TestPrepareDocumentRerunWithDeleteClearsCountersTasksAndChunks(t *testing.T) {
+func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
-	insertTestTask(t, "task-1", "doc-1")
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
 	if err != nil {
@@ -1821,8 +1830,8 @@ func TestPrepareDocumentRerunWithDeleteClearsCountersTasksAndChunks(t *testing.T
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 
-	if err := svc.prepareDocumentRerunWithDelete(doc, "tenant-1"); err != nil {
-		t.Fatalf("prepareDocumentRerunWithDelete failed: %v", err)
+	if err := svc.clearDocumentParseResults(doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 
 	updatedDoc, _ := dao.NewDocumentDAO().GetByID("doc-1")
@@ -1833,12 +1842,10 @@ func TestPrepareDocumentRerunWithDeleteClearsCountersTasksAndChunks(t *testing.T
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
 	}
-	var taskCount int64
-	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
-		t.Fatalf("count tasks: %v", err)
-	}
-	if taskCount != 0 {
-		t.Fatalf("task count = %d, want zero", taskCount)
+	// The completed ingestion task must be deleted so the new run can proceed.
+	remainingTask, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+	if remainingTask != nil {
+		t.Fatalf("ingestion task should be deleted, status was %q", remainingTask.Status)
 	}
 	if engine.deleteCalls != 1 {
 		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
@@ -1848,7 +1855,7 @@ func TestPrepareDocumentRerunWithDeleteClearsCountersTasksAndChunks(t *testing.T
 	}
 }
 
-func TestPrepareDocumentRerunWithDeleteIsIdempotentForStaleDocSnapshot(t *testing.T) {
+func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
@@ -1860,11 +1867,11 @@ func TestPrepareDocumentRerunWithDeleteIsIdempotentForStaleDocSnapshot(t *testin
 	}
 
 	svc := testDocumentService(t)
-	if err := svc.prepareDocumentRerunWithDelete(staleDoc, "tenant-1"); err != nil {
-		t.Fatalf("first prepareDocumentRerunWithDelete failed: %v", err)
+	if err := svc.clearDocumentParseResults(staleDoc, "tenant-1"); err != nil {
+		t.Fatalf("first clearDocumentParseResults failed: %v", err)
 	}
-	if err := svc.prepareDocumentRerunWithDelete(staleDoc, "tenant-1"); err != nil {
-		t.Fatalf("second prepareDocumentRerunWithDelete failed: %v", err)
+	if err := svc.clearDocumentParseResults(staleDoc, "tenant-1"); err != nil {
+		t.Fatalf("second clearDocumentParseResults failed: %v", err)
 	}
 
 	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
@@ -1874,6 +1881,126 @@ func TestPrepareDocumentRerunWithDeleteIsIdempotentForStaleDocSnapshot(t *testin
 	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate prepare", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+// TestClearDocumentParseResults_RejectsNonTerminalIngestionTask verifies
+// that re-parsing is refused while a document's ingestion task is still
+// RUNNING or STOPPING. Deleting a non-terminal task would let the in-flight
+// worker keep writing chunks and corrupt the new run's results.
+func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T) {
+	for _, status := range []string{common.RUNNING, common.STOPPING} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+
+			doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+			if err != nil {
+				t.Fatalf("get doc: %v", err)
+			}
+			svc := testDocumentService(t)
+
+			if err := svc.clearDocumentParseResults(doc, "tenant-1"); err == nil {
+				t.Fatalf("expected error for %s ingestion task, got nil", status)
+			}
+			// The non-terminal task must NOT be deleted.
+			task, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+			if task == nil {
+				t.Fatalf("%s ingestion task must not be deleted", status)
+			}
+		})
+	}
+}
+
+// TestClearDocumentParseResults_DeletesTerminalIngestionTask verifies
+// that a terminal ingestion task (STOPPED/COMPLETED/FAILED) and a CREATED
+// (queued) task are deleted so the new run can proceed.
+func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
+	for _, status := range []string{common.CREATED, common.COMPLETED, common.STOPPED, common.FAILED} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+
+			doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+			if err != nil {
+				t.Fatalf("get doc: %v", err)
+			}
+			svc := testDocumentService(t)
+
+			if err := svc.clearDocumentParseResults(doc, "tenant-1"); err != nil {
+				t.Fatalf("clearDocumentParseResults for %s task: %v", status, err)
+			}
+			task, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+			if task != nil {
+				t.Fatalf("%s ingestion task should be deleted, still present", status)
+			}
+		})
+	}
+}
+
+func TestAssertIngestionTasksTerminal_RejectsNonTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
+
+	svc := testDocumentService(t)
+	if err := svc.AssertIngestionTasksTerminal([]string{"doc-1", "doc-2"}); err == nil {
+		t.Fatal("expected error for RUNNING task, got nil")
+	}
+}
+
+func TestAssertIngestionTasksTerminal_AcceptsAllTerminal(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.STOPPED)
+
+	svc := testDocumentService(t)
+	if err := svc.AssertIngestionTasksTerminal([]string{"doc-1", "doc-2"}); err != nil {
+		t.Fatalf("expected nil for all-terminal batch, got %v", err)
+	}
+}
+
+// TestIngest_RerunWithDelete_RejectsBatchWithRunningTask verifies the batch
+// pre-check: when re-parsing with delete, if any document's ingestion task is
+// non-terminal, the whole request is rejected up front so no document is
+// partially cleaned.
+func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
+
+	svc := testDocumentService(t)
+	_, err := svc.Ingest("user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: true,
+	})
+	if err == nil {
+		t.Fatal("expected error for batch with RUNNING task, got nil")
+	}
+	// doc-1 (terminal) task must NOT be deleted - the whole batch was rejected.
+	task1, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+	if task1 == nil {
+		t.Fatal("doc-1 terminal task should not be deleted when batch is rejected")
 	}
 }
 

@@ -213,6 +213,102 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	}
 }
 
+// TestStartRunningMarksDocumentRunning locks in that starting a CREATED task
+// mirrors the transition to its document: run=RUNNING and progress counters
+// reset, with a fresh process_begin_at. The document bookkeeping is owned by
+// the task-lifecycle transition, not the ingestion worker's execution path.
+func TestStartRunningMarksDocumentRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	// Seed the document as a partially-processed, non-RUNNING state that the
+	// start transition must clobber.
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{
+			"run":          string(entity.TaskStatusDone),
+			"progress":     float64(0.5),
+			"progress_msg": "partial",
+		}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if _, err := svc.StartRunning("task-1"); err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+
+	var doc entity.Document
+	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
+		t.Fatalf("run = %v, want RUNNING(%q)", doc.Run, string(entity.TaskStatusRunning))
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("progress = %f, want 0", doc.Progress)
+	}
+	if doc.ChunkNum != 0 {
+		t.Fatalf("chunk_num = %d, want 0", doc.ChunkNum)
+	}
+	if doc.TokenNum != 0 {
+		t.Fatalf("token_num = %d, want 0", doc.TokenNum)
+	}
+	if doc.ProgressMsg != nil && *doc.ProgressMsg != "" {
+		t.Fatalf("progress_msg = %q, want empty", *doc.ProgressMsg)
+	}
+	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
+		t.Fatal("process_begin_at not set")
+	}
+}
+
+// TestStartRunningLeavesTerminalDocumentUntouched locks in the no-resurrection
+// invariant: a task already in a terminal status is returned as-is by
+// StartRunning, and its document's finished run status/counters are not reset.
+func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	finishedRun := string(entity.TaskStatusDone)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{
+			"run":          finishedRun,
+			"progress":     float64(1.0),
+			"progress_msg": "done",
+		}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.COMPLETED).Error; err != nil {
+		t.Fatalf("set COMPLETED: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	task, err := svc.StartRunning("task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.COMPLETED {
+		t.Fatalf("status = %q, want %q (terminal must be preserved)", task.Status, common.COMPLETED)
+	}
+
+	var doc entity.Document
+	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != finishedRun {
+		t.Fatalf("run = %v, want %q (terminal document must not be resurrected)", doc.Run, finishedRun)
+	}
+	if doc.ChunkNum != 10 || doc.TokenNum != 100 {
+		t.Fatalf("counters changed: chunk_num=%d token_num=%d, want 10/100", doc.ChunkNum, doc.TokenNum)
+	}
+}
+
 func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
