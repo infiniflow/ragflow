@@ -348,6 +348,55 @@ def by_somark(
     return None, None, None
 
 
+def by_mistral_ocr(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    mistral_ocr_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not mistral_ocr_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_mistral_ocr_from_env
+
+                mistral_ocr_llm_name = ensure_mistral_ocr_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env mistral ocr: {e}")
+
+        if mistral_ocr_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mistral_ocr_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "Mistral OCR not found.")
+    return None, None, None
+
+
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
@@ -376,6 +425,7 @@ PARSERS = {
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "somark": by_somark,
+    "mistral ocr": by_mistral_ocr,
     "plaintext": by_plaintext,  # default
 }
 
@@ -1003,6 +1053,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paddleocr_llm_name=parser_model_name,
             opendataloader_llm_name=opendataloader_llm_name,
             somark_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -1013,7 +1064,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
