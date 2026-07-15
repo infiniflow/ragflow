@@ -39,7 +39,12 @@ class Pipeline:
             raw = await fn(self.tools, **kwargs)
             elapsed = time.time() - start
             self.trace.append({"tool": tool_name, "args": kwargs, "elapsed": elapsed, "success": True})
-            return self._normalize(raw)
+            result = self._normalize(raw)
+            # Feed the shared citation pool: agent searches go through the
+            # pipeline, so without this their evidence never reaches kbinfos and
+            # the final answer has nothing to cite.
+            self._merge_into_kbinfos(result)
+            return result
         except Exception as e:
             elapsed = time.time() - start
             _LOG.exception("Pipeline.execute(%s) failed", tool_name)
@@ -69,6 +74,27 @@ class Pipeline:
         return list(self.trace)
 
     # ── Private ──
+
+    def _merge_into_kbinfos(self, result: ToolResult) -> None:
+        """Merge a tool result's chunks/doc_aggs into ``tools.kbinfos``, deduped."""
+        if not result or not result.chunks:
+            return
+        kb = self.tools.kbinfos
+        seen = {c.get("chunk_id") or c.get("id") or id(c) for c in kb.get("chunks", [])}
+        for c in result.chunks:
+            k = c.get("chunk_id") or c.get("id") or id(c)
+            if k in seen:
+                continue
+            seen.add(k)
+            kb.setdefault("chunks", []).append(c)
+        aggs = result.metadata.get("aggs") if isinstance(result.metadata, dict) else None
+        if aggs:
+            dseen = {d.get("doc_id") for d in kb.get("doc_aggs", [])}
+            for d in aggs:
+                if d.get("doc_id") in dseen:
+                    continue
+                dseen.add(d.get("doc_id"))
+                kb.setdefault("doc_aggs", []).append(d)
 
     @staticmethod
     def _normalize(raw: Any) -> ToolResult:

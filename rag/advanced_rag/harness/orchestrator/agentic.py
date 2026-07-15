@@ -18,6 +18,12 @@ from rag.advanced_rag.harness.sufficiency import (
 )
 
 _LOG = logging.getLogger(__name__)
+CLAIM_RESEARCH_TIMEOUT_SECONDS = 180
+
+
+def _snip(text: str, limit: int = 160) -> str:
+    text = (text or "").replace("\n", " ").strip()
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 async def agentic_research(state: dict, tools) -> dict:
@@ -47,8 +53,21 @@ async def agentic_research(state: dict, tools) -> dict:
             batch_size = mode.max_parallel_agents
             for i in range(0, len(unverified), batch_size):
                 batch = unverified[i : i + batch_size]
-                tasks = [research_agent_loop(c, tools, pipeline, ctx, mode, compilation_map) for c in batch]
+                _LOG.info(
+                    "[agentic] batch start cycle=%d offset=%d size=%d claim_ids=%s",
+                    cycle + 1,
+                    i,
+                    len(batch),
+                    [c.claim_id for c in batch],
+                )
+                tasks = [_run_claim_research(c, tools, pipeline, ctx, mode, compilation_map) for c in batch]
                 agent_results = await asyncio.gather(*tasks)
+                _LOG.info(
+                    "[agentic] batch done cycle=%d offset=%d size=%d",
+                    cycle + 1,
+                    i,
+                    len(agent_results),
+                )
 
                 for c, result in zip(batch, agent_results):
                     is_verified = result.get("is_verified", False)
@@ -113,6 +132,59 @@ async def agentic_research(state: dict, tools) -> dict:
 
     # Max cycles reached
     return _finalize(ctx, tools, partial=True)
+
+
+async def _run_claim_research(
+    claim: ClaimTarget,
+    tools,
+    pipeline: Pipeline,
+    ctx: OrchestratorContext,
+    mode,
+    compilation_map: dict,
+) -> dict:
+    _LOG.info("[agentic] claim start id=%s desc=%s", claim.claim_id, _snip(claim.description))
+    try:
+        result = await asyncio.wait_for(
+            research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
+            timeout=CLAIM_RESEARCH_TIMEOUT_SECONDS,
+        )
+    except asyncio.CancelledError:
+        raise
+    except asyncio.TimeoutError:
+        _LOG.warning(
+            "[agentic] claim timeout id=%s timeout=%ss desc=%s",
+            claim.claim_id,
+            CLAIM_RESEARCH_TIMEOUT_SECONDS,
+            _snip(claim.description),
+        )
+        return {
+            "report": "",
+            "is_verified": False,
+            "confidence": 0.0,
+            "evidence_ids": [],
+            "gaps": [f"claim research timeout after {CLAIM_RESEARCH_TIMEOUT_SECONDS}s"],
+            "discovered_claims": [],
+        }
+    except Exception:
+        _LOG.exception("[agentic] claim failed id=%s desc=%s", claim.claim_id, _snip(claim.description))
+        return {
+            "report": "",
+            "is_verified": False,
+            "confidence": 0.0,
+            "evidence_ids": [],
+            "gaps": ["claim research failed"],
+            "discovered_claims": [],
+        }
+
+    _LOG.info(
+        "[agentic] claim done id=%s verified=%s confidence=%.2f evidence=%d gaps=%d",
+        claim.claim_id,
+        result.get("is_verified", False),
+        float(result.get("confidence") or 0.0),
+        len(result.get("evidence_ids") or []),
+        len(result.get("gaps") or []),
+    )
+    return result
 
 
 def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False) -> dict:

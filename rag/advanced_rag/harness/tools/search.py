@@ -2,6 +2,7 @@
 
 import logging
 import re
+import hashlib
 from common import settings
 
 _LOG = logging.getLogger(__name__)
@@ -9,7 +10,7 @@ _LOG = logging.getLogger(__name__)
 
 # Sentence terminators: Chinese 。！？；, English ! ? ;, newline, and a
 # digit-guarded English period (so "3.14" / "v1.2" don't split).
-_SENT_END = re.compile(r"[。！？；!?;\n]+|(?<!\d)\.(?!\d)")
+_SENT_END = re.compile(r"[。！？；!?;]+|(?<!\d)\.(?!\d)")
 
 # Table blocks are kept ATOMIC — never split by sentence terminators — so a
 # whole table counts as one "sentence" for keyword matching / narrowing.
@@ -103,12 +104,21 @@ def _narrow_content(content: str, kwds: list[str]) -> str | None:
                 keep.add(i + 1)
     if not matched:
         return None
-    return "..." + "".join(sents[i] for i in sorted(keep)).strip() + "..."
+    narrowed = "".join(sents[i] for i in sorted(keep)).strip()
+    return "..." + _highlight_keywords(narrowed, kwds) + "..."
+
+
+def _highlight_keywords(text: str, kwds: list[str]) -> str:
+    terms = sorted({kw for kw in kwds if kw}, key=len, reverse=True)
+    if not terms:
+        return text
+    pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
+    return pattern.sub(lambda m: f"<em>{m.group(0)}</em>", text)
 
 
 def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     """Narrow each chunk to its keyword-bearing sentences (+/- 1 neighbour) and
-    drop keyword-less chunks when at least one other chunk carries a keyword.
+    drop keyword-less chunks.
 
     Keywords are the comma-separated terms (with close synonyms) produced by
     ``formalize``; matching is case-insensitive substring.
@@ -116,22 +126,27 @@ def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     kwds = [k.strip().lower() for k in (keywords or "").split(",") if k.strip()]
     if not kwds or not chunks:
         return chunks
+    if len(kwds) < 3:
+        kwds = [k.strip().lower() for k in (keywords or "").split(" ") if k.strip()]
+        _kwds = []
+        for i in range(len(kwds)-1):
+            _kwds.append(kwds[i] + " "+ kwds[i+1])
+        kwds = _kwds
 
     scored = [(ck, _narrow_content(ck.get("content_with_weight") or ck.get("content") or "", kwds)) for ck in chunks]
-    any_hit = any(nc is not None for _, nc in scored)
-
     out: list[dict] = []
+    dedup: set[str] = set()
     for ck, nc in scored:
         if nc is not None:
+            nc_hash = hashlib.md5(nc.encode("utf-8")).hexdigest()
+            if nc_hash in dedup:
+                continue
+            dedup.add(nc_hash)
             ck["content_with_weight"] = nc
             if "content" in ck:
                 ck["content"] = nc
             ck.pop("highlight", None)
             out.append(ck)
-        elif not any_hit:
-            # Nobody matched a keyword — keep everything unchanged.
-            out.append(ck)
-        # else: this chunk has no keyword but others do -> drop it.
     return out
 
 
@@ -150,7 +165,7 @@ def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
     return kbinfos
 
 
-async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6, doc_scope: list[str] | None = None, keywords: str = "") -> dict:
+async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "") -> dict:
     if not tools.kb_ids and not kb_ids:
         return {"chunks": [], "doc_aggs": []}
     target_ids = kb_ids or tools.kb_ids
@@ -161,7 +176,7 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
     effective_query = f"{query} {keywords}".strip() if keywords else query
 
     embd_mdl = tools.embed_mdl
-    vector_weight = 0.7 if embd_mdl else 0
+    vector_weight = 0.3 if embd_mdl else 0
 
     kbinfos = await settings.retriever.retrieval(
         effective_query,
@@ -180,11 +195,11 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
     if keywords:
         l = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Hybrid search]: snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[Hybrid search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
     return kbinfos
 
 
-async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6, keywords: str = "") -> dict:
+async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "") -> dict:
     if not tools.embed_mdl:
         _LOG.warning("vector_search: no embed_mdl available")
         return {"chunks": [], "doc_aggs": []}
@@ -207,11 +222,11 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
     if keywords:
         l = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Vector search]: snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[Vector search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
     return _normalize(kbinfos, tools.tenant_ids)
 
 
-async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 6, keywords: str = "") -> dict:
+async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "") -> dict:
     _LOG.info(f"[BM25 search]: {query} -> {keywords}")
     target_ids = kb_ids or tools.kb_ids
     effective_query = f"{query} {keywords}".strip() if keywords else query
@@ -230,7 +245,7 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
     if keywords:
         l = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Vector search]: snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[BM25 search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
     return _normalize(kbinfos, tools.tenant_ids)
 
 

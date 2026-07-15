@@ -13,7 +13,7 @@ async def open_context(tools, chunk_id: str, width: int = 500) -> dict:
     if idx is None:
         return {"chunks": [], "doc_aggs": []}
     start = max(0, idx - 2)
-    end = min(len(chunks), idx + 3)
+    end = min(len(chunks), idx + 2)
     context = chunks[start:end]
     _LOG.info("open_context: chunk=%s index=%d context=%d chunks", chunk_id, idx, len(context))
     return {"chunks": context, "doc_aggs": _collect_doc_aggs(tools, context)}

@@ -46,23 +46,55 @@ class ResearchToolSession:
         self.phase = phase
         self.report: dict | None = None
         self.got_evidence = False
+        self.evidence_ids: list[int] = []
+        self._seen_evidence_ids: set[int] = set()
 
     async def tool_call_async(self, name: str, arguments: dict, request_timeout: float | int = 300):
         arguments = arguments or {}
         if name == "generate_report":
-            self.report = dict(arguments)
+            self.report = self._normalize_report(arguments)
             return "Report received. Stop calling tools now."
         if name == "think_tool":
             return "Noted. Proceed with the next tool call."
         result = await execute_with_fallback(self.pipeline, name, self.phase, **arguments)
         if result.chunks:
             self.got_evidence = True
+            self._record_evidence_ids(result.chunks)
         return _fmt_tool_result(result)
 
-    def tool_call(self, name: str, arguments: dict, timeout: float | int = 300):
-        # The tool loop always prefers ``tool_call_async``; this is only here to
-        # satisfy the ToolCallSession shape.
-        raise NotImplementedError("ResearchToolSession only supports async tool calls")
+    def _normalize_report(self, report: dict) -> dict:
+        normalized = dict(report)
+        evidence_ids = []
+        for eid in normalized.get("evidence_ids") or []:
+            try:
+                idx = int(eid)
+            except (TypeError, ValueError):
+                continue
+            if idx not in evidence_ids:
+                evidence_ids.append(idx)
+        if not evidence_ids and self.evidence_ids:
+            evidence_ids = list(self.evidence_ids)
+        normalized["evidence_ids"] = evidence_ids
+        return normalized
+
+    def _record_evidence_ids(self, chunks: list[dict]) -> None:
+        all_chunks = self.pipeline.tools.kbinfos.get("chunks", [])
+        index_by_key = {}
+        for idx, chunk in enumerate(all_chunks):
+            index_by_key[_chunk_key(chunk)] = idx
+
+        for chunk in chunks:
+            idx = index_by_key.get(_chunk_key(chunk))
+            if idx is None:
+                idx = next((i for i, existing in enumerate(all_chunks) if existing is chunk), None)
+            if idx is None or idx in self._seen_evidence_ids:
+                continue
+            self._seen_evidence_ids.add(idx)
+            self.evidence_ids.append(idx)
+
+
+def _chunk_key(chunk: dict) -> object:
+    return chunk.get("chunk_id") or chunk.get("id") or id(chunk)
 
 
 def _build_tool_schemas(gated_defs: list[dict]) -> list[dict]:
@@ -145,7 +177,7 @@ async def _research_native(
         "report": (final_text or "").strip(),
         "is_verified": session.got_evidence,
         "confidence": 0.5 if session.got_evidence else 0.0,
-        "evidence_ids": [],
+        "evidence_ids": list(session.evidence_ids),
         "gaps": [] if session.got_evidence else ["no generate_report emitted"],
         "discovered_claims": [],
     }

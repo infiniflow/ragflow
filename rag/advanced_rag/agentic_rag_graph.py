@@ -336,8 +336,9 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
         await task
 
     state = holder.get("state") or {}
-    if isinstance(state.get("kbinfos"), dict):
-        tools.kbinfos = state["kbinfos"]
+    final_kb = state.get("kbinfos")
+    if isinstance(final_kb, dict) and final_kb.get("chunks"):
+        tools.kbinfos = final_kb
 
     _LOG.info("[agentic-rag] RUN END | streamed=%s, loops=%d, chunks=%d", produced, state.get("loop", 0), len((state.get("kbinfos") or {}).get("chunks", [])))
 

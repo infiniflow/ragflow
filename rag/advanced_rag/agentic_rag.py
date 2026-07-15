@@ -164,6 +164,9 @@ class RAGTools:
             "evidence from the knowledge bases or the web, call the `rag` tool "
             "with a self-contained question — it runs the full search-and-answer "
             "pipeline and returns a cited answer.\n"
+            "After the `rag` tool returns, do not call `rag` again for the same "
+            "user question. Use the returned cited answer as the final answer "
+            "unless the user explicitly asks a new question.\n"
             f"{summarize_line}"
             "Do not invent facts and do not fabricate document IDs."
         )
@@ -206,9 +209,15 @@ class RAGTools:
             "understood without seeing the prior conversation — resolve pronouns, ellipses and "
             "follow-up shortcuts using earlier turns. Preserve the original language of the last "
             "user message. If it is already a complete standalone question, keep it unchanged.\n"
-            "2. Extract the key search terms of that question and, for each, add 1-2 close synonyms "
-            "or alternative phrasings. Output them ALL TOGETHER as one comma-separated list, in the "
-            "SAME language as the question.\n\n"
+            "2. Extract keywords ONLY from the wording of the STANDALONE QUESTION itself — the "
+            "salient content words and phrases that literally appear in it (key nouns, named "
+            "entities, domain terms). Do NOT answer the question, and do NOT include any term that "
+            "would be part of the answer or is not present in the question. Then, for each extracted "
+            "term, you MAY add 1-2 close synonyms or alternative phrasings OF THAT SAME TERM. Output "
+            "them all together as one comma-separated list, in the SAME language as the question.\n"
+            '   Example — question "In which year did Apple acquire Beats?": keywords = '
+            '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
+            'the year is the ANSWER, so it must NOT appear).\n\n'
             'Output ONLY JSON, no prose, no code fences: '
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
         )
@@ -517,7 +526,7 @@ class RAGTools:
     # ------------------------------------------------------------------ #
     # Bound tools
     # ------------------------------------------------------------------ #
-    @tool(timeout=180)
+    @tool(timeout=600)
     async def rag(self, question: str) -> str:
         """Answer a question with evidence from the knowledge bases and the web.
 
@@ -537,6 +546,8 @@ class RAGTools:
         async for delta in _strip_think_stream(run_agentic_rag(self, messages)):
             if isinstance(delta, str):
                 final += delta
+        for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
+            final = re.sub(p, r, final)
         return final
 
     @tool
