@@ -65,8 +65,15 @@ class LLMCallPool:
             ticket = (int(priority), self._ticket)
             self._ticket += 1
             heapq.heappush(self._waiting, ticket)
-            while self._active >= self.max_concurrency or self._waiting[0] != ticket:
-                await self._condition.wait()
+            try:
+                while self._active >= self.max_concurrency or self._waiting[0] != ticket:
+                    await self._condition.wait()
+            except BaseException:
+                if ticket in self._waiting:
+                    self._waiting.remove(ticket)
+                    heapq.heapify(self._waiting)
+                    self._condition.notify_all()
+                raise
             heapq.heappop(self._waiting)
             self._active += 1
         try:
@@ -1291,6 +1298,11 @@ async def _struct_es_dedup_batch(
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
+
+    def _raise_if_canceled() -> None:
+        if callable(cancel_check) and cancel_check():
+            raise TaskCanceledException("Task was cancelled during ES dedup")
+
     select_fields = [
         "id",
         "content_with_weight",
@@ -1300,6 +1312,8 @@ async def _struct_es_dedup_batch(
         "doc_id",
         "from_entity_kwd",
         "to_entity_kwd",
+        "compilation_template_ids",
+        "compilation_template_kind_kwd",
     ]
 
     # One semaphore shared by all tasks; constructing it per task would not
@@ -1307,6 +1321,7 @@ async def _struct_es_dedup_batch(
     knn_semaphore = asyncio.Semaphore(_ES_DEDUP_KNN_CONCURRENCY)
 
     async def run_knn_shared(item_index: int, doc: dict):
+        _raise_if_canceled()
         async with knn_semaphore:
             return doc, await _struct_es_knn_candidate(
                 doc,
@@ -1319,7 +1334,9 @@ async def _struct_es_dedup_batch(
                 item_index,
             )
 
+    _raise_if_canceled()
     knn_results = await asyncio.gather(*(run_knn_shared(i, d) for i, d in enumerate(docs)))
+    _raise_if_canceled()
     groups: dict[str, tuple[dict, list[dict]]] = {}
     inserts: list[dict] = []
     for doc, old_doc in knn_results:
@@ -1342,6 +1359,7 @@ async def _struct_es_dedup_batch(
             "duplicate_docs": [],
             "merged": None,
             "chunk_ids": list(old_doc.get("source_chunk_ids") or []),
+            "entity_aliases": {},
         }
         for old_id, (old_doc, incoming) in groups.items()
     }
@@ -1376,6 +1394,7 @@ async def _struct_es_dedup_batch(
         decision_batches.append(current_batch)
 
     async def run_decision_batch(batch_no: int, batch_specs: list[dict]):
+        _raise_if_canceled()
         async with llm_semaphore:
             try:
                 result = await _struct_judge_es_group_batch(batch_specs, chat_mdl)
@@ -1387,6 +1406,7 @@ async def _struct_es_dedup_batch(
     decision_results = await asyncio.gather(
         *(run_decision_batch(i, batch) for i, batch in enumerate(decision_batches)),
     )
+    _raise_if_canceled()
     for batch, result in zip(decision_batches, decision_results):
         for spec in batch:
             state = states[spec["old_id"]]
@@ -1398,6 +1418,7 @@ async def _struct_es_dedup_batch(
                     state["separate"].append(doc)
 
     async def merge_one_group(old_id: str, state: dict):
+        _raise_if_canceled()
         duplicate_docs = state["duplicate_docs"]
         if not duplicate_docs:
             return
@@ -1408,6 +1429,7 @@ async def _struct_es_dedup_batch(
         # A normal group gets exactly one merge request.  Only pathological
         # groups are folded in <= batch-sized sequential pieces.
         for start in range(0, len(duplicate_docs), _ES_DEDUP_LLM_BATCH_SIZE):
+            _raise_if_canceled()
             candidate_docs = duplicate_docs[start : start + _ES_DEDUP_LLM_BATCH_SIZE]
             separate, candidate_merged = await _struct_merge_es_group(current_doc, candidate_docs, chat_mdl)
             state["separate"].extend(separate)
@@ -1420,9 +1442,9 @@ async def _struct_es_dedup_batch(
                 for candidate in candidate_docs:
                     candidate_name = _struct_entity_name(candidate)
                     if candidate_name and candidate_name != canonical_name:
-                        entity_aliases[candidate_name] = canonical_name
+                        state["entity_aliases"][candidate_name] = canonical_name
                 if old_name and old_name != canonical_name:
-                    entity_aliases[old_name] = canonical_name
+                    state["entity_aliases"][old_name] = canonical_name
             separate_ids = {id(doc) for doc in separate}
             current_chunk_ids = _struct_union_chunk_ids(
                 current_chunk_ids,
@@ -1437,95 +1459,13 @@ async def _struct_es_dedup_batch(
 
     merge_jobs = [merge_one_group(old_id, state) for old_id, state in states.items() if state["duplicate_docs"]]
     await asyncio.gather(*merge_jobs)
+    _raise_if_canceled()
 
     existing_relation_updates = 0
-    if entity_aliases:
-        for i, doc in enumerate(inserts):
-            inserts[i] = await _struct_rewrite_relation_doc(doc, entity_aliases, embd_mdl)
-
-        # Rewrite relation payloads already selected for an ES merge before
-        # their final embedding/write. Existing relation rows are handled
-        # below by a scoped search so old edges do not retain stale endpoints.
-        for state in states.values():
-            if state["old_doc"].get("knowledge_graph_kwd") != "relation" or state["merged"] is None:
-                continue
-            if _struct_rewrite_relation_payload(state["merged"], entity_aliases):
-                state["old_doc"]["from_entity_kwd"] = _struct_resolve_entity_alias(state["old_doc"].get("from_entity_kwd", ""), entity_aliases)
-                state["old_doc"]["to_entity_kwd"] = _struct_resolve_entity_alias(state["old_doc"].get("to_entity_kwd", ""), entity_aliases)
-
-        relation_fields = [
-            "id",
-            "content_with_weight",
-            "source_chunk_ids",
-            "knowledge_graph_kwd",
-            "compile_kwd",
-            "doc_id",
-            "from_entity_kwd",
-            "to_entity_kwd",
-            "compilation_template_ids",
-            "compilation_template_kind_kwd",
-        ]
-        scopes = {
-            (
-                state["old_doc"].get("doc_id"),
-                state["old_doc"].get("compile_kwd"),
-                _struct_doc_template_id(state["old_doc"]),
-            )
-            for state in states.values()
-            if state["old_doc"].get("knowledge_graph_kwd") == "entity"
-        }
-        relation_rewrites = []
-        from common.doc_store.doc_store_base import OrderByExpr
-
-        for doc_id, compile_kwd, template_id in scopes:
-            condition = {
-                "doc_id": [doc_id],
-                "compile_kwd": [compile_kwd],
-                "knowledge_graph_kwd": ["relation"],
-            }
-            if template_id:
-                condition["compilation_template_ids"] = [template_id]
-            try:
-                res = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    relation_fields,
-                    [],
-                    condition,
-                    [],
-                    OrderByExpr(),
-                    0,
-                    10000,
-                    index,
-                    [kb_id],
-                )
-                rows = settings.docStoreConn.get_fields(res, relation_fields)
-            except Exception:
-                logging.exception("merge_compiled_structures: relation reference search failed")
-                continue
-            for row_id, row in rows.items():
-                payload = _struct_load_payload(row)
-                if not isinstance(payload, dict) or not _struct_rewrite_relation_payload(payload, entity_aliases):
-                    continue
-                base = dict(row)
-                base["id"] = row_id
-                base["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
-                base["from_entity_kwd"] = _struct_resolve_entity_alias(base.get("from_entity_kwd", ""), entity_aliases)
-                base["to_entity_kwd"] = _struct_resolve_entity_alias(base.get("to_entity_kwd", ""), entity_aliases)
-                relation_rewrites.append((base, payload))
-
-        for start in range(0, len(relation_rewrites), _ES_DEDUP_EMBED_BATCH_SIZE):
-            rewrite_batch = relation_rewrites[start : start + _ES_DEDUP_EMBED_BATCH_SIZE]
-            vectors = await _struct_embed(embd_mdl, [_struct_payload_description(payload) for _, payload in rewrite_batch])
-            rewritten_docs = [_struct_rebuild_es_doc(payload, base, vector, base.get("source_chunk_ids") or [], preserve_id=True) for (base, payload), vector in zip(rewrite_batch, vectors)]
-            if rewritten_docs:
-                await thread_pool_exec(settings.docStoreConn.insert, rewritten_docs, index, kb_id)
-                existing_relation_updates += len(rewritten_docs)
 
     merged_jobs = []
     for old_id, state in states.items():
         separate_docs = state["separate"]
-        if entity_aliases:
-            separate_docs = [await _struct_rewrite_relation_doc(d, entity_aliases, embd_mdl) for d in separate_docs]
         inserts.extend(separate_docs)
         if state["merged"] is None:
             continue
@@ -1535,6 +1475,7 @@ async def _struct_es_dedup_batch(
                 "old_doc": state["old_doc"],
                 "payload": state["merged"],
                 "chunk_ids": state["chunk_ids"],
+                "entity_aliases": dict(state.get("entity_aliases") or {}),
             }
         )
 
@@ -1560,7 +1501,9 @@ async def _struct_es_dedup_batch(
     writes = inserts + [job["rebuilt"] for job in updated_jobs]
     inserted = 0
     updated = 0
+    successful_entity_aliases: dict[str, str] = {}
     for start in range(0, len(writes), _ES_DEDUP_INSERT_BATCH_SIZE):
+        _raise_if_canceled()
         batch = writes[start : start + _ES_DEDUP_INSERT_BATCH_SIZE]
         if not batch:
             continue
@@ -1569,9 +1512,96 @@ async def _struct_es_dedup_batch(
             updated_in_batch = sum(1 for doc in batch if any(doc is job.get("rebuilt") for job in updated_jobs))
             updated += updated_in_batch
             inserted += len(batch) - updated_in_batch
+            for job in updated_jobs:
+                if job.get("rebuilt") not in batch:
+                    continue
+                if job["old_doc"].get("knowledge_graph_kwd") == "entity":
+                    successful_entity_aliases.update(job.get("entity_aliases") or {})
         except Exception:
             logging.exception("merge_compiled_structures: bulk insert failed for %d docs", len(batch))
-        return inserted, updated + existing_relation_updates
+
+    # Only publish aliases after the canonical entity writes have completed.
+    entity_aliases.update(successful_entity_aliases)
+    if entity_aliases:
+        relation_fields = [
+            "id",
+            "content_with_weight",
+            "source_chunk_ids",
+            "knowledge_graph_kwd",
+            "compile_kwd",
+            "doc_id",
+            "from_entity_kwd",
+            "to_entity_kwd",
+            "compilation_template_ids",
+            "compilation_template_kind_kwd",
+        ]
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        scopes = {
+            (
+                state["old_doc"].get("doc_id"),
+                state["old_doc"].get("compile_kwd"),
+                _struct_doc_template_id(state["old_doc"]),
+            )
+            for state in states.values()
+            if state["old_doc"].get("knowledge_graph_kwd") == "entity"
+        }
+        for doc_id, compile_kwd, template_id in scopes:
+            condition = {
+                "doc_id": [doc_id],
+                "compile_kwd": [compile_kwd],
+                "knowledge_graph_kwd": ["relation"],
+            }
+            if template_id:
+                condition["compilation_template_ids"] = [template_id]
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    relation_fields,
+                    [],
+                    condition,
+                    [],
+                    OrderByExpr(),
+                    0,
+                    10000,
+                    index,
+                    [kb_id],
+                )
+                rows = settings.docStoreConn.get_fields(res, relation_fields)
+            except Exception:
+                logging.exception("merge_compiled_structures: relation reference search failed")
+                continue
+            rewrite_batch = []
+            for row_id, row in rows.items():
+                payload = _struct_load_payload(row)
+                if not isinstance(payload, dict) or not _struct_rewrite_relation_payload(payload, entity_aliases):
+                    continue
+                base = dict(row)
+                base["id"] = row_id
+                base["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
+                base["from_entity_kwd"] = _struct_resolve_entity_alias(base.get("from_entity_kwd", ""), entity_aliases)
+                base["to_entity_kwd"] = _struct_resolve_entity_alias(base.get("to_entity_kwd", ""), entity_aliases)
+                rewrite_batch.append((base, payload))
+            for start in range(0, len(rewrite_batch), _ES_DEDUP_EMBED_BATCH_SIZE):
+                batch = rewrite_batch[start : start + _ES_DEDUP_EMBED_BATCH_SIZE]
+                vectors = await _struct_embed(embd_mdl, [_struct_payload_description(payload) for _, payload in batch])
+                rewritten = [_struct_rebuild_es_doc(payload, base, vector, base.get("source_chunk_ids") or [], preserve_id=True) for (base, payload), vector in zip(batch, vectors)]
+                if rewritten:
+                    await thread_pool_exec(settings.docStoreConn.insert, rewritten, index, kb_id)
+                    existing_relation_updates += len(rewritten)
+        rewritten_inserts = [await _struct_rewrite_relation_doc(doc, entity_aliases, embd_mdl) if doc.get("knowledge_graph_kwd") == "relation" else doc for doc in inserts]
+        if rewritten_inserts != inserts:
+            await thread_pool_exec(settings.docStoreConn.insert, rewritten_inserts, index, kb_id)
+        for job in merged_jobs:
+            if job["old_doc"].get("knowledge_graph_kwd") != "relation":
+                continue
+            if not _struct_rewrite_relation_payload(job["payload"], entity_aliases):
+                continue
+            vector = await _struct_reembed_payload(job["payload"], embd_mdl)
+            if vector is not None:
+                rewritten = _struct_rebuild_es_doc(job["payload"], job["old_doc"], vector, job["chunk_ids"], preserve_id=True)
+                await thread_pool_exec(settings.docStoreConn.insert, [rewritten], index, kb_id)
+    return inserted, updated + existing_relation_updates
 
 
 async def _struct_local_dedup(
@@ -1715,8 +1745,8 @@ def _struct_entity_candidate_groups(docs: list[dict], similarity_threshold: floa
         if len(valid) > 1:
             matrix = cosine_similarity([list(vectors[i]) for i in valid])
             for left_offset, left in enumerate(valid):
-                for right in valid[left_offset + 1 :]:
-                    right_offset = valid.index(right)
+                for right_offset in range(left_offset + 1, len(valid)):
+                    right = valid[right_offset]
                     if float(matrix[left_offset, right_offset]) >= similarity_threshold:
                         union(left, right)
 
@@ -1787,129 +1817,6 @@ async def _struct_local_dedup_parallel(
         deduped_relations.extend(group_docs)
         dropped += group_dropped
     return deduped_entities + deduped_relations, dropped
-
-
-async def _struct_es_dedup_one(
-    doc: dict,
-    chat_mdl,
-    embd_mdl,
-    tenant_id: str,
-    kb_id: str,
-    similarity_threshold: float,
-    timing_context: str | None = None,
-    item_index: int | None = None,
-) -> str:
-    """Persist a single doc into ES with merge-or-insert semantics.
-
-    Returns one of: 'inserted', 'updated', 'skipped'.
-    """
-    from common import settings
-    from rag.nlp import search as _rag_search
-    from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
-
-    index = _rag_search.index_name(tenant_id)
-
-    condition = {
-        "compile_kwd": [doc["compile_kwd"]],
-        "doc_id": [doc["doc_id"]],
-    }
-    if doc.get("knowledge_graph_kwd"):
-        condition["knowledge_graph_kwd"] = [doc["knowledge_graph_kwd"]]
-    if doc.get("from_entity_kwd"):
-        condition["from_entity_kwd"] = [doc["from_entity_kwd"]]
-    if doc.get("to_entity_kwd"):
-        condition["to_entity_kwd"] = [doc["to_entity_kwd"]]
-    # KNN dedup must stay within the same template — two templates can
-    # produce identical-looking entities (e.g. two "list" kinds extracting
-    # the same headline) but they live on independent tabs in the UI.
-    incoming_template = _struct_doc_template_id(doc)
-    if incoming_template:
-        condition["compilation_template_ids"] = [incoming_template]
-
-    vec_field, vec = _struct_doc_vec(doc)
-    if not vec_field or vec is None:
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-        return "inserted"
-
-    match_expr = MatchDenseExpr(
-        vector_column_name=vec_field,
-        embedding_data=list(vec),
-        embedding_data_type="float",
-        distance_type="cosine",
-        topn=1,
-        extra_options={"similarity": similarity_threshold},
-    )
-    select_fields = [
-        "id",
-        "content_with_weight",
-        "source_chunk_ids",
-        "knowledge_graph_kwd",
-        "compile_kwd",
-        "doc_id",
-        "from_entity_kwd",
-        "to_entity_kwd",
-    ]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            select_fields,
-            [],
-            condition,
-            [match_expr],
-            OrderByExpr(),
-            0,
-            1,
-            index,
-            [kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, select_fields)
-    except Exception:
-        logging.exception("merge_compiled_structures: ES KNN search failed; inserting as new")
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-        return "inserted"
-
-    if not field_map:
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-        return "inserted"
-
-    old_id, old_doc = next(iter(field_map.items()))
-    old_doc = dict(old_doc)
-    old_doc.setdefault("id", old_id)
-
-    merged_payload = await _struct_merge_pair(old_doc, doc, chat_mdl)
-    if merged_payload is None:
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-        return "inserted"
-
-    merged_payload = _struct_apply_merge_invariants(old_doc, merged_payload)
-    merged_chunk_ids = _struct_union_chunk_ids(
-        old_doc.get("source_chunk_ids"),
-        doc.get("source_chunk_ids"),
-    )
-    new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
-    if new_vec is None:
-        return "skipped"
-
-    rebuilt = _struct_rebuild_es_doc(
-        merged_payload,
-        old_doc,
-        new_vec,
-        merged_chunk_ids,
-        preserve_id=True,
-    )
-    update_fields = {k: v for k, v in rebuilt.items() if k != "id"}
-    try:
-        await thread_pool_exec(
-            settings.docStoreConn.update,
-            {"id": old_id},
-            update_fields,
-            index,
-            kb_id,
-        )
-        return "updated"
-    except Exception:
-        logging.exception("merge_compiled_structures: ES update failed for id %s", old_id)
-        return "skipped"
 
 
 def _struct_graph_row_id(
@@ -2297,7 +2204,7 @@ async def validate_and_correct_chain(
         # Fail open for a failed or malformed batch: retain its relations.
         batch_keep = set(batch_edges)
         batch_docs = [doc for edge in batch_edges for doc in edge_to_docs.get(edge, ())]
-        batch_relations = [{"from": e[0], "to": e[1], "issue": "; ".join(violations[e])} for e in batch_edges]
+        batch_relations = [{"from": e[0], "to": e[1], "issue": "; ".join(violations.get(e, ("cross-batch conflict",)))} for e in batch_edges]
         chunk_pairs = _chain_gather_chunk_text(batch_docs, chunks_by_id)
         source_chunks_text = "\n\n".join(f"[{cid}]\n{text}" for cid, text in chunk_pairs) or "(no source chunks available)"
         prompt = CHAIN_CORRECTION_PROMPT.format(
@@ -2331,6 +2238,16 @@ async def validate_and_correct_chain(
     batch_keeps = await asyncio.gather(*(correct_batch(i, batch) for i, batch in enumerate(correction_batches)))
     for batch_keep in batch_keeps:
         keep_set.update(batch_keep)
+
+    # Independent corrections can be valid inside each request but conflict
+    # after their results are combined. Re-check the combined keep set and
+    # give the model one final decision over the remaining conflicts.
+    combined_violations = _chain_detect_violations(list(keep_set))
+    if combined_violations:
+        conflict_edges = list(combined_violations)
+        final_keep = await correct_batch(-1, conflict_edges)
+        keep_set.difference_update(conflict_edges)
+        keep_set.update(final_keep)
 
     if keep_set == bad_edge_set:
         # LLM kept everything → no correction applied.
@@ -2409,6 +2326,8 @@ async def merge_compiled_structures(
     if not docs:
         return {"inserted": 0, "updated": 0, "duplicates_dropped": 0}
 
+    if callable(cancel_check) and cancel_check():
+        raise TaskCanceledException("Task was cancelled before local dedup")
     deduped, dropped = await _struct_local_dedup_parallel(
         docs,
         chat_mdl,
@@ -2417,6 +2336,8 @@ async def merge_compiled_structures(
         timing_context=timing_context,
     )
 
+    if callable(cancel_check) and cancel_check():
+        raise TaskCanceledException("Task was cancelled after local dedup")
     if chain_kind in CHAIN_KINDS:
         try:
             deduped = await asyncio.wait_for(
@@ -2434,6 +2355,8 @@ async def merge_compiled_structures(
         except Exception:
             logging.exception("chain validate: unexpected failure; using local-deduped docs")
 
+    if callable(cancel_check) and cancel_check():
+        raise TaskCanceledException("Task was cancelled after chain validation")
     graph_keys = {
         (
             str(d.get("doc_id")),

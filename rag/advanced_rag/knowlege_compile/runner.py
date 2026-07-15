@@ -267,21 +267,17 @@ async def run_structure_compile_over_batches(
             label=f"compile:{template_id}:batch-{batch_no}",
             context=context,
         )
-        try:
-            docs = await compile_structure_from_text(
-                batch,
-                parser_cfg,
-                compile_chat_mdl,
-                embedding_model,
-                doc_id,
-                language=language,
-                callback=progress_cb,
-                max_workers=3,
-                compilation_template_id=template_id,
-            )
-            return docs
-        except BaseException:
-            raise
+        return await compile_structure_from_text(
+            batch,
+            parser_cfg,
+            compile_chat_mdl,
+            embedding_model,
+            doc_id,
+            language=language,
+            callback=progress_cb,
+            max_workers=3,
+            compilation_template_id=template_id,
+        )
 
     async def _commit_result(batch_no: int, batch_len: int, template_id: str, docs: list[dict]) -> None:
         if docs:
@@ -303,47 +299,78 @@ async def run_structure_compile_over_batches(
             await _commit_result(batch_no, batch_len, template_id, docs)
             commit_sequence += 1
 
+    async def _cancel_pending() -> None:
+        pending = [task for task in (*inflight, *flush_tasks) if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        inflight.clear()
+        flush_tasks.clear()
+
     async def _reap_one() -> None:
         if not inflight:
             return
-        done, _ = await asyncio.wait(tuple(inflight), return_when=asyncio.FIRST_COMPLETED)
+        try:
+            done, _ = await asyncio.wait(tuple(inflight), return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            await _cancel_pending()
+            raise
         for task in done:
             sequence, batch_no, batch_len, template_id = inflight.pop(task)
             try:
                 docs = task.result()
             except BaseException:
-                for other in inflight:
-                    if not other.done():
-                        other.cancel()
-                await asyncio.gather(*inflight, return_exceptions=True)
+                await _cancel_pending()
                 raise
             completed[sequence] = (batch_no, batch_len, template_id, docs)
         await _commit_ready()
 
-    batch_no = 0
-    async for batch in chunk_batches:
-        batch_no += 1
-        for chunk in batch:
-            cid = chunk.get("id")
-            if isinstance(cid, str) and cid not in chunks_by_id:
-                text = chunk.get("content_with_weight") or chunk.get("text") or ""
-                chunks_by_id[cid] = text if isinstance(text, str) else ""
-        for template_id, parser_cfg in active_templates:
-            task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
-            inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
-            submit_sequence += 1
-            if len(inflight) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
-                await _reap_one()
+    async def _submit_batches() -> None:
+        nonlocal submit_sequence
+        batch_no = 0
+        try:
+            async for batch in chunk_batches:
+                batch_no += 1
+                for chunk in batch:
+                    cid = chunk.get("id")
+                    if isinstance(cid, str) and cid not in chunks_by_id:
+                        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+                        chunks_by_id[cid] = text if isinstance(text, str) else ""
+                for template_id, parser_cfg in active_templates:
+                    if cancel_check():
+                        raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+                    task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
+                    inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
+                    submit_sequence += 1
+                    if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
+                        await _reap_one()
+        except BaseException:
+            await _cancel_pending()
+            raise
+
+    await _submit_batches()
 
     while inflight:
+        if cancel_check():
+            await _cancel_pending()
+            raise TaskCanceledException("Task was cancelled during document knowledge compilation")
         await _reap_one()
     await _commit_ready()
 
     for template_id, _ in active_templates:
+        if cancel_check():
+            await _cancel_pending()
+            raise TaskCanceledException("Task was cancelled before merge flush")
         await _flush(template_id)
     if flush_tasks:
-        await asyncio.gather(*flush_tasks)
-        flush_tasks.clear()
+        try:
+            await asyncio.gather(*flush_tasks)
+        except BaseException:
+            await _cancel_pending()
+            raise
+        finally:
+            flush_tasks.clear()
 
     for idx, (template_id, parser_cfg) in enumerate(active_templates):
         if cancel_check():
