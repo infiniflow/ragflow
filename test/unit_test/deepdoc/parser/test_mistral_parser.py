@@ -139,6 +139,17 @@ def test_normalize_pages_maps_bbox_and_page_size(monkeypatch):
     assert first_text["bbox"] == [40, 200, 500, 230]  # [x0, top, x1, bott]
 
 
+def test_normalize_pages_bbox_none_when_no_coords(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    resp = {"pages": [{"index": 0, "dimensions": {"width": 100, "height": 100},
+                       "blocks": [{"type": "image", "content": ""}]}]}
+    pages = p._normalize_pages(resp)
+    assert pages[0]["blocks"][0]["bbox"] is None
+    # geometry-less image must be skipped, not emitted as a zero-area crop
+    assert p._transfer_to_sections(pages) == []
+
+
 def test_transfer_naive_path_returns_2_tuples_without_header(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m)
@@ -173,14 +184,23 @@ def test_transfer_naive_image_carries_caption_and_tag(monkeypatch):
 def test_line_tag_rescales_per_page_dimensions(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m)
-    # page_images sized to the rendered pixels; page 1 is wider (1021) than page 0 (720)
+
     class _Img:
-        def __init__(self, size): self.size = size
-    p.page_images = [_Img((720, 1018)), _Img((1021, 681))]
-    tag0 = p._line_tag({"page_idx": 0, "bbox": [0, 0, 720, 1018], "page_size": {"w": 720, "h": 1018}})
-    assert tag0.startswith("@@1\t") and tag0.endswith("##")
-    tag1 = p._line_tag({"page_idx": 1, "bbox": [0, 0, 1021, 681], "page_size": {"w": 1021, "h": 681}})
-    assert tag1.startswith("@@2\t")
+        def __init__(self, size):
+            self.size = size
+
+    # Distinct scale factors per page and per axis so a swapped-axis or
+    # wrong-page-index bug cannot pass: page 0 scales x by 3.0, y by 4.0;
+    # page 1 scales x by 4.0, y by 6.0.
+    p.page_images = [_Img((300, 800)), _Img((200, 600))]
+
+    tag0 = p._line_tag({"page_idx": 0, "bbox": [10, 20, 40, 60],
+                        "page_size": {"w": 100, "h": 200}})
+    assert tag0 == "@@1\t30.0\t120.0\t80.0\t240.0##"
+
+    tag1 = p._line_tag({"page_idx": 1, "bbox": [5, 10, 25, 40],
+                        "page_size": {"w": 50, "h": 100}})
+    assert tag1 == "@@2\t20.0\t100.0\t60.0\t240.0##"
 
 
 def test_transfer_to_tables_is_empty(monkeypatch):

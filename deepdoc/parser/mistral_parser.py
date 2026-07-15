@@ -105,12 +105,16 @@ class MistralParser(RAGFlowPdfParser):
             page_size = {"w": dims.get("width") or 1, "h": dims.get("height") or 1}
             blocks = []
             for b in page.get("blocks") or []:
-                bbox = [
-                    b.get("top_left_x", 0),
-                    b.get("top_left_y", 0),
-                    b.get("bottom_right_x", 0),
-                    b.get("bottom_right_y", 0),
-                ]
+                coord_keys = ("top_left_x", "top_left_y", "bottom_right_x", "bottom_right_y")
+                if any(k in b for k in coord_keys):
+                    bbox = [
+                        b.get("top_left_x", 0),
+                        b.get("top_left_y", 0),
+                        b.get("bottom_right_x", 0),
+                        b.get("bottom_right_y", 0),
+                    ]
+                else:
+                    bbox = None
                 blocks.append({
                     "type": b.get("type"),
                     "content": b.get("content"),
