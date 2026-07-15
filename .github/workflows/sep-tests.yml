@@ -209,8 +209,12 @@ jobs:
             api_proxy_schemes='["go","python"]'
           elif [[ "$has_go" == "true" ]]; then
             api_proxy_schemes='["go"]'
-          else
+          elif [[ "$has_python" == "true" ]]; then
             api_proxy_schemes='["python"]'
+          elif [[ "$has_web" == "true" ]]; then
+            api_proxy_schemes='["web"]'
+          else
+            api_proxy_schemes='["go","python"]'
           fi
 
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
@@ -333,11 +337,13 @@ jobs:
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
+        if: env.API_PROXY_SCHEME != 'web'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -490,6 +496,7 @@ jobs:
 
 
       - name: Start ragflow:nightly for Infinity
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -517,6 +524,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run New RESTFUL api tests against Infinity
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -813,11 +821,13 @@ jobs:
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
+        if: env.API_PROXY_SCHEME != 'web'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -970,6 +980,7 @@ jobs:
 
 
       - name: Start ragflow:nightly for Elasticsearch
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -997,6 +1008,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-es-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run New RESTFUL api tests against Elasticsearch
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
