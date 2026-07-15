@@ -28,6 +28,38 @@
       ]
     },
     {
+      "name": "qwen3-vl-plus",
+      "max_tokens": 260096,
+      "model_types": [
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen3-vl-plus",
+      "max_tokens": 260096,
+      "model_types": [
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen-tts-flash",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen-asr-flash",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "fun-asr",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
       "name": "text-embedding-v3",
       "max_tokens": 8192,
       "model_types": [
