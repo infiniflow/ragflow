@@ -464,6 +464,18 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			p.ModelID = m
 		}
 	}
+	if p.Driver == "" && p.ModelID != "" {
+		modelID, driver, apiKey, baseURL, ok, err := resolveTenantChatModelByID(ctx, p.ModelID, p.APIKey, p.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			p.ModelID = modelID
+			p.Driver = driver
+			p.APIKey = apiKey
+			p.BaseURL = baseURL
+		}
+	}
 	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 
 	var state *runtime.CanvasState
