@@ -350,11 +350,9 @@ class MistralOcrModel(Base, MistralParser):
         key_as_secret = key if isinstance(key, str) and key and not key.lstrip().startswith("{") else ""
 
         def _resolve(ui_key: str, env_key: str, default=""):
-            return config.get(ui_key, config.get(env_key,
-                kwargs.get(ui_key, kwargs.get(env_key, os.environ.get(env_key, default)))))
+            return config.get(ui_key, config.get(env_key, kwargs.get(ui_key, kwargs.get(env_key, os.environ.get(env_key, default)))))
 
-        base_url = _resolve("mistral_ocr_base_url", "MISTRAL_OCR_BASE_URL",
-                            kwargs.get("base_url") or "https://api.mistral.ai/v1")
+        base_url = _resolve("mistral_ocr_base_url", "MISTRAL_OCR_BASE_URL", kwargs.get("base_url") or "https://api.mistral.ai/v1")
         api_key = _resolve("api_key", "MISTRAL_OCR_API_KEY", key_as_secret)
         table_format = _resolve("mistral_ocr_table_format", "MISTRAL_OCR_TABLE_FORMAT", "html")
         keep_hf = _resolve("mistral_ocr_keep_header_footer", "MISTRAL_OCR_KEEP_HEADER_FOOTER", 0)
@@ -371,12 +369,17 @@ class MistralOcrModel(Base, MistralParser):
     def check_available(self) -> tuple[bool, str]:
         return self.check_installation()
 
-    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw",
-                  from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs):
+    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs):
         ok, reason = self.check_available()
         if not ok:
             raise RuntimeError(f"Mistral OCR not accessible: {reason}")
         return MistralParser.parse_pdf(
-            self, filepath=filepath, binary=binary, callback=callback,
-            parse_method=parse_method, from_page=from_page, to_page=to_page, **kwargs,
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            from_page=from_page,
+            to_page=to_page,
+            **kwargs,
         )

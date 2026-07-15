@@ -22,7 +22,6 @@ SoMark produces so the proven section-building contract is reused verbatim.
 
 import base64
 import logging
-import os
 import re
 from io import BytesIO
 from os import PathLike
@@ -36,9 +35,6 @@ from PIL import Image
 
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER, RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
-
-# RAGFlow internal layout types the rest of the pipeline understands.
-_KNOWN_INTERNAL_TYPES = {"text", "image", "table", "equation", "code"}
 
 # Mistral block "type" -> RAGFlow internal layout type.
 # header/footer are resolved at runtime via keep_header_footer.
@@ -86,16 +82,14 @@ class MistralParser(RAGFlowPdfParser):
     # ------------------------------------------------------------------
     # Page image rendering
     # ------------------------------------------------------------------
-    def __images__(self, fnm, zoomin: int = 1, page_from: int = 0,
-                   page_to: int = MAXIMUM_PAGE_NUMBER, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from: int = 0, page_to: int = MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         try:
             ctx = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm))
             with ctx as pdf:
                 self.pdf = pdf
-                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original
-                                    for _, p in enumerate(self.pdf.pages[page_from:page_to])]
+                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as exc:
             self.page_images = None
             self.total_page = 0
@@ -146,17 +140,21 @@ class MistralParser(RAGFlowPdfParser):
                     ]
                 else:
                     bbox = None
-                blocks.append({
-                    "type": b.get("type"),
-                    "content": b.get("content"),
-                    "bbox": bbox,
-                    "table_id": b.get("table_id"),
-                })
-            out.append({
-                "page_num": page.get("index", 0),
-                "page_size": page_size,
-                "blocks": blocks,
-            })
+                blocks.append(
+                    {
+                        "type": b.get("type"),
+                        "content": b.get("content"),
+                        "bbox": bbox,
+                        "table_id": b.get("table_id"),
+                    }
+                )
+            out.append(
+                {
+                    "page_num": page.get("index", 0),
+                    "page_size": page_size,
+                    "blocks": blocks,
+                }
+            )
         return out
 
     # ------------------------------------------------------------------
@@ -389,28 +387,23 @@ class MistralParser(RAGFlowPdfParser):
             payload["pages"] = pages
         return payload
 
-    def _call_ocr(self, pdf_bytes: bytes, filename: str,
-                  pages: Optional[list[int]], callback=None) -> dict:
+    def _call_ocr(self, pdf_bytes: bytes, filename: str, pages: Optional[list[int]], callback=None) -> dict:
         ok, reason = self.check_installation()
         if not ok:
             raise RuntimeError(reason)
 
         if len(pdf_bytes) <= self.inline_max_bytes:
             b64 = base64.b64encode(pdf_bytes).decode()
-            document = {"type": "document_url",
-                        "document_url": f"data:application/pdf;base64,{b64}"}
+            document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{b64}"}
             return self._post_ocr(self._ocr_payload(document, pages))
 
         # Large file: upload -> signed url -> ocr -> delete.
         file_id = None
         try:
-            r = requests.post(f"{self.base_url}/files", headers=self._headers(),
-                              files={"file": (filename, pdf_bytes, "application/pdf")},
-                              data={"purpose": "ocr"}, timeout=self.timeout)
+            r = requests.post(f"{self.base_url}/files", headers=self._headers(), files={"file": (filename, pdf_bytes, "application/pdf")}, data={"purpose": "ocr"}, timeout=self.timeout)
             self._raise_for_status(r, "/files upload")
             file_id = r.json().get("id")
-            r = requests.get(f"{self.base_url}/files/{file_id}/url",
-                             headers=self._headers(), params={"expiry": 24}, timeout=self.timeout)
+            r = requests.get(f"{self.base_url}/files/{file_id}/url", headers=self._headers(), params={"expiry": 24}, timeout=self.timeout)
             self._raise_for_status(r, "signed-url fetch")
             signed = r.json().get("url")
             document = {"type": "document_url", "document_url": signed}
@@ -418,22 +411,19 @@ class MistralParser(RAGFlowPdfParser):
         finally:
             if file_id:
                 try:
-                    requests.delete(f"{self.base_url}/files/{file_id}",
-                                    headers=self._headers(), timeout=self.timeout)
+                    requests.delete(f"{self.base_url}/files/{file_id}", headers=self._headers(), timeout=self.timeout)
                 except Exception:
                     self.logger.warning("failed to delete uploaded file %s", file_id)
 
     def _post_ocr(self, payload: dict) -> dict:
-        r = requests.post(f"{self.base_url}/ocr", headers=self._headers(),
-                          json=payload, timeout=self.timeout)
+        r = requests.post(f"{self.base_url}/ocr", headers=self._headers(), json=payload, timeout=self.timeout)
         self._raise_for_status(r, "OCR")
         return r.json()
 
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
-    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw",
-                  from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple:
+    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple:
         # Load bytes.
         if binary is not None:
             pdf_bytes = binary.getvalue() if hasattr(binary, "getvalue") else bytes(binary)

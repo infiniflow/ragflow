@@ -97,18 +97,13 @@ def _ocr_response():
                 "index": 0,
                 "dimensions": {"dpi": 87, "width": 720, "height": 1018},
                 "markdown": "# Title\n\nhello",
-                "images": [{"id": "img-0.jpeg", "top_left_x": 251, "top_left_y": 72,
-                            "bottom_right_x": 311, "bottom_right_y": 145}],
+                "images": [{"id": "img-0.jpeg", "top_left_x": 251, "top_left_y": 72, "bottom_right_x": 311, "bottom_right_y": 145}],
                 "tables": [],
                 "blocks": [
-                    {"type": "header", "content": "Cofinanziato", "top_left_x": 135,
-                     "top_left_y": 72, "bottom_right_x": 213, "bottom_right_y": 145},
-                    {"type": "title", "content": "Title", "top_left_x": 40,
-                     "top_left_y": 160, "bottom_right_x": 400, "bottom_right_y": 190},
-                    {"type": "text", "content": "hello world", "top_left_x": 40,
-                     "top_left_y": 200, "bottom_right_x": 500, "bottom_right_y": 230},
-                    {"type": "image", "content": "", "top_left_x": 251, "top_left_y": 72,
-                     "bottom_right_x": 311, "bottom_right_y": 145},
+                    {"type": "header", "content": "Cofinanziato", "top_left_x": 135, "top_left_y": 72, "bottom_right_x": 213, "bottom_right_y": 145},
+                    {"type": "title", "content": "Title", "top_left_x": 40, "top_left_y": 160, "bottom_right_x": 400, "bottom_right_y": 190},
+                    {"type": "text", "content": "hello world", "top_left_x": 40, "top_left_y": 200, "bottom_right_x": 500, "bottom_right_y": 230},
+                    {"type": "image", "content": "", "top_left_x": 251, "top_left_y": 72, "bottom_right_x": 311, "bottom_right_y": 145},
                 ],
             },
             {
@@ -116,12 +111,9 @@ def _ocr_response():
                 "dimensions": {"dpi": 144, "width": 1021, "height": 681},
                 "markdown": "|a|b|",
                 "images": [],
-                "tables": [{"id": "tbl-0.md", "content": "<table><tr><td>a</td></tr></table>",
-                            "format": "html", "word_confidence_scores": None}],
+                "tables": [{"id": "tbl-0.md", "content": "<table><tr><td>a</td></tr></table>", "format": "html", "word_confidence_scores": None}],
                 "blocks": [
-                    {"type": "table", "content": "<table><tr><td>a</td></tr></table>",
-                     "table_id": "tbl-0.md", "top_left_x": 49, "top_left_y": 103,
-                     "bottom_right_x": 960, "bottom_right_y": 597},
+                    {"type": "table", "content": "<table><tr><td>a</td></tr></table>", "table_id": "tbl-0.md", "top_left_x": 49, "top_left_y": 103, "bottom_right_x": 960, "bottom_right_y": 597},
                 ],
             },
         ],
@@ -142,8 +134,7 @@ def test_normalize_pages_maps_bbox_and_page_size(monkeypatch):
 def test_normalize_pages_bbox_none_when_no_coords(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m)
-    resp = {"pages": [{"index": 0, "dimensions": {"width": 100, "height": 100},
-                       "blocks": [{"type": "image", "content": ""}]}]}
+    resp = {"pages": [{"index": 0, "dimensions": {"width": 100, "height": 100}, "blocks": [{"type": "image", "content": ""}]}]}
     pages = p._normalize_pages(resp)
     assert pages[0]["blocks"][0]["bbox"] is None
     # geometry-less image must be skipped, not emitted as a zero-area crop
@@ -194,12 +185,10 @@ def test_line_tag_rescales_per_page_dimensions(monkeypatch):
     # page 1 scales x by 4.0, y by 6.0.
     p.page_images = [_Img((300, 800)), _Img((200, 600))]
 
-    tag0 = p._line_tag({"page_idx": 0, "bbox": [10, 20, 40, 60],
-                        "page_size": {"w": 100, "h": 200}})
+    tag0 = p._line_tag({"page_idx": 0, "bbox": [10, 20, 40, 60], "page_size": {"w": 100, "h": 200}})
     assert tag0 == "@@1\t30.0\t120.0\t80.0\t240.0##"
 
-    tag1 = p._line_tag({"page_idx": 1, "bbox": [5, 10, 25, 40],
-                        "page_size": {"w": 50, "h": 100}})
+    tag1 = p._line_tag({"page_idx": 1, "bbox": [5, 10, 25, 40], "page_size": {"w": 50, "h": 100}})
     assert tag1 == "@@2\t20.0\t100.0\t60.0\t240.0##"
 
 
@@ -218,6 +207,7 @@ def test_crop_returns_none_without_positions(monkeypatch):
 
 def test_crop_reads_page_images_for_tagged_text(monkeypatch):
     from PIL import Image
+
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m)
     p.page_images = [Image.new("RGB", (200, 300), "white")]
@@ -231,6 +221,7 @@ class _Resp:
         self.status_code = status
         self._payload = payload or {}
         self.text = text
+
     def json(self):
         return self._payload
 
@@ -250,8 +241,7 @@ def test_call_ocr_inline_posts_pages_selector(monkeypatch):
     def fake_post(url, headers=None, json=None, timeout=None, **kw):
         captured["url"] = url
         captured["json"] = json
-        return _Resp(200, {"pages": [{"index": 5, "markdown": "x", "blocks": []}],
-                           "usage_info": {"pages_processed": 1}})
+        return _Resp(200, {"pages": [{"index": 5, "markdown": "x", "blocks": []}], "usage_info": {"pages_processed": 1}})
 
     monkeypatch.setattr(m.requests, "post", fake_post)
     out = p._call_ocr(b"%PDF-1.4 fake", "f.pdf", pages=[5])
@@ -265,9 +255,7 @@ def test_call_ocr_omits_pages_when_none(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-test")
     captured = {}
-    monkeypatch.setattr(m.requests, "post",
-        lambda url, headers=None, json=None, timeout=None, **kw: captured.update(json=json)
-        or _Resp(200, {"pages": []}))
+    monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, timeout=None, **kw: captured.update(json=json) or _Resp(200, {"pages": []}))
     p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
     assert "pages" not in captured["json"]
 
@@ -275,8 +263,7 @@ def test_call_ocr_omits_pages_when_none(monkeypatch):
 def test_call_ocr_raises_on_http_error(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-bad")
-    monkeypatch.setattr(m.requests, "post",
-        lambda *a, **k: _Resp(401, text="Unauthorized"))
+    monkeypatch.setattr(m.requests, "post", lambda *a, **k: _Resp(401, text="Unauthorized"))
     try:
         p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
         assert False, "expected RuntimeError"
@@ -296,10 +283,8 @@ def test_call_ocr_uploads_when_over_inline_limit(monkeypatch):
         return _Resp(200, {"pages": [{"index": 0, "blocks": []}]})
 
     monkeypatch.setattr(m.requests, "post", fake_post)
-    monkeypatch.setattr(m.requests, "get",
-        lambda url, headers=None, params=None, timeout=None, **kw: calls["get"].append(url) or _Resp(200, {"url": "https://signed"}))
-    monkeypatch.setattr(m.requests, "delete",
-        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: calls["get"].append(url) or _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
 
     out = p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
     assert any(u.endswith("/files") for u in calls["post"])
@@ -311,10 +296,8 @@ def test_call_ocr_upload_files_error_no_delete(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
     calls = {"delete": []}
-    monkeypatch.setattr(m.requests, "post",
-        lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(500, text="boom"))
-    monkeypatch.setattr(m.requests, "delete",
-        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(500, text="boom"))
+    monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
     try:
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
         assert False, "expected RuntimeError"
@@ -327,12 +310,9 @@ def test_call_ocr_signed_url_error_triggers_cleanup(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
     calls = {"delete": []}
-    monkeypatch.setattr(m.requests, "post",
-        lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(200, {"id": "file-1"}))
-    monkeypatch.setattr(m.requests, "get",
-        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(403, text="nope"))
-    monkeypatch.setattr(m.requests, "delete",
-        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(200, {"id": "file-1"}))
+    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(403, text="nope"))
+    monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
     try:
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
         assert False, "expected RuntimeError"
@@ -352,10 +332,8 @@ def test_call_ocr_post_upload_ocr_error_triggers_cleanup(monkeypatch):
         return _Resp(422, text="bad ocr")
 
     monkeypatch.setattr(m.requests, "post", fake_post)
-    monkeypatch.setattr(m.requests, "get",
-        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
-    monkeypatch.setattr(m.requests, "delete",
-        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
     try:
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
         assert False, "expected RuntimeError"
@@ -377,8 +355,7 @@ def test_call_ocr_delete_failure_does_not_mask_error(monkeypatch):
         raise RuntimeError("delete network error")
 
     monkeypatch.setattr(m.requests, "post", fake_post)
-    monkeypatch.setattr(m.requests, "get",
-        lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
     monkeypatch.setattr(m.requests, "delete", boom_delete)
     try:
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
@@ -389,6 +366,7 @@ def test_call_ocr_delete_failure_does_not_mask_error(monkeypatch):
 
 def _patch_render(m, p, n_pages):
     from PIL import Image
+
     p.page_images = [Image.new("RGB", (100, 140), "white") for _ in range(n_pages)]
     # neuter __images__ so parse_pdf doesn't touch pdfplumber
     p.__images__ = lambda *a, **k: None
@@ -462,6 +440,7 @@ def test_parse_pdf_binary_bytes_path(monkeypatch):
 
 def test_parse_pdf_binary_stream_normalized(monkeypatch):
     from io import BytesIO
+
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-test")
     seen = {}
