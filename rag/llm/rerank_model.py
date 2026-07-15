@@ -355,7 +355,8 @@ class BedrockRerank(Base):
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         # Truncate to the model token window, then enforce the API's hard 32k-char
-        # per-document limit (a longer RerankTextDocument.text is rejected).
+        # per-text limit (a longer RerankTextQuery / RerankTextDocument is rejected).
+        query = query[: self._MAX_DOC_CHARS]
         texts = [truncate(t, self.doc_max_tokens)[: self._MAX_DOC_CHARS] for t in texts]
         # Bedrock does not report token usage; count locally like CoHereRerank.
         token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(t) for t in texts)
@@ -368,23 +369,29 @@ class BedrockRerank(Base):
         for offset in range(0, len(texts), self._MAX_SOURCES):
             batch = texts[offset : offset + self._MAX_SOURCES]
             sources = [{"type": "INLINE", "inlineDocumentSource": {"type": "TEXT", "textDocument": {"text": t}}} for t in batch]
-            res = self.client.rerank(
-                queries=[{"type": "TEXT", "textQuery": {"text": query}}],
-                sources=sources,
-                rerankingConfiguration={
-                    "type": "BEDROCK_RERANKING_MODEL",
-                    "bedrockRerankingConfiguration": {
-                        "numberOfResults": len(batch),
-                        "modelConfiguration": {"modelArn": self.model_arn},
-                    },
+            reranking_config = {
+                "type": "BEDROCK_RERANKING_MODEL",
+                "bedrockRerankingConfiguration": {
+                    "numberOfResults": len(batch),
+                    "modelConfiguration": {"modelArn": self.model_arn},
                 },
-            )
-            try:
-                for d in res.get("results", []):
-                    rank[offset + d["index"]] = d["relevanceScore"]
-                    result_count += 1
-            except Exception as _e:
-                log_exception(_e, res)
+            }
+            # Drain paginated results: the API may split a batch across nextToken pages.
+            next_token = None
+            while True:
+                request = {"queries": [{"type": "TEXT", "textQuery": {"text": query}}], "sources": sources, "rerankingConfiguration": reranking_config}
+                if next_token:
+                    request["nextToken"] = next_token
+                res = self.client.rerank(**request)
+                try:
+                    for d in res.get("results", []):
+                        rank[offset + d["index"]] = d["relevanceScore"]
+                        result_count += 1
+                except (KeyError, IndexError, TypeError) as _e:
+                    log_exception(_e, res)
+                next_token = res.get("nextToken")
+                if not next_token:
+                    break
         # Safe diagnostics only: no query, document text or credentials.
         logging.debug(
             "BedrockRerank model=%s region=%s sources=%d tokens=%d results=%d elapsed=%.3fs",

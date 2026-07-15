@@ -124,9 +124,17 @@ def test_document_is_capped_at_32000_chars():
     # otherwise be rejected by the API. Amazon's 8k-token window can exceed it.
     mdl, client = _make(model_name="amazon.rerank-v1:0")
     client.rerank.return_value = _rerank_response([(0, 0.5)])
-    mdl.similarity("q", ["word " * 30000])  # 150k chars
+    mdl.similarity("q", ["word " * 30000])  # 150k chars -> ~41k after token truncation
     sent = client.rerank.call_args.kwargs["sources"][0]["inlineDocumentSource"]["textDocument"]["text"]
-    assert len(sent) <= 32000
+    assert len(sent) == 32000
+
+
+def test_query_is_capped_at_32000_chars():
+    mdl, client = _make(model_name="amazon.rerank-v1:0")
+    client.rerank.return_value = _rerank_response([(0, 0.5)])
+    mdl.similarity("q " * 30000, ["doc"])  # oversize query
+    sent = client.rerank.call_args.kwargs["queries"][0]["textQuery"]["text"]
+    assert len(sent) == 32000
 
 
 def test_short_document_is_not_char_capped():
@@ -151,5 +159,20 @@ def test_batches_requests_over_the_1000_source_limit():
     assert client.rerank.call_count == 3  # 1000 + 1000 + 1
     for call in client.rerank.call_args_list:
         cfg = call.kwargs["rerankingConfiguration"]["bedrockRerankingConfiguration"]
-        assert len(call.kwargs["sources"]) <= 1000
-        assert cfg["numberOfResults"] <= 1000
+        sources = call.kwargs["sources"]
+        assert len(sources) <= 1000
+        assert cfg["numberOfResults"] == len(sources)
+
+
+def test_paginated_results_are_all_consumed():
+    mdl, client = _make()
+    # First page returns one score + a nextToken; second page returns the rest.
+    pages = [
+        {"results": [{"index": 0, "relevanceScore": 0.9}], "nextToken": "tok"},
+        {"results": [{"index": 1, "relevanceScore": 0.4}, {"index": 2, "relevanceScore": 0.1}]},
+    ]
+    client.rerank.side_effect = pages
+    rank, _ = mdl.similarity("q", ["a", "b", "c"])
+    assert client.rerank.call_count == 2
+    assert client.rerank.call_args_list[1].kwargs["nextToken"] == "tok"
+    assert np.allclose(rank, [0.9, 0.4, 0.1])
