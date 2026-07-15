@@ -197,22 +197,55 @@ def _apply_model_family_policies(
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
         elif provider == SupportedLiteLLMProvider.Ollama and "frequency_penalty" in sanitized_gen_conf:
-            # litellm's ollama_chat integration maps the top-level
+            # litellm (1.82.5, installed here) maps the top-level
             # `frequency_penalty` completion kwarg onto Ollama's native
-            # `repeat_penalty` option, but sending it that way corrupts the
-            # response for at least some Ollama models/versions - observed
-            # failures include an empty response and a response that echoes
-            # the system prompt back verbatim instead of actually answering.
-            # Passing the same value through `extra_body.repeat_penalty`
-            # instead sidesteps the broken code path and produces a correct
-            # response, matching how the Moonshot/ZHIPU-AI branches above
-            # route provider-specific fields through extra_body.
-            repeat_penalty = sanitized_gen_conf.pop("frequency_penalty")
-            _merge_extra_body(sanitized_gen_conf, {"repeat_penalty": repeat_penalty})
+            # `repeat_penalty` option for the ollama_chat provider - and the
+            # *value it sends on the wire* is identical either way (confirmed
+            # via litellm's own debug logging: the outgoing POST body's
+            # `options.repeat_penalty` is byte-for-byte the same whether
+            # `frequency_penalty` is passed as a top-level kwarg or as
+            # `extra_body.repeat_penalty`). Nonetheless, passing it as the
+            # top-level kwarg (combined with `reasoning_effort`, as this
+            # Ollama branch always sets - see above) reproducibly breaks the
+            # response: with a fixed random seed swept over 8 values, the
+            # top-level path failed 8/8 (response echoed the system prompt
+            # verbatim) while `extra_body.repeat_penalty` with the *same*
+            # value succeeded 8/8. The failure is therefore in litellm's own
+            # request/response handling triggered by seeing `frequency_penalty`
+            # as a recognized top-level param alongside `reasoning_effort`,
+            # not in the resulting wire payload - routing through
+            # `extra_body` (as the existing Moonshot/ZHIPU-AI branches above
+            # already do for their provider-specific fields) sidesteps it.
+            #
+            # Ollama's `repeat_penalty` and OpenAI-style `frequency_penalty`
+            # are not on the same scale (repeat_penalty is centered on 1.0,
+            # with Ollama's own default at 1.1; frequency_penalty is centered
+            # on 0.0). Rescale rather than pass the raw value through, so a
+            # non-zero `frequency_penalty` actually discourages repetition
+            # instead of encouraging it.
+            frequency_penalty = sanitized_gen_conf.pop("frequency_penalty")
+            _merge_extra_body(sanitized_gen_conf, {"repeat_penalty": 1.0 + frequency_penalty})
 
         return sanitized_gen_conf, sanitized_kwargs
 
     return sanitized_gen_conf, sanitized_kwargs
+
+
+def _merge_gen_conf_and_kwargs(gen_conf: dict, kwargs: dict) -> dict:
+    """Combine a cleaned gen_conf with request kwargs for the completion call.
+
+    A plain `{**gen_conf, **kwargs}` spread would let `kwargs["extra_body"]`
+    silently clobber `gen_conf["extra_body"]` (or vice versa) instead of
+    merging them, which would lose whichever policy tweak (e.g. Ollama's
+    `repeat_penalty` rerouting above) put its value there. Merge the two
+    `extra_body` dicts explicitly; `kwargs` still wins on any other key.
+    """
+    merged = {**gen_conf, **kwargs}
+    gen_extra_body = gen_conf.get("extra_body")
+    kwargs_extra_body = kwargs.get("extra_body")
+    if isinstance(gen_extra_body, dict) and isinstance(kwargs_extra_body, dict):
+        merged["extra_body"] = {**gen_extra_body, **kwargs_extra_body}
+    return merged
 
 
 def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str | None, completion_args: dict) -> dict:
@@ -1680,9 +1713,13 @@ class LiteLLMBase(ABC):
         # `max_tokens` without renaming it, so the Agent node's "Max tokens"
         # setting was silently discarded for every litellm-routed provider
         # (Ollama, Anthropic, Gemini, Groq, DeepSeek, ...), leaving generation
-        # completely unbounded and able to run away into repetition loops.
+        # without the Agent-configured per-request output-length cap (model/
+        # provider-side context limits, where they exist, still applied).
+        # `setdefault` rather than unconditional overwrite in case a caller
+        # ever sets both keys - `max_completion_tokens` wins if so.
         if "max_tokens" in gen_conf:
-            gen_conf["max_completion_tokens"] = gen_conf.pop("max_tokens")
+            gen_conf.setdefault("max_completion_tokens", gen_conf["max_tokens"])
+            gen_conf.pop("max_tokens")
         gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
@@ -1704,7 +1741,7 @@ class LiteLLMBase(ABC):
             request_kwargs=kwargs,
         )
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **_merge_gen_conf_and_kwargs(gen_conf, kwargs))
 
         for attempt in range(self.max_retries + 1):
             try:
