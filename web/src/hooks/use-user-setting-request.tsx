@@ -113,8 +113,11 @@ export const useSelectParserList = (): Array<{
     },
     staleTime: Infinity,
   });
-  const pipelineList: Array<{ parser_id: string; title: string }> =
-    pipelineListData?.data ?? [];
+  const pipelineList: Array<{
+    parser_id: string;
+    title: string;
+    dsl: Record<string, any>;
+  }> = pipelineListData?.data ?? [];
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
