@@ -902,7 +902,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'naive', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -912,7 +912,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, "chunk_method")
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("Input should be 'naive', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
+        assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1664,7 +1664,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'naive', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -1673,7 +1673,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     chunk_method_none_payload = chunk_method_none_res.json()
     assert chunk_method_none_payload["code"] == ARGUMENT_ERROR_CODE, chunk_method_none_payload
     if IS_GO_PROXY:
-        assert chunk_method_none_payload["message"].startswith("Input should be 'naive', 'book'") and chunk_method_none_payload["message"].endswith("or 'tag'"), chunk_method_none_payload
+        assert chunk_method_none_payload["message"].startswith("Input should be 'audio', 'book'") and chunk_method_none_payload["message"].endswith("or 'tag'"), chunk_method_none_payload
     else:
         assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
 

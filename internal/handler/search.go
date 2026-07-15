@@ -427,7 +427,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			writer.Write(c, sseAnswer(delta.Value, nil, false))

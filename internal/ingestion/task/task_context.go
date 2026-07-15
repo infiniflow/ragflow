@@ -59,8 +59,11 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 // It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
 func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, error) {
 	doc, err := dao.NewDocumentDAO().GetByID(ingestionTask.DocumentID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", ingestionTask.DocumentID, err)
+	if err != nil {
+		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
 	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)

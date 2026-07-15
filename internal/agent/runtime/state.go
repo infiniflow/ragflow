@@ -33,9 +33,11 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -71,7 +73,7 @@ type CanvasState struct {
 // The atomic CancelFlag is allocated eagerly so nodes can safely poll it
 // even before any cancel signal has been wired.
 func NewCanvasState(runID, taskID string) *CanvasState {
-	return &CanvasState{
+	s := &CanvasState{
 		Outputs:    make(map[string]map[string]any),
 		Sys:        make(map[string]any),
 		Env:        make(map[string]any),
@@ -83,6 +85,26 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 		RunID:      runID,
 		TaskID:     taskID,
 	}
+	s.EnsureSysDate()
+	return s
+}
+
+// EnsureSysDate fills sys.date with the current UTC timestamp when it
+// is missing or blank. Python canvas initializes the same variable with
+// "%Y-%m-%d %H:%M:%S"; keep that wire format for DSL compatibility.
+func (s *CanvasState) EnsureSysDate() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	if v, ok := s.Sys["date"]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
+		return
+	}
+	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 }
 
 // init registers CanvasState with eino's internal type registry so
@@ -366,6 +388,76 @@ func (s *CanvasState) GetRetrievalChunks() []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+// GetRetrievalReference returns the run-level reference payload consumed by
+// the agent chat stream. It mirrors Python canvas.py's message_end.reference
+// shape while keeping doc_aggs as a list for the current Go frontend path.
+func (s *CanvasState) GetRetrievalReference() map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.Retrieval) == 0 {
+		return nil
+	}
+
+	chunks := copyRetrievalList(s.Retrieval["chunks"])
+	docAggs := copyRetrievalDocAggs(s.Retrieval["doc_aggs"])
+	if len(chunks) == 0 && len(docAggs) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"chunks":   chunks,
+		"doc_aggs": docAggs,
+		"total":    len(chunks),
+	}
+}
+
+func copyRetrievalList(value any) []any {
+	switch list := value.(type) {
+	case []any:
+		out := make([]any, len(list))
+		copy(out, list)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func copyRetrievalDocAggs(value any) []any {
+	switch aggs := value.(type) {
+	case []any:
+		out := make([]any, len(aggs))
+		copy(out, aggs)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(aggs))
+		for _, item := range aggs {
+			out = append(out, item)
+		}
+		return out
+	case map[string]any:
+		keys := make([]string, 0, len(aggs))
+		for key := range aggs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make([]any, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, aggs[key])
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // SetRetrievalChunks records the supplied chunks into

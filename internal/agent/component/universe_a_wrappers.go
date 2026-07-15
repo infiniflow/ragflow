@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Universe A delegation wrappers. Canvas-facing components that
+// Package component Universe A delegation wrappers. Canvas-facing components that
 // delegate to their corresponding Universe B eino tool
 // implementations. The delegation pattern keeps the canvas
 // scheduler's Component contract thin and the eino tool's
@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -317,6 +318,10 @@ type duckDuckGoInvoker interface {
 	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
 }
 
+type keenableInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 // bgptComponent delegates to internal/agent/tool/BGPTTool and adapts
 // the tool envelope to the BGPT canvas output contract.
 type bgptComponent struct {
@@ -572,6 +577,199 @@ func (c *duckDuckGoComponent) Invoke(ctx context.Context, inputs map[string]any)
 
 func (c *duckDuckGoComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// keenableSearchComponent delegates to internal/agent/tool/KeenableTool.
+type keenableSearchComponent struct {
+	inner  keenableInvoker
+	apiKey string
+	mode   string
+	topN   int
+	site   string
+}
+
+func newKeenableSearchComponent(params map[string]any) (Component, error) {
+	apiKey := stringParam(params["api_key"])
+	return newKeenableSearchComponentWithInvoker(agenttool.NewKeenableToolWithAPIKey(nil, apiKey), params), nil
+}
+
+func newKeenableSearchComponentWithInvoker(inner keenableInvoker, params map[string]any) Component {
+	if inner == nil {
+		inner = agenttool.NewKeenableTool()
+	}
+	mode := strings.TrimSpace(stringParam(params["mode"]))
+	if mode == "" {
+		mode = "pro"
+	}
+	topN := toIntParam(params["top_n"])
+	if topN <= 0 {
+		topN = 10
+	}
+	return &keenableSearchComponent{
+		inner:  inner,
+		apiKey: stringParam(params["api_key"]),
+		mode:   mode,
+		topN:   topN,
+		site:   stringParam(params["site"]),
+	}
+}
+
+func (c *keenableSearchComponent) Name() string { return "KeenableSearch" }
+
+func (c *keenableSearchComponent) Inputs() map[string]string {
+	return map[string]string{
+		"query":   "Search query.",
+		"site":    "Optional single-domain filter.",
+		"api_key": "Optional Keenable API key.",
+		"mode":    "Search mode: pro or realtime.",
+		"top_n":   "Maximum number of results.",
+	}
+}
+
+func (c *keenableSearchComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+		"site": map[string]any{
+			"name": "Site",
+			"type": "line",
+		},
+	}
+}
+
+func (c *keenableSearchComponent) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Rendered search results for downstream LLM prompts.",
+		"json":               "Raw Keenable result list.",
+	}
+}
+
+func (c *keenableSearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	query := strings.TrimSpace(stringParam(inputs["query"]))
+	if query == "" {
+		return map[string]any{"formalized_content": "", "json": []any{}}, nil
+	}
+
+	args := map[string]any{
+		"query": query,
+		"mode":  c.mode,
+		"top_n": c.topN,
+	}
+	if mode := strings.TrimSpace(stringParam(inputs["mode"])); mode != "" {
+		args["mode"] = mode
+	}
+	if topN := toIntParam(inputs["top_n"]); topN > 0 {
+		args["top_n"] = topN
+	}
+	site := strings.TrimSpace(stringParam(inputs["site"]))
+	if site == "" {
+		site = strings.TrimSpace(c.site)
+	}
+	if site != "" {
+		args["site"] = site
+	}
+
+	invoker := c.inner
+	if apiKey := strings.TrimSpace(stringParam(inputs["api_key"])); apiKey != "" && apiKey != strings.TrimSpace(c.apiKey) {
+		invoker = agenttool.NewKeenableToolWithAPIKey(nil, apiKey)
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	out, err := invoker.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	results := anySlice(decoded["results"])
+	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
+		return map[string]any{
+			"formalized_content": "",
+			"json":               results,
+			"_ERROR":             existing,
+		}, nil
+	}
+	if err != nil {
+		if len(decoded) > 0 {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               results,
+				"_ERROR":             decoded["_ERROR"],
+			}, nil
+		}
+		return nil, fmt.Errorf("canvas: KeenableSearch: %w", err)
+	}
+	chunks, docAggs := buildKeenableReferences(results)
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		state.SetRetrievalReferences(chunks, docAggs)
+	}
+	return map[string]any{
+		"formalized_content": renderKeenableReferences(chunks),
+		"json":               results,
+	}, nil
+}
+
+func (c *keenableSearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func buildKeenableReferences(results []any) ([]map[string]any, []map[string]any) {
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, item := range results {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateRunes(strings.TrimSpace(keenableValueString(m["description"])), 10000)
+		if content == "" || content == "None" {
+			continue
+		}
+		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		title := keenableValueString(m["title"])
+		url := keenableValueString(m["url"])
+		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           url,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      url,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderKeenableReferences(chunks []map[string]any) string {
+	if len(chunks) == 0 {
+		return ""
+	}
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + keenableValueString(chunk["id"]),
+			"├── Title: " + keenableValueString(chunk["docnm_kwd"]),
+			"├── URL: " + keenableValueString(chunk["url"]),
+			"└── Content:\n" + keenableValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func keenableValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func renderDuckDuckGoResults(results []any) string {
@@ -1057,7 +1255,10 @@ func newExeSQLComponent(params map[string]any) (Component, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
 	}
-	return &exesqlComponent{inner: agenttool.NewExeSQLTool(conn)}, nil
+	return &exesqlComponent{
+		inner: agenttool.NewExeSQLTool(conn),
+		sql:   conn.SQL,
+	}, nil
 }
 
 // translateExeSQLParamsToToolShape adapts a v1 DSL ExeSQL params
@@ -1119,16 +1320,20 @@ func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
 	return out
 }
 
+type exeSQLInvoker interface {
+	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+}
+
 type exesqlComponent struct {
-	inner *agenttool.ExeSQLTool
+	inner exeSQLInvoker
+	sql   string
 }
 
 func (c *exesqlComponent) Name() string { return "ExeSQL" }
 
 func (c *exesqlComponent) Inputs() map[string]string {
 	return map[string]string{
-		"sql":      "SQL statement to execute (SELECT-only; DML/DDL rejected).",
-		"database": "Optional target database/schema (overrides the tool's configured DB).",
+		"sql": "SQL statement to execute (SELECT-only; DML/DDL rejected).",
 	}
 }
 
@@ -1143,19 +1348,114 @@ func (c *exesqlComponent) GetInputForm() map[string]any {
 
 func (c *exesqlComponent) Outputs() map[string]string {
 	return map[string]string{
-		"columns": "Result-set column names.",
-		"rows":    "Result-set rows as column→value maps.",
-		"sql":     "Resolved SQL string (after parameter substitution).",
+		"formalized_content": "SQL result rendered as Markdown.",
+		"json":               "Raw SQL statement results.",
 	}
 }
 
 func (c *exesqlComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	argsJSON, _ := json.Marshal(inputs)
-	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
+	sqlText := c.sql
+	if value, ok := inputs["sql"].(string); ok && strings.TrimSpace(value) != "" {
+		sqlText = value
 	}
-	return parseToolEnvelope(out), nil
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		resolved, resolveErr := runtime.ResolveTemplate(sqlText, state)
+		if resolveErr != nil {
+			return map[string]any{
+				"formalized_content": "",
+				"json":               []any{},
+				"_ERROR":             resolveErr.Error(),
+			}, nil
+		}
+		sqlText = resolved
+	}
+
+	argsJSON, err := json.Marshal(map[string]any{"sql": sqlText})
+	if err != nil {
+		return nil, fmt.Errorf("canvas: ExeSQL: encode SQL: %w", err)
+	}
+	out, invokeErr := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	result := formatExeSQLCanvasOutput(decoded)
+	if invokeErr != nil {
+		if message := stringParam(decoded["_ERROR"]); message != "" {
+			result["_ERROR"] = message
+		} else {
+			result["_ERROR"] = invokeErr.Error()
+		}
+	}
+	return result, nil
+}
+
+func formatExeSQLCanvasOutput(decoded map[string]any) map[string]any {
+	rows := anySlice(decoded["rows"])
+	columns := anySlice(decoded["columns"])
+	jsonResult := make([]any, 0, 1)
+	if len(rows) == 1 {
+		if row, ok := rows[0].(map[string]any); ok && len(row) == 1 {
+			if _, hasContent := row["content"]; hasContent {
+				jsonResult = append(jsonResult, row)
+			}
+		}
+	}
+	if len(jsonResult) == 0 && len(rows) > 0 {
+		jsonResult = append(jsonResult, rows)
+	}
+	result := map[string]any{
+		"formalized_content": renderExeSQLMarkdown(columns, rows),
+		"json":               jsonResult,
+	}
+	if message := stringParam(decoded["_ERROR"]); message != "" {
+		result["_ERROR"] = message
+	}
+	return result
+}
+
+func renderExeSQLMarkdown(columns, rows []any) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	for _, value := range rows {
+		if row, ok := value.(map[string]any); ok && len(row) == 1 {
+			if message, exists := row["content"]; exists {
+				return stringParam(message)
+			}
+		}
+	}
+	columnNames := make([]string, 0, len(columns))
+	for _, column := range columns {
+		columnNames = append(columnNames, fmt.Sprint(column))
+	}
+	if len(columnNames) == 0 {
+		if first, ok := rows[0].(map[string]any); ok {
+			for column := range first {
+				columnNames = append(columnNames, column)
+			}
+			sort.Strings(columnNames)
+		}
+	}
+	if len(columnNames) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(columnNames, " | "))
+	separators := make([]string, len(columnNames))
+	for i := range separators {
+		separators[i] = "---"
+	}
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(separators, " | "))
+	for _, value := range rows {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		cells := make([]string, len(columnNames))
+		for i, column := range columnNames {
+			cells[i] = strings.ReplaceAll(strings.ReplaceAll(fmt.Sprint(row[column]), "|", "\\|"), "\n", "<br>")
+		}
+		fmt.Fprintf(&builder, "| %s |\n", strings.Join(cells, " | "))
+	}
+	return strings.TrimSuffix(builder.String(), "\n")
 }
 
 func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
@@ -1196,6 +1496,17 @@ func (c *codeExecComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *codeExecComponent) GetInputForm() map[string]any {
+	res := make(map[string]any, len(c.params))
+	for k, _ := range c.params {
+		res[k] = map[string]any{
+			"type": "line",
+			"name": k,
+		}
+	}
+	return res
+}
+
 func (c *codeExecComponent) Outputs() map[string]string {
 	return map[string]string{
 		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
@@ -1217,7 +1528,8 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 		merged[k] = v
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),
@@ -1356,29 +1668,29 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+func resolveCodeExecArguments(args map[string]any, merged map[string]any, state *runtime.CanvasState) map[string]any {
 	if args == nil {
 		return nil
 	}
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		out[k] = resolveCodeExecArgumentValue(v, merged)
+		out[k] = resolveCodeExecArgumentValue(v, merged, state)
 	}
 	return out
 }
 
-func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+func resolveCodeExecArgumentValue(v any, merged map[string]any, state *runtime.CanvasState) any {
 	switch x := v.(type) {
 	case map[string]any:
-		return resolveCodeExecArguments(x, merged)
+		return resolveCodeExecArguments(x, merged, state)
 	case []any:
 		out := make([]any, 0, len(x))
 		for _, item := range x {
-			out = append(out, resolveCodeExecArgumentValue(item, merged))
+			out = append(out, resolveCodeExecArgumentValue(item, merged, state))
 		}
 		return out
 	case string:
-		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged, state); ok {
 			return resolved
 		}
 		return x
@@ -1387,10 +1699,15 @@ func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
 	}
 }
 
-func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime.CanvasState) (any, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, false
+	}
+	if state != nil {
+		if v, err := state.GetVar(ref); err == nil && v != nil {
+			return v, true
+		}
 	}
 	at := strings.Index(ref, "@")
 	if at <= 0 || at >= len(ref)-1 {

@@ -778,6 +778,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
+        general: 'General',
         qa: 'Q&A',
         resume: 'Resume',
         manual: 'Manual',
@@ -1118,6 +1119,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
+      thinkingLevelLow: 'Low',
+      thinkingLevelMedium: 'Medium',
+      thinkingLevelHigh: 'High',
+      thinkingLevelUltra: 'Ultra',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',
