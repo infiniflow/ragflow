@@ -414,6 +414,25 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         response_data_list.append(remap_dictionary_keys(kb))
+
+    include_parsing_status = args.get("include_parsing_status", False)
+    if isinstance(include_parsing_status, str):
+        include_parsing_status = include_parsing_status.lower() == "true"
+    if include_parsing_status and response_data_list:
+        empty_status = {
+            "unstart_count": 0,
+            "running_count": 0,
+            "cancel_count": 0,
+            "done_count": 0,
+            "fail_count": 0,
+        }
+        kb_ids = [dataset["id"] for dataset in response_data_list if dataset.get("id")]
+        parsing_status_by_kb = DocumentService.get_parsing_status_by_kb_ids(kb_ids)
+        for dataset in response_data_list:
+            status = empty_status.copy()
+            status.update(parsing_status_by_kb.get(dataset.get("id"), {}))
+            dataset.update(status)
+
     return True, {"data": response_data_list, "total": total}
 
 
