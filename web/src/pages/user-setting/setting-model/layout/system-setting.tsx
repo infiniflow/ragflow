@@ -29,8 +29,6 @@ import {
 import { CircleQuestionMark } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const STORAGE_KEY = 'ragflow-system-model-settings';
-
 interface ModelFieldItemProps {
   id: string;
   label: string;
@@ -38,25 +36,6 @@ interface ModelFieldItemProps {
   tooltip?: string;
   isRequired?: boolean;
   onChange: (id: string, value: string) => void;
-}
-
-/** Read persisted model selections from localStorage */
-function loadPersistedValues(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-/** Persist model selections to localStorage */
-function savePersistedValues(values: Record<string, string>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
-  } catch {
-    // Silently fail if storage is full/disabled
-  }
 }
 
 function ModelFieldItem({
@@ -105,16 +84,15 @@ function SystemSetting() {
   const defaultModelDictionary = useFetchDefaultModelDictionary();
   const { setDefaultModel } = useSetDefaultModel();
 
-  // Local state synced with localStorage for persistence across page refreshes.
-  // This handles the case where the Go backend hasn't been rebuilt yet and
-  // doesn't return TTS/ASR/VLM defaults from the API (same pattern as ASR/VLM).
-  const [persistedValues, setPersistedValues] =
-    useState<Record<string, string>>(loadPersistedValues);
+  // Local state mirrors the API-backed defaults so the UI updates immediately
+  // when the user changes a selection. The backend is the source of truth.
+  const [persistedValues, setPersistedValues] = useState<
+    Record<string, string>
+  >(defaultModelDictionary);
 
-  // Sync localStorage whenever persistedValues changes
   useEffect(() => {
-    savePersistedValues(persistedValues);
-  }, [persistedValues]);
+    setPersistedValues(defaultModelDictionary);
+  }, [defaultModelDictionary]);
 
   const handleFieldChange = useCallback(
     async (field: string, value: string) => {
@@ -139,9 +117,8 @@ function SystemSetting() {
   );
 
   // Resolution order (same for ALL model types including ASR/VLM/TTS):
-  //   1. localStorage (user's latest selection, survives refresh)
-  //   2. API response (from Go backend GET /api/v1/models/default)
-  //   3. empty string (fallback)
+  //   1. API response (from Go backend GET /api/v1/models/default)
+  //   2. empty string (fallback)
   const getValue = useCallback(
     (field: string) =>
       persistedValues[field] || defaultModelDictionary[field] || '',
