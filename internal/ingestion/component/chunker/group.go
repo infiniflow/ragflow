@@ -237,6 +237,42 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	return recordGroups
 }
 
+// capChunkText splits text so no piece exceeds maxTok tokens. maxTok <= 0 (unset)
+// returns the text unchanged. Splitting is on line boundaries, re-accumulating up
+// to the cap; a single line longer than the cap is emitted whole (we do not split
+// mid-line). Mirrors the intent of python naive_merge's chunk_token_num cap.
+func capChunkText(text string, maxTok int) []string {
+	if maxTok <= 0 || tokenizeStr(text) <= maxTok {
+		return []string{text}
+	}
+	var out []string
+	var cur strings.Builder
+	curTok := 0
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+			curTok = 0
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		lineTok := tokenizeStr(line)
+		if curTok > 0 && curTok+lineTok > maxTok {
+			flush()
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte('\n')
+		}
+		cur.WriteString(line)
+		curTok += lineTok
+	}
+	flush()
+	if len(out) == 0 {
+		return []string{text}
+	}
+	return out
+}
+
 // joinGroupText mirrors python's `"".join(record["text"] + "\n" for
 // record in records)` — every record's text followed by a newline
 // (including the last), matching the python text join exactly.
@@ -270,23 +306,29 @@ func isPlainTextFormat(inputs map[string]any) bool {
 // materialisation): the root chunk's text is prepended to every
 // following chunk and the root chunk is dropped.
 func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+	maxTok := 0
+	if p.ChunkTokenNum != nil && *p.ChunkTokenNum > 0 {
+		maxTok = *p.ChunkTokenNum
+	}
 	chunks := make([]map[string]any, 0, len(groups))
 	for _, g := range groups {
 		if len(g) == 0 {
 			continue
 		}
-		// Strip parser-emitted position tags (`@@...##`) from the
-		// joined text (diff 1.6 / 2.8). Mirrors common.py:255
-		// `RAGFlowPdfParser.remove_tag("".join(...))`.
-		chunk := map[string]any{"text": removeTag(joinGroupText(g))}
+		var docType string
+		var imgID *string
 		if !plain {
 			first := g[0]
-			if first.docType != "" {
-				chunk["doc_type_kwd"] = first.docType
-			}
-			if first.imgID != nil {
-				chunk["img_id"] = *first.imgID
-			}
+			docType = first.docType
+			imgID = first.imgID
+		}
+		// Strip parser-emitted position tags (@@...##) from the joined text.
+		chunk := map[string]any{"text": removeTag(joinGroupText(g))}
+		if docType != "" {
+			chunk["doc_type_kwd"] = docType
+		}
+		if imgID != nil {
+			chunk["img_id"] = *imgID
 		}
 		// Merge PDF coordinate matrices across the merged records
 		// instead of keeping only the leading record's (diff 1.6).
@@ -315,7 +357,24 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 		}
 		chunks = chunks[1:]
 	}
-	return chunks
+	if maxTok <= 0 {
+		return chunks
+	}
+	// Split each chunk to <= chunk_token_num, copying metadata to every piece.
+	out := make([]map[string]any, 0, len(chunks))
+	for _, ch := range chunks {
+		for _, text := range capChunkText(toString(ch["text"]), maxTok) {
+			piece := map[string]any{"text": text}
+			if v, ok := ch["doc_type_kwd"]; ok {
+				piece["doc_type_kwd"] = v
+			}
+			if v, ok := ch["img_id"]; ok {
+				piece["img_id"] = v
+			}
+			out = append(out, piece)
+		}
+	}
+	return out
 }
 
 // posTagRemove matches parser-emitted position tags of the form
