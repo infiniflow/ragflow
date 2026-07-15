@@ -46,6 +46,15 @@ class RAGFlowJsonParser:
         return len(json.dumps(data, ensure_ascii=False))
 
     @staticmethod
+    def _is_empty_chunk(chunk: Any) -> bool:
+        """Only null and empty containers carry no content; 0 and false do."""
+        if chunk is None:
+            return True
+        if isinstance(chunk, (dict, list, str)):
+            return not chunk
+        return False
+
+    @staticmethod
     def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
         """Set a value in a nested dictionary based on the given path."""
         for key in path[:-1]:
@@ -114,7 +123,7 @@ class RAGFlowJsonParser:
             chunks = self._json_split(json_data, None, None)
 
         # Remove the last chunk if it's empty
-        if not chunks[-1]:
+        if chunks and self._is_empty_chunk(chunks[-1]):
             chunks.pop()
         return chunks
 
@@ -136,7 +145,7 @@ class RAGFlowJsonParser:
         try:
             json_data = json.loads(content)
             chunks = self.split_json(json_data, True)
-            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
+            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if not self._is_empty_chunk(line)]
         except json.JSONDecodeError:
             pass
         return sections
@@ -150,7 +159,7 @@ class RAGFlowJsonParser:
             try:
                 data = json.loads(line)
                 chunks = self.split_json(data, convert_lists=True)
-                all_chunks.extend(json.dumps(chunk, ensure_ascii=False) for chunk in chunks if chunk)
+                all_chunks.extend(json.dumps(chunk, ensure_ascii=False) for chunk in chunks if not self._is_empty_chunk(chunk))
             except json.JSONDecodeError:
                 continue
         return all_chunks

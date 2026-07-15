@@ -67,12 +67,17 @@ def test_top_level_scalars_do_not_crash():
     assert parser._parse_json("42") == ["42"]
     assert parser._parse_json('"hello"') == ['"hello"']
     assert parser._parse_json("true") == ["true"]
+    assert parser._parse_json("0") == ["0"]
+    assert parser._parse_json("false") == ["false"]
 
 
 def test_top_level_null_yields_no_chunk():
     # null carries no content; it should be dropped, not crash.
     parser = RAGFlowJsonParser()
     assert parser._parse_json("null") == []
+    assert parser._parse_json('""') == []
+    assert parser._parse_json("{}") == []
+    assert parser._parse_json("[]") == []
 
 
 def test_objects_and_arrays_still_chunk():
