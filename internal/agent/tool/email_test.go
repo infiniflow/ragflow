@@ -25,6 +25,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/agent/runtime"
 )
 
 func TestEmail_BuildMessage(t *testing.T) {
@@ -125,17 +127,25 @@ func TestEmail_SendAgainstMockSMTP(t *testing.T) {
 	var portInt int
 	_, _ = fmt.Sscanf(port, "%d", &portInt)
 
-	tool := NewEmailTool()
+	built, err := BuildByName("email", map[string]any{
+		"smtp_server": "127.0.0.1",
+		"smtp_port":   portInt,
+		"email":       "alice@example.com",
+		"sender_name": "Alice",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(email): %v", err)
+	}
+	emailTool := built.(*EmailTool)
 	args := map[string]any{
-		"smtp_host": "127.0.0.1",
-		"smtp_port": portInt,
-		"from_addr": "alice@example.com",
-		"to_addrs":  []string{"bob@example.com"},
-		"subject":   "Test Subject",
-		"body":      "Test body content.",
+		"to_email": "bob@example.com",
+		"subject":  "Test {sys.date}",
+		"content":  "Test body content.",
 	}
 	argsJSON, _ := json.Marshal(args)
-	out, err := tool.InvokableRun(context.Background(), string(argsJSON))
+	state := runtime.NewCanvasState("run-email", "task-email")
+	state.Sys["date"] = "2026-07-15"
+	out, err := emailTool.InvokableRun(runtime.WithState(context.Background(), state), string(argsJSON))
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -158,7 +168,7 @@ func TestEmail_SendAgainstMockSMTP(t *testing.T) {
 		t.Fatal("mock SMTP server did not close in time")
 	}
 
-	if !strings.Contains(receivedData.String(), "Subject: Test Subject") {
+	if !strings.Contains(receivedData.String(), "Subject: Test 2026-07-15") {
 		t.Errorf("mock server did not receive subject\n--- data ---\n%s\n---",
 			receivedData.String())
 	}
@@ -175,33 +185,35 @@ func TestEmail_SendAgainstMockSMTP(t *testing.T) {
 func TestEmail_RequiresFields(t *testing.T) {
 	t.Parallel()
 
-	tool := NewEmailTool()
-
 	cases := []struct {
 		name    string
+		tool    *EmailTool
 		args    string
 		wantErr string
 	}{
 		{
-			name:    "missing smtp_host",
-			args:    `{"smtp_port":587,"from_addr":"a@b","to_addrs":["c@d"],"subject":"s","body":"b"}`,
-			wantErr: "smtp_host",
+			name:    "missing smtp_server",
+			tool:    newEmailTool(emailParams{SMTPPort: 587, Email: "a@b"}),
+			args:    `{"to_email":"c@d","subject":"s","content":"b"}`,
+			wantErr: "smtp_server",
 		},
 		{
-			name:    "missing to_addrs",
-			args:    `{"smtp_host":"x","smtp_port":587,"from_addr":"a@b","subject":"s","body":"b"}`,
-			wantErr: "to_addrs",
+			name:    "missing to_email",
+			tool:    newEmailTool(emailParams{SMTPServer: "x", SMTPPort: 587, Email: "a@b"}),
+			args:    `{"subject":"s","content":"b"}`,
+			wantErr: "to_email",
 		},
 		{
 			name:    "bad smtp_port",
-			args:    `{"smtp_host":"x","smtp_port":0,"from_addr":"a@b","to_addrs":["c@d"],"subject":"s","body":"b"}`,
+			tool:    newEmailTool(emailParams{SMTPServer: "x", SMTPPort: -1, Email: "a@b"}),
+			args:    `{"to_email":"c@d","subject":"s","content":"b"}`,
 			wantErr: "smtp_port",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tool.InvokableRun(context.Background(), tc.args)
+			_, err := tc.tool.InvokableRun(context.Background(), tc.args)
 			if err == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -225,5 +237,72 @@ func TestEmail_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "SMTP") {
 		t.Errorf("Desc = %q, want to mention SMTP", info.Desc)
+	}
+	schemaJSON, err := info.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	raw, err := json.Marshal(schemaJSON)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	for _, runtimeField := range []string{"to_email", "cc_email", "content", "subject"} {
+		if !strings.Contains(string(raw), `"`+runtimeField+`"`) {
+			t.Errorf("schema missing runtime field %q: %s", runtimeField, raw)
+		}
+	}
+	for _, configField := range []string{"smtp_server", "smtp_port", "email", "password", "sender_name"} {
+		if strings.Contains(string(raw), `"`+configField+`"`) {
+			t.Errorf("schema leaked node config %q: %s", configField, raw)
+		}
+	}
+}
+
+func TestEmail_ComponentContractAndFactory(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("email", map[string]any{
+		"smtp_server": "smtp.example.com",
+		"smtp_port":   "587",
+		"email":       "sender@example.com",
+		"password":    "secret",
+		"sender_name": "Sender",
+		"outputs":     map[string]any{"success": map[string]any{}},
+		"setups":      map[string]any{"to_email": "configured@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(email): %v", err)
+	}
+	emailTool := built.(*EmailTool)
+	if emailTool.defaults.SMTPPort != 587 || emailTool.defaults.SMTPServer != "smtp.example.com" {
+		t.Fatalf("node defaults = %#v", emailTool.defaults)
+	}
+	spec := emailTool.ComponentSpec()
+	if _, ok := spec.Inputs["to_email"]; !ok {
+		t.Fatalf("component inputs = %#v", spec.Inputs)
+	}
+	if _, ok := spec.Outputs["success"]; !ok {
+		t.Fatalf("component outputs = %#v", spec.Outputs)
+	}
+	toEmail, ok := spec.InputForm["to_email"].(map[string]any)
+	if !ok || toEmail["name"] != "To " || toEmail["type"] != "line" {
+		t.Fatalf("to_email input form = %#v", spec.InputForm["to_email"])
+	}
+	if outputs := emailTool.BuildComponentOutputs(map[string]any{"ok": true, "provider": "smtp"}); outputs["success"] != true {
+		t.Fatalf("component outputs = %#v", outputs)
+	}
+}
+
+func TestEmail_BuildByNameRejectsInvalidNodeParams(t *testing.T) {
+	t.Parallel()
+
+	for _, params := range []map[string]any{
+		{"smtp_port": float64(1.5)},
+		{"smtp_port": 70000},
+		{"smtp_server": 1},
+	} {
+		if _, err := BuildByName("email", params); err == nil {
+			t.Fatalf("BuildByName(email, %#v) succeeded, want error", params)
+		}
 	}
 }

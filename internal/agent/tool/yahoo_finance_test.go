@@ -88,7 +88,7 @@ func TestYahooFinance_ParseQuote(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"quoteResponse": {
 				"result": [
-					{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD","regularMarketChangePercent":1.23},
+					{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD","regularMarketChangePercent":1.23,"marketState":"REGULAR"},
 					{"symbol":"MSFT","regularMarketPrice":421.0,"currency":"USD","regularMarketChangePercent":-0.5}
 				]
 			}
@@ -119,14 +119,17 @@ func TestYahooFinance_ParseQuote(t *testing.T) {
 	if len(env.Results) != 2 {
 		t.Fatalf("Results len = %d, want 2", len(env.Results))
 	}
-	if env.Results[0].Symbol != "AAPL" {
-		t.Errorf("Results[0].Symbol = %q, want AAPL", env.Results[0].Symbol)
+	if env.Results[0]["symbol"] != "AAPL" {
+		t.Errorf("Results[0].symbol = %q, want AAPL", env.Results[0]["symbol"])
 	}
-	if env.Results[0].RegularMarketPrice != 189.5 {
-		t.Errorf("Results[0].Price = %v, want 189.5", env.Results[0].RegularMarketPrice)
+	if env.Results[0]["regularMarketPrice"] != float64(189.5) {
+		t.Errorf("Results[0].price = %v, want 189.5", env.Results[0]["regularMarketPrice"])
 	}
-	if env.Results[1].RegularMarketChangePercent != -0.5 {
-		t.Errorf("Results[1].ChangePct = %v, want -0.5", env.Results[1].RegularMarketChangePercent)
+	if env.Results[1]["regularMarketChangePercent"] != float64(-0.5) {
+		t.Errorf("Results[1].changePct = %v, want -0.5", env.Results[1]["regularMarketChangePercent"])
+	}
+	if env.Results[0]["marketState"] != "REGULAR" {
+		t.Fatalf("unknown upstream fields were lost: %#v", env.Results[0])
 	}
 }
 
@@ -138,8 +141,46 @@ func TestYahooFinance_RequiresSymbols(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty symbols")
 	}
-	if !strings.Contains(err.Error(), "symbols") {
-		t.Errorf("err = %v, want to mention symbols", err)
+	if !strings.Contains(err.Error(), "stock_code") {
+		t.Errorf("err = %v, want to mention stock_code", err)
+	}
+}
+
+func TestYahooFinance_ComponentContract(t *testing.T) {
+	t.Parallel()
+
+	yahoo := NewYahooFinanceTool()
+	spec := yahoo.ComponentSpec()
+	if stockCode, ok := spec.InputForm["stock_code"].(map[string]any); !ok || stockCode["type"] != "line" {
+		t.Fatalf("stock_code input form = %#v", spec.InputForm["stock_code"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{"symbol": "AAPL", "marketState": "REGULAR"}}}
+	outputs := yahoo.BuildComponentOutputs(envelope)
+	report, ok := outputs["report"].([]any)
+	if !ok || len(report) != 1 || report[0].(map[string]any)["marketState"] != "REGULAR" {
+		t.Fatalf("report = %#v", outputs["report"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestYahooFinance_StockCodeAlias(t *testing.T) {
+	t.Parallel()
+
+	var symbols string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		symbols = r.URL.Query().Get("symbols")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"quoteResponse":{"result":[]}}`))
+	}))
+	defer srv.Close()
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	if _, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"stock_code":"AAPL"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if symbols != "AAPL" {
+		t.Fatalf("symbols = %q", symbols)
 	}
 }
 

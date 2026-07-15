@@ -104,6 +104,21 @@ var toolComponentRegistrations = []struct {
 	toolName      string
 }{
 	{componentName: "GitHub", toolName: "github"},
+	{componentName: "BGPT", toolName: "bgpt"},
+	{componentName: "ArXiv", toolName: "arxiv"},
+	{componentName: "DuckDuckGo", toolName: "duckduckgo"},
+	{componentName: "Email", toolName: "email"},
+	{componentName: "ExeSQL", toolName: "execute_sql"},
+	{componentName: "Google", toolName: "google"},
+	{componentName: "GoogleScholar", toolName: "google_scholar"},
+	{componentName: "KeenableSearch", toolName: "keenable"},
+	{componentName: "PubMed", toolName: "pubmed"},
+	{componentName: "SearXNG", toolName: "searxng"},
+	{componentName: "TavilySearch", toolName: "tavily"},
+	{componentName: "TavilyExtract", toolName: "tavily_extract"},
+	{componentName: "WenCai", toolName: "wencai"},
+	{componentName: "Wikipedia", toolName: "wikipedia"},
+	{componentName: "YahooFinance", toolName: "yahoo_finance"},
 }
 
 func init() {

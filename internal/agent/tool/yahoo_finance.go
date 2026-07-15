@@ -34,31 +34,24 @@ const yahooFinanceToolDescription = "Fetch stock quote snapshots from Yahoo Fina
 
 // yahooFinanceParams is the JSON shape the model sends into InvokableRun.
 type yahooFinanceParams struct {
-	Symbols []string `json:"symbols"`
-	Fields  []string `json:"fields"`
-}
-
-// yahooFinanceQuote is one element of the upstream result array.
-type yahooFinanceQuote struct {
-	Symbol                     string  `json:"symbol"`
-	RegularMarketPrice         float64 `json:"regularMarketPrice"`
-	Currency                   string  `json:"currency"`
-	RegularMarketChangePercent float64 `json:"regularMarketChangePercent"`
+	Symbols   []string `json:"symbols"`
+	Fields    []string `json:"fields"`
+	StockCode string   `json:"stock_code"`
 }
 
 // yahooFinanceResponse is the upstream Yahoo Finance /v7/finance/quote
 // envelope.
 type yahooFinanceResponse struct {
 	QuoteResponse struct {
-		Result []yahooFinanceQuote `json:"result"`
-		Error  any                 `json:"error,omitempty"`
+		Result []map[string]any `json:"result"`
+		Error  any              `json:"error,omitempty"`
 	} `json:"quoteResponse"`
 }
 
 // yahooFinanceEnvelope is what the model sees.
 type yahooFinanceEnvelope struct {
-	Results []yahooFinanceQuote `json:"results"`
-	Error   string              `json:"_ERROR,omitempty"`
+	Results []map[string]any `json:"results"`
+	Error   string           `json:"_ERROR,omitempty"`
 }
 
 // yahooFinanceEndpoint is the Yahoo Finance quote URL. Exposed as a
@@ -72,6 +65,8 @@ var yahooFinanceEndpoint = "https://query1.finance.yahoo.com/v7/finance/quote"
 type YahooFinanceTool struct {
 	helper *HTTPHelper
 }
+
+var _ ToolComponent = (*YahooFinanceTool)(nil)
 
 // NewYahooFinanceTool returns a YahooFinanceTool using the default
 // HTTPHelper.
@@ -108,6 +103,18 @@ func (y *YahooFinanceTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
+func (y *YahooFinanceTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"stock_code": "Stock symbol to look up (e.g. AAPL, MSFT, 0005.HK).",
+		},
+		Outputs: map[string]string{"report": "Stock quote data."},
+		InputForm: map[string]any{
+			"stock_code": map[string]any{"type": "line", "name": "Stock code/Company name"},
+		},
+	}
+}
+
 // buildYahooFinanceURL composes the quote URL with the symbol list
 // and an optional `fields` parameter. Centralized for testability.
 func buildYahooFinanceURL(symbols []string, fields []string) string {
@@ -126,9 +133,12 @@ func (y *YahooFinanceTool) InvokableRun(ctx context.Context, argsJSON string, _ 
 		return yahooFinanceErrJSON(fmt.Errorf("yahoo_finance: parse arguments: %w", err)),
 			fmt.Errorf("yahoo_finance: parse arguments: %w", err)
 	}
+	if len(p.Symbols) == 0 && strings.TrimSpace(p.StockCode) != "" {
+		p.Symbols = []string{strings.TrimSpace(p.StockCode)}
+	}
 	if len(p.Symbols) == 0 {
-		return yahooFinanceErrJSON(fmt.Errorf("symbols is required and must be non-empty")),
-			fmt.Errorf("yahoo_finance: symbols is required and must be non-empty")
+		return yahooFinanceErrJSON(fmt.Errorf("stock_code is required")),
+			fmt.Errorf("yahoo_finance: stock_code is required")
 	}
 
 	endpoint := buildYahooFinanceURL(p.Symbols, p.Fields)
@@ -157,6 +167,10 @@ func (y *YahooFinanceTool) InvokableRun(ctx context.Context, argsJSON string, _ 
 			fmt.Errorf("yahoo_finance: decode response: %w", err)
 	}
 	return yahooFinanceJSON(yahooFinanceEnvelope{Results: raw.QuoteResponse.Result}), nil
+}
+
+func (y *YahooFinanceTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	return map[string]any{"report": envelopeSlice(envelope, "results")}
 }
 
 func yahooFinanceJSON(env yahooFinanceEnvelope) string {

@@ -115,6 +115,188 @@ func TestToolBackedComponentRegisteredGitHubFactory(t *testing.T) {
 	}
 }
 
+func TestToolBackedComponentRegisteredFactories(t *testing.T) {
+	tests := []struct {
+		name      string
+		toolName  string
+		params    map[string]any
+		outputKey string
+		inputKey  string
+	}{
+		{
+			name:      "ArXiv",
+			toolName:  "ArXiv",
+			params:    map[string]any{"top_n": float64(3), "sort_by": "relevance", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "BGPT",
+			toolName:  "BGPT",
+			params:    map[string]any{"api_key": "stored-key", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "KeenableSearch",
+			toolName:  "KeenableSearch",
+			params:    map[string]any{"api_key": "stored-key", "mode": "realtime", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "PubMed",
+			toolName:  "PubMed",
+			params:    map[string]any{"top_n": float64(3), "email": "node@example.com", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "Google",
+			toolName:  "Google",
+			params:    map[string]any{"api_key": "stored-key", "country": "cn", "language": "en", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "q",
+		},
+		{
+			name:     "ExeSQL",
+			toolName: "ExeSQL",
+			params: map[string]any{
+				"database": "demo", "username": "root", "host": "db.example.com", "port": float64(3306), "password": "secret",
+				"top_n": float64(50), "outputs": map[string]any{"json": map[string]any{}},
+			},
+			outputKey: "json",
+			inputKey:  "sql",
+		},
+		{
+			name:      "GoogleScholar",
+			toolName:  "GoogleScholar",
+			params:    map[string]any{"top_n": float64(3), "sort_by": "relevance", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "DuckDuckGo",
+			toolName:  "DuckDuckGo",
+			params:    map[string]any{"top_n": float64(3), "channel": "news", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:     "Email",
+			toolName: "Email",
+			params: map[string]any{
+				"smtp_server": "smtp.example.com", "smtp_port": float64(465), "email": "sender@example.com",
+				"password": "secret", "sender_name": "Sender", "outputs": map[string]any{"success": map[string]any{}},
+			},
+			outputKey: "success",
+			inputKey:  "to_email",
+		},
+		{
+			name:      "SearXNG",
+			toolName:  "SearXNG",
+			params:    map[string]any{"top_n": "10", "searxng_url": "https://searx.example.com", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "WenCai",
+			toolName:  "WenCai",
+			params:    map[string]any{"top_n": float64(20), "query_type": "stock", "outputs": map[string]any{"report": map[string]any{}}},
+			outputKey: "report",
+			inputKey:  "query",
+		},
+		{
+			name:      "Wikipedia",
+			toolName:  "Wikipedia",
+			params:    map[string]any{"top_n": float64(3), "language": "en", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "YahooFinance",
+			toolName:  "YahooFinance",
+			params:    map[string]any{"outputs": map[string]any{"report": map[string]any{}}},
+			outputKey: "report",
+			inputKey:  "stock_code",
+		},
+		{
+			name:      "TavilyExtract",
+			toolName:  "TavilyExtract",
+			params:    map[string]any{"api_key": "stored-key", "extract_depth": "advanced", "format": "text", "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "urls",
+		},
+		{
+			name:      "TavilySearch",
+			toolName:  "TavilySearch",
+			params:    map[string]any{"api_key": "stored-key", "search_depth": "advanced", "max_results": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := New(tt.toolName, tt.params)
+			if err != nil {
+				t.Fatalf("New(%s): %v", tt.toolName, err)
+			}
+			if _, ok := c.(*ToolBackedComponent); !ok {
+				t.Fatalf("New(%s) returned %T, want *ToolBackedComponent", tt.toolName, c)
+			}
+			if c.Name() != tt.toolName {
+				t.Fatalf("Name = %q, want %q", c.Name(), tt.toolName)
+			}
+			if _, ok := c.Inputs()[tt.inputKey]; !ok {
+				t.Fatalf("Inputs missing %q: %#v", tt.inputKey, c.Inputs())
+			}
+			if _, ok := c.Outputs()[tt.outputKey]; !ok {
+				t.Fatalf("Outputs missing %q: %#v", tt.outputKey, c.Outputs())
+			}
+		})
+	}
+}
+
+func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
+	c, err := New("WenCai", map[string]any{"top_n": float64(20), "query_type": "stock"})
+	if err != nil {
+		t.Fatalf("New(WenCai): %v", err)
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"query":     "商业航天",
+		"unrelated": "ignored by the tool parameter struct",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["report"] != "" {
+		t.Fatalf("outputs = %#v, want empty report", out)
+	}
+}
+
+func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
+	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "SearXNG", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+		t.Run(componentName, func(t *testing.T) {
+			c := &canvas.Canvas{
+				Components: map[string]canvas.CanvasComponent{
+					"begin_0": {
+						Obj:        canvas.CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+						Downstream: []string{"tool_0"},
+					},
+					"tool_0": {
+						Obj:      canvas.CanvasComponentObj{ComponentName: componentName, Params: map[string]any{}},
+						Upstream: []string{"begin_0"},
+					},
+				},
+				Path: []string{"begin_0", "tool_0"},
+			}
+			if _, err := canvas.BuildWorkflow(context.Background(), c); err != nil {
+				t.Fatalf("BuildWorkflow with %s: %v", componentName, err)
+			}
+		})
+	}
+}
+
 func TestToolBackedComponentCanvasBuildWorkflow(t *testing.T) {
 	c := &canvas.Canvas{
 		Components: map[string]canvas.CanvasComponent{
@@ -236,6 +418,52 @@ func TestToolBackedComponentGitHubIntegration(t *testing.T) {
 	}
 	chunks := state.GetRetrievalChunks()
 	if len(chunks) != 1 || chunks[0]["document_name"] != "ragflow" {
+		t.Fatalf("recorded references = %#v", chunks)
+	}
+}
+
+func TestToolBackedComponentTavilyIntegration(t *testing.T) {
+	serverCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		serverCalls++
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"results":[{"title":"RAGFlow","url":"https://ragflow.io","raw_content":"RAG article","content":"fallback","score":0.8,"custom":"preserved"}]}`))
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	helper := agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	tavily := agenttool.NewTavilyToolWith(helper)
+	component := &ToolBackedComponent{name: "TavilySearch", tool: tavily, spec: tavily.ComponentSpec()}
+	state := runtime.NewCanvasState("run-tavily", "task-tavily")
+	empty, err := component.Invoke(context.Background(), map[string]any{"query": ""})
+	if err != nil {
+		t.Fatalf("Invoke(empty query): %v", err)
+	}
+	if serverCalls != 0 || len(empty["json"].([]any)) != 0 || empty["formalized_content"] != "" {
+		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls)
+	}
+	out, err := component.Invoke(runtime.WithState(context.Background(), state), map[string]any{"query": "ragflow", "api_key": "key"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	rendered, _ := out["formalized_content"].(string)
+	if !strings.Contains(rendered, "Title: RAGFlow") || !strings.Contains(rendered, "RAG article") {
+		t.Fatalf("formalized_content = %q", rendered)
+	}
+	results, ok := out["json"].([]any)
+	if !ok || len(results) != 1 || results[0].(map[string]any)["custom"] != "preserved" {
+		t.Fatalf("raw json results = %#v", out["json"])
+	}
+	chunks := state.GetRetrievalChunks()
+	if len(chunks) != 1 || chunks[0]["document_name"] != "RAGFlow" || chunks[0]["similarity"] != float64(0.8) {
 		t.Fatalf("recorded references = %#v", chunks)
 	}
 }

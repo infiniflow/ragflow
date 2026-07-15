@@ -18,25 +18,34 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
 const (
-	searxngToolName        = "searxng_search"
-	searxngToolDescription = "SearXNG is a privacy-focused metasearch engine that aggregates results from multiple search engines without tracking users. It provides comprehensive web search capabilities."
-	defaultSearXNGTopN     = 10
-	searxngRequestTimeout  = 10 * time.Second
+	searxngToolName         = "searxng_search"
+	searxngToolDescription  = "SearXNG is a privacy-focused metasearch engine that aggregates results from multiple search engines without tracking users. It provides comprehensive web search capabilities."
+	defaultSearXNGTopN      = 10
+	searxngRequestTimeout   = 10 * time.Second
+	searxngPromptTokenLimit = 200000
 )
+
+var searxngDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
+
+var searxngNewlinePattern = regexp.MustCompile(`\n+`)
 
 // searxngParams mirrors the SearXNG-specific Python parameters. Query and
 // searxng_url are model inputs; searxng_url may also be node configuration,
@@ -60,6 +69,9 @@ type SearXNGTool struct {
 	defaults searxngParams
 	resolve  searxngResolver
 }
+
+var _ ToolComponent = (*SearXNGTool)(nil)
+var _ ReferenceBuilder = (*SearXNGTool)(nil)
 
 func defaultSearXNGParams() searxngParams {
 	return searxngParams{TopN: defaultSearXNGTopN}
@@ -210,6 +222,152 @@ func parseSearXNGTopN(value any) (int, bool) {
 		return parsed, err == nil
 	}
 	return strictInt(value)
+}
+
+// ComponentSpec returns the Python-compatible SearXNG Canvas surface.
+func (s *SearXNGTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query":       "The search keywords to execute with SearXNG.",
+			"searxng_url": "The base URL of the SearXNG instance.",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered SearXNG references for downstream LLM prompts.",
+			"json":               "Raw SearXNG result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{
+				"name": "Query",
+				"type": "line",
+			},
+			"searxng_url": map[string]any{
+				"name":        "SearXNG URL",
+				"type":        "line",
+				"placeholder": "http://localhost:4000",
+			},
+		},
+	}
+}
+
+// BuildReferences builds the same references as Python ToolBase._retrieve_chunks.
+func (s *SearXNGTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildSearXNGReferences(envelope)
+}
+
+// BuildComponentOutputs converts SearXNG's complete tool envelope into its
+// public Canvas outputs.
+func (s *SearXNGTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildSearXNGReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderSearXNGReferences(chunks, searxngPromptTokenLimit),
+		"json":               results,
+	}
+}
+
+func buildSearXNGReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, _ := item["content"].(string)
+		if content == "" {
+			continue
+		}
+		content = searxngDataImagePattern.ReplaceAllString(content, "")
+		runes := []rune(content)
+		if len(runes) > 10000 {
+			content = string(runes[:10000])
+		}
+		if content == "" {
+			continue
+		}
+
+		documentID := strconv.Itoa(hashSearXNGString(content, 100000000))
+		displayID := strconv.Itoa(hashSearXNGString(documentID, 500))
+		title := searxngText(item["title"])
+		resultURL := searxngText(item["url"])
+		chunks = append(chunks, map[string]any{
+			"id":                displayID,
+			"chunk_id":          documentID,
+			"content":           content,
+			"doc_id":            documentID,
+			"docnm_kwd":         title,
+			"document_id":       documentID,
+			"document_name":     title,
+			"dataset_id":        nil,
+			"image_id":          nil,
+			"positions":         nil,
+			"url":               resultURL,
+			"similarity":        1,
+			"vector_similarity": nil,
+			"term_similarity":   nil,
+			"row_id":            nil,
+			"doc_type":          nil,
+			"document_metadata": nil,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      resultURL,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderSearXNGReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := searxngText(chunk["content"])
+		if content == "" {
+			continue
+		}
+		usedTokens += tokenizer.NumTokensFromString(content)
+		var block strings.Builder
+		fmt.Fprintf(&block, "\nID: %s", searxngText(chunk["id"]))
+		if title := searxngPromptField(chunk["document_name"]); title != "" {
+			fmt.Fprintf(&block, "\n├── Title: %s", title)
+		}
+		if resultURL := searxngPromptField(chunk["url"]); resultURL != "" {
+			fmt.Fprintf(&block, "\n├── URL: %s", resultURL)
+		}
+		block.WriteString("\n└── Content:\n")
+		block.WriteString(content)
+		blocks = append(blocks, block.String())
+		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+			break
+		}
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func searxngText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func searxngPromptField(value any) string {
+	return searxngNewlinePattern.ReplaceAllString(searxngText(value), " ")
+}
+
+func hashSearXNGString(value string, modulus int) int {
+	digest := sha1.Sum([]byte(value))
+	result := 0
+	for _, part := range digest {
+		result = (result*256 + int(part)) % modulus
+	}
+	return result
 }
 
 func searxngJSON(env searxngEnvelope) string {
