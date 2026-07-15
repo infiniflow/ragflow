@@ -193,9 +193,9 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:
-        l = len(kbinfos["chunks"])
+        length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Hybrid search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[Hybrid search]({keywords}): snippet {length} -> {len(kbinfos['chunks'])}")
     return kbinfos
 
 
@@ -220,9 +220,9 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         highlight=False,
     )
     if keywords:
-        l = len(kbinfos["chunks"])
+        length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Vector search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[Vector search]({keywords}): snippet {length} -> {len(kbinfos['chunks'])}")
     return _normalize(kbinfos, tools.tenant_ids)
 
 
@@ -243,9 +243,9 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         highlight=False,
     )
     if keywords:
-        l = len(kbinfos["chunks"])
+        length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[BM25 search]({keywords}): snippet {l} -> {len(kbinfos['chunks'])}")
+        _LOG.info(f"[BM25 search]({keywords}): snippet {length} -> {len(kbinfos['chunks'])}")
     return _normalize(kbinfos, tools.tenant_ids)
 
 
