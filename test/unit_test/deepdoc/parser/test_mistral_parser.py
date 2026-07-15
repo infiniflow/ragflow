@@ -83,3 +83,108 @@ def test_block_text_image_returns_empty(monkeypatch):
 def test_block_text_strips_and_returns_content(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     assert m.MistralParser._block_text({"content": "  hi  "}, "text") == "hi"
+
+
+def _ocr_response():
+    """A real-shaped /v1/ocr response (from a live probe): two pages, a header
+    (dropped), text, title, an image with bbox, and a table block. dimensions
+    differ per page to guard against a constant rescale factor."""
+    return {
+        "model": "mistral-ocr-latest",
+        "usage_info": {"pages_processed": 2, "doc_size_bytes": 211291},
+        "pages": [
+            {
+                "index": 0,
+                "dimensions": {"dpi": 87, "width": 720, "height": 1018},
+                "markdown": "# Title\n\nhello",
+                "images": [{"id": "img-0.jpeg", "top_left_x": 251, "top_left_y": 72,
+                            "bottom_right_x": 311, "bottom_right_y": 145}],
+                "tables": [],
+                "blocks": [
+                    {"type": "header", "content": "Cofinanziato", "top_left_x": 135,
+                     "top_left_y": 72, "bottom_right_x": 213, "bottom_right_y": 145},
+                    {"type": "title", "content": "Title", "top_left_x": 40,
+                     "top_left_y": 160, "bottom_right_x": 400, "bottom_right_y": 190},
+                    {"type": "text", "content": "hello world", "top_left_x": 40,
+                     "top_left_y": 200, "bottom_right_x": 500, "bottom_right_y": 230},
+                    {"type": "image", "content": "", "top_left_x": 251, "top_left_y": 72,
+                     "bottom_right_x": 311, "bottom_right_y": 145},
+                ],
+            },
+            {
+                "index": 1,
+                "dimensions": {"dpi": 144, "width": 1021, "height": 681},
+                "markdown": "|a|b|",
+                "images": [],
+                "tables": [{"id": "tbl-0.md", "content": "<table><tr><td>a</td></tr></table>",
+                            "format": "html", "word_confidence_scores": None}],
+                "blocks": [
+                    {"type": "table", "content": "<table><tr><td>a</td></tr></table>",
+                     "table_id": "tbl-0.md", "top_left_x": 49, "top_left_y": 103,
+                     "bottom_right_x": 960, "bottom_right_y": 597},
+                ],
+            },
+        ],
+    }
+
+
+def test_normalize_pages_maps_bbox_and_page_size(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    pages = p._normalize_pages(_ocr_response())
+    assert [pg["page_num"] for pages_ in [pages] for pg in pages_] == [0, 1]
+    assert pages[0]["page_size"] == {"w": 720, "h": 1018}
+    assert pages[1]["page_size"] == {"w": 1021, "h": 681}
+    first_text = pages[0]["blocks"][2]
+    assert first_text["bbox"] == [40, 200, 500, 230]  # [x0, top, x1, bott]
+
+
+def test_transfer_naive_path_returns_2_tuples_without_header(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    pages = p._normalize_pages(_ocr_response())
+    secs = p._transfer_to_sections(pages)  # parse_method None -> naive
+    assert all(isinstance(s, tuple) and len(s) == 2 for s in secs)
+    joined = " ".join(s[0] for s in secs)
+    assert "Cofinanziato" not in joined  # header dropped
+    assert "hello world" in joined
+    assert "<table>" in joined  # table inlined as text
+
+
+def test_transfer_pipeline_path_returns_typed_3_tuples(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    pages = p._normalize_pages(_ocr_response())
+    secs = p._transfer_to_sections(pages, parse_method="pipeline")
+    assert all(isinstance(s, tuple) and len(s) == 3 for s in secs)
+    layout_types = {s[1] for s in secs}
+    assert {"text", "image", "table"} <= layout_types
+
+
+def test_transfer_naive_image_carries_caption_and_tag(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    pages = p._normalize_pages(_ocr_response())
+    secs = p._transfer_to_sections(pages)
+    img = [s for s in secs if "@@" in s[0] and "##" in s[0]]
+    assert len(img) == 1  # exactly the image block, tag embedded in text
+
+
+def test_line_tag_rescales_per_page_dimensions(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    # page_images sized to the rendered pixels; page 1 is wider (1021) than page 0 (720)
+    class _Img:
+        def __init__(self, size): self.size = size
+    p.page_images = [_Img((720, 1018)), _Img((1021, 681))]
+    tag0 = p._line_tag({"page_idx": 0, "bbox": [0, 0, 720, 1018], "page_size": {"w": 720, "h": 1018}})
+    assert tag0.startswith("@@1\t") and tag0.endswith("##")
+    tag1 = p._line_tag({"page_idx": 1, "bbox": [0, 0, 1021, 681], "page_size": {"w": 1021, "h": 681}})
+    assert tag1.startswith("@@2\t")
+
+
+def test_transfer_to_tables_is_empty(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    pages = p._normalize_pages(_ocr_response())
+    assert p._transfer_to_tables(pages) == []
