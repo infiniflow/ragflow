@@ -271,7 +271,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting Admin go server..."
-            bin/ragflow_server --admin --migrate
+            bin/ragflow_server --admin
             echo "Admin go server started."
             sleep 1;
         done &
