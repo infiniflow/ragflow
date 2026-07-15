@@ -40,6 +40,8 @@ export const enum UserSettingApiAction {
   AgreeTenant = 'agreeTenant',
   SetLangfuseConfig = 'setLangfuseConfig',
   DeleteLangfuseConfig = 'deleteLangfuseConfig',
+  BackendLanguage = 'backendLanguage',
+  ListPipelines = 'listPipelines',
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
@@ -107,14 +109,14 @@ export const useSelectParserList = (): Array<{
   // Detect backend runtime language (Go vs Python) so we can choose
   // the matching parser-list code path at runtime.
   const { data: backendLang } = useQuery({
-    queryKey: ['backendLanguage'],
+    queryKey: [UserSettingApiAction.BackendLanguage],
     queryFn: fetchBackendLanguage,
     staleTime: Infinity,
   });
 
   // Go backend: fetch pipeline catalog dynamically.
   const { data: pipelineListData } = useQuery({
-    queryKey: ['listPipelines'],
+    queryKey: [UserSettingApiAction.ListPipelines],
     queryFn: async () => {
       const { data } = await kbService.listPipelines();
       return data;

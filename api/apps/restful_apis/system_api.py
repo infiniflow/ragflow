@@ -65,6 +65,7 @@ def version():
 @manager.route("/language", methods=["GET"])  # noqa: F821
 def language():
     """Backend runtime language detection for front-end compatibility."""
+    logging.info("Language endpoint called, returning python")
     return get_json_result(data={"language": "python"})
 
 
