@@ -43,11 +43,15 @@
 // Chunk shape translation: nlp's Chunks are []map[string]any with
 // keys chunk_id, doc_id, docnm_kwd, content_with_weight,
 // content_ltks, similarity, term_similarity, vector_similarity. The
-// tool side wants a flat RetrievalChunk{ID, Content, DocumentID,
-// Score}. We pick the most user-facing fields:
+// tool side wants a flat RetrievalChunk with the fields needed for both
+// display and the frontend reference strip. We pick the most user-facing fields:
 //   - ID         ← chunk_id
 //   - Content    ← content_with_weight (fallback to content_ltks)
 //   - DocumentID ← doc_id
+//   - DocumentName ← docnm_kwd
+//   - DatasetID  ← kb_id
+//   - ImageID    ← image_id/img_id
+//   - Positions  ← positions/position_int
 //   - Score      ← similarity (fallback to avg of term+vector)
 //
 // Defensive defaults: missing or wrong-typed chunk fields become
@@ -59,6 +63,8 @@ package tool
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -130,9 +136,13 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 	// surface only the fields the agent tool actually controls:
 	// Page=1, PageSize=TopN, KbIDs=DatasetIDs, Top=TopN*4 (rerank
 	// headroom — matches the chat_session.go call pattern).
+	tenantIDs, err := a.resolveTenantIDs(req)
+	if err != nil {
+		return nil, err
+	}
 	nlpReq := &nlp.RetrievalRequest{
 		Question:  req.Query,
-		TenantIDs: a.resolveTenantIDs(req),
+		TenantIDs: tenantIDs,
 		KbIDs:     append([]string(nil), req.DatasetIDs...),
 		Page:      1,
 		PageSize:  topN,
@@ -161,10 +171,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 	return out, nil
 }
 
-func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
+func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) ([]string, error) {
 	seen := map[string]struct{}{}
 	tenantIDs := make([]string, 0, 1)
 	appendTenantID := func(tenantID string) {
+		tenantID = strings.TrimSpace(tenantID)
 		if tenantID == "" {
 			return
 		}
@@ -176,7 +187,25 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
 	}
 
 	appendTenantID(req.TenantID)
-	return tenantIDs
+	datasetIDs := compactStrings(req.DatasetIDs)
+	if len(datasetIDs) == 0 || a == nil || a.kbDAO == nil {
+		return tenantIDs, nil
+	}
+
+	kbs, err := a.kbDAO.GetByIDs(datasetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval: resolve dataset tenants: %w", err)
+	}
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		appendTenantID(kb.TenantID)
+	}
+	if len(tenantIDs) == 0 {
+		return nil, fmt.Errorf("retrieval: no valid knowledge bases found for dataset_ids %v", datasetIDs)
+	}
+	return tenantIDs, nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.
@@ -185,10 +214,17 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
 // can't break the whole result list.
 func translateChunk(raw map[string]any) RetrievalChunk {
 	return RetrievalChunk{
-		ID:         stringFromMap(raw, "chunk_id"),
-		Content:    contentFromMap(raw),
-		DocumentID: stringFromMap(raw, "doc_id"),
-		Score:      scoreFromMap(raw),
+		ID:               stringFromMap(raw, "chunk_id"),
+		Content:          contentFromMap(raw),
+		DocumentID:       stringFromMap(raw, "doc_id"),
+		DocumentName:     stringFromMap(raw, "docnm_kwd"),
+		DatasetID:        stringFromMap(raw, "kb_id"),
+		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
+		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
+		Positions:        firstValueFromMap(raw, "positions", "position_int"),
+		Score:            scoreFromMap(raw),
+		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
+		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),
 	}
 }
 
@@ -201,6 +237,24 @@ func stringFromMap(raw map[string]any, key string) string {
 		}
 	}
 	return ""
+}
+
+func firstStringFromMap(raw map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := stringFromMap(raw, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstValueFromMap(raw map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 // contentFromMap picks the most user-facing content field. nlp
@@ -236,6 +290,11 @@ func scoreFromMap(raw map[string]any) float64 {
 		return vec
 	}
 	return 0
+}
+
+func scoreValueFromMap(raw map[string]any, key string) float64 {
+	value, _ := numberFromMap(raw, key)
+	return value
 }
 
 // numberFromMap returns raw[key].(float64) with a tolerant path

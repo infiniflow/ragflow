@@ -33,10 +33,17 @@ import (
 // full Chunk type (with document_id, docnm_kwd, position, etc.)
 // lives in internal/entity and is wired in by a follow-up phase.
 type RetrievalChunk struct {
-	ID         string
-	Content    string
-	DocumentID string
-	Score      float64
+	ID               string
+	Content          string
+	DocumentID       string
+	DocumentName     string
+	DatasetID        string
+	ImageID          string
+	URL              string
+	Positions        any
+	Score            float64
+	TermSimilarity   float64
+	VectorSimilarity float64
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.

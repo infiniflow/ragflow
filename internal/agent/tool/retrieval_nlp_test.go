@@ -30,6 +30,8 @@ import (
 	"context"
 	"math"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 // floatEqual compares two floats with a small epsilon so
@@ -44,6 +46,8 @@ func TestTranslateChunk_FullFields(t *testing.T) {
 		"doc_id":              "doc-7",
 		"docnm_kwd":           "report.pdf",
 		"kb_id":               "kb-1",
+		"image_id":            "img-1",
+		"position_int":        [][]float64{{1, 2, 3, 4}},
 		"content_with_weight": "the answer is 42",
 		"content_ltks":        "answer 42",
 		"similarity":          0.87,
@@ -60,8 +64,26 @@ func TestTranslateChunk_FullFields(t *testing.T) {
 	if got.DocumentID != "doc-7" {
 		t.Errorf("DocumentID = %q, want \"doc-7\"", got.DocumentID)
 	}
+	if got.DocumentName != "report.pdf" {
+		t.Errorf("DocumentName = %q, want \"report.pdf\"", got.DocumentName)
+	}
+	if got.DatasetID != "kb-1" {
+		t.Errorf("DatasetID = %q, want \"kb-1\"", got.DatasetID)
+	}
+	if got.ImageID != "img-1" {
+		t.Errorf("ImageID = %q, want \"img-1\"", got.ImageID)
+	}
+	if got.Positions == nil {
+		t.Errorf("Positions is nil, want position_int payload")
+	}
 	if got.Score != 0.87 {
 		t.Errorf("Score = %v, want 0.87 (similarity preferred)", got.Score)
+	}
+	if got.TermSimilarity != 0.5 {
+		t.Errorf("TermSimilarity = %v, want 0.5", got.TermSimilarity)
+	}
+	if got.VectorSimilarity != 0.9 {
+		t.Errorf("VectorSimilarity = %v, want 0.9", got.VectorSimilarity)
 	}
 }
 
@@ -210,10 +232,13 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 
 func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
 	a := &NLPRetrievalAdapter{}
-	got := a.resolveTenantIDs(RetrievalRequest{
+	got, err := a.resolveTenantIDs(RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
 	})
+	if err != nil {
+		t.Fatalf("resolveTenantIDs: %v", err)
+	}
 
 	if len(got) != 1 {
 		t.Fatalf("tenantIDs len=%d want 1, got=%v", len(got), got)
@@ -221,4 +246,54 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing
 	if got[0] != "tenant-a" {
 		t.Fatalf("tenantIDs=%v want [tenant-a]", got)
 	}
+}
+
+func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
+	a := &NLPRetrievalAdapter{
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-a"},
+				{ID: "kb-2", TenantID: "tenant-b"},
+				{ID: "kb-3", TenantID: "tenant-a"},
+			},
+		},
+	}
+	got, err := a.resolveTenantIDs(RetrievalRequest{
+		DatasetIDs: []string{"kb-1", "kb-2", "kb-3", " "},
+	})
+	if err != nil {
+		t.Fatalf("resolveTenantIDs: %v", err)
+	}
+	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
+		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	}
+}
+
+func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.T) {
+	a := &NLPRetrievalAdapter{
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-b"},
+			},
+		},
+	}
+	got, err := a.resolveTenantIDs(RetrievalRequest{
+		TenantID:   "tenant-a",
+		DatasetIDs: []string{"kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("resolveTenantIDs: %v", err)
+	}
+	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
+		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	}
+}
+
+type fakeKnowledgebaseLookup struct {
+	kbs []*entity.Knowledgebase
+	err error
+}
+
+func (f fakeKnowledgebaseLookup) GetByIDs(_ []string) ([]*entity.Knowledgebase, error) {
+	return f.kbs, f.err
 }

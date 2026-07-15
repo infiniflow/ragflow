@@ -992,6 +992,15 @@ func (c *retrievalComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *retrievalComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
 func (c *retrievalComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered chunks for downstream LLM prompts.",
