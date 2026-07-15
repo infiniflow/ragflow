@@ -61,7 +61,7 @@ export function useBeforeDelete() {
             toBeDeletedNodes.push(currentNode);
           }
         });
-      }, []);
+      });
     }
 
     const toBeDeletedNodeIdSet = new Set(

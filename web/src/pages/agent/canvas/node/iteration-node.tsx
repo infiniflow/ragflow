@@ -30,7 +30,7 @@ export function InnerIterationNode({
         )}
       >
         <NodeResizeControl
-          style={{ ...controlStyle, pointerEvents: 'all' }}
+          style={{ ...controlStyle, pointerEvents: 'auto' }}
           minWidth={100}
           minHeight={50}
         >

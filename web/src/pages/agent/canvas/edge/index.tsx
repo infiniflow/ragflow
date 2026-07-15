@@ -127,7 +127,7 @@ function InnerButtonEdge({
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               fontSize: 12,
-              pointerEvents: 'all',
+              pointerEvents: 'auto',
               zIndex: 1002,
             }}
             className="nodrag nopan"
