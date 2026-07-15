@@ -85,6 +85,7 @@ func (e *EmailComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	toEmail = runtime.ResolveTemplateForDisplay(toEmail, state)
 	ccEmail = runtime.ResolveTemplateForDisplay(ccEmail, state)
 	subject = runtime.ResolveTemplateForDisplay(subject, state)
+	subject = stripEmailHeaderLineBreaks(subject)
 	content = runtime.ResolveTemplateForDisplay(content, state)
 
 	args := map[string]any{
@@ -239,6 +240,10 @@ func splitEmailList(value string) []string {
 		}
 	}
 	return out
+}
+
+func stripEmailHeaderLineBreaks(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
 }
 
 func init() {

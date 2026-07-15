@@ -35,6 +35,11 @@ const emailToolName = "email"
 
 const emailToolDescription = "Send an email via SMTP. Returns success/failure status."
 
+const (
+	emailDialTimeout    = 10 * time.Second
+	emailSessionTimeout = 30 * time.Second
+)
+
 // emailParams is the JSON shape the model sends into InvokableRun.
 type emailParams struct {
 	SMTPHost string   `json:"smtp_host"`
@@ -123,13 +128,17 @@ func buildEmailMessage(from string, to []string, subject, body string) []byte {
 	var b strings.Builder
 	b.WriteString("From: " + from + "\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("Subject: " + stripEmailHeaderLineBreaks(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	b.WriteString("\r\n")
 	b.WriteString(body)
 	b.WriteString("\r\n")
 	return []byte(b.String())
+}
+
+func stripEmailHeaderLineBreaks(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
 }
 
 type emailSender func(ctx context.Context, p emailParams, msg []byte) error
@@ -153,9 +162,6 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 			fmt.Errorf("email: send: %w", err)
 	}
 
-	// Honor context cancellation if the caller passed a deadline. The
-	// underlying smtp.SendMail is blocking, so we check after the call;
-	// a stricter impl would select on ctx.Done() around the call.
 	if err := ctx.Err(); err != nil {
 		return emailErrJSON(err), err
 	}
@@ -169,20 +175,49 @@ func sendEmailSMTP(ctx context.Context, p emailParams, msg []byte) error {
 	return sendEmailSTARTTLS(ctx, p, msg)
 }
 
-func sendEmailSTARTTLS(_ context.Context, p emailParams, msg []byte) error {
+func sendEmailSTARTTLS(ctx context.Context, p emailParams, msg []byte) error {
 	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
-	var auth smtp.Auth
-	if p.Username != "" {
-		auth = smtp.PlainAuth("", p.Username, p.Password, p.SMTPHost)
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
 	}
-	return smtp.SendMail(addr, auth, p.FromAddr, p.ToAddrs, msg)
+	defer conn.Close()
+	setEmailDeadline(ctx, conn)
+	stopWatch := watchEmailContext(ctx, conn)
+	defer stopWatch()
+
+	client, err := smtp.NewClient(conn, p.SMTPHost)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+	return submitEmail(ctx, client, p, msg)
 }
 
 func sendEmailSMTPS(ctx context.Context, p emailParams, msg []byte) error {
 	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: p.SMTPHost, MinVersion: tls.VersionTLS12})
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	rawConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		return err
+	}
+	setEmailDeadline(ctx, rawConn)
+	stopWatch := watchEmailContext(ctx, rawConn)
+	defer stopWatch()
+
+	conn := tls.Client(rawConn, &tls.Config{ServerName: p.SMTPHost, MinVersion: tls.VersionTLS12})
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = rawConn.Close()
 		return err
 	}
 	defer conn.Close()
@@ -196,6 +231,10 @@ func sendEmailSMTPS(ctx context.Context, p emailParams, msg []byte) error {
 	if err := client.Hello("localhost"); err != nil {
 		return err
 	}
+	return submitEmail(ctx, client, p, msg)
+}
+
+func submitEmail(ctx context.Context, client *smtp.Client, p emailParams, msg []byte) error {
 	if p.Username != "" {
 		if err := client.Auth(smtp.PlainAuth("", p.Username, p.Password, p.SMTPHost)); err != nil {
 			return err
@@ -227,6 +266,26 @@ func sendEmailSMTPS(ctx context.Context, p emailParams, msg []byte) error {
 		return err
 	}
 	return nil
+}
+
+func setEmailDeadline(ctx context.Context, conn net.Conn) {
+	deadline := time.Now().Add(emailSessionTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+}
+
+func watchEmailContext(ctx context.Context, conn net.Conn) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 // validateEmailParams guards against obviously broken inputs. The
