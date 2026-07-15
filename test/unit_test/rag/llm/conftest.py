@@ -58,13 +58,49 @@ def _install_rag_llm_stub():
     llm_pkg.OcrModel = {}
 
     class SupportedLiteLLMProvider(StrEnum):
+        # Kept in sync with the real rag/llm/__init__.py enum so that tests
+        # exercising _apply_model_family_policies() (which references
+        # several of these members, e.g. Anthropic, Ollama) don't fail with
+        # AttributeError against this lightweight stub.
         Tongyi_Qianwen = "Tongyi-Qianwen"
         Dashscope = "Dashscope"
+        Bedrock = "Bedrock"
         Moonshot = "Moonshot"
+        xAI = "xAI"
+        DeepInfra = "DeepInfra"
+        Groq = "Groq"
+        Cohere = "Cohere"
+        Gemini = "Gemini"
+        DeepSeek = "DeepSeek"
+        Nvidia = "NVIDIA"
+        TogetherAI = "TogetherAI"
+        Anthropic = "Anthropic"
+        Ollama = "Ollama"
+        LongCat = "LongCat"
+        CometAPI = "CometAPI"
+        SILICONFLOW = "SILICONFLOW"
+        OpenRouter = "OpenRouter"
+        StepFun = "StepFun"
+        PPIO = "PPIO"
+        PerfXCloud = "PerfXCloud"
+        Upstage = "Upstage"
+        NovitaAI = "NovitaAI"
+        Lingyi_AI = "01.AI"
+        GiteeAI = "GiteeAI"
+        AI_302 = "302.AI"
+        JiekouAI = "Jiekou.AI"
         ZHIPU_AI = "ZHIPU-AI"
+        MiniMax = "MiniMax"
+        DeerAPI = "DeerAPI"
+        GPUStack = "GPUStack"
         OpenAI = "OpenAI"
         Azure_OpenAI = "Azure-OpenAI"
+        n1n = "n1n"
         HunYuan = "Tencent Hunyuan"
+        Avian = "Avian"
+        Astraflow = "Astraflow"
+        Astraflow_CN = "Astraflow-CN"
+        FuturMix = "FuturMix"
 
     llm_pkg.SupportedLiteLLMProvider = SupportedLiteLLMProvider
     llm_pkg.FACTORY_DEFAULT_BASE_URL = {}
