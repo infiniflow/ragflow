@@ -204,7 +204,7 @@ class MistralParser(RAGFlowPdfParser):
         if not poss:
             return (None, None) if need_position else None
         if not getattr(self, "page_images", None):
-            self.logger.warning("[SoMark] crop called without page images; skip.")
+            self.logger.warning("[Mistral OCR] crop called without page images; skip.")
             return (None, None) if need_position else None
 
         page_count = len(self.page_images)
@@ -423,7 +423,7 @@ class MistralParser(RAGFlowPdfParser):
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
-    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple:
+    def parse_pdf(self, filepath: str | PathLike[str], binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple[list, list]:
         # Load bytes.
         if binary is not None:
             pdf_bytes = binary.getvalue() if hasattr(binary, "getvalue") else bytes(binary)

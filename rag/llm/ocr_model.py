@@ -357,6 +357,15 @@ class MistralOcrModel(Base, MistralParser):
         table_format = _resolve("mistral_ocr_table_format", "MISTRAL_OCR_TABLE_FORMAT", "html")
         keep_hf = _resolve("mistral_ocr_keep_header_footer", "MISTRAL_OCR_KEEP_HEADER_FOOTER", 0)
 
+        # Redact sensitive config keys before logging
+        redacted_config = {}
+        for k, v in config.items():
+            if any(s in k.lower() for s in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed Mistral OCR config (sensitive fields redacted): {redacted_config}")
+
         MistralParser.__init__(
             self,
             base_url=base_url,
