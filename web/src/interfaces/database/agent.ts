@@ -156,6 +156,7 @@ export interface IRetrievalForm {
   tenant_rerank_id?: string;
   empty_response?: string;
   kb_ids: string[];
+  document_ids?: string | string[];
 }
 
 export interface ICodeForm {

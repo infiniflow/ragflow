@@ -134,6 +134,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		Question:  req.Query,
 		TenantIDs: a.resolveTenantIDs(req),
 		KbIDs:     append([]string(nil), req.DatasetIDs...),
+		DocIDs:    append([]string(nil), req.DocumentIDs...),
 		Page:      1,
 		PageSize:  topN,
 		Aggs:      boolPtr(false),
