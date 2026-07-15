@@ -20,16 +20,10 @@ export function InnerIterationNode({
   selected,
 }: NodeProps<IIterationNode>) {
   return (
-    <ToolBar
-      selected={selected}
-      id={id}
-      label={data.label}
-      showRun={false}
-      passThrough
-    >
+    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <section
         className={cn(
-          'h-full bg-transparent rounded-b-md group border border-border-button border-t-0 pointer-events-none',
+          'h-full bg-transparent rounded-b-md group border border-border-button border-t-0',
           {
             ['border-x border-accent-primary']: selected,
           },

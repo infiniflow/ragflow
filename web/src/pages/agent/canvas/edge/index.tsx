@@ -11,7 +11,7 @@ import useGraphStore from '../../store';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { PointerEvent as ReactPointerEvent } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 
 function InnerButtonEdge({
@@ -59,9 +59,8 @@ function InnerButtonEdge({
       : {};
   }, [isTargetPlaceholder]);
 
-  const onEdgeClick = (
-    event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>,
-  ) => {
+  const onEdgeClick = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    // pointerdown: React Flow may swallow click inside group nodes.
     event.stopPropagation();
     event.preventDefault();
     deleteEdgeById(id);
@@ -137,7 +136,6 @@ function InnerButtonEdge({
               className="size-5 border border-state-error text-state-error rounded-full leading-none bg-bg-canvas outline outline-bg-canvas"
               type="button"
               onPointerDown={onEdgeClick}
-              onClick={onEdgeClick}
             >
               ×
             </button>

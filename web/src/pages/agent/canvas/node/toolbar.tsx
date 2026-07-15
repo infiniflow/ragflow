@@ -34,7 +34,6 @@ type ToolBarProps = {
   id: string;
   showRun?: boolean;
   showCopy?: boolean;
-  passThrough?: boolean;
 } & PropsWithChildren;
 
 export function ToolBar({
@@ -44,7 +43,6 @@ export function ToolBar({
   id,
   showRun = true,
   showCopy = true,
-  passThrough = false,
 }: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
   const deleteIterationNodeById = useGraphStore(
@@ -74,15 +72,8 @@ export function ToolBar({
   );
 
   return (
-    <TooltipNode
-      selected={selected}
-      className={cn(passThrough && 'pointer-events-none')}
-    >
-      <TooltipTrigger
-        className={cn('h-full', passThrough && 'pointer-events-none')}
-      >
-        {children}
-      </TooltipTrigger>
+    <TooltipNode selected={selected}>
+      <TooltipTrigger className="h-full">{children}</TooltipTrigger>
 
       <TooltipContent position={Position.Top}>
         <section className="flex gap-2 items-center text-text-secondary pb-2">

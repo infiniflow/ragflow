@@ -73,35 +73,28 @@ export function useBeforeDelete() {
         .map((node) => node.id),
     );
 
-    const edgeIdSet = new Set<string>();
-    const toBeDeletedEdges: Edge[] = [];
+    const allowEdge = (edge: Edge) =>
+      !discardedNodeIds.has(edge.source) && !discardedNodeIds.has(edge.target);
 
-    const pushEdge = (edge: Edge) => {
-      if (edgeIdSet.has(edge.id)) {
-        return;
+    const edgeById = new Map<string, Edge>();
+    for (const edge of edges) {
+      if (allowEdge(edge)) {
+        edgeById.set(edge.id, edge);
       }
+    }
+    for (const edge of graphEdges) {
       if (
-        discardedNodeIds.has(edge.source) ||
-        discardedNodeIds.has(edge.target)
+        (toBeDeletedNodeIdSet.has(edge.source) ||
+          toBeDeletedNodeIdSet.has(edge.target)) &&
+        allowEdge(edge)
       ) {
-        return;
+        edgeById.set(edge.id, edge);
       }
-      edgeIdSet.add(edge.id);
-      toBeDeletedEdges.push(edge);
-    };
-
-    edges.forEach(pushEdge);
-    graphEdges
-      .filter(
-        (edge) =>
-          toBeDeletedNodeIdSet.has(edge.source) ||
-          toBeDeletedNodeIdSet.has(edge.target),
-      )
-      .forEach(pushEdge);
+    }
 
     return {
       nodes: toBeDeletedNodes,
-      edges: toBeDeletedEdges,
+      edges: [...edgeById.values()],
     };
   };
 
