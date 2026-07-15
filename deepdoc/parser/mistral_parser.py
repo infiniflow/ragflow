@@ -440,11 +440,11 @@ class MistralParser(RAGFlowPdfParser):
         else:
             pdf_bytes = Path(filepath).read_bytes()
 
-        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
+        self.outlines = extract_pdf_outlines(pdf_bytes)
 
         # Render the WHOLE document locally: _line_tag/crop index page_images in
         # absolute page order, so a sliced render would crop the wrong page.
-        self.__images__(binary if binary is not None else filepath, zoomin=1)
+        self.__images__(pdf_bytes, zoomin=1)
 
         # pages is a selector: include only when the caller restricted the range.
         pages: Optional[list[int]] = None

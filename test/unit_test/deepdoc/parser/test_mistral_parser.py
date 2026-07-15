@@ -429,3 +429,43 @@ def test_parse_pdf_pipeline_returns_3_tuples(monkeypatch, tmp_path):
     pdf.write_bytes(b"%PDF-1.4 minimal")
     secs, _ = p.parse_pdf(str(pdf), parse_method="pipeline")
     assert all(len(s) == 3 for s in secs)
+
+
+def test_parse_pdf_empty_range_short_circuits(monkeypatch, tmp_path):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    called = {"ocr": 0}
+
+    def fake_ocr(pdf_bytes, filename, pages, callback=None):
+        called["ocr"] += 1
+        return {"pages": []}
+
+    p._call_ocr = fake_ocr
+    _patch_render(m, p, 3)  # only 3 pages rendered
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 minimal")
+    # from_page beyond the rendered page count -> empty selector after clamp
+    secs, tables = p.parse_pdf(str(pdf), from_page=5, to_page=10)
+    assert (secs, tables) == ([], [])
+    assert called["ocr"] == 0  # short-circuited, no OCR call made
+
+
+def test_parse_pdf_binary_bytes_path(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    p._call_ocr = lambda pdf_bytes, filename, pages, callback=None: _ocr_response()
+    _patch_render(m, p, 2)
+    secs, tables = p.parse_pdf("x.pdf", binary=b"%PDF-1.4 minimal")
+    assert any("hello world" in s[0] for s in secs)
+    assert tables == []
+
+
+def test_parse_pdf_binary_stream_normalized(monkeypatch):
+    from io import BytesIO
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    seen = {}
+    p._call_ocr = lambda pdf_bytes, filename, pages, callback=None: seen.update(pdf_bytes=pdf_bytes) or _ocr_response()
+    _patch_render(m, p, 2)
+    p.parse_pdf("x.pdf", binary=BytesIO(b"%PDF-1.4 stream"))
+    assert seen["pdf_bytes"] == b"%PDF-1.4 stream"  # BytesIO normalized to raw bytes
