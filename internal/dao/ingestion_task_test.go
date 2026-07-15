@@ -157,44 +157,38 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 		}
 	}
 
-	// DeleteIfTerminal should delete terminal tasks (idx 3=COMPLETED, 4=STOPPED, 5=FAILED),
-	// not non-terminal ones (idx 0=CREATED, 1=RUNNING, 2=STOPPING).
-	deleted, err := NewIngestionTaskDAO().DeleteIfTerminal("doc-3")
-	if err != nil {
-		t.Fatalf("DeleteIfTerminal: %v", err)
-	}
-	if deleted != 1 {
-		t.Fatalf("deleted doc-3(COMPLETED) = %d, want 1", deleted)
-	}
-	_, err = NewIngestionTaskDAO().DeleteIfTerminal("doc-4")
-	if err != nil {
-		t.Fatalf("DeleteIfTerminal: %v", err)
-	}
-	_, err = NewIngestionTaskDAO().DeleteIfTerminal("doc-5")
-	if err != nil {
-		t.Fatalf("DeleteIfTerminal: %v", err)
+	// DeleteIfTerminal deletes everything except RUNNING and STOPPING.
+	// CREATED is safe to delete (no worker has claimed it yet);
+	// COMPLETED/STOPPED/FAILED are terminal.
+	// Call it for every doc and verify the negative cases survived.
+	for i := 0; i < len(statuses); i++ {
+		docID := fmt.Sprintf("doc-%d", i)
+		_, err := NewIngestionTaskDAO().DeleteIfTerminal(docID)
+		if err != nil {
+			t.Fatalf("DeleteIfTerminal(doc-%d): %v", i, err)
+		}
 	}
 
-	// Verify non-terminal tasks survived.
-	for i, status := range []string{common.CREATED, common.RUNNING, common.STOPPING} {
+	// RUNNING and STOPPING must survive.
+	for _, i := range []int{1, 2} {
 		docID := fmt.Sprintf("doc-%d", i)
 		task, err := NewIngestionTaskDAO().GetByDocumentID(docID)
 		if err != nil {
 			t.Fatalf("GetByDocumentID %s: %v", docID, err)
 		}
 		if task == nil {
-			t.Fatalf("%s task (doc=%s) must not be deleted", status, docID)
+			t.Fatalf("%s task (doc=%d) must not be deleted", statuses[i], i)
 		}
 	}
-	// Verify terminal tasks are gone.
-	for i, status := range []string{common.COMPLETED, common.STOPPED, common.FAILED} {
-		docID := fmt.Sprintf("doc-%d", i+3)
+	// CREATED, COMPLETED, STOPPED, FAILED must be gone.
+	for _, i := range []int{0, 3, 4, 5} {
+		docID := fmt.Sprintf("doc-%d", i)
 		task, err := NewIngestionTaskDAO().GetByDocumentID(docID)
 		if err != nil {
 			t.Fatalf("GetByDocumentID %s: %v", docID, err)
 		}
 		if task != nil {
-			t.Fatalf("%s task (doc=%s) should be deleted, still present", status, docID)
+			t.Fatalf("%s task (doc=%d) should be deleted, still present", statuses[i], i)
 		}
 	}
 }
