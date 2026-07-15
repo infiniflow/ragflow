@@ -343,7 +343,6 @@ jobs:
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.API_PROXY_SCHEME != 'web'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -496,7 +495,6 @@ jobs:
 
 
       - name: Start ragflow:nightly for Infinity
-        if: env.API_PROXY_SCHEME != 'web'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -827,7 +825,6 @@ jobs:
           uv pip install -e sdk/python
 
       - name: Prepare function test environment
-        if: env.API_PROXY_SCHEME != 'web'
         working-directory: docker
         run: |
           set -euo pipefail
@@ -980,7 +977,6 @@ jobs:
 
 
       - name: Start ragflow:nightly for Elasticsearch
-        if: env.API_PROXY_SCHEME != 'web'
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
