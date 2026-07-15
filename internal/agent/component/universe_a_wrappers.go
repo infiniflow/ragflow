@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Universe A delegation wrappers. Canvas-facing components that
+// Package component Universe A delegation wrappers. Canvas-facing components that
 // delegate to their corresponding Universe B eino tool
 // implementations. The delegation pattern keeps the canvas
 // scheduler's Component contract thin and the eino tool's
@@ -1496,6 +1496,17 @@ func (c *codeExecComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *codeExecComponent) GetInputForm() map[string]any {
+	res := make(map[string]any, len(c.params))
+	for k, _ := range c.params {
+		res[k] = map[string]any{
+			"type": "line",
+			"name": k,
+		}
+	}
+	return res
+}
+
 func (c *codeExecComponent) Outputs() map[string]string {
 	return map[string]string{
 		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
@@ -1517,7 +1528,8 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 		merged[k] = v
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),
@@ -1656,29 +1668,29 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+func resolveCodeExecArguments(args map[string]any, merged map[string]any, state *runtime.CanvasState) map[string]any {
 	if args == nil {
 		return nil
 	}
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		out[k] = resolveCodeExecArgumentValue(v, merged)
+		out[k] = resolveCodeExecArgumentValue(v, merged, state)
 	}
 	return out
 }
 
-func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+func resolveCodeExecArgumentValue(v any, merged map[string]any, state *runtime.CanvasState) any {
 	switch x := v.(type) {
 	case map[string]any:
-		return resolveCodeExecArguments(x, merged)
+		return resolveCodeExecArguments(x, merged, state)
 	case []any:
 		out := make([]any, 0, len(x))
 		for _, item := range x {
-			out = append(out, resolveCodeExecArgumentValue(item, merged))
+			out = append(out, resolveCodeExecArgumentValue(item, merged, state))
 		}
 		return out
 	case string:
-		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged, state); ok {
 			return resolved
 		}
 		return x
@@ -1687,10 +1699,15 @@ func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
 	}
 }
 
-func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime.CanvasState) (any, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, false
+	}
+	if state != nil {
+		if v, err := state.GetVar(ref); err == nil && v != nil {
+			return v, true
+		}
 	}
 	at := strings.Index(ref, "@")
 	if at <= 0 || at >= len(ref)-1 {
