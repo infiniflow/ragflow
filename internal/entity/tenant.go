@@ -36,7 +36,7 @@ type Tenant struct {
 	ParserIDs       string  `gorm:"column:parser_ids;size:256;not null;index" json:"parser_ids"`
 	OCRID           string  `gorm:"column:ocr_id;size:256" json:"ocr_id,omitempty"`
 	TenantOCRID     *string `gorm:"column:tenant_ocr_id;size:32" json:"tenant_ocr_id,omitempty"`
-	Credit          int     `gorm:"column:credit;default:512;index" json:"credit"`
+	Credit          int64   `gorm:"column:credit;default:512;index" json:"credit"`
 	Status          *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
