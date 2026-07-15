@@ -109,6 +109,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTokenHubModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
+	case "ragcon":
+		return NewRAGconModel(baseURL, urlSuffix), nil
 	case "avian":
 		return NewAvianModel(baseURL, urlSuffix), nil
 	case "replicate":
