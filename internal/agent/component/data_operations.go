@@ -282,37 +282,6 @@ func (d *DataOperationsComponent) GetInputForm() map[string]any {
 	return map[string]any{}
 }
 
-// TODO duplicate with string_transform.go, make it to a common method later --Haruko386
-// I can't do this since that PR not merged
-func getInputElementsFromText(txt string) map[string]map[string]any {
-	res := make(map[string]map[string]any)
-	for _, match := range runtime.VarRefPattern.FindAllStringSubmatch(txt, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		exp := match[1]
-		if _, ok := res[exp]; ok {
-			continue
-		}
-		cpnID, varName := "", exp
-		if at := strings.Index(exp, "@"); at > 0 {
-			cpnID = exp[:at]
-			varName = exp[at+1:]
-		}
-		name := exp
-		if cpnID != "" {
-			name = cpnID + "@" + varName
-		}
-		res[exp] = map[string]any{
-			"name":       name,
-			"value":      nil,
-			"_retrieval": nil,
-			"_cpn_id":    cpnID,
-		}
-	}
-	return res
-}
-
 // Outputs returns the transformed payload.
 func (d *DataOperationsComponent) Outputs() map[string]string {
 	return map[string]string{
