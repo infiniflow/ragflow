@@ -127,7 +127,7 @@ func NewRouter(
 func (r *Router) Setup(engine *gin.Engine) {
 
 	SetupEERouter(engine)
-	
+
 	// Mark all responses from Go with a header for debugging.
 	engine.Use(func(c *gin.Context) {
 		c.Header("X-API-Source", "go")
@@ -365,6 +365,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
 				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.POST("/:dataset_id/embedding", r.datasetsHandler.RunEmbedding)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)

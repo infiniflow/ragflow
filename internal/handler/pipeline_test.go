@@ -44,8 +44,19 @@ func pipelineCtx() (*gin.Context, *httptest.ResponseRecorder) {
 
 func TestPipelineHandler_ListPipelines_TypeBuiltin(t *testing.T) {
 	items := []*pipelinepkg.BuiltinPipelineMeta{
-		{ParserID: "general", Title: "General", Description: "general desc", Filename: "ingestion_pipeline_general.json"},
-		{ParserID: "book", Title: "Book", Filename: "ingestion_pipeline_book.json"},
+		{
+			ParserID:    "general",
+			Title:       "General",
+			Description: "general desc",
+			Filename:    "ingestion_pipeline_general.json",
+			DSL:         map[string]any{"components": map[string]any{}},
+		},
+		{
+			ParserID: "book",
+			Title:    "Book",
+			Filename: "ingestion_pipeline_book.json",
+			DSL:      map[string]any{"components": map[string]any{}},
+		},
 	}
 	h := &PipelineHandler{registry: fakePipelineLister{items: items}}
 
@@ -58,8 +69,9 @@ func TestPipelineHandler_ListPipelines_TypeBuiltin(t *testing.T) {
 	var resp struct {
 		Code int `json:"code"`
 		Data []struct {
-			ParserID string `json:"parser_id"`
-			Title    string `json:"title"`
+			ParserID string         `json:"parser_id"`
+			Title    string         `json:"title"`
+			DSL      map[string]any `json:"dsl"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {

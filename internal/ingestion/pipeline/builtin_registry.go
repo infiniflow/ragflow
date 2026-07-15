@@ -22,10 +22,11 @@ var builtinTemplateFS embed.FS
 // pipeline template. The ParserID field is the value stored in the dataset's
 // parser_id column for built-in pipelines.
 type BuiltinPipelineMeta struct {
-	ParserID    string `json:"parser_id"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Filename    string `json:"filename"`
+	ParserID    string         `json:"parser_id"`
+	Title       string         `json:"title"`
+	Description string         `json:"description,omitempty"`
+	Filename    string         `json:"filename"`
+	DSL         map[string]any `json:"dsl"`
 }
 
 type BuiltinPipeline struct {
@@ -196,6 +197,7 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 			Title:       englishText(data["title"], ref),
 			Description: englishText(data["description"], ""),
 			Filename:    filename,
+			DSL:         dsl,
 		},
 		DSL: dsl,
 	}

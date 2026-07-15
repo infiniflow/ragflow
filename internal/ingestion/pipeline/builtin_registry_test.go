@@ -201,6 +201,37 @@ func TestLoadBuiltinDSL_NaiveAlias(t *testing.T) {
 	}
 }
 
+func TestRegistryMetaIncludesDSL(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	mustWrite("ingestion_pipeline_general.json", `{
+		"title": {"en": "General"},
+		"dsl": {"components": {"File": {"obj": {"component_name": "File"}}}}
+	}`)
+
+	r, err := NewRegistryFromDir(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryFromDir: %v", err)
+	}
+
+	general, ok := r.Get("general")
+	if !ok {
+		t.Fatal("Get(general) failed")
+	}
+
+	// Verify DSL is included in the meta.
+	if general.DSL == nil {
+		t.Fatal("DSL is nil, want non-nil")
+	}
+	if _, ok := general.DSL["components"]; !ok {
+		t.Fatal("DSL missing components key")
+	}
+}
+
 func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	_, err := LoadBuiltinDSL("nonexistent")
 	if err == nil {
