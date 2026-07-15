@@ -50,7 +50,7 @@ func TestTavily_BuildRequest(t *testing.T) {
 	})
 	tool := NewTavilyToolWith(helper)
 	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"ragflow","api_key":"key-xyz","max_results":3,"search_depth":"advanced"}`)
+		`{"query":"ragflow","api_key":"key-xyz","max_results":3,"search_depth":"advanced","include_raw_content":true,"include_images":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -78,6 +78,9 @@ func TestTavily_BuildRequest(t *testing.T) {
 	}
 	if gotBody["search_depth"] != "advanced" {
 		t.Errorf("body.search_depth = %v, want advanced", gotBody["search_depth"])
+	}
+	if gotBody["include_raw_content"] != true || gotBody["include_images"] != true {
+		t.Errorf("include flags = raw:%v images:%v, want true/true", gotBody["include_raw_content"], gotBody["include_images"])
 	}
 }
 
@@ -226,6 +229,8 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 		"max_results":                float64(12),
 		"days":                       float64(7),
 		"include_answer":             true,
+		"include_raw_content":        true,
+		"include_images":             true,
 		"include_image_descriptions": true,
 		"query":                      "ignored runtime input",
 		"outputs":                    map[string]any{"json": map[string]any{}},
@@ -240,8 +245,37 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 	if tavily.defaults.APIKey != "stored-key" || tavily.defaults.SearchDepth != "advanced" || tavily.defaults.MaxResults != 12 || tavily.defaults.Days != 7 {
 		t.Fatalf("defaults = %+v", tavily.defaults)
 	}
-	if !tavily.defaults.IncludeAnswer || !tavily.defaults.IncludeImageDescriptions {
+	if !tavily.defaults.IncludeAnswer || !tavily.defaults.IncludeRawContent || !tavily.defaults.IncludeImages || !tavily.defaults.IncludeImageDescriptions {
 		t.Fatalf("boolean defaults = %+v", tavily.defaults)
+	}
+}
+
+func TestTavily_ExplicitFlagsOverrideNodeDefaults(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	tavily := newTavilyTool(helper, func() string { return "" }, tavilyParams{
+		APIKey: "stored-key", IncludeRawContent: true, IncludeImages: true,
+	})
+	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow"}`); err != nil {
+		t.Fatalf("InvokableRun(node defaults): %v", err)
+	}
+	if gotBody["include_raw_content"] != true || gotBody["include_images"] != true {
+		t.Fatalf("node default flags were not sent: %#v", gotBody)
+	}
+	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow","include_raw_content":false,"include_images":false}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
+		t.Fatalf("explicit false flags were not preserved: %#v", gotBody)
 	}
 }
 

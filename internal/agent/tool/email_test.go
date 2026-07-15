@@ -34,15 +34,18 @@ func TestEmail_BuildMessage(t *testing.T) {
 
 	msg := buildEmailMessage(
 		"alice@example.com",
-		[]string{"bob@example.com", "carol@example.com"},
+		"Alice Sender",
+		[]string{"bob@example.com"},
+		[]string{"carol@example.com"},
 		"Hello, world",
 		"Body of the message.",
 	)
 
 	s := string(msg)
 	for _, want := range []string{
-		"From: alice@example.com",
-		"To: bob@example.com, carol@example.com",
+		`From: "Alice Sender" <alice@example.com>`,
+		"To: bob@example.com\r\n",
+		"Cc: carol@example.com\r\n",
 		"Subject: Hello, world",
 		"Content-Type: text/plain; charset=UTF-8",
 		"Body of the message.",
@@ -51,134 +54,130 @@ func TestEmail_BuildMessage(t *testing.T) {
 			t.Errorf("message missing %q\n--- message ---\n%s\n---", want, s)
 		}
 	}
+	if strings.Contains(s, "To: bob@example.com, carol@example.com") {
+		t.Fatalf("CC recipient leaked into To header:\n%s", s)
+	}
 	// RFC 822 mandates a blank line between headers and body.
 	if !strings.Contains(s, "\r\n\r\n") {
 		t.Errorf("message missing blank line between headers and body\n%s", s)
 	}
 }
 
-func TestEmail_SendAgainstMockSMTP(t *testing.T) {
-	t.Parallel()
-
-	// Spin up a minimal SMTP server: read commands, respond 250 to
-	// everything, and copy the DATA payload bytes so the test can
-	// inspect them.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Listen: %v", err)
+func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
+	originalSendEmail := sendEmail
+	t.Cleanup(func() { sendEmail = originalSendEmail })
+	var sentParams emailParams
+	var sentMessage []byte
+	sendEmail = func(_ context.Context, p emailParams, msg []byte) error {
+		sentParams = p
+		sentMessage = append([]byte(nil), msg...)
+		return nil
 	}
-	defer ln.Close()
-
-	var receivedData strings.Builder
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		reader := bufio.NewReader(conn)
-		writer := bufio.NewWriter(conn)
-		// Greeting
-		_, _ = writer.WriteString("220 mock-smtp ready\r\n")
-		_ = writer.Flush()
-		inData := false
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				return
-			}
-			up := strings.ToUpper(strings.TrimSpace(line))
-			switch {
-			case strings.HasPrefix(up, "EHLO"), strings.HasPrefix(up, "HELO"):
-				_, _ = writer.WriteString("250-mock-smtp\r\n250 OK\r\n")
-				_ = writer.Flush()
-			case strings.HasPrefix(up, "MAIL FROM:"), strings.HasPrefix(up, "RCPT TO:"):
-				_, _ = writer.WriteString("250 OK\r\n")
-				_ = writer.Flush()
-			case strings.HasPrefix(up, "DATA"):
-				_, _ = writer.WriteString("354 End data with <CR><LF>.<CR><LF>\r\n")
-				_ = writer.Flush()
-				inData = true
-			case inData && strings.TrimSpace(line) == ".":
-				_, _ = writer.WriteString("250 Queued\r\n")
-				_ = writer.Flush()
-				inData = false
-			case inData:
-				receivedData.WriteString(line)
-			case strings.HasPrefix(up, "QUIT"):
-				_, _ = writer.WriteString("221 Bye\r\n")
-				_ = writer.Flush()
-				return
-			default:
-				_, _ = writer.WriteString("250 OK\r\n")
-				_ = writer.Flush()
-			}
-		}
-	}()
-
-	host, port, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		t.Fatalf("SplitHostPort: %v", err)
-	}
-	_ = host
-	var portInt int
-	_, _ = fmt.Sscanf(port, "%d", &portInt)
 
 	built, err := BuildByName("email", map[string]any{
-		"smtp_server": "127.0.0.1",
-		"smtp_port":   portInt,
+		"smtp_server": "smtp.example.com",
+		"smtp_port":   587,
 		"email":       "alice@example.com",
-		"sender_name": "Alice",
+		"sender_name": "Alice Sender",
 	})
 	if err != nil {
 		t.Fatalf("BuildByName(email): %v", err)
 	}
-	emailTool := built.(*EmailTool)
 	args := map[string]any{
 		"to_email": "bob@example.com",
+		"cc_email": "carol@example.com, dave@example.com",
 		"subject":  "Test {sys.date}",
 		"content":  "Test body content.",
 	}
 	argsJSON, _ := json.Marshal(args)
 	state := runtime.NewCanvasState("run-email", "task-email")
 	state.Sys["date"] = "2026-07-15"
-	out, err := emailTool.InvokableRun(runtime.WithState(context.Background(), state), string(argsJSON))
+	out, err := built.(*EmailTool).InvokableRun(runtime.WithState(context.Background(), state), string(argsJSON))
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-
 	var env emailEnvelope
-	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
-	}
-	if env.Error != "" {
-		t.Errorf("Error = %q, want empty", env.Error)
-	}
-	if !env.OK {
-		t.Errorf("OK = false, want true")
+	if err := json.Unmarshal([]byte(out), &env); err != nil || !env.OK || env.Error != "" {
+		t.Fatalf("output = %s, decode error = %v", out, err)
 	}
 
-	// Wait for the mock server to finish.
+	message := string(sentMessage)
+	for _, want := range []string{
+		`From: "Alice Sender" <alice@example.com>`,
+		"To: bob@example.com\r\n",
+		"Cc: carol@example.com, dave@example.com\r\n",
+		"Subject: Test 2026-07-15",
+		"Test body content.",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing %q:\n%s", want, message)
+		}
+	}
+	if got := emailRecipients(sentParams.ToEmail, sentParams.CCEmail); strings.Join(got, ",") != "bob@example.com,carol@example.com,dave@example.com" {
+		t.Fatalf("SMTP envelope recipients = %#v", got)
+	}
+}
+
+func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
+	t.Parallel()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer listener.Close()
+	commands := make(chan []string, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			commands <- nil
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+		reader := bufio.NewReader(conn)
+		writer := bufio.NewWriter(conn)
+		_, _ = writer.WriteString("220 mock-smtp ready\r\n")
+		_ = writer.Flush()
+		var received []string
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				commands <- received
+				return
+			}
+			command := strings.ToUpper(strings.TrimSpace(line))
+			received = append(received, command)
+			if strings.HasPrefix(command, "EHLO") || strings.HasPrefix(command, "HELO") {
+				_, _ = writer.WriteString("250 mock-smtp\r\n")
+				_ = writer.Flush()
+			}
+		}
+	}()
+
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	var portNumber int
+	_, _ = fmt.Sscanf(port, "%d", &portNumber)
+	err = sendEmailSTARTTLS(context.Background(), emailParams{
+		SMTPServer: host, SMTPPort: portNumber, Email: "alice@example.com",
+		ToEmail: "bob@example.com",
+	}, []byte("message"))
+	if err == nil || !strings.Contains(err.Error(), "does not advertise STARTTLS") {
+		t.Fatalf("err = %v", err)
+	}
+
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("mock SMTP server did not close in time")
-	}
-
-	if !strings.Contains(receivedData.String(), "Subject: Test 2026-07-15") {
-		t.Errorf("mock server did not receive subject\n--- data ---\n%s\n---",
-			receivedData.String())
-	}
-	if !strings.Contains(receivedData.String(), "bob@example.com") {
-		t.Errorf("mock server did not receive recipient\n--- data ---\n%s\n---",
-			receivedData.String())
-	}
-	if !strings.Contains(receivedData.String(), "Test body content.") {
-		t.Errorf("mock server did not receive body\n--- data ---\n%s\n---",
-			receivedData.String())
+	case received := <-commands:
+		for _, command := range received {
+			if strings.HasPrefix(command, "MAIL FROM") || strings.HasPrefix(command, "RCPT TO") || command == "DATA" {
+				t.Fatalf("message submission started without STARTTLS: %#v", received)
+			}
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("mock SMTP server did not finish")
 	}
 }
 

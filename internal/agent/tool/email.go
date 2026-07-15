@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -139,10 +140,17 @@ func (e *EmailTool) ComponentSpec() ComponentSpec {
 // buildEmailMessage composes the RFC 822 wire format: headers + blank
 // line + body. Extracted so tests can verify subject / recipient
 // inclusion without opening a real socket.
-func buildEmailMessage(from string, to []string, subject, body string) []byte {
+func buildEmailMessage(from, senderName string, to, cc []string, subject, body string) []byte {
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
+	fromHeader := (&mail.Address{
+		Name:    stripEmailHeaderLineBreaks(senderName),
+		Address: stripEmailHeaderLineBreaks(from),
+	}).String()
+	b.WriteString("From: " + fromHeader + "\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	if len(cc) > 0 {
+		b.WriteString("Cc: " + strings.Join(cc, ", ") + "\r\n")
+	}
 	b.WriteString("Subject: " + stripEmailHeaderLineBreaks(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
@@ -176,8 +184,9 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return emailErrJSON(err), err
 	}
 
-	recipients := emailRecipients(p.ToEmail, p.CCEmail)
-	if len(recipients) == 0 {
+	toRecipients := splitEmailList(p.ToEmail)
+	ccRecipients := splitEmailList(p.CCEmail)
+	if len(toRecipients) == 0 {
 		err := fmt.Errorf("email: to_email is required")
 		return emailErrJSON(err), err
 	}
@@ -189,7 +198,7 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 	if content == "" {
 		content = "No content provided"
 	}
-	msg := buildEmailMessage(p.Email, recipients, subject, content)
+	msg := buildEmailMessage(p.Email, p.SenderName, toRecipients, ccRecipients, subject, content)
 	if err := sendEmail(ctx, p, msg); err != nil {
 		return emailErrJSON(fmt.Errorf("email: send: %w", err)),
 			fmt.Errorf("email: send: %w", err)
@@ -234,10 +243,11 @@ func sendEmailSTARTTLS(ctx context.Context, p emailParams, msg []byte) error {
 	if err := client.Hello("localhost"); err != nil {
 		return err
 	}
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPServer, MinVersion: tls.VersionTLS12}); err != nil {
-			return err
-		}
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("email: SMTP server does not advertise STARTTLS")
+	}
+	if err := client.StartTLS(&tls.Config{ServerName: p.SMTPServer, MinVersion: tls.VersionTLS12}); err != nil {
+		return err
 	}
 	return submitEmail(ctx, client, p, msg)
 }

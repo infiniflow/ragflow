@@ -302,9 +302,7 @@ func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any)
 		if kbName != "" && !hasDatasetIDs {
 			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
 				out["dataset_ids"] = []string{datasetID}
-				common.Debug("agent retrieval component: resolved dataset id",
-					zap.String("kb", strings.TrimSpace(kbName)),
-					zap.String("dataset_id", datasetID))
+				common.Debug("agent retrieval component: resolved dataset id")
 			}
 		}
 		if queryText != "" {
@@ -322,37 +320,23 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 		return ""
 	}
 	if kb, err := dao.NewKnowledgebaseDAO().GetByID(kbName); err == nil && kb != nil {
-		common.Debug("agent retrieval component: resolved dataset id by direct id",
-			zap.String("kb", kbName),
-			zap.String("dataset_id", kb.ID))
+		common.Debug("agent retrieval component: resolved dataset id by direct id")
 		return kb.ID
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		common.Warn("agent retrieval component: resolve dataset id by id failed",
-			zap.String("kb", kbName),
 			zap.Error(err))
 	}
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-		common.Debug("agent retrieval component: resolve dataset id context",
-			zap.String("kb", kbName),
-			zap.Any("sys_query", state.Sys["query"]),
-			zap.Any("tenant_id", state.Sys["tenant_id"]),
-			zap.Any("user_id", state.Sys["user_id"]))
+		common.Debug("agent retrieval component: resolve dataset id context")
 		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
 			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(kbName, tenantID); lookupErr == nil && kb != nil {
-				common.Debug("agent retrieval component: resolved dataset id by tenant",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID),
-					zap.String("dataset_id", kb.ID))
+				common.Debug("agent retrieval component: resolved dataset id by tenant")
 				return kb.ID
 			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 				common.Warn("agent retrieval component: resolve dataset id by tenant failed",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID),
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: tenant lookup missed",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID))
+				common.Debug("agent retrieval component: tenant lookup missed")
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
@@ -361,30 +345,21 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
 						continue
 					}
-					common.Debug("agent retrieval component: resolved dataset id by user visibility",
-						zap.String("kb", kbName),
-						zap.String("user_id", userID),
-						zap.String("dataset_id", kb.ID))
+					common.Debug("agent retrieval component: resolved dataset id by user visibility")
 					return kb.ID
 				}
 			} else if lookupErr != nil {
 				common.Warn("agent retrieval component: resolve dataset id by name failed",
-					zap.String("kb", kbName),
-					zap.String("user_id", userID),
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: user visibility lookup missed",
-					zap.String("kb", kbName),
-					zap.String("user_id", userID))
+				common.Debug("agent retrieval component: user visibility lookup missed")
 			}
 		}
 	} else {
 		common.Debug("agent retrieval component: resolve dataset id missing canvas state",
-			zap.String("kb", kbName),
 			zap.Error(err))
 	}
-	common.Debug("agent retrieval component: dataset id unresolved",
-		zap.String("kb", kbName))
+	common.Debug("agent retrieval component: dataset id unresolved")
 	return ""
 }
 

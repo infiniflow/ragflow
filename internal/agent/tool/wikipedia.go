@@ -103,7 +103,7 @@ type wikipediaResponse struct {
 // is the canvas-facing equivalent of Python ToolBase._retrieve_chunks().
 type wikipediaEnvelope struct {
 	FormalizedContent string            `json:"formalized_content,omitempty"`
-	Results           []wikipediaResult `json:"results,omitempty"`
+	Results           []wikipediaResult `json:"results"`
 	Error             string            `json:"_ERROR,omitempty"`
 }
 

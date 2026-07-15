@@ -203,6 +203,9 @@ func TestWikipedia_EmptyQuery(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
 		t.Fatalf("empty result = %s / %v", out, err)
 	}
+	if !strings.Contains(out, `"results":[]`) {
+		t.Fatalf("empty result omitted results key: %s", out)
+	}
 }
 
 func TestWikipedia_ComponentReferencesAndOutputs(t *testing.T) {

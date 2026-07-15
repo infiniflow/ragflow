@@ -156,6 +156,27 @@ func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
 	}
 }
 
+func TestMergeYahooFinanceParamsKeepsStockCodeAndUsesNodeConfig(t *testing.T) {
+	t.Parallel()
+
+	defaults := yahooFinanceParams{
+		Info: true, History: false, Financials: true,
+		BalanceSheet: false, CashFlowStatement: true, News: false,
+	}
+	params := yahooFinanceParams{
+		StockCode: "AAPL",
+		Info:      false, History: true, Financials: false,
+		BalanceSheet: true, CashFlowStatement: false, News: true,
+	}
+
+	got := mergeYahooFinanceParams(defaults, params)
+	want := defaults
+	want.StockCode = "AAPL"
+	if got != want {
+		t.Fatalf("merged params = %#v, want %#v", got, want)
+	}
+}
+
 func TestYahooFinanceErrorsReturnEnvelope(t *testing.T) {
 	t.Parallel()
 
@@ -284,8 +305,8 @@ func TestBuildYahooFinanceToolRejectsInvalidBooleanParams(t *testing.T) {
 	t.Parallel()
 
 	for _, key := range []string{
-		"info", "history", "count", "financials", "income_stmt",
-		"balance_sheet", "cash_flow_statement", "news",
+		"info", "history", "financials", "balance_sheet",
+		"cash_flow_statement", "news",
 	} {
 		t.Run(key, func(t *testing.T) {
 			_, err := BuildByName("yahoo_finance", map[string]any{key: "true"})

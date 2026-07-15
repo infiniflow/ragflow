@@ -207,7 +207,6 @@ func TestKeenable_DefaultTopN(t *testing.T) {
 	}
 }
 
-// TestKeenable_MissingQuery verifies Python's empty try-run behavior.
 func TestKeenable_MissingQuery(t *testing.T) {
 	t.Parallel()
 

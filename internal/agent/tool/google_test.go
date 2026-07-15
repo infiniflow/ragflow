@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 func TestGoogle_BuildURL(t *testing.T) {
@@ -161,6 +163,11 @@ func TestGoogle_InfoAndInputForm(t *testing.T) {
 	if _, ok := form["num"]; !ok {
 		t.Fatalf("InputForm missing num: %+v", form)
 	}
+	for _, configField := range []string{"api_key", "country", "language"} {
+		if _, exists := form[configField]; exists {
+			t.Fatalf("InputForm leaked node configuration %q: %+v", configField, form)
+		}
+	}
 }
 
 func TestGoogle_MergeDefaultsPrefersExplicitInputs(t *testing.T) {
@@ -283,5 +290,26 @@ func TestGoogle_ComponentReferencesAndOutputs(t *testing.T) {
 	}
 	if _, exists := envelope["chunks"]; exists {
 		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
 	}
 }

@@ -17,10 +17,10 @@
 // Package component contains e2e fixture stubs used directly by tests.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// fixture-backed component names that are registered here: Retrieval,
-// TavilySearch, ExeSQL, Generate, Answer, Iteration,
-// IterationItem. Production TavilySearch and ExeSQL nodes use
-// ToolBackedComponent; their stubs remain direct test constructors. The
+// fixture-backed component names that are registered here: Retrieval and its
+// aliases, CodeExec, Generate, Answer, Iteration, and IterationItem.
+// Production TavilySearch and ExeSQL nodes are registered through
+// ToolBackedComponent; their fixture stubs are direct-only test constructors. The
 // fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,

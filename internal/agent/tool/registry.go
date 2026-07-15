@@ -533,9 +533,7 @@ func buildYahooFinanceTool(params map[string]any) (einotool.BaseTool, error) {
 	booleanParams := map[string]*bool{
 		"info":                &defaults.Info,
 		"history":             &defaults.History,
-		"count":               &defaults.Count,
 		"financials":          &defaults.Financials,
-		"income_stmt":         &defaults.IncomeStmt,
 		"balance_sheet":       &defaults.BalanceSheet,
 		"cash_flow_statement": &defaults.CashFlowStatement,
 		"news":                &defaults.News,
