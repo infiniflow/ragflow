@@ -384,8 +384,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 // across two Run calls: when the terminal component errors mid-run (simulated
 // crash), non-terminal checkpoints + interrupt state persist. The second Run
 // on the same taskID resumes past completed non-terminal components instead of
-// re-executing them (plan §6.a: "re-run same task, completed components not
-// redone"). A non-terminal stage (A) runs exactly once across both runs; the
+// re-executing them. A non-terminal stage (A) runs exactly once across both runs; the
 // terminal stage (B, a oneShotErrStage) errors on run 1 and succeeds on run 2.
 func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
@@ -454,8 +453,8 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	}
 }
 
-// TestPipelineRun_RequireResumeRejectsWithoutStore verifies M4 (plan §6.a
-// 方案 A): with WithRequireResume set and no checkpoint store resolvable (no
+// TestPipelineRun_RequireResumeRejectsWithoutStore verifies that with
+// WithRequireResume set and no checkpoint store resolvable (no
 // injected store, no global Redis in unit scope), Run must refuse to start
 // and return ErrResumeUnavailable — a clear, distinguishable signal — rather
 // than silently degrading to a non-resumable runPlain. The reject fires

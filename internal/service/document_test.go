@@ -2633,3 +2633,69 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
 	}
 }
+
+// TestStartParseDocuments_FailsBeforeClearing verifies that GetDocumentStorageAddress
+// runs before clearDocumentParseResults: when storage is invalid, we fail without
+// deleting existing parse results.
+func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+
+	// Force GetDocumentStorageAddress to fail by clearing the document location.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "").Error; err != nil {
+		t.Fatalf("clear location: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	err = svc.StartParseDocuments(doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	if err == nil {
+		t.Fatal("expected error from GetDocumentStorageAddress, got nil")
+	}
+
+	// The old ingestion task must still exist — we failed before clearing.
+	remaining, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+	if remaining == nil {
+		t.Fatal("ingestion task should NOT be deleted when storage validation fails")
+	}
+}
+
+// TestIngest_CancelDoesNotDeleteIngestionTask verifies that cancel+delete
+// no longer races with the worker by deleting the ingestion task while the
+// worker is still stopping. Cancel only issues RequestStop (STOPPING);
+// deletion is deferred until the task reaches a terminal state.
+func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := testDocumentService(t)
+	_, err := svc.Ingest("user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+		Delete: true,
+	})
+	if err != nil {
+		t.Fatalf("Ingest(cancel+delete): %v", err)
+	}
+
+	// The ingestion task must NOT be deleted — cancel only stops it.
+	remaining, _ := svc.ingestionTaskDAO.GetByDocumentID("doc-1")
+	if remaining == nil {
+		t.Fatal("ingestion task must NOT be deleted by cancel")
+	}
+}

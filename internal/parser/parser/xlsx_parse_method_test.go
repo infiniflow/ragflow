@@ -38,61 +38,48 @@ func TestNormalizeXLSXParseMethod(t *testing.T) {
 	}
 }
 
-// TestXLSXParser_DeepDocParseMethod asserts that the default "deepdoc"
-// parse_method no longer raises "unsupported XLSX parse method" and
-// instead produces the default HTML table output.
+// TestXLSXParser_DeepDocParseMethod verifies that both the lowercase "deepdoc"
+// and the uppercase "DeepDOC" (as shipped by the ingestion pipeline DSL templates)
+// parse_method values produce the default HTML table output.
 func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
-	f := excelize.NewFile()
-	if err := f.SetCellValue("Sheet1", "A1", "hello"); err != nil {
-		t.Fatalf("SetCellValue: %v", err)
-	}
-	buf, err := f.WriteToBuffer()
-	if err != nil {
-		t.Fatalf("WriteToBuffer: %v", err)
-	}
-
-	p, err := NewXLSXParser("")
-	if err != nil {
-		t.Fatalf("NewXLSXParser: %v", err)
-	}
-	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
-
-	res := p.ParseWithResult("test.xlsx", buf.Bytes())
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
-	}
-	if got, want := res.OutputFormat, "html"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
-	}
-	if !strings.Contains(res.HTML, "hello") {
-		t.Fatalf("HTML = %q, want it to contain cell content %q", res.HTML, "hello")
-	}
-}
-
-// TestXLSXParser_DeepDocParseMethod_Uppercase covers the "DeepDOC"
-// casing shipped by the ingestion pipeline DSL templates.
-func TestXLSXParser_DeepDocParseMethod_Uppercase(t *testing.T) {
-	f := excelize.NewFile()
-	if err := f.SetCellValue("Sheet1", "A1", "world"); err != nil {
-		t.Fatalf("SetCellValue: %v", err)
-	}
-	buf, err := f.WriteToBuffer()
-	if err != nil {
-		t.Fatalf("WriteToBuffer: %v", err)
+	cases := []struct {
+		name      string
+		method    string
+		cellValue string
+	}{
+		{"Lowercase", "deepdoc", "hello"},
+		{"Uppercase", "DeepDOC", "world"},
 	}
 
-	p, err := NewXLSXParser("")
-	if err != nil {
-		t.Fatalf("NewXLSXParser: %v", err)
-	}
-	p.ConfigureFromSetup(map[string]any{"parse_method": "DeepDOC"})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := excelize.NewFile()
+			defer f.Close()
+			if err := f.SetCellValue("Sheet1", "A1", tc.cellValue); err != nil {
+				t.Fatalf("SetCellValue: %v", err)
+			}
+			buf, err := f.WriteToBuffer()
+			if err != nil {
+				t.Fatalf("WriteToBuffer: %v", err)
+			}
 
-	res := p.ParseWithResult("test.xlsx", buf.Bytes())
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult(DeepDOC): %v", res.Err)
-	}
-	if !strings.Contains(res.HTML, "world") {
-		t.Fatalf("HTML = %q, want it to contain cell content %q", res.HTML, "world")
+			p, err := NewXLSXParser("")
+			if err != nil {
+				t.Fatalf("NewXLSXParser: %v", err)
+			}
+			p.ConfigureFromSetup(map[string]any{"parse_method": tc.method})
+
+			res := p.ParseWithResult("test.xlsx", buf.Bytes())
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
+			}
+			if got, want := res.OutputFormat, "html"; got != want {
+				t.Fatalf("OutputFormat = %q, want %q", got, want)
+			}
+			if !strings.Contains(res.HTML, tc.cellValue) {
+				t.Fatalf("HTML = %q, want it to contain cell content %q", res.HTML, tc.cellValue)
+			}
+		})
 	}
 }
 

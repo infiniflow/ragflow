@@ -1415,10 +1415,8 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1") // owner = user-1, Accessible passes
 	insertChunkTestDoc(t, "doc-1", "kb-1")
-	// StopParsing requires doc.Run == RUNNING
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", string(entity.TaskStatusRunning)).Error; err != nil {
-		t.Fatalf("set run: %v", err)
-	}
+	// StopParsing now checks the IngestionTask status (not doc.Run).
+	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
 	var calledDocID string
@@ -1433,5 +1431,28 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	}
 	if calledDocID != "doc-1" {
 		t.Fatalf("cancelIngestionTaskFunc called with doc %s, want doc-1", calledDocID)
+	}
+}
+
+func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	// No IngestionTask — should be rejected (nothing to stop).
+
+	svc := newParseTestService(t)
+	var called bool
+	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error { called = true; return nil }
+
+	_, code, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	if err == nil {
+		t.Fatal("expected error for document without ingestion task")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected CodeDataError, got %v", code)
+	}
+	if called {
+		t.Fatal("cancel should not be called for doc without ingestion task")
 	}
 }
