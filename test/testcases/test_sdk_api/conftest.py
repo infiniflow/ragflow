@@ -47,8 +47,6 @@ from utils.file_utils import (
 
 
 GO_ONLY_PATH_SKIPS = {
-    "test_file_management_within_dataset/test_download_document.py::test_file_type_validation": "Go deployment database schema is missing document.meta_fields",
-    "test_file_management_within_dataset/test_upload_documents.py": "Go deployment database schema is missing document.meta_fields",
     "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_invalid": "Go dataset parser_config only validates serialized size, not individual fields",
     "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_empty": "Go dataset creation does not preserve an explicit empty parser_config",
     "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_unset": "Go dataset creation does not return the SDK parser_config contract",

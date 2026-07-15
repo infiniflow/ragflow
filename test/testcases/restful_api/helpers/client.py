@@ -77,8 +77,6 @@ class RestClient:
             if not isinstance(payload, dict):
                 return response
             message = payload.get("message", "")
-            if payload.get("code") == 500 and "Unknown column 'meta_fields'" in message:
-                pytest.skip("Go deployment database schema is missing document.meta_fields")
             if payload.get("code") == 500 and "http://localhost:6380/embed" in message and "connect: connection refused" in message:
                 pytest.skip("Go memory embedding service is unavailable on localhost:6380")
         return response

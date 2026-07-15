@@ -56,6 +56,7 @@ type ModelServiceIface interface {
 type MetadataServiceIface interface {
 	GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error)
 	LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64
+	SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*service.SearchMetadataResponse, error)
 }
 
 // RetrievalServiceIface abstracts RetrievalService for the Dify handler.
@@ -286,6 +287,35 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Enrich with child chunks
 	chunks := nlp.RetrievalByChildren(result.Chunks, []string{kb.TenantID}, h.docEngine, c.Request.Context())
 
+	// Collect doc IDs and fetch metadata
+	docIDSet := make(map[string]struct{})
+	for _, ch := range chunks {
+		if docID, ok := ch["doc_id"].(string); ok && docID != "" {
+			docIDSet[docID] = struct{}{}
+		}
+	}
+	allDocIDs := make([]string, 0, len(docIDSet))
+	for id := range docIDSet {
+		allDocIDs = append(allDocIDs, id)
+	}
+	metaByDocID := make(map[string]map[string]interface{})
+	if len(allDocIDs) > 0 {
+		searchResult, err := h.metadataSvc.SearchMetadata(req.KnowledgeID, kb.TenantID, allDocIDs, len(allDocIDs))
+		if err == nil && searchResult != nil && len(searchResult.MetadataRecords) > 0 {
+			metaByDocID = make(map[string]map[string]interface{}, len(allDocIDs))
+			for _, record := range searchResult.MetadataRecords {
+				docID, _ := record["id"].(string)
+				if docID == "" {
+					continue
+				}
+				meta, _ := service.ExtractMetaFields(record)
+				if len(meta) > 0 {
+					metaByDocID[docID] = meta
+				}
+			}
+		}
+	}
+
 	// KG retrieval (optional)
 	if req.UseKG {
 		chatModel, kgErr := h.modelSvc.GetChatModel(kb.TenantID, "")
@@ -306,18 +336,6 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 				}
 			}
 		}
-	}
-
-	// Collect doc IDs and fetch documents
-	docIDSet := make(map[string]struct{})
-	for _, ch := range chunks {
-		if docID, ok := ch["doc_id"].(string); ok && docID != "" {
-			docIDSet[docID] = struct{}{}
-		}
-	}
-	allDocIDs := make([]string, 0, len(docIDSet))
-	for id := range docIDSet {
-		allDocIDs = append(allDocIDs, id)
 	}
 
 	docMap := make(map[string]*entity.Document)
@@ -346,8 +364,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		delete(ch, "vector")
 
 		meta := make(map[string]interface{})
-		if doc.MetaFields != nil {
-			for k, v := range *doc.MetaFields {
+		if m, ok := metaByDocID[docID]; ok && m != nil {
+			for k, v := range m {
 				meta[k] = v
 			}
 		}
