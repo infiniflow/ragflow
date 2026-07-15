@@ -2597,22 +2597,6 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
 }
 
-var allowedDocumentChunkMethods = map[string]struct{}{
-	"naive":           {},
-	"manual":          {},
-	"qa":              {},
-	"table":           {},
-	"paper":           {},
-	"book":            {},
-	"laws":            {},
-	"presentation":    {},
-	"picture":         {},
-	"one":             {},
-	"knowledge_graph": {},
-	"email":           {},
-	"tag":             {},
-}
-
 func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("Invalid request payload")
@@ -2638,7 +2622,7 @@ func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, re
 			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
 		}
 		chunkMethod := strings.TrimSpace(*req.ChunkMethod)
-		if _, ok := allowedDocumentChunkMethods[chunkMethod]; !ok {
+		if err := validateParserID(chunkMethod); err != nil {
 			return common.CodeDataError, fmt.Errorf("`chunk_method` %s doesn't exist", chunkMethod)
 		}
 		if doc.Type == "visual" || isPresentationFile(doc.Name) {

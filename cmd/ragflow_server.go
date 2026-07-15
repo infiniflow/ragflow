@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -494,7 +495,7 @@ func runIngestor(args *serverArgs) error {
 	}
 	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, int32(runtime.NumCPU()), []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()
@@ -803,6 +804,7 @@ func startServer(config *server.Config) {
 	)
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
+	pipelineHandler := handler.NewPipelineHandler()
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -833,7 +835,8 @@ func startServer(config *server.Config) {
 		fileCommitHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler)
+		componentsHandler,
+		pipelineHandler)
 
 	// Create Gin enginegit diff
 
