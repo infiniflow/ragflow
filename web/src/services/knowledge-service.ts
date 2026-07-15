@@ -19,7 +19,6 @@ const {
   documentThumbnails,
   documentIngest,
   listTagByKnowledgeIds,
-  listPipelines,
   setMeta,
   getMeta,
   getMetaKeys,
@@ -66,10 +65,6 @@ const methods = {
   retrievalTestShare: {
     url: retrievalTestShare,
     method: 'post',
-  },
-  listPipelines: {
-    url: listPipelines,
-    method: 'get',
   },
   pipelineRerun: {
     url: api.pipelineRerun,
