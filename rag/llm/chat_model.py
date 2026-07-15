@@ -1661,7 +1661,15 @@ class LiteLLMBase(ABC):
             gen_conf=gen_conf,
         )
 
-        gen_conf.pop("max_tokens", None)
+        # The Agent/LLM component only ever populates `max_tokens` (see
+        # agent/component/llm.py LLMParam.gen_conf()); litellm's OpenAI-style
+        # param name is `max_completion_tokens`. Previously this just dropped
+        # `max_tokens` without renaming it, so the Agent node's "Max tokens"
+        # setting was silently discarded for every litellm-routed provider
+        # (Ollama, Anthropic, Gemini, Groq, DeepSeek, ...), leaving generation
+        # completely unbounded and able to run away into repetition loops.
+        if "max_tokens" in gen_conf:
+            gen_conf["max_completion_tokens"] = gen_conf.pop("max_tokens")
         gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
