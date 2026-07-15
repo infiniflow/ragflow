@@ -40,9 +40,9 @@ def _load_mistral_parser(monkeypatch):
     return module
 
 
-def _make_parser(m, **kwargs):
+def _make_parser(m, api_key="", **kwargs):
     """Build a MistralParser without any network call. __init__ only sets attributes."""
-    return m.MistralParser(base_url="https://api.mistral.ai/v1", api_key="", **kwargs)
+    return m.MistralParser(base_url="https://api.mistral.ai/v1", api_key=api_key, **kwargs)
 
 
 def test_resolve_internal_type_maps_known_types(monkeypatch):
@@ -224,3 +224,84 @@ def test_crop_reads_page_images_for_tagged_text(monkeypatch):
     tag = "@@1\t10.0\t100.0\t20.0\t60.0##"
     out = p.crop("caption" + tag, need_position=True)
     assert isinstance(out, tuple) and len(out) == 2
+
+
+class _Resp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload or {}
+        self.text = text
+    def json(self):
+        return self._payload
+
+
+def test_check_installation_requires_api_key(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="")
+    ok, reason = p.check_installation()
+    assert ok is False and "key" in reason.lower()
+
+
+def test_call_ocr_inline_posts_pages_selector(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None, **kw):
+        captured["url"] = url
+        captured["json"] = json
+        return _Resp(200, {"pages": [{"index": 5, "markdown": "x", "blocks": []}],
+                           "usage_info": {"pages_processed": 1}})
+
+    monkeypatch.setattr(m.requests, "post", fake_post)
+    out = p._call_ocr(b"%PDF-1.4 fake", "f.pdf", pages=[5])
+    assert captured["url"].endswith("/ocr")
+    assert captured["json"]["pages"] == [5]
+    assert captured["json"]["include_blocks"] is True
+    assert out["pages"][0]["index"] == 5
+
+
+def test_call_ocr_omits_pages_when_none(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    captured = {}
+    monkeypatch.setattr(m.requests, "post",
+        lambda url, headers=None, json=None, timeout=None, **kw: captured.update(json=json)
+        or _Resp(200, {"pages": []}))
+    p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
+    assert "pages" not in captured["json"]
+
+
+def test_call_ocr_raises_on_http_error(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-bad")
+    monkeypatch.setattr(m.requests, "post",
+        lambda *a, **k: _Resp(401, text="Unauthorized"))
+    try:
+        p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "401" in str(e)
+
+
+def test_call_ocr_uploads_when_over_inline_limit(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
+    calls = {"post": [], "get": [], "delete": []}
+
+    def fake_post(url, headers=None, json=None, data=None, files=None, timeout=None, **kw):
+        calls["post"].append(url)
+        if url.endswith("/files"):
+            return _Resp(200, {"id": "file-1"})
+        return _Resp(200, {"pages": [{"index": 0, "blocks": []}]})
+
+    monkeypatch.setattr(m.requests, "post", fake_post)
+    monkeypatch.setattr(m.requests, "get",
+        lambda url, headers=None, params=None, timeout=None, **kw: calls["get"].append(url) or _Resp(200, {"url": "https://signed"}))
+    monkeypatch.setattr(m.requests, "delete",
+        lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
+
+    out = p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
+    assert any(u.endswith("/files") for u in calls["post"])
+    assert calls["get"] and calls["delete"]  # signed-url fetch + cleanup
+    assert out["pages"][0]["index"] == 0

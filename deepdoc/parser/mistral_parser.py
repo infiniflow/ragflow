@@ -20,6 +20,7 @@ chat-completions), then normalizes the per-block response into the same shape
 SoMark produces so the proven section-building contract is reused verbatim.
 """
 
+import base64
 import logging
 import os
 import re
@@ -29,6 +30,7 @@ from typing import Optional
 
 import numpy as np
 import pdfplumber
+import requests
 from PIL import Image
 
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER, RAGFlowPdfParser
@@ -357,3 +359,69 @@ class MistralParser(RAGFlowPdfParser):
     def _transfer_to_tables(self, pages: list[dict]) -> list:
         # Tables are inlined as HTML in section text; no separate extraction.
         return []
+
+    # ------------------------------------------------------------------
+    # HTTP client
+    # ------------------------------------------------------------------
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def check_installation(self) -> tuple[bool, str]:
+        if not self.api_key:
+            return False, "Mistral API key is not configured."
+        return True, ""
+
+    def _ocr_payload(self, document: dict, pages: Optional[list[int]]) -> dict:
+        payload = {
+            "model": self.model,
+            "document": document,
+            "include_blocks": True,
+            "table_format": self.table_format,
+            "include_image_base64": False,
+        }
+        if pages:
+            payload["pages"] = pages
+        return payload
+
+    def _call_ocr(self, pdf_bytes: bytes, filename: str,
+                  pages: Optional[list[int]], callback=None) -> dict:
+        ok, reason = self.check_installation()
+        if not ok:
+            raise RuntimeError(reason)
+
+        if len(pdf_bytes) <= self.inline_max_bytes:
+            b64 = base64.b64encode(pdf_bytes).decode()
+            document = {"type": "document_url",
+                        "document_url": f"data:application/pdf;base64,{b64}"}
+            return self._post_ocr(self._ocr_payload(document, pages))
+
+        # Large file: upload -> signed url -> ocr -> delete.
+        file_id = None
+        try:
+            r = requests.post(f"{self.base_url}/files", headers=self._headers(),
+                              files={"file": (filename, pdf_bytes, "application/pdf")},
+                              data={"purpose": "ocr"}, timeout=self.timeout)
+            if r.status_code != 200:
+                raise RuntimeError(f"Mistral /files upload failed: {r.status_code} {r.text[:300]}")
+            file_id = r.json().get("id")
+            r = requests.get(f"{self.base_url}/files/{file_id}/url",
+                             headers=self._headers(), params={"expiry": 24}, timeout=self.timeout)
+            if r.status_code != 200:
+                raise RuntimeError(f"Mistral signed-url failed: {r.status_code} {r.text[:300]}")
+            signed = r.json().get("url")
+            document = {"type": "document_url", "document_url": signed}
+            return self._post_ocr(self._ocr_payload(document, pages))
+        finally:
+            if file_id:
+                try:
+                    requests.delete(f"{self.base_url}/files/{file_id}",
+                                    headers=self._headers(), timeout=self.timeout)
+                except Exception:
+                    self.logger.warning("failed to delete uploaded file %s", file_id)
+
+    def _post_ocr(self, payload: dict) -> dict:
+        r = requests.post(f"{self.base_url}/ocr", headers=self._headers(),
+                          json=payload, timeout=self.timeout)
+        if r.status_code != 200:
+            raise RuntimeError(f"Mistral OCR API error: {r.status_code} {r.text[:300]}")
+        return r.json()
