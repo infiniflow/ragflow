@@ -35,11 +35,13 @@ import (
 )
 
 type fakeToolAdapter struct {
-	args   map[string]any
-	calls  int
-	events []string
-	out    string
-	err    error
+	args              map[string]any
+	referenceEnvelope map[string]any
+	outputEnvelope    map[string]any
+	calls             int
+	events            []string
+	out               string
+	err               error
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -67,21 +69,27 @@ func (f *fakeToolAdapter) ComponentSpec() agenttool.ComponentSpec {
 	}
 }
 
-func (f *fakeToolAdapter) BuildReferences(_ context.Context, results []any) ([]map[string]any, []map[string]any) {
+func (f *fakeToolAdapter) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	f.referenceEnvelope = envelope
 	f.events = append(f.events, "references")
 	return []map[string]any{{"chunk_id": "1", "content": "RAG engine", "docnm_kwd": "RAGFlow"}},
 		[]map[string]any{{"doc_name": "RAGFlow", "doc_id": "1", "count": 1}}
 }
 
-func (f *fakeToolAdapter) BuildComponentOutputs(results []any, chunks []map[string]any) map[string]any {
+func (f *fakeToolAdapter) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	f.outputEnvelope = envelope
 	f.events = append(f.events, "render")
 	formalizedContent := ""
-	if len(chunks) > 0 {
-		formalizedContent, _ = chunks[0]["content"].(string)
+	results := anySlice(envelope["results"])
+	if len(results) > 0 {
+		if result, ok := results[0].(map[string]any); ok {
+			formalizedContent, _ = result["content"].(string)
+		}
 	}
 	return map[string]any{
 		"json":               results,
 		"formalized_content": formalizedContent,
+		"tool_metadata":      envelope["tool_metadata"],
 	}
 }
 
@@ -127,7 +135,7 @@ func TestToolBackedComponentCanvasBuildWorkflow(t *testing.T) {
 }
 
 func TestToolBackedComponentInvokeOrdersReferencesBeforeRendering(t *testing.T) {
-	fake := &fakeToolAdapter{}
+	fake := &fakeToolAdapter{out: `{"results":[{"title":"RAGFlow","content":"RAG engine"}],"tool_metadata":{"request_id":"request-1"}}`}
 	c := &ToolBackedComponent{name: "Search", tool: fake, spec: fake.ComponentSpec()}
 	state := runtime.NewCanvasState("run", "task")
 	out, err := c.Invoke(runtime.WithState(context.Background(), state), map[string]any{
@@ -146,6 +154,15 @@ func TestToolBackedComponentInvokeOrdersReferencesBeforeRendering(t *testing.T) 
 	}
 	if !reflect.DeepEqual(fake.events, []string{"references", "render"}) {
 		t.Fatalf("post-process order = %#v, want references then render", fake.events)
+	}
+	if fake.referenceEnvelope["tool_metadata"] == nil || fake.outputEnvelope["tool_metadata"] == nil {
+		t.Fatalf("complete tool envelope was not passed to post-processors: references=%#v outputs=%#v", fake.referenceEnvelope, fake.outputEnvelope)
+	}
+	if _, exists := fake.outputEnvelope["chunks"]; exists {
+		t.Fatalf("generic component injected references into the tool envelope: %#v", fake.outputEnvelope)
+	}
+	if metadata, ok := out["tool_metadata"].(map[string]any); !ok || metadata["request_id"] != "request-1" {
+		t.Fatalf("tool-specific envelope fields were lost: %#v", out)
 	}
 	if out["formalized_content"] != "RAG engine" {
 		t.Fatalf("formalized_content = %#v", out["formalized_content"])
@@ -168,6 +185,9 @@ func TestToolBackedComponentReturnsErrorEnvelopeWithoutReferences(t *testing.T) 
 	}
 	if out["_ERROR"] != "rate limited" || out["formalized_content"] != "" {
 		t.Fatalf("error outputs = %#v", out)
+	}
+	if results, ok := out["json"].([]any); !ok || len(results) != 0 {
+		t.Fatalf("error json output = %#v, want an empty array", out["json"])
 	}
 	if len(state.GetRetrievalChunks()) != 0 {
 		t.Fatalf("error path recorded references: %#v", state.GetRetrievalChunks())

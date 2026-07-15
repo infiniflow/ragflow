@@ -74,11 +74,10 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any)
 		}
 		return nil, fmt.Errorf("canvas: %s: invalid tool result: %v", c.name, rawValue)
 	}
-	results := anySlice(decoded["results"])
 	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
-		outputs := make(map[string]any)
-		if builder, ok := c.tool.(agenttool.ComponentOutputBuilder); ok {
-			outputs = builder.BuildComponentOutputs(results, nil)
+		outputs := c.tool.BuildComponentOutputs(decoded)
+		if outputs == nil {
+			outputs = make(map[string]any, 1)
 		}
 		outputs["_ERROR"] = existing
 		return outputs, nil
@@ -87,21 +86,13 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any)
 		return nil, fmt.Errorf("canvas: %s: %w", c.name, invokeErr)
 	}
 
-	var chunks []map[string]any
 	if builder, ok := c.tool.(agenttool.ReferenceBuilder); ok {
-		var docAggs []map[string]any
-		chunks, docAggs = builder.BuildReferences(ctx, results)
+		chunks, docAggs := builder.BuildReferences(ctx, decoded)
 		if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
 			state.SetRetrievalReferences(chunks, docAggs)
 		}
 	}
-	outputs := make(map[string]any)
-	if builder, ok := c.tool.(agenttool.ComponentOutputBuilder); ok {
-		for key, value := range builder.BuildComponentOutputs(results, chunks) {
-			outputs[key] = value
-		}
-	}
-	return outputs, nil
+	return c.tool.BuildComponentOutputs(decoded), nil
 }
 
 func (c *ToolBackedComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {

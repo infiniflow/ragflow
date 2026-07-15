@@ -232,15 +232,19 @@ func TestGitHub_ReferencesAndOutputsPreserveRawResults(t *testing.T) {
 	if repository["private"] != false {
 		t.Fatalf("raw repository fields were lost: %#v", repository)
 	}
+	envelope := map[string]any{"results": results}
 
-	chunks, docAggs := github.BuildReferences(context.Background(), results)
+	chunks, docAggs := github.BuildReferences(context.Background(), envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
 	if chunks[0]["document_name"] != "ragflow" || chunks[0]["similarity"] != 1 {
 		t.Fatalf("reference metadata = %#v", chunks[0])
 	}
-	outputs := github.BuildComponentOutputs(results, chunks)
+	outputs := github.BuildComponentOutputs(envelope)
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("component output conversion mutated the tool envelope: %#v", envelope)
+	}
 	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
 		t.Fatalf("component json output = %#v", outputs["json"])
 	}

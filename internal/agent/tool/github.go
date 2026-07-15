@@ -79,7 +79,6 @@ type GitHubTool struct {
 var _ ToolInvoker = (*GitHubTool)(nil)
 var _ ToolComponent = (*GitHubTool)(nil)
 var _ ReferenceBuilder = (*GitHubTool)(nil)
-var _ ComponentOutputBuilder = (*GitHubTool)(nil)
 
 // NewGitHubTool returns a GitHubTool using the default HTTPHelper.
 func NewGitHubTool() *GitHubTool {
@@ -214,7 +213,12 @@ func (g *GitHubTool) ComponentSpec() ComponentSpec {
 
 // BuildReferences creates the chunks and document aggregates Python's
 // ToolBase._retrieve_chunks records for GitHub results.
-func (g *GitHubTool) BuildReferences(_ context.Context, results []any) ([]map[string]any, []map[string]any) {
+func (g *GitHubTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildGitHubReferences(envelope)
+}
+
+func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
 	chunks := make([]map[string]any, 0, len(results))
 	docAggs := make([]map[string]any, 0, len(results))
 	for _, result := range results {
@@ -253,15 +257,16 @@ func (g *GitHubTool) BuildReferences(_ context.Context, results []any) ([]map[st
 }
 
 // BuildComponentOutputs constructs GitHub's complete Canvas output map.
-func (g *GitHubTool) BuildComponentOutputs(results []any, chunks []map[string]any) map[string]any {
+func (g *GitHubTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildGitHubReferences(envelope)
 	return map[string]any{
 		"json":               results,
-		"formalized_content": g.RenderResults(results, chunks),
+		"formalized_content": renderGitHubReferences(chunks),
 	}
 }
 
-// RenderResults renders the same chunks that the Canvas adapter records.
-func (g *GitHubTool) RenderResults(_ []any, chunks []map[string]any) string {
+func renderGitHubReferences(chunks []map[string]any) string {
 	chunks = limitGitHubReferences(chunks, githubPromptMaxTokens)
 	blocks := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {

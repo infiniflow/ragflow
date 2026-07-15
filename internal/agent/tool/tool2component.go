@@ -41,17 +41,28 @@ type ComponentSpec struct {
 type ToolComponent interface {
 	ToolInvoker
 	ComponentSpec() ComponentSpec
+	// BuildComponentOutputs converts the complete decoded tool envelope into
+	// the component's public Canvas outputs.
+	BuildComponentOutputs(envelope map[string]any) map[string]any
 }
 
 // ReferenceBuilder is an optional capability for tools that add retrieval
 // references to Canvas state.
 type ReferenceBuilder interface {
-	BuildReferences(ctx context.Context, results []any) (chunks []map[string]any, docAggs []map[string]any)
+	BuildReferences(ctx context.Context, envelope map[string]any) (chunks []map[string]any, docAggs []map[string]any)
 }
 
-// ComponentOutputBuilder is an optional capability for tools that construct
-// their final Canvas outputs after references have been built. chunks are the
-// exact references recorded in Canvas state.
-type ComponentOutputBuilder interface {
-	BuildComponentOutputs(results []any, chunks []map[string]any) map[string]any
+func envelopeSlice(envelope map[string]any, key string) []any {
+	switch values := envelope[key].(type) {
+	case []any:
+		return values
+	case []map[string]any:
+		result := make([]any, 0, len(values))
+		for _, value := range values {
+			result = append(result, value)
+		}
+		return result
+	default:
+		return []any{}
+	}
 }
