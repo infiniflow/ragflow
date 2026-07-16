@@ -61,9 +61,14 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		pipelineID = s.taskCtx.IngestionTask.ID
 	}
-	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
+	opts := []pipelinepkg.PipelineOption{
 		pipelinepkg.WithProgressSink(s.progressSink),
-		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID),
+	}
+	if s.requireResume {
+		opts = append(opts, pipelinepkg.WithRequireResume())
+	}
+	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID, opts...)
 	if err != nil {
 		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}
@@ -77,7 +82,7 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
 
-	output, err := pipe.Run(ctx, inputs)
+	output, err := pipe.Run(ctx, inputs, nil)
 	if err != nil {
 		return nil, dsl, err
 	}

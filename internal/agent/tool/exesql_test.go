@@ -30,6 +30,8 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // testConn is a fully-populated connection params struct used by
@@ -354,6 +356,56 @@ func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
+	dialer, mock, cleanup := sqlmockDialer(t)
+	defer cleanup()
+	mock.ExpectPing()
+	mock.ExpectQuery("SELECT id FROM orders WHERE status = 'Completed'").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow(1, "Completed"))
+	conn := testConn()
+	conn.SQL = "{Agent:Result@content}"
+	exesql := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
+	state := runtime.NewCanvasState("run", "task")
+	state.SetVar("Agent:Result", "content", "SELECT id FROM orders WHERE status = 'Completed'")
+	out, err := exesql.InvokableRun(runtime.WithState(context.Background(), state), `{}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	outputs := exesql.BuildComponentOutputs(envelope)
+	if !strings.Contains(outputs["formalized_content"].(string), "Completed") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	jsonRows, ok := outputs["json"].([]any)
+	if !ok || len(jsonRows) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	spec := exesql.ComponentSpec()
+	if sqlInput, ok := spec.InputForm["sql"].(map[string]any); !ok || sqlInput["type"] != "line" {
+		t.Fatalf("sql input form = %#v", spec.InputForm["sql"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestExeSQL_BuildByNameAcceptsCanvasShape(t *testing.T) {
+	built, err := BuildByName("execute_sql", map[string]any{
+		"database": "demo", "username": "root", "host": "db.example.com", "port": float64(3306), "password": "secret",
+		"top_n": float64(50), "sql": "SELECT 1", "outputs": map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	exesql := built.(*ExeSQLTool)
+	if exesql.conn.DBType != "mysql" || exesql.conn.Port != 3306 || exesql.conn.MaxRecords != 50 || exesql.conn.SQL != "SELECT 1" {
+		t.Fatalf("connection defaults = %+v", exesql.conn)
 	}
 }
 

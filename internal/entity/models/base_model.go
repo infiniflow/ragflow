@@ -81,6 +81,7 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 		}
 		return "", fmt.Errorf("no base URL configured for region %q", region)
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return baseURL, nil
 }
