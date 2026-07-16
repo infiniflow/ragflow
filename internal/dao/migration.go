@@ -273,7 +273,7 @@ func migrateKnowledgebaseNameUnique(db *gorm.DB) error {
 	// Add the generated column if it does not exist yet.
 	var colExists int64
 	if err := db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = 'knowledgebase' AND COLUMN_NAME = 'name_ci'`).Scan(&colExists).Error; err != nil {
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledgebase' AND COLUMN_NAME = 'name_ci'`).Scan(&colExists).Error; err != nil {
 		return err
 	}
 	if colExists == 0 {
@@ -296,7 +296,7 @@ func migrateKnowledgebaseNameUnique(db *gorm.DB) error {
 	// Check whether the unique index already exists.
 	var idxExists int64
 	if err := db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'knowledgebase' AND INDEX_NAME = ?`, indexName).Scan(&idxExists).Error; err != nil {
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledgebase' AND INDEX_NAME = ?`, indexName).Scan(&idxExists).Error; err != nil {
 		return err
 	}
 	if idxExists > 0 {
