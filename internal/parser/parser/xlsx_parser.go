@@ -78,6 +78,15 @@ func normalizeXLSXParseMethod(raw string) string {
 	if method == "tcadp parser" {
 		return "tcadp"
 	}
+	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
+	// (see schema.ParserParam.Defaults and the matching Python ParserParam),
+	// and the DSL templates ship "DeepDOC". Normalize to "" so the default
+	// Excelize/CSV path is taken by all three spreadsheet parsers, mirroring
+	// rag/flow/parser/parser.py:_spreadsheet which only special-cases
+	// "tcadp parser" and routes every other value to the default parser.
+	if method == "deepdoc" || method == "deepdoc parser" {
+		return ""
+	}
 	return method
 }
 

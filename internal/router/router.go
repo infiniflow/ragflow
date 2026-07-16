@@ -18,7 +18,6 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
@@ -125,7 +124,6 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
@@ -159,6 +157,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+		// Backend runtime language detection. The front end calls this once
+		// to choose between Go and Python code paths.
+		apiNoAuth.GET("/language", r.systemHandler.Language)
 
 		// Pipeline catalog. Public static data (shipped with the binary),
 		// no auth required. The front end uses it to populate the parser
@@ -365,7 +366,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
 				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
-				datasets.POST("/:dataset_id/embedding", r.datasetsHandler.RunEmbedding)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)

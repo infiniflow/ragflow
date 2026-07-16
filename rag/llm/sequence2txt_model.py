@@ -18,9 +18,11 @@ import io
 import json
 import os
 import re
+import struct
 from abc import ABC
 import tempfile
 import logging
+from urllib.parse import urlparse
 
 import requests
 from openai import OpenAI
@@ -42,6 +44,47 @@ class Base(ABC):
         with open(audio_path, "rb") as audio_file:
             transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
+
+    @staticmethod
+    def _generate_test_wav(duration_seconds=0.5, sample_rate=16000):
+        """Generate a minimal silent WAV file as bytes (pure stdlib, no dependencies)."""
+        n_samples = int(sample_rate * duration_seconds)
+        data_size = n_samples * 2  # 16-bit mono = 2 bytes per sample
+        header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",
+            36 + data_size,
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
+            1,
+            sample_rate,
+            sample_rate * 2,
+            2,
+            16,
+            b"data",
+            data_size,
+        )
+        return header + b"\x00" * data_size
+
+    def check_available(self) -> tuple[bool, str]:
+        """Check if the ASR model is available by transcribing a minimal test WAV."""
+        try:
+            wav_data = self._generate_test_wav()
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(wav_data)
+                temp_path = f.name
+            try:
+                text, _ = self.transcription(temp_path)
+                if text.find("**ERROR**") >= 0:
+                    return False, text.replace("**ERROR**: ", "").strip()
+                return True, ""
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except Exception as e:
+            return False, str(e)
 
     def audio2base64(self, audio):
         if isinstance(audio, bytes):
@@ -83,14 +126,34 @@ class FuturMixSeq2txt(GPTSeq2txt):
 
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
+    _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"
+    _FUN_ASR_BASE64_MAX_SIZE = 10 * 1024 * 1024
+    _DASHSCOPE_API_BASE = "https://dashscope.aliyuncs.com/api/v1"
+    _AUDIO_MIME_FORMATS = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/wave": "wav",
+        "audio/x-wav": "wav",
+    }
 
-    def __init__(self, key, model_name="qwen-audio-asr", **kwargs):
+    def __init__(self, key, model_name="qwen-audio-asr", base_url=None, **kwargs):
         import dashscope
 
         dashscope.api_key = key
+        self.api_key = key
         self.model_name = model_name
+        self.base_url = (base_url or self._DASHSCOPE_API_BASE).rstrip("/")
 
     def transcription(self, audio_path):
+        # Fun-ASR-Flash uses DashScope's workspace-scoped native multimodal
+        # endpoint and payload instead of MultiModalConversation.
+        if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
+            return self._transcribe_fun_asr_flash(audio_path)
+
+        return self._transcribe_qwen_audio(audio_path)
+
+    def _transcribe_qwen_audio(self, audio_path):
         import dashscope
 
         if audio_path.startswith("http"):
@@ -108,7 +171,126 @@ class QWenSeq2txt(Base):
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
 
+    @classmethod
+    def _fun_asr_audio_format(cls, audio_path):
+        """Derive the Fun-ASR audio format from a data URI, URL, or path."""
+
+        if audio_path.startswith("data:"):
+            mime_type = audio_path[5:].split(";", 1)[0].lower()
+            if not mime_type.startswith("audio/"):
+                raise ValueError(f"Unsupported audio data URI MIME type: {mime_type or 'missing'}")
+            audio_format = cls._AUDIO_MIME_FORMATS.get(mime_type, mime_type.split("/", 1)[1].removeprefix("x-"))
+        else:
+            path = urlparse(audio_path).path if audio_path.startswith(("http://", "https://")) else audio_path
+            audio_format = os.path.splitext(path)[1].lower().lstrip(".")
+
+        if audio_format == "wave":
+            audio_format = "wav"
+        if not audio_format:
+            raise ValueError("Cannot determine audio format; use a URL/path extension or an audio data URI MIME type")
+        return audio_format
+
+    @classmethod
+    def _validate_fun_asr_base64_size(cls, encoded_size):
+        if encoded_size > cls._FUN_ASR_BASE64_MAX_SIZE:
+            raise ValueError("Fun-ASR-Flash Base64 audio exceeds the 10 MB encoded-input limit; provide a publicly accessible URL (for example, OSS) instead")
+
+    def _fun_asr_flash_request(self, audio_path, *, stream=False):
+        audio_format = self._fun_asr_audio_format(audio_path)
+
+        if audio_path.startswith(("http://", "https://")):
+            audio_input = audio_path
+        elif audio_path.startswith("data:"):
+            _, separator, encoded_audio = audio_path.partition(",")
+            if not separator:
+                raise ValueError("Invalid audio data URI: missing Base64 payload")
+            self._validate_fun_asr_base64_size(len(encoded_audio.encode("utf-8")))
+            audio_input = audio_path
+        else:
+            file_size = os.path.getsize(audio_path)
+            encoded_size = 4 * ((file_size + 2) // 3)
+            self._validate_fun_asr_base64_size(encoded_size)
+            mime_type = "audio/mpeg" if audio_format == "mp3" else f"audio/{audio_format}"
+            with open(audio_path, "rb") as audio_file:
+                audio_input = f"data:{mime_type};base64,{base64.b64encode(audio_file.read()).decode('utf-8')}"
+
+        api_base = self.base_url
+        if api_base.endswith("/compatible-mode/v1"):
+            api_base = api_base[: -len("/compatible-mode/v1")] + "/api/v1"
+        url = f"{api_base}/services/aigc/multimodal-generation/generation"
+        payload = {
+            "model": self.model_name,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_audio", "input_audio": {"data": audio_input}}],
+                    }
+                ]
+            },
+            # sample_rate is optional in the Fun-ASR-Flash API. Omitting it
+            # avoids declaring incorrect metadata for remote or compressed audio.
+            "parameters": {"format": audio_format},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-SSE": "enable" if stream else "disable",
+        }
+        return url, headers, payload
+
+    def _transcribe_fun_asr_flash(self, audio_path):
+        try:
+            url, headers, payload = self._fun_asr_flash_request(audio_path)
+
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            text = result.get("text") or result.get("output", {}).get("text")
+            if not text:
+                raise ValueError("Missing transcription text in Fun-ASR-Flash response")
+            text = text.strip()
+            return text, num_tokens_from_string(text)
+        except Exception as e:
+            logging.exception("Fun-ASR-Flash transcription failed for model %s", self.model_name)
+            return "**ERROR**: " + str(e), 0
+
+    def _stream_fun_asr_flash(self, audio_path):
+        response = None
+        try:
+            url, headers, payload = self._fun_asr_flash_request(audio_path, stream=True)
+            response = requests.post(url, headers=headers, json=payload, timeout=60, stream=True)
+            response.raise_for_status()
+
+            full = ""
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data:"):
+                    continue
+                event_data = line[5:].strip()
+                if not event_data or event_data == "[DONE]":
+                    continue
+                result = json.loads(event_data)
+                text = result.get("text") or result.get("output", {}).get("text")
+                if not text:
+                    continue
+                full = text.strip()
+                yield {"event": "delta", "text": full}
+
+            if not full:
+                raise ValueError("Missing transcription text in Fun-ASR-Flash stream")
+            yield {"event": "final", "text": full}
+        except Exception as e:
+            logging.exception("Fun-ASR-Flash streaming transcription failed for model %s", self.model_name)
+            yield {"event": "error", "text": "**ERROR**: " + str(e)}
+        finally:
+            if response is not None:
+                response.close()
+
     def stream_transcription(self, audio_path):
+        if self.model_name.startswith(self._FUN_ASR_FLASH_PREFIX):
+            yield from self._stream_fun_asr_flash(audio_path)
+            return
+
         import dashscope
 
         if audio_path.startswith("http"):
@@ -192,6 +374,17 @@ class TencentCloudSeq2txt(Base):
         self.client = asr_client.AsrClient(cred, "")
         self.model_name = model_name
 
+    def check_available(self) -> tuple[bool, str]:
+        """Tencent Cloud ASR transcription expects raw bytes, not a file path."""
+        try:
+            wav_data = self._generate_test_wav()
+            text, _ = self.transcription(wav_data)
+            if text.find("**ERROR**") >= 0:
+                return False, text.replace("**ERROR**: ", "").strip()
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
     def transcription(self, audio, max_retries=60, retry_interval=5):
         import time
 
@@ -251,6 +444,10 @@ class GPUStackSeq2txt(Base):
         self.base_url = base_url
         self.model_name = model_name
         self.key = key
+
+    def check_available(self) -> tuple[bool, str]:
+        """GPUStack ASR transcription endpoint is not yet implemented."""
+        return False, "GPUStack ASR transcription is not yet implemented"
 
 
 class GiteeSeq2txt(Base):
@@ -408,3 +605,16 @@ class NewAPISeq2txt(GPTSeq2txt):
             raise ValueError("url cannot be None")
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
+class FunASRSeq2txt(GPTSeq2txt):
+    """FunASR speech-to-text provider for its OpenAI-compatible API."""
+
+    _FACTORY_NAME = "FunASR"
+
+    def __init__(self, key, model_name="sensevoice", base_url="http://localhost:8000/v1", **kwargs):
+        """Initialize a client for a FunASR OpenAI-compatible endpoint."""
+        if not base_url:
+            base_url = "http://localhost:8000/v1"
+        super().__init__(key=key or "funasr", model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FunASR] Speech2Text initialized with model %s at %s", model_name, self.base_url)

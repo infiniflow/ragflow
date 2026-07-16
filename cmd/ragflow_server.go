@@ -249,7 +249,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -327,7 +327,7 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
-	if err = common.Init(logLevel, fileOut); err != nil {
+	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
@@ -369,11 +369,12 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(); err != nil {
+	ctx := context.Background()
+	if err = server.StartServer(ctx, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
-	defer server.ShutdownServer()
+	defer server.ShutdownServer(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName

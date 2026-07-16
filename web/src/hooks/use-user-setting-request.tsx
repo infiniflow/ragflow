@@ -11,6 +11,10 @@ import {
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import kbService from '@/services/knowledge-service';
+import {
+  getBackendLanguage,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -20,6 +24,7 @@ import userService, {
 } from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -39,6 +44,7 @@ export const enum UserSettingApiAction {
   AgreeTenant = 'agreeTenant',
   SetLangfuseConfig = 'setLangfuseConfig',
   DeleteLangfuseConfig = 'deleteLangfuseConfig',
+  ListPipelines = 'listPipelines',
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
@@ -103,46 +109,91 @@ export const useSelectParserList = (): Array<{
   const { data: tenantInfo } = useFetchTenantInfo(true);
   const { t } = useTranslation();
 
-  // Fetch the builtin pipeline catalog from the backend (embed-registry),
-  // replacing the old hardcoded parser list.
+  // Detect backend runtime language (Go vs Python) so we can choose
+  // the matching parser-list code path at runtime.
+  // fetchBackendLanguage / getBackendLanguage handle their own caching
+  // internally; no need for an extra useQuery layer.
+  const backendLang = useSyncExternalStore(
+    subscribeBackendLanguage,
+    getBackendLanguage,
+    getBackendLanguage,
+  );
+
+  // Go backend: fetch pipeline catalog dynamically.
   const { data: pipelineListData } = useQuery({
-    queryKey: ['listPipelines'],
+    queryKey: [UserSettingApiAction.ListPipelines],
     queryFn: async () => {
       const { data } = await kbService.listPipelines();
       return data;
     },
     staleTime: Infinity,
+    enabled: backendLang === 'go',
   });
-  const pipelineList: Array<{
-    parser_id: string;
-    title: string;
-    dsl: Record<string, any>;
-  }> = pipelineListData?.data ?? [];
+
+  const defaultParsers = useMemo(
+    () => [
+      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
+      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
+      {
+        value: 'resume',
+        label: t('knowledgeConfiguration.parserLabel.resume'),
+      },
+      {
+        value: 'manual',
+        label: t('knowledgeConfiguration.parserLabel.manual'),
+      },
+      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
+      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
+      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
+      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
+      {
+        value: 'presentation',
+        label: t('knowledgeConfiguration.parserLabel.presentation'),
+      },
+      {
+        value: 'picture',
+        label: t('knowledgeConfiguration.parserLabel.picture'),
+      },
+      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
+      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
+      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
+      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
+    ],
+    [t],
+  );
 
   const parserList = useMemo(() => {
+    // Go backend: prefer the dynamic pipeline catalog from the API.
+    if (backendLang === 'go') {
+      const pipelineList: Array<{ parser_id: string; title: string; dsl: Record<string, any> }> =
+        pipelineListData?.data ?? [];
+      if (pipelineList.length > 0) {
+        const labelFromAPI = (parserId: string, title: string) => {
+          const key = `knowledgeConfiguration.parserLabel.${parserId}`;
+          const translated = t(key);
+          return translated !== key ? translated : title;
+        };
+        return pipelineList.map((item) => ({
+          value: item.parser_id,
+          label: labelFromAPI(item.parser_id, item.title),
+        }));
+      }
+    }
+
+    // Python backend (or fallback): use tenant-level parser_ids or
+    // the hardcoded default parsers.
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     const filteredArray = parserArray.filter((x) => x.trim() !== '');
 
-    // Tenant-level parser_ids filter (if configured), otherwise all builtins.
-    if (filteredArray.length > 0) {
-      return filteredArray.map((x) => {
-        const arr = x.split(':');
-        return { value: arr[0], label: arr[1] };
-      });
+    if (filteredArray.length === 0) {
+      return defaultParsers;
     }
 
-    // Map API pipeline list to { value, label }; prefer i18n label,
-    // fallback to the API title when the i18n key is missing.
-    const labelFromAPI = (parserId: string, title: string) => {
-      const key = `knowledgeConfiguration.parserLabel.${parserId}`;
-      const translated = t(key);
-      return translated !== key ? translated : title;
-    };
-    return pipelineList.map((item) => ({
-      value: item.parser_id,
-      label: labelFromAPI(item.parser_id, item.title),
-    }));
-  }, [tenantInfo, pipelineList, t]);
+    return filteredArray.map((x) => {
+      const arr = x.split(':');
+      return { value: arr[0], label: arr[1] };
+    });
+  }, [tenantInfo, defaultParsers, backendLang, pipelineListData, t]);
 
   return parserList;
 };

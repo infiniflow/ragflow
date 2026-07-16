@@ -873,46 +873,6 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     return True, {}
 
 
-def run_embedding(dataset_id: str, tenant_id: str):
-    """
-    Run embedding for all documents in a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    documents, _ = DocumentService.get_by_kb_id(
-        kb_id=dataset_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    if not documents:
-        return False, f"No documents in Dataset {dataset_id}"
-
-    kb_table_num_map = {}
-    for doc in documents:
-        doc["tenant_id"] = tenant_id
-        DocumentService.run(tenant_id, doc, kb_table_num_map)
-
-    return True, {"scheduled_count": len(documents)}
-
-
 def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
     """
     Rename a tag in a dataset.

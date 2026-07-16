@@ -14,7 +14,9 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -72,6 +74,7 @@ type AgentParam struct {
 	ModelID               string
 	SystemPrompt          string
 	UserPrompt            string
+	Thinking              string
 	TopP                  *float64
 	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
@@ -135,7 +138,7 @@ var agentRunner = runEinoReActAgent
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(p)
+	chatModel, err := buildAgentChatModel(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
@@ -164,11 +167,87 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
-	msg, err := agent.Generate(ctx, input, opt)
+	stream, err := agent.Stream(ctx, input, opt)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	emitDone := emitAgentModelStreams(ctx, future)
+
+	chunks := make([]*schema.Message, 0)
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if chunk == nil {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	if emitErr := <-emitDone; emitErr != nil {
+		return nil, emitErr
+	}
+	if len(chunks) == 0 {
+		return &schema.Message{Role: schema.Assistant}, nil
+	}
+	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		var firstErr error
+		iter := future.GetMessageStreams()
+		for {
+			msgStream, hasNext, err := iter.Next()
+			if err != nil {
+				firstErr = err
+				break
+			}
+			if !hasNext {
+				break
+			}
+			if msgStream == nil {
+				continue
+			}
+			for {
+				msg, err := msgStream.Recv()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					break
+				}
+				if msg == nil {
+					continue
+				}
+				if msg.Role != "" && msg.Role != schema.Assistant {
+					continue
+				}
+				if msg.Content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				if runtime.AgentMessageEventsEmitted(ctx) {
+					continue
+				}
+				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
+			}
+			msgStream.Close()
+		}
+		done <- firstErr
+	}()
+	return done
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -437,46 +516,20 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // Invoke runs the ReAct loop via the configured agentRunner and returns
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	runtime.ResetAgentMessageEmission(ctx)
+	defer runtime.FinalizeAgentMessage(ctx)
+
 	p := mergeAgentParam(c.param, inputs)
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
 	}
 
-	// v3.6.1: derive the driver and bare model name from the
-	// composite llm_id when the Agent DSL didn't set `driver`. The
-	// Python side does the same in split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178. We
-	// also use this opportunity to look up the tenant's LLM
-	// credentials from `tenant_llm` when the DSL omitted `api_key`
-	// — mirrors Python's get_model_config_from_provider_instance,
-	// which is how the Python canvas finds the tenant's
-	// provider-specific API key + base URL without storing them
-	// in the canvas DSL.
-	// Save the original composite llm_id before the split drops the
-	// instance-name segment. We need it for the tenant_model_instance
-	// fallback path below.
-	originalModelID := p.ModelID
-
-	if p.Driver == "" && p.ModelID != "" {
-		if m, prov, ok := agentProviderLastSegmentSplit(p.ModelID); ok {
-			p.Driver = prov
-			p.ModelID = m
-		}
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, err
 	}
-	if p.Driver == "" && p.ModelID != "" {
-		modelID, driver, apiKey, baseURL, ok, err := resolveTenantChatModelByID(ctx, p.ModelID, p.APIKey, p.BaseURL)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			p.ModelID = modelID
-			p.Driver = driver
-			p.APIKey = apiKey
-			p.BaseURL = baseURL
-		}
-	}
-	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 
 	var state *runtime.CanvasState
 	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
@@ -569,6 +622,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		zap.String("modelID", p.ModelID),
 		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
+	thinking := msg.ReasoningContent
+
 	var groundingStatus string
 	if p.Cite {
 		chunks := chunksFromState(ctx)
@@ -588,11 +643,15 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
+		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
+	}
+	if !runtime.AgentMessageEventsEmitted(ctx) {
+		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
 }
@@ -636,6 +695,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
 		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
@@ -644,7 +704,7 @@ func (c *AgentComponent) Outputs() map[string]string {
 
 // buildAgentChatModel constructs an EinoChatModel from AgentParam by
 // resolving the driver through the RAGFlow provider manager.
-func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
+func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatModel, error) {
 	driver := p.Driver
 	modelID := p.ModelID
 
@@ -694,8 +754,21 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	// would be dead weight. When AgentParam grows Temperature/
 	// MaxTokens, switch to always-build.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil {
+	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
 		chatCfg = &models.ChatConfig{TopP: p.TopP}
+		switch p.Thinking {
+		case "enabled":
+			t := true
+			chatCfg.Thinking = &t
+		case "disabled":
+			f := false
+			chatCfg.Thinking = &f
+		}
+		if runtime.HasAgentMessageEmitter(ctx) {
+			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
+				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
+			}
+		}
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -1005,6 +1078,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+		p.Thinking = v
+	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
 	}
@@ -1017,11 +1093,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
-	if v, ok := sliceFrom(inputs, "tools"); ok {
-		p.Tools = v
+	if tools, params, ok := agentToolsFrom(inputs, "tools"); ok {
+		p.Tools = tools
+		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
-		p.ToolParams = v
+		p.ToolParams = mergeToolParams(p.ToolParams, v)
 	}
 	if v, ok := boolFrom(inputs, "optimize_multi_turn"); ok {
 		p.OptimizeMultiTurn = v
@@ -1033,6 +1110,107 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Cite = v
 	}
 	return p
+}
+
+// agentToolsFrom extracts the Agent tools list. The Go-native shape is
+// []string; the canvas DSL shape stores tool component objects with
+// component_name and params.
+func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, bool) {
+	v, ok := inputs[name]
+	if !ok {
+		return nil, nil, false
+	}
+	switch x := v.(type) {
+	case []string:
+		return x, nil, true
+	case []any:
+		out := make([]string, 0, len(x))
+		params := make(map[string]map[string]any)
+		for _, item := range x {
+			switch tool := item.(type) {
+			case string:
+				if strings.TrimSpace(tool) == "" {
+					continue
+				}
+				out = append(out, tool)
+			case map[string]any:
+				toolName, toolParams, ok := agentToolObject(tool)
+				if !ok {
+					continue
+				}
+				out = append(out, toolName)
+				if len(toolParams) != 0 {
+					params[strings.ToLower(strings.TrimSpace(toolName))] = toolParams
+				}
+			}
+		}
+		return out, params, true
+	}
+	return nil, nil, false
+}
+
+func agentToolObject(item map[string]any) (string, map[string]any, bool) {
+	toolName, ok := stringFrom(item, "component_name")
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "tool_name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		return "", nil, false
+	}
+	toolName = strings.TrimSpace(toolName)
+
+	rawParams, _ := item["params"].(map[string]any)
+	toolParams := cloneMap(rawParams)
+	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
+		if toolParams == nil {
+			toolParams = make(map[string]any)
+		}
+		toolParams["function_name"] = strings.TrimSpace(fn)
+	}
+	return toolName, toolParams, true
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {
+	if len(base) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(base)+len(overrides))
+	for name, params := range base {
+		out[name] = cloneMap(params)
+		if lower := strings.ToLower(strings.TrimSpace(name)); lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	for name, params := range overrides {
+		if len(params) == 0 {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(name))
+		for k := range out {
+			if strings.ToLower(strings.TrimSpace(k)) == lower {
+				delete(out, k)
+			}
+		}
+		out[name] = cloneMap(params)
+		if lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	return out
 }
 
 // sliceFrom extracts []string from inputs[name].
@@ -1102,11 +1280,15 @@ func init() {
 			f := v
 			p.TopP = &f
 		}
-		if v, ok := sliceFrom(params, "tools"); ok {
-			p.Tools = v
+		if tools, toolParams, ok := agentToolsFrom(params, "tools"); ok {
+			p.Tools = tools
+			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
 		}
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
-			p.ToolParams = v
+			p.ToolParams = mergeToolParams(p.ToolParams, v)
+		}
+		if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
+			p.Thinking = v
 		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v
