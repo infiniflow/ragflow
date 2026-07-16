@@ -207,6 +207,22 @@ func TestCategorize_PromptUsesInputQueryValue(t *testing.T) {
 	}
 }
 
+func TestCategorize_OtherInstructionOnlyWhenAllowed(t *testing.T) {
+	withoutOther := buildCategorizeSystemPrompt(CategorizeParam{
+		Categories: []string{"Number", "Chinese", "English"},
+	})
+	if strings.Contains(withoutOther, `Use "Other"`) {
+		t.Fatalf("prompt should not mention Other when category is absent: %s", withoutOther)
+	}
+
+	withOther := buildCategorizeSystemPrompt(CategorizeParam{
+		Categories: []string{"Number", "Other"},
+	})
+	if !strings.Contains(withOther, `Use "Other" only when no other category fits`) {
+		t.Fatalf("prompt should mention Other when category exists: %s", withOther)
+	}
+}
+
 func TestCategorize_Registered(t *testing.T) {
 	c, err := New("Categorize", map[string]any{
 		"model_id":         "stub",
@@ -457,6 +473,83 @@ func TestCategorize_RoutesFromCategoryDescriptionToList(t *testing.T) {
 	}
 	if len(next) != 1 || next[0] != "Message:CateRetrieval" {
 		t.Fatalf("_next=%v, want [\"Message:CateRetrieval\"]", next)
+	}
+}
+
+func TestCategorize_ExplicitCategoriesKeepCategoryDescriptionMetadata(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "English", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"categories": []any{"Number", "chinese", "English"},
+		"category_description": map[string]any{
+			"Number":  map[string]any{"description": "This query has only a number", "examples": []any{"4321"}, "to": []any{"Message:Number"}},
+			"chinese": map[string]any{"description": "this query only has chinese", "examples": []any{"测试"}, "to": []any{"Message:Chinese"}},
+			"English": map[string]any{"description": "this query has english letter", "examples": []any{"hello"}, "to": []any{"Message:English"}},
+		},
+		"query": "hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	next, ok := out["_next"].([]string)
+	if !ok {
+		t.Fatalf("_next missing or wrong type: %T", out["_next"])
+	}
+	if len(next) != 1 || next[0] != "Message:English" {
+		t.Fatalf("_next=%v, want [\"Message:English\"]", next)
+	}
+	var systemContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "system" {
+			systemContent = m.Content
+		}
+	}
+	for _, want := range []string{"this query has english letter", `USER: "hello" -> English`} {
+		if !strings.Contains(systemContent, want) {
+			t.Fatalf("system prompt missing %q; got %s", want, systemContent)
+		}
+	}
+}
+
+func TestCategorizeRegistered_ExplicitCategoriesKeepCategoryDescriptionMetadata(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "English", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c, err := New("Categorize", map[string]any{
+		"model_id":   "stub",
+		"categories": []any{"Number", "chinese", "English"},
+		"category_description": map[string]any{
+			"Number":  map[string]any{"description": "This query has only a number", "examples": []any{"4321"}, "to": []any{"Message:Number"}},
+			"chinese": map[string]any{"description": "this query only has chinese", "examples": []any{"测试"}, "to": []any{"Message:Chinese"}},
+			"English": map[string]any{"description": "this query has english letter", "examples": []any{"hello"}, "to": []any{"Message:English"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Categorize): %v", err)
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{"query": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	next, ok := out["_next"].([]string)
+	if !ok {
+		t.Fatalf("_next missing or wrong type: %T", out["_next"])
+	}
+	if len(next) != 1 || next[0] != "Message:English" {
+		t.Fatalf("_next=%v, want [\"Message:English\"]", next)
+	}
+	var systemContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "system" {
+			systemContent = m.Content
+		}
+	}
+	for _, want := range []string{"this query has english letter", `USER: "hello" -> English`} {
+		if !strings.Contains(systemContent, want) {
+			t.Fatalf("system prompt missing %q; got %s", want, systemContent)
+		}
 	}
 }
 

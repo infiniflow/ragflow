@@ -195,7 +195,9 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	b.WriteString("- Consider both explicit mentions and implied context\n")
 	b.WriteString("- Prioritize the most specific applicable category\n")
 	b.WriteString("- Return only the category name without explanations\n")
-	b.WriteString("- Use \"Other\" only when no other category fits\n")
+	if containsCategory(cats, "Other") {
+		b.WriteString("- Use \"Other\" only when no other category fits\n")
+	}
 
 	examples := categorizeExamples(p, cats)
 	if len(examples) > 0 {
@@ -208,8 +210,17 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	return b.String()
 }
 
+func containsCategory(categories []string, target string) bool {
+	for _, c := range categories {
+		if c == target {
+			return true
+		}
+	}
+	return false
+}
+
 func categorizeExamples(p CategorizeParam, cats []string) []string {
-	lines := []string{}
+	var lines []string
 	for _, c := range cats {
 		for _, example := range p.CategoryExamples[c] {
 			example = strings.TrimSpace(strings.ReplaceAll(example, "\n", "    "))
@@ -218,9 +229,6 @@ func categorizeExamples(p CategorizeParam, cats []string) []string {
 			}
 			lines = append(lines, fmt.Sprintf("USER: %q -> %s", example, c))
 		}
-	}
-	if len(lines) > 0 {
-		return lines
 	}
 	for _, it := range p.Items {
 		it = strings.TrimSpace(strings.ReplaceAll(it, "\n", "    "))
@@ -232,11 +240,8 @@ func categorizeExamples(p CategorizeParam, cats []string) []string {
 	return lines
 }
 
-// buildCategorizePrompt mirrors Python's Categorize user prompt: the system
-// prompt carries category definitions/examples, while the user prompt carries
-// the actual runtime query to classify.
 func buildCategorizePrompt(_ CategorizeParam, query string) string {
-	query = strings.ReplaceAll(query, "\n", "")
+	query = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(query)
 	return fmt.Sprintf("\n---- Real Data ----\nUSER: %q ->\n", query)
 }
 
@@ -248,7 +253,7 @@ func resolveCategorizeQuery(ctx context.Context, p CategorizeParam, inputs map[s
 	if queryRef == "" {
 		queryRef = "sys.query"
 	}
-	if v, ok := stringValueFromAny(inputs[queryRef]); ok {
+	if v, ok := stringValueFromAny(inputs[queryRef]); ok && strings.TrimSpace(v) != "" {
 		return v
 	}
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
@@ -333,15 +338,16 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 	}
 	if v, ok := sliceFrom(inputs, "categories"); ok {
 		p.Categories = v
-	} else if meta, ok := categoryMetadataFrom(inputs, "category_description"); ok && len(meta.Names) > 0 {
-		// v1 stores the categories as a map of {name: description}.
-		// We only need the keys to drive the picker.
-		p.Categories = meta.Names
-		p.CategoryDescriptions = meta.Descriptions
-		p.CategoryExamples = meta.Examples
+	}
+	if meta, ok := categoryMetadataFrom(inputs, "category_description"); ok && len(meta.Names) > 0 {
+		if len(p.Categories) == 0 {
+			p.Categories = meta.Names
+		}
+		p.CategoryDescriptions = mergeStringMap(p.CategoryDescriptions, meta.Descriptions)
+		p.CategoryExamples = mergeStringSliceMap(p.CategoryExamples, meta.Examples)
 	}
 	if routes, ok := categoryRoutesFrom(inputs, "category_description"); ok {
-		p.CategoryRoutes = routes
+		p.CategoryRoutes = mergeStringMap(p.CategoryRoutes, routes)
 	}
 	if v, ok := stringFrom(inputs, "sys_prompt"); ok {
 		p.SysPrompt = v
@@ -418,6 +424,34 @@ func examplesFromAny(v any) []string {
 				out = append(out, s)
 			}
 		}
+	}
+	return out
+}
+
+func mergeStringMap(base, override map[string]string) map[string]string {
+	if len(override) == 0 {
+		return base
+	}
+	out := make(map[string]string, len(base)+len(override))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeStringSliceMap(base, override map[string][]string) map[string][]string {
+	if len(override) == 0 {
+		return base
+	}
+	out := make(map[string][]string, len(base)+len(override))
+	for k, v := range base {
+		out[k] = append([]string(nil), v...)
+	}
+	for k, v := range override {
+		out[k] = append([]string(nil), v...)
 	}
 	return out
 }
@@ -516,25 +550,15 @@ func init() {
 		}
 		if v, ok := sliceFrom(params, "categories"); ok {
 			p.Categories = v
-		} else if meta, ok := categoryMetadataFrom(params, "category_description"); ok && len(meta.Names) > 0 {
-			p.Categories = meta.Names
-			p.CategoryDescriptions = meta.Descriptions
-			p.CategoryExamples = meta.Examples
-			routes := make(map[string]string, len(meta.Names))
-			raw, _ := params["category_description"].(map[string]any)
-			for k, child := range raw {
-				nested, ok := child.(map[string]any)
-				if !ok {
-					continue
-				}
-				if route, ok := firstRouteTarget(nested["to"]); ok {
-					routes[k] = route
-				} else if uuid, _ := nested["uuid"].(string); uuid != "" {
-					routes[k] = uuid
-				}
+		}
+		if meta, ok := categoryMetadataFrom(params, "category_description"); ok && len(meta.Names) > 0 {
+			if len(p.Categories) == 0 {
+				p.Categories = meta.Names
 			}
-			if len(routes) > 0 {
-				p.CategoryRoutes = routes
+			p.CategoryDescriptions = mergeStringMap(p.CategoryDescriptions, meta.Descriptions)
+			p.CategoryExamples = mergeStringSliceMap(p.CategoryExamples, meta.Examples)
+			if routes, ok := categoryRoutesFrom(params, "category_description"); ok {
+				p.CategoryRoutes = mergeStringMap(p.CategoryRoutes, routes)
 			}
 		}
 		if v, ok := stringFrom(params, "sys_prompt"); ok {
