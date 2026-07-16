@@ -345,6 +345,9 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+	}
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
@@ -390,7 +393,6 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 					accumulatedToolCalls[idx] = cloneMap(tcMap)
 				}
 			}
-			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)

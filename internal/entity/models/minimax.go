@@ -188,19 +188,15 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("no message in response")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
+	content, _ := messageMap["content"].(string)
 
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+		if rc, ok := messageMap["reasoning_content"].(string); ok {
+			reasonContent = rc
+			if reasonContent != "" && reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
+			}
 		}
 	}
 
@@ -386,7 +382,6 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 					accumulatedToolCalls[idx] = cloneMap(tcMap)
 				}
 			}
-			return nil
 		}
 
 		content, ok := delta["content"].(string)

@@ -420,23 +420,42 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 				}
 				idx := int(idxF)
 				existing, hasExisting := accumulatedToolCalls[idx]
-				if hasExisting {
-					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-						if args, ok := fn["arguments"].(string); ok {
-							if ef, ok := existing["function"].(map[string]interface{}); ok {
-								if ea, ok := ef["arguments"].(string); ok {
-									ef["arguments"] = ea + args
-								} else {
-									ef["arguments"] = args
-								}
-							}
+				if !hasExisting {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					continue
+				}
+				if id, ok := tcMap["id"].(string); ok && id != "" {
+					if eid, ok := existing["id"].(string); ok {
+						existing["id"] = eid + id
+					} else {
+						existing["id"] = id
+					}
+				}
+				if typ, ok := tcMap["type"].(string); ok && typ != "" {
+					existing["type"] = typ
+				}
+				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+					ef, ok := existing["function"].(map[string]interface{})
+					if !ok {
+						ef = make(map[string]interface{})
+						existing["function"] = ef
+					}
+					if name, ok := fn["name"].(string); ok && name != "" {
+						if en, ok := ef["name"].(string); ok {
+							ef["name"] = en + name
+						} else {
+							ef["name"] = name
 						}
 					}
-				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					if args, ok := fn["arguments"].(string); ok && args != "" {
+						if ea, ok := ef["arguments"].(string); ok {
+							ef["arguments"] = ea + args
+						} else {
+							ef["arguments"] = args
+						}
+					}
 				}
 			}
-			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
