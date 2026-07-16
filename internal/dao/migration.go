@@ -315,8 +315,7 @@ func migrateKnowledgebaseNameUnique(db *gorm.DB) error {
 		return err
 	}
 	if duplicateCount > 0 {
-		common.Warn("Found duplicate (tenant_id, name) pairs among valid knowledge bases, cannot add unique index", zap.Int64("count", duplicateCount))
-		return nil
+		return fmt.Errorf("found %d duplicate (tenant_id, name) pairs among valid knowledge bases; resolve these before the unique index can be created", duplicateCount)
 	}
 
 	common.Info("Adding unique index on knowledgebase (tenant_id, name_ci)...")
