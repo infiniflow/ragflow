@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -85,15 +86,6 @@ func NewDocumentService() *DocumentService {
 }
 
 // CreateDocumentRequest create document request
-type CreateDocumentRequest struct {
-	Name      string `json:"name" binding:"required"`
-	KbID      string `json:"kb_id" binding:"required"`
-	ParserID  string `json:"parser_id" binding:"required"`
-	CreatedBy string `json:"created_by" binding:"required"`
-	Type      string `json:"type"`
-	Source    string `json:"source"`
-}
-
 // UpdateDocumentRequest update document request
 type UpdateDocumentRequest struct {
 	Name        *string  `json:"name"`
@@ -102,8 +94,6 @@ type UpdateDocumentRequest struct {
 	ChunkNum    *int64   `json:"chunk_num"`
 	Progress    *float64 `json:"progress"`
 	ProgressMsg *string  `json:"progress_msg"`
-	// FIXME: need to confirm below field
-	ProcessDuration *float64 `json:"progress_duration"`
 }
 
 // DocumentResponse document response
@@ -147,7 +137,6 @@ type ArtifactResponse struct {
 
 type UpdateDatasetDocumentRequest struct {
 	Name         *string        `json:"name"`
-	ChunkMethod  *string        `json:"chunk_method"`
 	ParserID     *string        `json:"parser_id"`
 	ChunkCount   *int64         `json:"chunk_count"`
 	TokenCount   *int64         `json:"token_count"`
@@ -163,7 +152,7 @@ type UpdateDatasetDocumentResponse struct {
 	ID              string                 `json:"id"`
 	Thumbnail       *string                `json:"thumbnail,omitempty"`
 	DatasetID       string                 `json:"dataset_id"`
-	ChunkMethod     string                 `json:"chunk_method"`
+	ParserID        string                 `json:"parser_id"`
 	PipelineID      *string                `json:"pipeline_id,omitempty"`
 	ParserConfig    map[string]interface{} `json:"parser_config"`
 	SourceType      string                 `json:"source_type"`
@@ -551,27 +540,6 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 }
 
 // CreateDocument create document
-func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
-	document := &entity.Document{
-		ID:           utility.GenerateUUID(),
-		Name:         &req.Name,
-		KbID:         req.KbID,
-		ParserID:     req.ParserID,
-		ParserConfig: entity.JSONMap{},
-		CreatedBy:    req.CreatedBy,
-		Type:         req.Type,
-		SourceType:   req.Source,
-		Suffix:       ".doc",
-		Status:       func() *string { s := "1"; return &s }(),
-	}
-
-	if err := s.InsertDocument(document); err != nil {
-		return nil, fmt.Errorf("failed to create document: %w", err)
-	}
-
-	return document, nil
-}
-
 // GetDocumentByID get document by ID
 func (s *DocumentService) GetDocumentByID(id string) (*DocumentResponse, error) {
 	document, err := s.documentDAO.GetByID(id)
@@ -1219,29 +1187,6 @@ func (s *DocumentService) StartParseDocuments(doc *entity.Document, kb *entity.K
 	if opts.RerunWithDelete {
 		if err := s.clearDocumentParseResults(doc, kb.TenantID); err != nil {
 			return err
-		}
-	}
-
-	if opts.ApplyKB {
-		if doc.ParserConfig == nil {
-			doc.ParserConfig = entity.JSONMap{}
-		}
-		config := map[string]interface{}{
-			"llm_id":          kb.ParserConfig["llm_id"],
-			"enable_metadata": false,
-			"metadata":        map[string]interface{}{},
-		}
-		if value, ok := kb.ParserConfig["enable_metadata"]; ok {
-			config["enable_metadata"] = value
-		}
-		if value, ok := kb.ParserConfig["metadata"]; ok {
-			config["metadata"] = value
-		}
-		if err := s.updateDocumentParserConfig(doc.ID, config); err != nil {
-			return err
-		}
-		for key, value := range config {
-			doc.ParserConfig[key] = value
 		}
 	}
 
@@ -2201,7 +2146,7 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 		return nil, common.CodeServerError, err
 	}
 
-	if code, err := s.validateDatasetDocumentUpdate(doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(datasetID, documentID, userID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
@@ -2223,17 +2168,22 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 		}
 	}
 
-	if req.PipelineID != nil && *req.PipelineID != "" {
-		if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, req.PipelineID); err != nil {
-			return nil, common.CodeDataError, err
+	if present["pipeline_id"] {
+		if req.PipelineID != nil && strings.TrimSpace(*req.PipelineID) != "" {
+			if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, req.PipelineID); err != nil {
+				return nil, common.CodeDataError, err
+			}
+		} else {
+			// Explicitly cleared: drop the custom canvas so the worker falls
+			// back to the built-in template, matching validation.
+			empty := ""
+			if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, &empty); err != nil {
+				return nil, common.CodeDataError, err
+			}
 		}
 	} else if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
 		parserID := strings.TrimSpace(*req.ParserID)
 		if err := s.resetDocumentForReparse(doc, kb.TenantID, &parserID, nil); err != nil {
-			return nil, common.CodeDataError, err
-		}
-	} else if req.ChunkMethod != nil && *req.ChunkMethod != "" {
-		if err := s.updateChunkMethod(doc, kb.TenantID, *req.ChunkMethod, req.ParserConfig, present["parser_config"]); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -2260,7 +2210,7 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("Invalid request payload")
 	}
@@ -2280,18 +2230,6 @@ func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, re
 		}
 	}
 
-	if present["chunk_method"] {
-		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
-			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
-		}
-		chunkMethod := strings.TrimSpace(*req.ChunkMethod)
-		if err := validateParserID(chunkMethod); err != nil {
-			return common.CodeDataError, fmt.Errorf("`chunk_method` %s doesn't exist", chunkMethod)
-		}
-		if doc.Type == "visual" || isPresentationFile(doc.Name) {
-			return common.CodeDataError, errors.New("Not supported yet!")
-		}
-	}
 	if present["parser_id"] && req.ParserID != nil {
 		parserID := strings.TrimSpace(*req.ParserID)
 		if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
@@ -2308,6 +2246,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, re
 		if err := validateMetaFields(req.MetaFields); err != nil {
 			return common.CodeDataError, err
 		}
+	}
+
+	// Validate component_params against the effective pipeline's DSL before any
+	// parser_config write happens downstream.
+	if err := s.validateComponentParamsForUpdate(datasetID, documentID, userID, req, present); err != nil {
+		return common.CodeDataError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -2444,6 +2388,192 @@ func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID,
 		indexName,
 		doc.KbID,
 	)
+}
+
+// ValidateComponentParams checks that every cpnID and param key in the
+// provided component_params map exists in the given DSL JSON. It uses
+// pipeline.ExtractAllComponentParams to derive the schema for each component.
+func ValidateComponentParams(dslJSON []byte, componentParams map[string]map[string]any) error {
+	if len(componentParams) == 0 {
+		return nil
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams(dslJSON)
+	if err != nil {
+		return err
+	}
+	// Build lookup: cpnID -> set of valid param keys.
+	validCPNs := make(map[string]map[string]struct{}, len(schemas))
+	for _, s := range schemas {
+		keys := make(map[string]struct{}, len(s.ParamsDefaults))
+		for k := range s.ParamsDefaults {
+			keys[k] = struct{}{}
+		}
+		validCPNs[s.CpnID] = keys
+	}
+	for cpnID, params := range componentParams {
+		validKeys, ok := validCPNs[cpnID]
+		if !ok {
+			return fmt.Errorf("component_params: unknown cpnID %q", cpnID)
+		}
+		for paramName := range params {
+			if _, ok := validKeys[paramName]; !ok {
+				return fmt.Errorf("component_params: unknown param %q for component %q", paramName, cpnID)
+			}
+		}
+	}
+	return nil
+}
+
+// validateComponentParamsForUpdate validates the component_params submitted in
+// an update request against the DSL of the pipeline the update targets. Both
+// built-in templates and custom canvas pipelines are DSLs and go through the
+// same check: every cpnID and param key must exist in the pipeline's schema.
+//
+// The target pipeline is resolved by resolveEffectivePipeline, which mirrors
+// how the ingestion worker picks the DSL at run time (see
+// internal/ingestion/service.ingestion_service.go): a custom canvas id wins,
+// then the document's stored pipeline id, and only when neither is set do we
+// fall back to the built-in parser_id.
+func (s *DocumentService) validateComponentParamsForUpdate(datasetID, documentID, userID string, req *UpdateDatasetDocumentRequest, present map[string]bool) error {
+	if !present["parser_config"] || req.ParserConfig == nil || len(req.ParserConfig) == 0 {
+		return nil
+	}
+	componentParams, err := normalizeComponentParams(map[string]any(req.ParserConfig))
+	if err != nil {
+		return err
+	}
+	if len(componentParams) == 0 {
+		return nil
+	}
+
+	isCanvas, ref, err := s.resolveEffectivePipeline(datasetID, documentID, req, present)
+	if err != nil {
+		return err
+	}
+
+	// Reject references to a custom canvas the caller does not own or share.
+	if isCanvas {
+		if ok, aerr := canvasAccessibleForUser(userID, ref); aerr != nil {
+			return fmt.Errorf("check canvas %s access: %w", ref, aerr)
+		} else if !ok {
+			return fmt.Errorf("canvas %s is not accessible", ref)
+		}
+	}
+
+	return validateComponentParamsAgainstPipeline(isCanvas, ref, componentParams)
+}
+
+// validateComponentParamsAgainstPipeline loads the DSL for the target pipeline
+// and validates the supplied component_params against it. A custom canvas
+// pipeline (isCanvas true) loads its DSL from the canvas row; a built-in
+// template (isCanvas false) loads it from the embedded registry. Both share
+// the same component-graph schema, so the same ValidateComponentParams check
+// applies. This is the single validation primitive reused by both document
+// and knowledge-base updates.
+func validateComponentParamsAgainstPipeline(isCanvas bool, ref string, componentParams map[string]map[string]any) error {
+	var dslJSON []byte
+	var err error
+	if isCanvas {
+		dslJSON, err = loadCanvasDSLJSON(ref)
+		if err != nil {
+			return err
+		}
+	} else {
+		registry, regErr := pipelinepkg.DefaultRegistry()
+		if regErr != nil {
+			return fmt.Errorf("builtin pipeline registry: %w", regErr)
+		}
+		if !registry.IsValid(ref) {
+			return fmt.Errorf("unknown builtin parser_id: %s", ref)
+		}
+		dslStr, dslErr := pipelinepkg.LoadBuiltinDSL(ref)
+		if dslErr != nil {
+			return fmt.Errorf("load builtin DSL for %q: %w", ref, dslErr)
+		}
+		dslJSON = []byte(dslStr)
+	}
+
+	return ValidateComponentParams(dslJSON, componentParams)
+}
+
+// resolveEffectivePipeline picks the pipeline definition an update applies to.
+// It prefers the canvas id / parser id carried in the request and falls back to
+// the document's stored values, matching how the ingestion worker selects the
+// DSL at run time. It returns whether the target is a custom canvas pipeline
+// and its identifier (a canvas id when isCanvas is true, otherwise a built-in
+// parser id).
+func (s *DocumentService) resolveEffectivePipeline(datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (bool, string, error) {
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Custom canvas: the request value wins, else the document's stored pipeline id.
+	if present["pipeline_id"] {
+		if req.PipelineID != nil && strings.TrimSpace(*req.PipelineID) != "" {
+			return true, strings.TrimSpace(*req.PipelineID), nil
+		}
+		// pipeline_id was supplied but is empty: the caller explicitly cleared
+		// the custom canvas, so fall through to built-in template resolution
+		// instead of re-selecting the stored canvas.
+	} else if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
+		return true, strings.TrimSpace(*doc.PipelineID), nil
+	}
+
+	// Built-in template: the request parser_id wins, else the stored parser id.
+	parserID := doc.ParserID
+	if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
+		parserID = strings.TrimSpace(*req.ParserID)
+	}
+	return false, parserID, nil
+}
+
+// loadCanvasDSLJSON returns the DSL JSON for a custom canvas pipeline. The
+// canvas's dsl column holds the same component-graph structure that built-in
+// templates use, so it can be validated by the same schema extractor. It is a
+// package-level function so both document and knowledge-base updates reuse it.
+func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
+	if strings.TrimSpace(canvasID) == "" {
+		return nil, fmt.Errorf("empty canvas id")
+	}
+	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, fmt.Errorf("canvas %s not found", canvasID)
+		}
+		return nil, fmt.Errorf("load canvas %s: %w", canvasID, err)
+	}
+	if len(canvas.DSL) == 0 {
+		return nil, fmt.Errorf("canvas %s has no DSL", canvasID)
+	}
+	raw, err := json.Marshal(canvas.DSL)
+	if err != nil {
+		return nil, fmt.Errorf("marshal canvas %s DSL: %w", canvasID, err)
+	}
+	return raw, nil
+}
+
+// normalizeComponentParams coerces a JSON-decoded component_params value into
+// the typed form expected by ValidateComponentParams. It rejects structurally
+// invalid input (e.g. a scalar or array at the top level, or a non-object per
+// component) so a malformed payload fails fast with a clear message.
+func normalizeComponentParams(raw any) (map[string]map[string]any, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	outer, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("component_params must be a JSON object mapping component id to a param object")
+	}
+	out := make(map[string]map[string]any, len(outer))
+	for cpnID, paramsRaw := range outer {
+		params, ok := paramsRaw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("component_params[%q] must be a JSON object mapping param name to value", cpnID)
+		}
+		out[cpnID] = params
+	}
+	return out, nil
 }
 
 func (s *DocumentService) updateDocumentParserConfig(documentID string, config map[string]any) error {
@@ -2598,22 +2728,6 @@ func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.D
 	return decremented, err
 }
 
-func (s *DocumentService) updateChunkMethod(doc *entity.Document, tenantID string, chunkMethod string, parserConfig map[string]any, hasParserConfig bool) error {
-	chunkMethod = strings.TrimSpace(chunkMethod)
-	if !strings.EqualFold(doc.ParserID, chunkMethod) {
-		if err := s.resetDocumentForReparse(doc, tenantID, &chunkMethod, nil); err != nil {
-			return err
-		}
-	}
-	if !hasParserConfig {
-		defaultConfig := common.GetParserConfig(chunkMethod, nil)
-		if err := s.updateDocumentParserConfig(doc.ID, defaultConfig); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *DocumentService) updateDocumentStatusOnly(doc *entity.Document, kb *entity.Knowledgebase, status int) error {
 	statusStr := strconv.Itoa(status)
 	if doc.Status != nil && *doc.Status == statusStr {
@@ -2646,7 +2760,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, 
 		ID:              doc.ID,
 		Thumbnail:       doc.Thumbnail,
 		DatasetID:       doc.KbID,
-		ChunkMethod:     doc.ParserID,
+		ParserID:        doc.ParserID,
 		PipelineID:      doc.PipelineID,
 		ParserConfig:    map[string]interface{}(doc.ParserConfig),
 		SourceType:      doc.SourceType,
@@ -2991,11 +3105,12 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
 	}
+	parserID := selectUploadParser(utility.FileType(filetype), filename, kb.ParserID)
 	loc := location
 	doc := &entity.Document{
 		ID:           docID,
 		KbID:         kb.ID,
-		ParserID:     selectUploadParser(utility.FileType(filetype), filename, kb.ParserID),
+		ParserID:     parserID,
 		PipelineID:   kb.PipelineID,
 		ParserConfig: parserConfig,
 		CreatedBy:    tenantID,
@@ -3012,11 +3127,24 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		hash := contentHashHex(blob)
 		doc.ContentHash = &hash
 	}
+
+	// When the document's builtin parser_id differs from the KB's (e.g. visual→picture,
+	// aural→audio), re-resolve component_params defaults from the document's own DSL
+	// template so cpnIDs and param keys match the pipeline that will actually execute.
+	if kb.PipelineID == nil && parserID != kb.ParserID {
+		if cp, err := resolveComponentParamsDefaults(parserID, nil); err != nil {
+			common.Warn("newDatasetDocument: resolve component_params defaults",
+				zap.String("parserID", parserID), zap.Error(err))
+		} else if cp != nil {
+			doc.ParserConfig = cp
+		}
+	}
+
 	return doc
 }
 
 // docToRawMap serialises a freshly created Document into the raw key shape the
-// handler remaps (chunk_num→chunk_count, kb_id→dataset_id, parser_id→chunk_method).
+// handler remaps (chunk_num→chunk_count, kb_id→dataset_id).
 func docToRawMap(doc *entity.Document) map[string]interface{} {
 	m := map[string]interface{}{
 		"id":            doc.ID,

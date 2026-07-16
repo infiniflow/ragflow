@@ -17,6 +17,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -46,17 +47,9 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 		Description:    &description,
 		Language:       &language,
 		Permission:     &permission,
-		ChunkMethod:    &chunkMethod,
+		ParserID:       &chunkMethod,
 		EmbeddingModel: &embeddingModel,
 		PipelineID:     &pipelineID,
-		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child": true,
-			},
-			"ext": map[string]interface{}{
-				"delimiter": "\n\n",
-			},
-		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateDataset failed: %v", err)
@@ -67,8 +60,8 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	if result["name"] != "Renamed Dataset" {
 		t.Fatalf("expected trimmed name in response, got %#v", result["name"])
 	}
-	if result["chunk_method"] != chunkMethod {
-		t.Fatalf("expected chunk method %q, got %#v", chunkMethod, result["chunk_method"])
+	if result["parser_id"] != chunkMethod {
+		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
 	}
 	if result["embedding_model"] != embeddingModel {
 		t.Fatalf("expected embedding model %q, got %#v", embeddingModel, result["embedding_model"])
@@ -102,11 +95,9 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	if persisted.PipelineID == nil || *persisted.PipelineID != strings.ToLower(pipelineID) {
 		t.Fatalf("expected normalized pipeline id persisted, got %#v", persisted.PipelineID)
 	}
-	if pc, ok := persisted.ParserConfig["parent_child"].(map[string]interface{}); !ok || pc["use_parent_child"] != true {
-		t.Fatalf("expected parent_child preserved as nested, got %#v", persisted.ParserConfig)
-	}
-	if pc, ok := persisted.ParserConfig["ext"].(map[string]interface{}); !ok || pc["delimiter"] != "\n\n" {
-		t.Fatalf("expected ext preserved as nested, got %#v", persisted.ParserConfig)
+	// parser_config stores DSL runtime component params directly.
+	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
+		t.Fatalf("expected Parser:HipSignsRhyme in parser_config, got %#v", persisted.ParserConfig)
 	}
 }
 
@@ -464,5 +455,271 @@ func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, mo
 	}
 	if err := dao.DB.Create(model).Error; err != nil {
 		t.Fatalf("insert test tenant model: %v", err)
+	}
+}
+
+// --- KB-level component_params validation (mirrors document-level) ---
+
+// seedDatasetUpdateCanvas migrates user_canvas on the active test DB and
+// inserts a canvas row with the given DSL.
+func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
+	t.Helper()
+	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
+		t.Fatalf("migrate user_canvas: %v", err)
+	}
+	var dslMap map[string]any
+	if err := json.Unmarshal(dslJSON, &dslMap); err != nil {
+		t.Fatalf("unmarshal seed dsl: %v", err)
+	}
+	canvas := &entity.UserCanvas{
+		ID:             id,
+		UserID:         userID,
+		Tags:           "",
+		Permission:     "me",
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap(dslMap),
+	}
+	if err := dao.DB.Create(canvas).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+}
+
+// datasetUpdateCanvasDSL builds a minimal canvas DSL declaring a Parser
+// component with the given cpnID and param keys.
+func datasetUpdateCanvasDSL(cpnID string, paramKeys ...string) []byte {
+	params := map[string]any{"outputs": map[string]any{}}
+	for _, k := range paramKeys {
+		params[k] = map[string]any{}
+	}
+	dsl := map[string]any{
+		"components": map[string]any{
+			cpnID: map[string]any{
+				"obj": map[string]any{"component_name": "Parser", "params": params},
+			},
+		},
+	}
+	raw, _ := json.Marshal(dsl)
+	return raw
+}
+
+func TestValidateDatasetComponentParams_BuiltinValid(t *testing.T) {
+	raw := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{"pdf": map[string]any{"parse_method": "deepdoc"}},
+	}
+	if err := validateDatasetComponentParams("general", nil, raw, "u"); err != nil {
+		t.Fatalf("expected valid builtin, got %v", err)
+	}
+}
+
+func TestValidateDatasetComponentParams_BuiltinUnknownCpn(t *testing.T) {
+	raw := map[string]any{"Parser:NoSuch": map[string]any{"pdf": map[string]any{}}}
+	if err := validateDatasetComponentParams("general", nil, raw, "u"); err == nil {
+		t.Fatal("expected error for unknown cpn in builtin")
+	}
+}
+
+func TestValidateDatasetComponentParams_BuiltinUnknownParam(t *testing.T) {
+	raw := map[string]any{"Parser:HipSignsRhyme": map[string]any{"no_such_param": 1}}
+	if err := validateDatasetComponentParams("general", nil, raw, "u"); err == nil {
+		t.Fatal("expected error for unknown param in builtin")
+	}
+}
+
+func TestValidateDatasetComponentParams_CanvasValid(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	dsl := datasetUpdateCanvasDSL("Parser:CustomRhyme", "pdf")
+	seedDatasetUpdateCanvas(t, "canvas-1", "u", dsl)
+	raw := map[string]any{"Parser:CustomRhyme": map[string]any{"pdf": map[string]any{}}}
+	pid := "canvas-1"
+	if err := validateDatasetComponentParams("general", &pid, raw, "u"); err != nil {
+		t.Fatalf("expected valid canvas, got %v", err)
+	}
+}
+
+func TestValidateDatasetComponentParams_CanvasUnknownCpn(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	dsl := datasetUpdateCanvasDSL("Parser:CustomRhyme", "pdf")
+	seedDatasetUpdateCanvas(t, "canvas-1", "u", dsl)
+	raw := map[string]any{"Parser:NoSuch": map[string]any{"pdf": map[string]any{}}}
+	pid := "canvas-1"
+	if err := validateDatasetComponentParams("general", &pid, raw, "u"); err == nil {
+		t.Fatal("expected error for unknown cpn in canvas")
+	}
+}
+
+func TestValidateDatasetComponentParams_Malformed(t *testing.T) {
+	// A non-object top level must be rejected by normalization.
+	if err := validateDatasetComponentParams("general", nil, "not-an-object", "u"); err == nil {
+		t.Fatal("expected error for malformed component_params")
+	}
+}
+
+func TestValidateDatasetComponentParams_None(t *testing.T) {
+	// No component_params at all is always valid.
+	if err := validateDatasetComponentParams("general", nil, nil, "u"); err != nil {
+		t.Fatalf("expected nil raw to be valid, got %v", err)
+	}
+}
+
+// --- Step 3: component_params validation wired into UpdateDataset ---
+
+// insertDatasetUpdateCanvasKB seeds a KB bound to a custom canvas pipeline
+// (PipelineID set, ParserID empty) for the canvas validation tests.
+func insertDatasetUpdateCanvasKB(t *testing.T, id, tenantID, name, pipelineID string) {
+	t.Helper()
+
+	pid := pipelineID
+	kb := &entity.Knowledgebase{
+		ID:           id,
+		TenantID:     tenantID,
+		Name:         name,
+		EmbdID:       "BAAI/bge-large-zh-v1.5@Builtin",
+		CreatedBy:    tenantID,
+		Permission:   string(entity.TenantPermissionMe),
+		ParserID:     "",
+		PipelineID:   &pid,
+		ParserConfig: entity.JSONMap{"chunk_token_num": float64(128)},
+		Status:       sptr(string(entity.StatusValid)),
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert test canvas kb: %v", err)
+	}
+}
+
+func TestUpdateDataset_RejectsUnknownParam_Builtin(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"no_such_param": 1,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected unknown param error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+}
+
+func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["parser_id"] != string(entity.ParserTypeNaive) {
+		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	cp := map[string]interface{}(persisted.ParserConfig)
+	if len(cp) == 0 {
+		t.Fatalf("expected component_params persisted, got %#v", persisted.ParserConfig)
+	}
+	rhyme, ok := cp["Parser:HipSignsRhyme"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Parser:HipSignsRhyme persisted, got %#v", cp)
+	}
+	pdf, ok := rhyme["pdf"].(map[string]interface{})
+	if !ok || pdf["parse_method"] != "deepdoc" {
+		t.Fatalf("expected pdf setup persisted, got %#v", rhyme)
+	}
+}
+
+func TestUpdateDataset_RejectsCanvasUnknownParam(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	dsl := datasetUpdateCanvasDSL("Parser:CustomRhyme", "pdf")
+	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
+	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:NoSuch": map[string]interface{}{
+				"pdf": map[string]interface{}{},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected unknown cpn error for canvas")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+}
+
+func TestUpdateDataset_AcceptsValidCanvasComponentParams(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	dsl := datasetUpdateCanvasDSL("Parser:CustomRhyme", "pdf")
+	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
+	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
+
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:CustomRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["pipeline_id"] != "canvas-1" {
+		t.Fatalf("expected pipeline_id preserved, got %#v", result["pipeline_id"])
+	}
+}
+
+// TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin covers the
+// effective-ref edge where a request parser_id clears the existing canvas
+// pipeline: the override must be validated against the new builtin template,
+// not the stale canvas.
+func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	dsl := datasetUpdateCanvasDSL("Parser:CustomRhyme", "pdf")
+	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
+	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
+
+	chunkMethod := "naive"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", UpdateDatasetRequest{
+		ParserID: &chunkMethod,
+		ParserConfig: map[string]interface{}{
+			// Valid for the "general" builtin template, not the canvas.
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
 }
