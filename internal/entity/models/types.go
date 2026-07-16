@@ -172,6 +172,11 @@ type ChatConfig struct {
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
 	UsageResult *ChatUsage `json:"-"`
+	// StreamCallback receives raw content/reasoning deltas as soon as
+	// the model driver streams them. It is intentionally out-of-band
+	// from provider JSON so canvas callers can mirror Python's Message
+	// partial streaming without waiting for the final component output.
+	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
 }
 
 type APIConfig struct {

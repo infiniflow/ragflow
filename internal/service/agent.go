@@ -88,6 +88,135 @@ func (s *AgentService) RunAgentWithWebhook(
 	return s.RunAgent(ctx, userID, canvasID, "", "", "")
 }
 
+func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
+	for _, ev := range buildAgentMessageEvents(answer, thinking, reference) {
+		data, _ := json.Marshal(ev)
+		emit("message", string(data))
+	}
+}
+
+func makeAgentMessageDeltaEmitter(emit func(string, string)) func(string, string) {
+	thinkState := &ThinkStreamState{}
+	var inThinking bool
+	var explicitReasoning bool
+	startThinking := func() {
+		if inThinking {
+			return
+		}
+		emitAgentMessageEvent(emit, canvas.MessageEvent{StartToThink: true})
+		inThinking = true
+	}
+	endThinking := func() {
+		if !inThinking {
+			return
+		}
+		emitAgentMessageEvent(emit, canvas.MessageEvent{EndToThink: true})
+		inThinking = false
+	}
+	emitThinkDeltas := func(deltas []ThinkDelta) {
+		for _, d := range deltas {
+			switch {
+			case d.Kind == ThinkDeltaMarker && d.Value == thinkOpen:
+				startThinking()
+			case d.Kind == ThinkDeltaMarker && d.Value == thinkClose:
+				endThinking()
+			case d.Kind == ThinkDeltaText && d.Value != "":
+				emitAgentMessageEvent(emit, canvas.MessageEvent{Content: d.Value})
+			}
+		}
+	}
+	return func(contentDelta, thinkingDelta string) {
+		if thinkingDelta != "" {
+			startThinking()
+			explicitReasoning = true
+			emitAgentMessageEvent(emit, canvas.MessageEvent{Content: thinkingDelta})
+			return
+		}
+		if contentDelta == "" {
+			return
+		}
+		if explicitReasoning {
+			endThinking()
+			explicitReasoning = false
+		}
+		emitThinkDeltas(NextThinkDelta(thinkState, contentDelta, 0))
+	}
+}
+
+func emitAgentMessageEvent(emit func(string, string), ev canvas.MessageEvent) {
+	data, _ := json.Marshal(ev)
+	emit("message", string(data))
+}
+
+func buildAgentMessageEvents(answer, thinking string, reference any) []canvas.MessageEvent {
+	answer, thinking = splitInlineThink(answer, thinking)
+	if thinking == "" {
+		return []canvas.MessageEvent{{
+			Content:   answer,
+			Reference: reference,
+		}}
+	}
+
+	events := []canvas.MessageEvent{{StartToThink: true}}
+	for _, chunk := range splitMessageContent(thinking) {
+		events = append(events, canvas.MessageEvent{Content: chunk})
+	}
+	events = append(events, canvas.MessageEvent{EndToThink: true})
+	for _, chunk := range splitMessageContent(answer) {
+		events = append(events, canvas.MessageEvent{Content: chunk})
+	}
+	return events
+}
+
+func splitInlineThink(answer, thinking string) (string, string) {
+	if thinking != "" {
+		return answer, thinking
+	}
+	const startTag = "<think>"
+	const endTag = "</think>"
+	start := strings.Index(answer, startTag)
+	if start < 0 {
+		return answer, thinking
+	}
+	afterStart := start + len(startTag)
+	endRel := strings.Index(answer[afterStart:], endTag)
+	if endRel < 0 {
+		return answer, thinking
+	}
+	end := afterStart + endRel
+	thinking = answer[afterStart:end]
+	answer = answer[:start] + answer[end+len(endTag):]
+	answer = strings.TrimLeft(answer, "\r\n")
+	return answer, thinking
+}
+
+func splitMessageContent(content string) []string {
+	if content == "" {
+		return nil
+	}
+	const maxRunes = 24
+	runes := []rune(content)
+	chunks := make([]string, 0, (len(runes)+maxRunes-1)/maxRunes)
+	for len(runes) > 0 {
+		n := maxRunes
+		if len(runes) < n {
+			n = len(runes)
+		}
+		chunks = append(chunks, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return chunks
+}
+
+func agentMessageEventsEmitted(state *canvas.CanvasState) bool {
+	if state == nil {
+		return false
+	}
+	v, ok := state.GetGlobal(runtime.AgentMessageEventsEmittedKey)
+	emitted, _ := v.(bool)
+	return ok && emitted
+}
+
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
 // is accessible to the caller but is owned by a different user. It maps
 // to the Python "Only the owner of the agent is authorized for this
@@ -998,6 +1127,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			TaskID:    taskID,
 			SessionID: sessionID,
 		})
+		ctx2 = runtime.WithAgentMessageEmitter(ctx2, makeAgentMessageDeltaEmitter(emit))
 
 		// Seed initial env/sys values from the Canvas DSL globals.
 		// Python's self.globals dict stores "sys.*" and "env.*" under
@@ -1116,6 +1246,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
 		var answer string
+		var thinking string
 		var legacyReference []interface{}
 		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
@@ -1131,6 +1262,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if v, ok := bucket["result"].(string); ok && v != "" && answer == "" {
 				answer = v
 			}
+			if v, ok := bucket["thinking"].(string); ok && v != "" && thinking == "" {
+				thinking = v
+			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
 				legacyReference = append(legacyReference, v...)
 			}
@@ -1139,6 +1273,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
+		messageEventsEmitted := agentMessageEventsEmitted(state)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1152,11 +1287,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
 					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-					msgData, _ := json.Marshal(canvas.MessageEvent{
-						Content:   answer,
-						Reference: referencePayload,
-					})
-					emit("message", string(msgData))
+					if !messageEventsEmitted {
+						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+					}
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
 						Reference: referencePayload,
@@ -1167,11 +1300,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-				msgData, _ := json.Marshal(canvas.MessageEvent{
-					Content:   answer,
-					Reference: referencePayload,
-				})
-				emit("message", string(msgData))
+				if !messageEventsEmitted {
+					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+				}
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
 					Reference: referencePayload,
@@ -1199,11 +1330,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-		msgData, _ := json.Marshal(canvas.MessageEvent{
-			Content:   answer,
-			Reference: referencePayload,
-		})
-		emit("message", string(msgData))
+		if !messageEventsEmitted {
+			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+		}
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
 			Reference: referencePayload,

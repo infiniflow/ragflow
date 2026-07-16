@@ -14,7 +14,9 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -72,6 +74,7 @@ type AgentParam struct {
 	ModelID               string
 	SystemPrompt          string
 	UserPrompt            string
+	Thinking              string
 	TopP                  *float64
 	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
@@ -135,7 +138,7 @@ var agentRunner = runEinoReActAgent
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(p)
+	chatModel, err := buildAgentChatModel(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
@@ -164,11 +167,99 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
-	msg, err := agent.Generate(ctx, input, opt)
+	stream, err := agent.Stream(ctx, input, opt)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	emitDone := emitAgentModelStreams(ctx, future)
+
+	chunks := make([]*schema.Message, 0)
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if chunk == nil {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	if emitErr := <-emitDone; emitErr != nil {
+		return nil, emitErr
+	}
+	if len(chunks) == 0 {
+		return &schema.Message{Role: schema.Assistant}, nil
+	}
+	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		var firstErr error
+		emitted := false
+		iter := future.GetMessageStreams()
+		for {
+			msgStream, hasNext, err := iter.Next()
+			if err != nil {
+				firstErr = err
+				break
+			}
+			if !hasNext {
+				break
+			}
+			if msgStream == nil {
+				continue
+			}
+			for {
+				msg, err := msgStream.Recv()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					break
+				}
+				if msg == nil {
+					continue
+				}
+				if msg.Role != "" && msg.Role != schema.Assistant {
+					continue
+				}
+				if msg.Content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+					if v, ok := state.GetGlobal(runtime.AgentMessageEventsEmittedKey); ok {
+						if alreadyEmitted, _ := v.(bool); alreadyEmitted {
+							continue
+						}
+					}
+				}
+				if runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent) {
+					emitted = true
+				}
+			}
+			msgStream.Close()
+		}
+		if emitted {
+			if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+				state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
+			}
+		}
+		done <- firstErr
+	}()
+	return done
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -569,6 +660,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		zap.String("modelID", p.ModelID),
 		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
+	thinking := msg.ReasoningContent
+
 	var groundingStatus string
 	if p.Cite {
 		chunks := chunksFromState(ctx)
@@ -588,11 +681,23 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
+		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
+	}
+	alreadyEmitted := false
+	if state != nil {
+		if v, ok := state.GetGlobal(runtime.AgentMessageEventsEmittedKey); ok {
+			alreadyEmitted, _ = v.(bool)
+		}
+	}
+	if !alreadyEmitted {
+		if emitted := runtime.EmitAgentMessage(ctx, content+artifactMD, thinking); emitted && state != nil {
+			state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
+		}
 	}
 	return out, nil
 }
@@ -636,6 +741,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
 		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
@@ -644,7 +750,7 @@ func (c *AgentComponent) Outputs() map[string]string {
 
 // buildAgentChatModel constructs an EinoChatModel from AgentParam by
 // resolving the driver through the RAGFlow provider manager.
-func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
+func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatModel, error) {
 	driver := p.Driver
 	modelID := p.ModelID
 
@@ -694,8 +800,25 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	// would be dead weight. When AgentParam grows Temperature/
 	// MaxTokens, switch to always-build.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil {
+	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
 		chatCfg = &models.ChatConfig{TopP: p.TopP}
+		switch p.Thinking {
+		case "enabled":
+			t := true
+			chatCfg.Thinking = &t
+		case "disabled":
+			f := false
+			chatCfg.Thinking = &f
+		}
+		if runtime.HasAgentMessageEmitter(ctx) {
+			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
+				if emitted := runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta); emitted {
+					if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+						state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
+					}
+				}
+			}
+		}
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -1005,6 +1128,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+		p.Thinking = v
+	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
 	}
@@ -1210,6 +1336,9 @@ func init() {
 		}
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
 			p.ToolParams = mergeToolParams(p.ToolParams, v)
+		}
+		if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
+			p.Thinking = v
 		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v

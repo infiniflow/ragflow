@@ -36,6 +36,16 @@ import (
 // stable across calls (a fresh struct{}{} per call would key
 // distinctly and break ctx.Value lookups).
 type stateCtxKey struct{}
+type agentMessageEmitterCtxKey struct{}
+
+// AgentMessageEventsEmittedKey marks a CanvasState global when an Agent
+// component has already emitted Python-style message chunks during Invoke.
+const AgentMessageEventsEmittedKey = "__agent_message_events_emitted__"
+
+// AgentMessageEmitter emits visible assistant deltas for an Agent component.
+// The service layer owns the actual SSE envelope; runtime keeps the callback
+// shape free of canvas/service imports.
+type AgentMessageEmitter func(contentDelta, thinkingDelta string)
 
 // WithState attaches *CanvasState to ctx for retrieval by
 // GetStateFromContext. Production code (canvas/compile.go) calls this
@@ -43,6 +53,33 @@ type stateCtxKey struct{}
 // before invoking a component.
 func WithState(ctx context.Context, s *CanvasState) context.Context {
 	return context.WithValue(ctx, stateCtxKey{}, s)
+}
+
+// WithAgentMessageEmitter attaches the Agent message stream callback used by
+// components that can surface thinking before their node_finished event.
+func WithAgentMessageEmitter(ctx context.Context, emit AgentMessageEmitter) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, agentMessageEmitterCtxKey{}, emit)
+}
+
+// HasAgentMessageEmitter reports whether the service layer installed an
+// Agent message stream callback on ctx.
+func HasAgentMessageEmitter(ctx context.Context) bool {
+	emit, ok := ctx.Value(agentMessageEmitterCtxKey{}).(AgentMessageEmitter)
+	return ok && emit != nil
+}
+
+// EmitAgentMessage emits Agent answer/thinking deltas when the service layer
+// installed a callback. It returns true when a callback was present.
+func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) bool {
+	emit, ok := ctx.Value(agentMessageEmitterCtxKey{}).(AgentMessageEmitter)
+	if !ok || emit == nil {
+		return false
+	}
+	emit(contentDelta, thinkingDelta)
+	return true
 }
 
 // GetStateFromContext extracts a typed state attached via WithState.

@@ -70,6 +70,53 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 }
 
+func TestAgent_EmitsThinking(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "model reasoning",
+		}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"user_prompt": "hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["content"], "final answer"; got != want {
+		t.Errorf("content=%v, want %v", got, want)
+	}
+	if got, want := out["thinking"], "model reasoning"; got != want {
+		t.Errorf("thinking=%v, want %v", got, want)
+	}
+}
+
+func TestAgent_ForwardsThinkingParam(t *testing.T) {
+	var gotThinking string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotThinking = p.Thinking
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "hello",
+		"thinking":    "enabled",
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	if _, err := cmp.Invoke(context.Background(), nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotThinking != "enabled" {
+		t.Fatalf("runner thinking = %q, want enabled", gotThinking)
+	}
+}
+
 func TestAgent_ResolvesUserPromptFromCanvasState(t *testing.T) {
 	var gotPrompt string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
