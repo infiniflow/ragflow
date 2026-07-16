@@ -25,7 +25,7 @@ type InvitationCode struct {
 	VisitTime *time.Time `gorm:"column:visit_time;index" json:"visit_time,omitempty"`
 	UserID    *string    `gorm:"column:user_id;size:32;index" json:"user_id,omitempty"`
 	TenantID  *string    `gorm:"column:tenant_id;size:32;index" json:"tenant_id,omitempty"`
-	Status    *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	Status    *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
 
