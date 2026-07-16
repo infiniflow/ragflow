@@ -35,12 +35,12 @@ import (
 )
 
 var (
-	globalClient *RedisClient
+	globalClient *Client
 	once         sync.Once
 )
 
-// RedisClient wraps go-redis client with additional utility methods
-type RedisClient struct {
+// Client wraps go-redis client with additional utility methods
+type Client struct {
 	client           *redis.Client
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
@@ -48,8 +48,8 @@ type RedisClient struct {
 	config           *server.RedisConfig
 }
 
-// RedisMsg represents a message from Redis Stream
-type RedisMsg struct {
+// Message represents a message from Redis Stream
+type Message struct {
 	consumer  *redis.Client
 	queueName string
 	groupName string
@@ -128,7 +128,7 @@ func Init(cfg *server.RedisConfig) error {
 			return
 		}
 
-		globalClient = &RedisClient{
+		globalClient = &Client{
 			client:           client,
 			config:           cfg,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
@@ -145,7 +145,7 @@ func Init(cfg *server.RedisConfig) error {
 }
 
 // Get gets global Redis client instance
-func Get() *RedisClient {
+func Get() *Client {
 	return globalClient
 }
 
@@ -163,7 +163,7 @@ func IsEnabled() bool {
 }
 
 // Health checks if Redis is healthy
-func (r *RedisClient) Health() bool {
+func (r *Client) Health() bool {
 	if r.client == nil {
 		return false
 	}
@@ -186,7 +186,7 @@ func (r *RedisClient) Health() bool {
 }
 
 // Info returns Redis server information
-func (r *RedisClient) Info() map[string]interface{} {
+func (r *Client) Info() map[string]interface{} {
 	if r.client == nil {
 		return nil
 	}
@@ -269,12 +269,12 @@ func parseInt(s string) int {
 }
 
 // IsAlive checks if Redis client is alive
-func (r *RedisClient) IsAlive() bool {
+func (r *Client) IsAlive() bool {
 	return r.client != nil
 }
 
 // Exist checks if key exists
-func (r *RedisClient) Exist(key string) (bool, error) {
+func (r *Client) Exist(key string) (bool, error) {
 	if r.client == nil {
 		return false, nil
 	}
@@ -288,7 +288,7 @@ func (r *RedisClient) Exist(key string) (bool, error) {
 }
 
 // Get gets value by key
-func (r *RedisClient) Get(key string) (string, error) {
+func (r *Client) Get(key string) (string, error) {
 	if r.client == nil {
 		return "", nil
 	}
@@ -305,7 +305,7 @@ func (r *RedisClient) Get(key string) (string, error) {
 }
 
 // SetObj sets object with JSON serialization
-func (r *RedisClient) SetObj(key string, obj interface{}, exp time.Duration) bool {
+func (r *Client) SetObj(key string, obj interface{}, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
@@ -323,7 +323,7 @@ func (r *RedisClient) SetObj(key string, obj interface{}, exp time.Duration) boo
 }
 
 // GetObj gets and unmarshals object from Redis
-func (r *RedisClient) GetObj(key string, dest interface{}) bool {
+func (r *Client) GetObj(key string, dest interface{}) bool {
 	if r.client == nil {
 		return false
 	}
@@ -344,7 +344,7 @@ func (r *RedisClient) GetObj(key string, dest interface{}) bool {
 }
 
 // Set sets value with expiration
-func (r *RedisClient) Set(key string, value string, exp time.Duration) bool {
+func (r *Client) Set(key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
@@ -357,7 +357,7 @@ func (r *RedisClient) Set(key string, value string, exp time.Duration) bool {
 }
 
 // SetNX sets value only if key does not exist
-func (r *RedisClient) SetNX(key string, value string, exp time.Duration) bool {
+func (r *Client) SetNX(key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
@@ -372,7 +372,7 @@ func (r *RedisClient) SetNX(key string, value string, exp time.Duration) bool {
 
 // GetOrCreateSecretKey atomically retrieves an existing key or creates a new one
 // Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
-func (r *RedisClient) GetOrCreateKey(key string, value string) (string, error) {
+func (r *Client) GetOrCreateKey(key string, value string) (string, error) {
 	if r.client == nil {
 		return "", nil
 	}
@@ -408,7 +408,7 @@ func (r *RedisClient) GetOrCreateKey(key string, value string) (string, error) {
 }
 
 // SAdd adds member to set
-func (r *RedisClient) SAdd(key string, member string) bool {
+func (r *Client) SAdd(key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
@@ -421,7 +421,7 @@ func (r *RedisClient) SAdd(key string, member string) bool {
 }
 
 // SRem removes member from set
-func (r *RedisClient) SRem(key string, member string) bool {
+func (r *Client) SRem(key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
@@ -434,7 +434,7 @@ func (r *RedisClient) SRem(key string, member string) bool {
 }
 
 // SMembers returns all members of a set
-func (r *RedisClient) SMembers(key string) ([]string, error) {
+func (r *Client) SMembers(key string) ([]string, error) {
 	if r.client == nil {
 		return nil, nil
 	}
@@ -448,7 +448,7 @@ func (r *RedisClient) SMembers(key string) ([]string, error) {
 }
 
 // SIsMember checks if member exists in set
-func (r *RedisClient) SIsMember(key string, member string) bool {
+func (r *Client) SIsMember(key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
@@ -462,7 +462,7 @@ func (r *RedisClient) SIsMember(key string, member string) bool {
 }
 
 // ZAdd adds member with score to sorted set
-func (r *RedisClient) ZAdd(key string, member string, score float64) bool {
+func (r *Client) ZAdd(key string, member string, score float64) bool {
 	if r.client == nil {
 		return false
 	}
@@ -475,7 +475,7 @@ func (r *RedisClient) ZAdd(key string, member string, score float64) bool {
 }
 
 // ZCount returns count of members with score in range
-func (r *RedisClient) ZCount(key string, min, max float64) int64 {
+func (r *Client) ZCount(key string, min, max float64) int64 {
 	if r.client == nil {
 		return 0
 	}
@@ -489,7 +489,7 @@ func (r *RedisClient) ZCount(key string, min, max float64) int64 {
 }
 
 // ZPopMin pops minimum score members from sorted set
-func (r *RedisClient) ZPopMin(key string, count int) ([]redis.Z, error) {
+func (r *Client) ZPopMin(key string, count int) ([]redis.Z, error) {
 	if r.client == nil {
 		return nil, nil
 	}
@@ -503,7 +503,7 @@ func (r *RedisClient) ZPopMin(key string, count int) ([]redis.Z, error) {
 }
 
 // ZRangeByScore returns members with score in range
-func (r *RedisClient) ZRangeByScore(key string, min, max float64) ([]string, error) {
+func (r *Client) ZRangeByScore(key string, min, max float64) ([]string, error) {
 	if r.client == nil {
 		return nil, nil
 	}
@@ -520,7 +520,7 @@ func (r *RedisClient) ZRangeByScore(key string, min, max float64) ([]string, err
 }
 
 // ZRemRangeByScore removes members with score in range
-func (r *RedisClient) ZRemRangeByScore(key string, min, max float64) int64 {
+func (r *Client) ZRemRangeByScore(key string, min, max float64) int64 {
 	if r.client == nil {
 		return 0
 	}
@@ -534,7 +534,7 @@ func (r *RedisClient) ZRemRangeByScore(key string, min, max float64) int64 {
 }
 
 // IncrBy increments key by increment
-func (r *RedisClient) IncrBy(key string, increment int64) (int64, error) {
+func (r *Client) IncrBy(key string, increment int64) (int64, error) {
 	if r.client == nil {
 		return 0, nil
 	}
@@ -548,7 +548,7 @@ func (r *RedisClient) IncrBy(key string, increment int64) (int64, error) {
 }
 
 // DecrBy decrements key by decrement
-func (r *RedisClient) DecrBy(key string, decrement int64) (int64, error) {
+func (r *Client) DecrBy(key string, decrement int64) (int64, error) {
 	if r.client == nil {
 		return 0, nil
 	}
@@ -562,7 +562,7 @@ func (r *RedisClient) DecrBy(key string, decrement int64) (int64, error) {
 }
 
 // GenerateAutoIncrementID generates auto-increment ID
-func (r *RedisClient) GenerateAutoIncrementID(keyPrefix string, namespace string, increment int64, ensureMinimum *int64) int64 {
+func (r *Client) GenerateAutoIncrementID(keyPrefix string, namespace string, increment int64, ensureMinimum *int64) int64 {
 	if r.client == nil {
 		return -1
 	}
@@ -612,7 +612,7 @@ func (r *RedisClient) GenerateAutoIncrementID(keyPrefix string, namespace string
 }
 
 // Transaction sets key with NX flag (transaction-like behavior)
-func (r *RedisClient) Transaction(key string, value string, exp time.Duration) bool {
+func (r *Client) Transaction(key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
@@ -628,7 +628,7 @@ func (r *RedisClient) Transaction(key string, value string, exp time.Duration) b
 }
 
 // QueueProduct produces a message to Redis Stream
-func (r *RedisClient) QueueProduct(queue string, message interface{}) bool {
+func (r *Client) QueueProduct(queue string, message interface{}) bool {
 	if r.client == nil {
 		return false
 	}
@@ -655,7 +655,7 @@ func (r *RedisClient) QueueProduct(queue string, message interface{}) bool {
 }
 
 // QueueConsumer consumes a message from Redis Stream
-func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, msgID string) (*RedisMsg, error) {
+func (r *Client) QueueConsumer(queueName, groupName, consumerName string, msgID string) (*Message, error) {
 	if r.client == nil {
 		return nil, nil
 	}
@@ -714,7 +714,7 @@ func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, m
 			json.Unmarshal([]byte(msgStr), &messageData)
 		}
 
-		return &RedisMsg{
+		return &Message{
 			consumer:  r.client,
 			queueName: queueName,
 			groupName: groupName,
@@ -726,36 +726,36 @@ func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, m
 }
 
 // Ack acknowledges the message
-func (m *RedisMsg) Ack() bool {
+func (m *Message) Ack() bool {
 	if m.consumer == nil {
 		return false
 	}
 	ctx := context.Background()
 	err := m.consumer.XAck(ctx, m.queueName, m.groupName, m.msgID).Err()
 	if err != nil {
-		common.Warn("RedisMsg Ack error", zap.Error(err))
+		common.Warn("Message Ack error", zap.Error(err))
 		return false
 	}
 	return true
 }
 
 // GetMessage returns the message data
-func (m *RedisMsg) GetMessage() map[string]interface{} {
+func (m *Message) GetMessage() map[string]interface{} {
 	return m.message
 }
 
 // GetMsgID returns the message ID
-func (m *RedisMsg) GetMsgID() string {
+func (m *Message) GetMsgID() string {
 	return m.msgID
 }
 
 // GetPendingMsg gets pending messages
-func (r *RedisClient) GetPendingMsg(queue, groupName string) ([]redis.XPendingExt, error) {
+func (r *Client) GetPendingMsg(queue, groupName string) ([]redis.XPendingExt, error) {
 	if r.client == nil {
 		return nil, nil
 	}
 	ctx := context.Background()
-	msgs, err := r.client.XPendingExt(ctx, &redis.XPendingExtArgs{
+	messages, err := r.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: queue,
 		Group:  groupName,
 		Start:  "-",
@@ -768,11 +768,11 @@ func (r *RedisClient) GetPendingMsg(queue, groupName string) ([]redis.XPendingEx
 		}
 		return nil, err
 	}
-	return msgs, nil
+	return messages, nil
 }
 
-// RequeueMsg requeues a message
-func (r *RedisClient) RequeueMsg(queue, groupName, msgID string) {
+// RequeueMsg re-enqueues a message
+func (r *Client) RequeueMsg(queue, groupName, msgID string) {
 	if r.client == nil {
 		return
 	}
@@ -799,7 +799,7 @@ func (r *RedisClient) RequeueMsg(queue, groupName, msgID string) {
 }
 
 // QueueInfo returns queue group info
-func (r *RedisClient) QueueInfo(queue, groupName string) (map[string]interface{}, error) {
+func (r *Client) QueueInfo(queue, groupName string) (map[string]interface{}, error) {
 	if r.client == nil {
 		return nil, nil
 	}
@@ -829,7 +829,7 @@ func (r *RedisClient) QueueInfo(queue, groupName string) (map[string]interface{}
 }
 
 // DeleteIfEqual deletes key if its value equals expected value (atomic)
-func (r *RedisClient) DeleteIfEqual(key, expectedValue string) bool {
+func (r *Client) DeleteIfEqual(key, expectedValue string) bool {
 	if r.client == nil {
 		return false
 	}
@@ -843,7 +843,7 @@ func (r *RedisClient) DeleteIfEqual(key, expectedValue string) bool {
 }
 
 // Delete deletes a key
-func (r *RedisClient) Delete(key string) bool {
+func (r *Client) Delete(key string) bool {
 	if r.client == nil {
 		return false
 	}
@@ -856,7 +856,7 @@ func (r *RedisClient) Delete(key string) bool {
 }
 
 // Expire sets expiration on a key
-func (r *RedisClient) Expire(key string, exp time.Duration) bool {
+func (r *Client) Expire(key string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
@@ -869,7 +869,7 @@ func (r *RedisClient) Expire(key string, exp time.Duration) bool {
 }
 
 // TTL gets remaining time to live of a key
-func (r *RedisClient) TTL(key string) time.Duration {
+func (r *Client) TTL(key string) time.Duration {
 	if r.client == nil {
 		return -2
 	}
@@ -884,7 +884,7 @@ func (r *RedisClient) TTL(key string) time.Duration {
 
 // DistributedLock distributed lock implementation
 type DistributedLock struct {
-	client          *RedisClient
+	client          *Client
 	lockKey         string
 	lockValue       string
 	timeout         time.Duration
@@ -944,7 +944,7 @@ func (l *DistributedLock) Release() bool {
 
 // TokenBucket token bucket rate limiter
 type TokenBucket struct {
-	client   *RedisClient
+	client   *Client
 	key      string
 	capacity float64
 	rate     float64
@@ -985,7 +985,7 @@ func (tb *TokenBucket) Allow(cost float64) (bool, float64) {
 }
 
 // GetClient returns the underlying go-redis client for advanced usage
-func (r *RedisClient) GetClient() *redis.Client {
+func (r *Client) GetClient() *redis.Client {
 	return r.client
 }
 
@@ -998,7 +998,7 @@ func (r *RedisClient) GetClient() *redis.Client {
 //
 // Cost is fixed at 1.0; callers wanting variable cost should compose their
 // own Lua. ctx is used for both the EVALSHA round-trip and the deadline.
-func (r *RedisClient) EvalTokenBucketStrict(
+func (r *Client) EvalTokenBucketStrict(
 	ctx context.Context, key string, capacity, rate float64,
 ) (allowed bool, err error) {
 	if r == nil || r.client == nil {

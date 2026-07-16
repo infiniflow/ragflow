@@ -49,7 +49,7 @@ func init() {
 	testSynonymWordNetDir = "../../../resource/wordnet"
 }
 
-// MockRedisClient is a mock implementation of RedisClient for testing
+// MockRedisClient is a mock implementation of Client for testing
 type MockRedisClient struct {
 	data map[string]string
 }
