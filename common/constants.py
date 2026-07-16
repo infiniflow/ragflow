@@ -94,7 +94,7 @@ class LLMType(StrEnum):
 
 
 class ModelTypeBinary(Enum):
-    CHAT = 0b0000001      # 1 << 0 = 1
+    CHAT = 0b0000001  # 1 << 0 = 1
     EMBEDDING = 0b0000010  # 1 << 1 = 2
     ASR = 0b0000100  # 1 << 2 = 4
     VISION = 0b0001000  # 1 << 3 = 8
@@ -345,7 +345,7 @@ SOMARK_ENV_KEYS = [
     "SOMARK_KEEP_HEADER_FOOTER",
 ]
 SOMARK_DEFAULT_CONFIG = {
-    "SOMARK_BASE_URL": "https://somark.tech/api/v1",
+    "SOMARK_BASE_URL": "https://somark.cn/api/v1",
     "SOMARK_API_KEY": "",
     "SOMARK_IMAGE_FORMAT": "url",
     "SOMARK_FORMULA_FORMAT": "latex",

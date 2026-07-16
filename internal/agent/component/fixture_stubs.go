@@ -14,20 +14,18 @@
 //  limitations under the License.
 //
 
-// Package component — e2e fixture stubs and compat shims.
+// Package component contains e2e fixture stubs used directly by tests.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// fixture-backed component names that are registered here: Retrieval,
-// TavilySearch, ExeSQL, Generate, Answer, Iteration,
-// IterationItem. Some names (for example TavilySearch) now route to
-// production wrappers while their stubs remain available as direct test
-// constructors. The fixture stub bodies are deliberately trivial — they
+// fixture-backed component names that are registered here: Retrieval and its
+// aliases, CodeExec, Generate, Answer, Iteration, and IterationItem.
+// Production TavilySearch and ExeSQL nodes are registered through
+// ToolBackedComponent; their fixture stubs are direct-only test constructors. The
+// fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,
 // and produces outputs downstream templates can resolve", not
-// "do something useful". The Universe A wrappers in
-// universe_a_wrappers.go and the real production bodies in
-// their own .go files replace these stubs in production paths.
+// "do something useful".
 //
 // The fixture names were chosen by enumerating the component_name
 // values in the testdata fixtures (see the `examples` var in
@@ -490,13 +488,9 @@ func (it *IterationItemStub) Outputs() map[string]string {
 // uniqueness), so accidental double-registration in a later refactor
 // surfaces as a panic at init time, not as a silent override.
 func init() {
-	// Primary registration: Retrieval and ExeSQL go through the
-	// Universe A delegation wrappers in universe_a_wrappers.go
-	// (real eino tool plumbing). The stubs remain available for
-	// unit tests that want to assert the "no service wired" path
-	// via a direct constructor.
+	// Retrieval still requires its specialized adapter. The stub remains a
+	// direct test constructor for the "no service wired" path.
 	Register(componentNameRetrieval, newRetrievalComponent)
-	// The Python-side
 	// The agent canvas uses both a PascalCase "SearchMyDataset"
 	// and the original snake_case typo "search_my_dateset"; an
 	// intermediate "search_my_dataset" form also exists in some
@@ -509,21 +503,9 @@ func init() {
 	Register("SearchMyDataset", newRetrievalComponent)
 	Register("search_my_dataset", newRetrievalComponent)
 	Register("search_my_dateset", newRetrievalComponent)
-	Register(componentNameTavilySearch, newTavilySearchComponent)
-	Register("TavilyExtract", newTavilyExtractComponent)
-	Register(componentNameExeSQL, newExeSQLComponent)
 	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
-	Register("BGPT", newBGPTComponent)
-	Register("GitHub", newGitHubComponent)
-	Register("Wikipedia", newWikipediaComponent)
-	Register("DuckDuckGo", newDuckDuckGoComponent)
-	Register("Google", newGoogleComponent)
-	Register("GoogleScholar", newGoogleScholarComponent)
-	Register("ArXiv", newArxivComponent)
-	Register("PubMed", newPubMedComponent)
-	Register("YahooFinance", newYahooFinanceComponent)
 }

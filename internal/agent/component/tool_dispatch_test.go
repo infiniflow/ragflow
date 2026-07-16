@@ -94,7 +94,7 @@ func TestAgent_GoogleToolDSLParamsLoading(t *testing.T) {
 		},
 	})
 	form := c.GetInputForm()
-	googleForm, ok := form["google"].(map[string]any)
+	googleForm, ok := form["google_search"].(map[string]any)
 	if !ok {
 		t.Fatalf("GetInputForm missing google tool form: %+v", form)
 	}

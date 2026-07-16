@@ -161,7 +161,10 @@ func TestKB_Doc_Tenant_Accessors(t *testing.T) {
 func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
 	chunks := []map[string]any{{"text": "hello world"}}
-	meta := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	meta, err := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
 
 	// Verify the wrapper method works correctly and chunks are processed
 	if chunks[0]["doc_id"] != "doc-1" {

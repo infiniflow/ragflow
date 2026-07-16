@@ -71,43 +71,86 @@ def set_tenant_info():
 def _load_dify_retrieval_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
+    # ---- Stub all modules imported by dify_retrieval_api.py BEFORE exec_module ----
+    # 1. common and sub-modules (NO __path__ to avoid real imports)
     common_pkg = ModuleType("common")
-    common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
-    api_apps_mod = ModuleType("api.apps")
-    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
-    api_apps_mod.login_required = lambda func: func
-    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+    class _DummyRetCode:
+        SUCCESS = 0
+        ARGUMENT_ERROR = 1
+        NOT_FOUND = 2
+        SERVER_ERROR = 3
+        AUTHENTICATION_ERROR = 4
 
-    deepdoc_pkg = ModuleType("deepdoc")
-    deepdoc_parser_pkg = ModuleType("deepdoc.parser")
-    deepdoc_parser_pkg.__path__ = []
+    class _DummyLLMType:
+        CHAT = "chat"
+        EMBEDDING = "embedding"
 
-    class _StubPdfParser:
-        pass
+    common_constants_mod = ModuleType("common.constants")
+    common_constants_mod.RetCode = _DummyRetCode()
+    common_constants_mod.LLMType = _DummyLLMType()
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
-    class _StubExcelParser:
-        pass
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.retriever = None
+    common_settings_mod.kg_retriever = None
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
-    class _StubDocxParser:
-        pass
+    common_metadata_utils_mod = ModuleType("common.metadata_utils")
+    common_metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
+    common_metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_utils_mod)
 
-    deepdoc_parser_pkg.PdfParser = _StubPdfParser
-    deepdoc_parser_pkg.ExcelParser = _StubExcelParser
-    deepdoc_parser_pkg.DocxParser = _StubDocxParser
-    deepdoc_pkg.parser = deepdoc_parser_pkg
-    monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_pkg)
-    monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser_pkg)
+    # 2. quart + werkzeug (avoid heavy web framework imports)
+    qt_mod = ModuleType("quart")
+    qt_mod.jsonify = lambda *_args, **_kwargs: None
+    qt_mod.request = SimpleNamespace(method="POST", args={})
+    monkeypatch.setitem(sys.modules, "quart", qt_mod)
 
-    deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
-    deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
-    monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
+    werkzeug_exc_mod = ModuleType("werkzeug.exceptions")
+    werkzeug_exc_mod.BadRequest = type("BadRequest", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "werkzeug.exceptions", werkzeug_exc_mod)
 
-    deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
-    deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
-    monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
-    monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
+    qt_exc_mod = ModuleType("quart.exceptions")
+    qt_exc_mod.BadRequest = type("BadRequest", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "quart.exceptions", qt_exc_mod)
+
+    # 3. api.db.services.* (avoid Peewee ORM imports)
+    api_db_svc_mod = ModuleType("api.db.services")
+    api_db_svc_mod.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.db.services", api_db_svc_mod)
+
+    class _StubDocumentService:
+        @staticmethod
+        def get_by_ids(*_args, **_kwargs):
+            return []
+
+    doc_svc_mod = ModuleType("api.db.services.document_service")
+    doc_svc_mod.DocumentService = _StubDocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", doc_svc_mod)
+
+    class _StubDocMetadataService:
+        @staticmethod
+        def get_flatted_meta_by_kbs(*_args, **_kwargs):
+            return []
+
+    doc_metadata_mod = ModuleType("api.db.services.doc_metadata_service")
+    doc_metadata_mod.DocMetadataService = _StubDocMetadataService
+    monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_mod)
+
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def get_by_id(*_args, **_kwargs):
+            return True, SimpleNamespace(tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1")
+
+        @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
+    kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
+    kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
 
     # Mock tenant_llm_service for TenantLLMService and TenantService
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
@@ -190,9 +233,56 @@ def _load_dify_retrieval_module(monkeypatch):
     llm_service_mod.LLMBundle = _StubLLMBundle
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
-    # Mock tenant_model_service to ensure it uses mocked services
-    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    # 4. api.utils.api_utils
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda f: f
+    api_utils_mod.build_error_result = lambda message, code: {"code": code, "message": message}
+    api_utils_mod.get_request_json = lambda: {}
+    api_utils_mod.get_json_result = lambda data=None, message="": {"data": data, "message": message}
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
+    # 5. rag.app.tag
+    tag_mod = ModuleType("rag.app.tag")
+    tag_mod.label_question = lambda *_args, **_kwargs: []
+    monkeypatch.setitem(sys.modules, "rag.app.tag", tag_mod)
+
+    # 6. api.apps
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+
+    # 7. deepdoc stubs
+    deepdoc_pkg = ModuleType("deepdoc")
+    deepdoc_parser_pkg = ModuleType("deepdoc.parser")
+    deepdoc_parser_pkg.__path__ = []
+
+    class _StubPdfParser:
+        pass
+
+    class _StubExcelParser:
+        pass
+
+    class _StubDocxParser:
+        pass
+
+    deepdoc_parser_pkg.PdfParser = _StubPdfParser
+    deepdoc_parser_pkg.ExcelParser = _StubExcelParser
+    deepdoc_parser_pkg.DocxParser = _StubDocxParser
+    deepdoc_pkg.parser = deepdoc_parser_pkg
+    monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_pkg)
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser_pkg)
+
+    deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
+    deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
+
+    deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
+    deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
+    monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
+
+    # 8. api.db.joint_services.tenant_model_service
     class _MockModelConfig2:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
@@ -244,12 +334,14 @@ def _load_dify_retrieval_module(monkeypatch):
         # Return mock tenant with default model configurations
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
 
+    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
+    # ---- Load the real module ----
     module_name = "test_dify_retrieval_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -327,7 +419,7 @@ def test_retrieval_kb_not_found(monkeypatch):
     assert "Knowledgebase not found" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_not_found_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})
@@ -341,6 +433,7 @@ def test_retrieval_not_found_exception_mapping(monkeypatch):
             raise RuntimeError("chunk_not_found_error")
 
     monkeypatch.setattr(module.settings, "retriever", _BrokenRetriever())
+    monkeypatch.setattr(module.logger, "exception", lambda *args, **kwargs: None)
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
     assert res["code"] == module.RetCode.NOT_FOUND, res
@@ -361,6 +454,7 @@ def test_retrieval_generic_exception_mapping(monkeypatch):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(module.settings, "retriever", _BrokenRetriever())
+    monkeypatch.setattr(module.logger, "exception", lambda *args, **kwargs: None)
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
     assert res["code"] == module.RetCode.SERVER_ERROR, res

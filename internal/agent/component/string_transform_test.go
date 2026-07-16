@@ -173,3 +173,77 @@ func TestStringTransform_Registered(t *testing.T) {
 		t.Errorf("Name()=%q, want StringTransform", c.Name())
 	}
 }
+
+func TestStringTransform_GetInputFormSplit(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "split",
+		"delimiters": []string{","},
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+
+	got := c.(*StringTransformComponent).GetInputForm()
+	want := map[string]any{
+		"line": map[string]any{
+			"name": "String",
+			"type": "line",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetInputForm split = %#v, want %#v", got, want)
+	}
+}
+
+func TestStringTransform_GetInputFormMerge(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "{{sys.query}} - {{CodeExec:Run@result}} - {{sys.query}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+
+	got := c.(*StringTransformComponent).GetInputForm()
+	want := map[string]any{
+		"sys.query": map[string]any{
+			"name": "sys.query",
+			"type": "line",
+		},
+		"CodeExec:Run@result": map[string]any{
+			"name": "CodeExec:Run@result",
+			"type": "line",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetInputForm merge = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetInputElementsFromText(t *testing.T) {
+	got := getInputElementsFromText("{{ sys.query }} {{env.foo}} {{Node_1@answer.text}} {{sys.query}}")
+	want := map[string]map[string]any{
+		"sys.query": {
+			"name":       "sys.query",
+			"value":      nil,
+			"_retrieval": nil,
+			"_cpn_id":    "",
+		},
+		"env.foo": {
+			"name":       "env.foo",
+			"value":      nil,
+			"_retrieval": nil,
+			"_cpn_id":    "",
+		},
+		"Node_1@answer.text": {
+			"name":       "Node_1@answer.text",
+			"value":      nil,
+			"_retrieval": nil,
+			"_cpn_id":    "Node_1",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("getInputElementsFromText = %#v, want %#v", got, want)
+	}
+}
