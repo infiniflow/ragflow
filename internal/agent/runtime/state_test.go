@@ -90,7 +90,7 @@ func TestCanvasStateConversationHistory(t *testing.T) {
 	state := NewCanvasState("run-history", "task-history")
 	state.AppendHistory("user", "previous question")
 	state.AppendHistory("assistant", map[string]any{"content": "previous answer"})
-	state.AppendHistory("user", "current question")
+	state.AppendCurrentUser("current question")
 	state.AppendSysHistory("user: previous question")
 	state.AppendSysHistory("assistant: {'content': 'previous answer'}")
 	state.AppendSysHistory("user: current question")
@@ -104,6 +104,62 @@ func TestCanvasStateConversationHistory(t *testing.T) {
 	}
 	if got := state.SnapshotSysHistory(); len(got) != 3 || got[2] != "user: current question" {
 		t.Fatalf("sys.history = %#v", got)
+	}
+}
+
+func TestCanvasStatePriorHistoryPreservesPersistedUser(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-history", "task-history")
+	state.AppendHistory("user", "persisted unanswered question")
+
+	prior := state.SnapshotPriorHistory()
+	if len(prior) != 1 || prior[0]["content"] != "persisted unanswered question" {
+		t.Fatalf("prior history = %#v, want persisted user turn", prior)
+	}
+
+	state.AppendCurrentUser("current question")
+	prior = state.SnapshotPriorHistory()
+	if len(prior) != 1 || prior[0]["content"] != "persisted unanswered question" {
+		t.Fatalf("prior history = %#v, want only current user excluded", prior)
+	}
+}
+
+func TestCanvasStateHistorySnapshotsDeepCopyPayload(t *testing.T) {
+	t.Parallel()
+	payload := map[string]any{
+		"content":  "answer",
+		"nil":      nil,
+		"nil_map":  map[string]any(nil),
+		"nil_list": []any(nil),
+		"metadata": map[string]any{
+			"tags": []any{"one", map[string]any{"name": "nested"}},
+		},
+	}
+	state := NewCanvasState("run-copy", "task-copy")
+	state.AppendHistory("assistant", payload)
+
+	snapshot := state.SnapshotHistory()
+	snapshotPayload := snapshot[0]["payload"].(map[string]any)
+	metadata := snapshotPayload["metadata"].(map[string]any)
+	tags := metadata["tags"].([]any)
+	metadata["new"] = true
+	tags[0] = "changed"
+	tags[1].(map[string]any)["name"] = "changed"
+
+	unchanged := state.SnapshotHistory()[0]["payload"].(map[string]any)
+	unchangedMetadata := unchanged["metadata"].(map[string]any)
+	unchangedTags := unchangedMetadata["tags"].([]any)
+	if unchanged["nil"] != nil || unchanged["nil_map"].(map[string]any) != nil || unchanged["nil_list"].([]any) != nil {
+		t.Fatalf("nil values were not preserved: %#v", unchanged)
+	}
+	if _, exists := unchangedMetadata["new"]; exists || unchangedTags[0] != "one" || unchangedTags[1].(map[string]any)["name"] != "nested" {
+		t.Fatalf("snapshot mutation leaked into state: %#v", unchanged)
+	}
+
+	payload["metadata"].(map[string]any)["source"] = "caller mutation"
+	unchanged = state.SnapshotHistory()[0]["payload"].(map[string]any)
+	if _, exists := unchanged["metadata"].(map[string]any)["source"]; exists {
+		t.Fatalf("caller mutation leaked into state: %#v", unchanged)
 	}
 }
 

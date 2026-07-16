@@ -160,7 +160,7 @@ func TestLLM_Invoke_HistoryWindow_DoesNotDuplicateCurrentUser(t *testing.T) {
 	state := runtime.NewCanvasState("rid", "tid")
 	state.AppendHistory("user", "earlier")
 	state.AppendHistory("assistant", map[string]any{"content": "earlier reply"})
-	state.AppendHistory("user", "now")
+	state.AppendCurrentUser("now")
 	c := NewLLMComponent(LLMParam{
 		ModelID:                  "echo",
 		UserPrompt:               "now",

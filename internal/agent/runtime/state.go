@@ -57,18 +57,19 @@ import (
 //   - CancelFlag  : set when cancel signal received; nodes may poll
 //   - RunID       : unique per-run identifier (used by RunTracker + CheckPointStore)
 type CanvasState struct {
-	mu         sync.RWMutex
-	Outputs    map[string]map[string]any
-	Sys        map[string]any
-	Env        map[string]any
-	Path       []string
-	History    []map[string]any
-	Memory     []map[string]any
-	Retrieval  map[string]any
-	Globals    map[string]any
-	CancelFlag *atomic.Bool
-	RunID      string
-	TaskID     string
+	mu                 sync.RWMutex
+	activeHistoryIndex int
+	Outputs            map[string]map[string]any
+	Sys                map[string]any
+	Env                map[string]any
+	Path               []string
+	History            []map[string]any
+	Memory             []map[string]any
+	Retrieval          map[string]any
+	Globals            map[string]any
+	CancelFlag         *atomic.Bool
+	RunID              string
+	TaskID             string
 }
 
 // NewCanvasState returns a zero-valued CanvasState with all maps allocated.
@@ -76,17 +77,18 @@ type CanvasState struct {
 // even before any cancel signal has been wired.
 func NewCanvasState(runID, taskID string) *CanvasState {
 	s := &CanvasState{
-		Outputs:    make(map[string]map[string]any),
-		Sys:        make(map[string]any),
-		Env:        make(map[string]any),
-		Path:       []string{},
-		History:    []map[string]any{},
-		Memory:     []map[string]any{},
-		Retrieval:  make(map[string]any),
-		Globals:    make(map[string]any),
-		CancelFlag: &atomic.Bool{},
-		RunID:      runID,
-		TaskID:     taskID,
+		activeHistoryIndex: -1,
+		Outputs:            make(map[string]map[string]any),
+		Sys:                make(map[string]any),
+		Env:                make(map[string]any),
+		Path:               []string{},
+		History:            []map[string]any{},
+		Memory:             []map[string]any{},
+		Retrieval:          make(map[string]any),
+		Globals:            make(map[string]any),
+		CancelFlag:         &atomic.Bool{},
+		RunID:              runID,
+		TaskID:             taskID,
 	}
 	s.EnsureSysDate()
 	return s
@@ -202,6 +204,7 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	}
 	s.Path = snap.Path
 	s.History = snap.History
+	s.activeHistoryIndex = -1
 	s.Memory = snap.Memory
 	if snap.Retrieval != nil {
 		s.Retrieval = snap.Retrieval
@@ -323,6 +326,7 @@ func (s *CanvasState) SetHistory(history []map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.History = cloneMapSlice(history)
+	s.activeHistoryIndex = -1
 }
 
 // AppendHistory adds one user or assistant turn. payload preserves the
@@ -333,11 +337,30 @@ func (s *CanvasState) AppendHistory(role string, payload any) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.appendHistory(role, payload)
+	s.activeHistoryIndex = -1
+}
+
+// AppendCurrentUser adds the user prompt for the in-flight turn and records
+// its exact history index. SnapshotPriorHistory uses this identity instead of
+// guessing that any trailing user entry must be the current prompt.
+func (s *CanvasState) AppendCurrentUser(payload any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeHistoryIndex = s.appendHistory("user", payload)
+}
+
+func (s *CanvasState) appendHistory(role string, payload any) int {
+	payload = cloneJSONValue(payload)
 	s.History = append(s.History, map[string]any{
 		"role":    role,
 		"content": historyContent(payload),
 		"payload": payload,
 	})
+	return len(s.History) - 1
 }
 
 // SnapshotHistory returns a defensive copy of all conversation turns.
@@ -354,13 +377,14 @@ func (s *CanvasState) SnapshotHistory() []map[string]any {
 // user input. Python appends the current user before workflow execution but
 // excludes it when prepending history to the same LLM request.
 func (s *CanvasState) SnapshotPriorHistory() []map[string]any {
-	history := s.SnapshotHistory()
-	if len(history) == 0 {
-		return history
+	if s == nil {
+		return nil
 	}
-	role, _ := history[len(history)-1]["role"].(string)
-	if role == "user" {
-		return history[:len(history)-1]
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	history := cloneMapSlice(s.History)
+	if s.activeHistoryIndex >= 0 && s.activeHistoryIndex == len(history)-1 {
+		return history[:s.activeHistoryIndex]
 	}
 	return history
 }
@@ -466,11 +490,41 @@ func cloneMapSlice(items []map[string]any) []map[string]any {
 	for _, item := range items {
 		copyItem := make(map[string]any, len(item))
 		for key, value := range item {
-			copyItem[key] = value
+			copyItem[key] = cloneJSONValue(value)
 		}
 		out = append(out, copyItem)
 	}
 	return out
+}
+
+func cloneJSONValue(value any) any {
+	switch item := value.(type) {
+	case map[string]any:
+		if item == nil {
+			return map[string]any(nil)
+		}
+		copyItem := make(map[string]any, len(item))
+		for key, child := range item {
+			copyItem[key] = cloneJSONValue(child)
+		}
+		return copyItem
+	case []any:
+		if item == nil {
+			return []any(nil)
+		}
+		copyItem := make([]any, len(item))
+		for index, child := range item {
+			copyItem[index] = cloneJSONValue(child)
+		}
+		return copyItem
+	case []string:
+		if item == nil {
+			return []string(nil)
+		}
+		return append([]string(nil), item...)
+	default:
+		return value
+	}
 }
 
 func historyContent(payload any) string {

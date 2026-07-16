@@ -195,6 +195,9 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
 	downloads := ExtractDownloads(resolved)
+	if downloads == nil {
+		downloads = make([]DownloadInfo, 0)
+	}
 	if len(downloads) > 0 && downloadInfoString(resolved) {
 		resolved = ""
 	}
@@ -221,9 +224,12 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		})
 	}
 
-	out := map[string]any{"content": rendered}
-	if len(downloads) > 0 {
-		out["downloads"] = downloads
+	// Python's Message output schema always contains downloads, including an
+	// empty list. Keeping the key is also important for the full terminal
+	// output recorded in Canvas history between conversation turns.
+	out := map[string]any{
+		"content":   rendered,
+		"downloads": downloads,
 	}
 
 	// auto_play TTS dispatch. The audio bytes are returned under
