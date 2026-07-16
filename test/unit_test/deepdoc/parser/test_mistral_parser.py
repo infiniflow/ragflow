@@ -498,3 +498,31 @@ def test_parse_pdf_consumes_vision_model_kwarg(monkeypatch, tmp_path):
     pdf.write_bytes(b"%PDF-1.4 minimal")
     p.parse_pdf(str(pdf), vision_model="VM")
     assert p.vision_model == "VM"  # popped from kwargs into self, not forwarded to _call_ocr
+
+
+def test_describe_image_passes_pil_image_not_bytes(monkeypatch):
+    # Regression: vision_llm_chunk expects a PIL Image (it calls img.size/img.save),
+    # so _describe_image must pass the crop directly, not its bytes.
+    import sys as _sys
+    from types import ModuleType
+    from PIL import Image
+
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    p.vision_model = object()
+    p.crop = lambda *a, **k: Image.new("RGB", (40, 40), "white")
+
+    captured = {}
+    for name in ("rag", "rag.app", "rag.prompts"):
+        if name not in _sys.modules:
+            monkeypatch.setitem(_sys.modules, name, ModuleType(name))
+    pic = ModuleType("rag.app.picture")
+    pic.vision_llm_chunk = lambda binary, vision_model, prompt=None, callback=None: (captured.update(kind=type(binary).__name__), "a white square")[1]
+    gen = ModuleType("rag.prompts.generator")
+    gen.vision_llm_figure_describe_prompt = lambda: "describe"
+    monkeypatch.setitem(_sys.modules, "rag.app.picture", pic)
+    monkeypatch.setitem(_sys.modules, "rag.prompts.generator", gen)
+
+    out = p._describe_image("@@1\t0\t0\t40\t40##")
+    assert out == "a white square"
+    assert captured["kind"] == "Image"  # PIL Image, not 'bytes'

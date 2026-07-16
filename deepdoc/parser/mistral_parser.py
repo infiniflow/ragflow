@@ -327,12 +327,12 @@ class MistralParser(RAGFlowPdfParser):
             img = self.crop("figure" + line_tag, ZM=1)
             if img is None:
                 return ""
-            buf = BytesIO()
-            img.save(buf, format="PNG")
             from rag.app.picture import vision_llm_chunk
             from rag.prompts.generator import vision_llm_figure_describe_prompt
 
-            desc = vision_llm_chunk(binary=buf.getvalue(), vision_model=self.vision_model, prompt=vision_llm_figure_describe_prompt())
+            # vision_llm_chunk expects a PIL Image (it calls img.size / img.save),
+            # not raw bytes — pass the crop directly.
+            desc = vision_llm_chunk(binary=img, vision_model=self.vision_model, prompt=vision_llm_figure_describe_prompt())
             return (desc or "").strip()
         except Exception:
             self.logger.info("[Mistral OCR] figure description skipped", exc_info=True)
