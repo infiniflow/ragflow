@@ -354,7 +354,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 
 	pipelineOut, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("pipeline Run: %v", err)
 	}

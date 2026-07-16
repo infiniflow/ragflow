@@ -469,7 +469,10 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.base_url = ensure_v1(kwargs["base_url"])
+        # Native ollama.Client builds paths like "/api/embed" directly off this
+        # host; unlike the OpenAI-compatible providers below, it must NOT go
+        # through ensure_v1 (which appends "/v1") or every request 404s.
+        self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
