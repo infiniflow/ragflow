@@ -27,6 +27,7 @@ from timeit import default_timer as timer
 from typing import Dict, List
 
 from common.constants import ParserType
+from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -103,6 +104,8 @@ async def run_chunking(
         logging.info("Chunking({}) {}/{} done".format(timer() - st, ctx.location, ctx.name))
         ctx.recording_context.record("parser_config_after_merge", parser_config)
         return cks
+    except TaskCanceledException:
+        raise
     except Exception as e:
         ctx.progress_cb(-1, msg="Internal server error while chunking: %s" % str(e).replace("'", ""))
         logging.exception("Chunking {}/{} got exception".format(ctx.location, ctx.name))

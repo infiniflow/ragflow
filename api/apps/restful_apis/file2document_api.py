@@ -21,6 +21,7 @@ from pathlib import Path
 from quart import request
 
 from api.common.check_team_permission import check_file_team_permission, check_kb_team_permission
+from api.db.services import duplicate_name
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -70,17 +71,18 @@ def _convert_files(file_ids, kb_ids, user_id, mode):
             e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:
                 continue
+            filename = duplicate_name(DocumentService.query, name=file.name, kb_id=kb.id)
             doc = DocumentService.insert(
                 {
                     "id": get_uuid(),
                     "kb_id": kb.id,
-                    "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                    "parser_id": FileService.get_parser(file.type, filename, kb.parser_id),
                     "pipeline_id": kb.pipeline_id,
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": file.type,
-                    "name": file.name,
-                    "suffix": Path(file.name).suffix.lstrip("."),
+                    "name": filename,
+                    "suffix": Path(filename).suffix.lstrip("."),
                     "location": file.location,
                     "size": file.size,
                 }

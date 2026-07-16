@@ -250,6 +250,21 @@ services:
       timeout: 10s
       retries: 120
 
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
+
   nats:
     profiles:
       - ragflow-go
@@ -269,21 +284,6 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
-
-  jaeger:
-    profiles:
-      - jaeger
-    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
-    ports:
-      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
-      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
-      - ${JAEGER_UI_PORT:-16686}:16686
-    env_file: .env
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    networks:
-      - ragflow
-    restart: unless-stopped
 
   tei-cpu:
     profiles:
@@ -342,6 +342,37 @@ services:
     restart: unless-stopped
 
 
+  clickhouse:
+    profiles:
+      - clickhouse
+    image: clickhouse/clickhouse-server:26.5.5.8
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
+    env_file: .env
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-ragflow}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-infini_rag_flow}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USER:-ragflow}", "--password", "${CLICKHOUSE_PASSWORD:-infini_rag_flow}", "-q", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+
 volumes:
   esdata01:
     driver: local
@@ -364,6 +395,8 @@ volumes:
   kibana_data:
     driver: local
   nats_data:
+    driver: local
+  clickhouse_data:
     driver: local
 
 networks:
