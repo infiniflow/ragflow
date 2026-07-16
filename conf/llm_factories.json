@@ -2254,15 +2254,6 @@
                     ]
                 },
                 {
-                    "llm_name": "mistral-ocr-latest",
-                    "tags": "LLM,IMAGE2TEXT,131k",
-                    "max_tokens": 131000,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ]
-                },
-                {
                     "llm_name": "open-mistral-nemo",
                     "tags": "LLM,CHAT,131k",
                     "max_tokens": 131000,
