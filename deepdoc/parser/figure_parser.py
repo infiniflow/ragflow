@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import logging
 
 from PIL import Image
+
+from common.exceptions import TaskCanceledException
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -61,6 +63,8 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, **kwargs):
             docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
             boosted_figures = docx_vision_parser(callback=callback)
             tbls.extend(boosted_figures)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
@@ -94,6 +98,8 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
             callback(0.22, "Parsing images...")
             boosted_figures = parser(callback=callback)
             tbls.extend(boosted_figures)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             callback(0.25, f"Excel visual model error: {e}. Skipping vision enhancement.")
     return tbls
@@ -136,6 +142,8 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
             boosted_figures = docx_vision_parser(callback=callback)
             tbls = [item for item in tbls if not is_figure_item(item)]
             tbls.extend(boosted_figures)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
@@ -187,12 +195,23 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
                     except Exception:
                         pass
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(worker, idx, chunks[idx]) for idx in idx_lst]
-
-            for future in as_completed(futures):
-                idx, description = future.result()
-                chunks[idx]["text"] += description
+        executor = ThreadPoolExecutor(max_workers=10)
+        pending = {executor.submit(worker, idx, chunks[idx]) for idx in idx_lst}
+        try:
+            while pending:
+                done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+                for future in done:
+                    idx, description = future.result()
+                    chunks[idx]["text"] += description
+                if callback:
+                    callback(0.75, "")
+        except Exception:
+            for f in pending:
+                f.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
 
 shared_executor = ThreadPoolExecutor(max_workers=10)
@@ -249,7 +268,7 @@ class VisionFigureParser:
         return self.assembled
 
     def __call__(self, **kwargs):
-        callback = kwargs.get("callback", lambda prog, msg: None)
+        callback = kwargs.get("callback") or (lambda prog, msg: None)
 
         @timeout(30, 3)
         def process(figure_idx, figure_binary):
@@ -278,14 +297,19 @@ class VisionFigureParser:
             )
             return figure_idx, description_text
 
-        futures = []
-        for idx, img_binary in enumerate(self.figures or []):
-            futures.append(shared_executor.submit(process, idx, img_binary))
-
-        for future in as_completed(futures):
-            figure_num, txt = future.result()
-            if txt:
-                self.descriptions[figure_num] = txt + "\n".join(self.descriptions[figure_num])
+        pending = {shared_executor.submit(process, idx, img_binary) for idx, img_binary in enumerate(self.figures or [])}
+        try:
+            while pending:
+                done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+                for future in done:
+                    figure_num, txt = future.result()
+                    if txt:
+                        self.descriptions[figure_num] = txt + "\n".join(self.descriptions[figure_num])
+                callback(0.75, "")
+        except Exception:
+            for f in pending:
+                f.cancel()
+            raise
 
         self._assemble()
 
