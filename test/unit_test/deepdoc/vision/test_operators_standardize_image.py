@@ -61,21 +61,21 @@ def operators_module():
     the real ``rag.utils.lazy_image`` continues to receive the real module
     rather than the identity-pass-through stub installed here.
     """
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+    project_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+    )
 
     # Snapshot the entries we'll mutate so teardown can restore them
     # exactly, even when some of them were already populated.
     snapshot = {name: sys.modules.get(name) for name in _STUB_MODULE_NAMES}
 
     rag_pkg = sys.modules.setdefault(
-        "rag",
-        ModuleType("rag"),
+        "rag", ModuleType("rag"),
     )
     rag_pkg.__path__ = [os.path.join(project_root, "rag")]
 
     rag_utils = sys.modules.setdefault(
-        "rag.utils",
-        ModuleType("rag.utils"),
+        "rag.utils", ModuleType("rag.utils"),
     )
     rag_utils.__path__ = [os.path.join(project_root, "rag", "utils")]
 
@@ -83,8 +83,12 @@ def operators_module():
     lazy_image.ensure_pil_image = lambda im: im
     sys.modules["rag.utils.lazy_image"] = lazy_image
 
-    operators_path = os.path.join(project_root, "deepdoc", "vision", "operators.py")
-    spec = importlib.util.spec_from_file_location("_test_operators_under_test", operators_path)
+    operators_path = os.path.join(
+        project_root, "deepdoc", "vision", "operators.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "_test_operators_under_test", operators_path
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
@@ -113,9 +117,13 @@ def test_standardize_image_class_resolves_by_canonical_name(operators_module):
     ``getattr(operators, "StandardizeImage")`` succeeds.
     """
     assert hasattr(operators_module, "StandardizeImage"), (
-        "deepdoc.vision.operators must expose a 'StandardizeImage' class — recognizer.py dispatches preprocessing ops by this name; a typo in the class name causes AttributeError at runtime."
+        "deepdoc.vision.operators must expose a 'StandardizeImage' class — "
+        "recognizer.py dispatches preprocessing ops by this name; a typo in "
+        "the class name causes AttributeError at runtime."
     )
-    assert isinstance(operators_module.StandardizeImage, type), "StandardizeImage must be a class."
+    assert isinstance(operators_module.StandardizeImage, type), (
+        "StandardizeImage must be a class."
+    )
 
 
 def test_standardize_image_callable_matches_legacy_alias_name(operators_module):
@@ -125,7 +133,9 @@ def test_standardize_image_callable_matches_legacy_alias_name(operators_module):
     re-add a compatibility shim.
     """
     assert not hasattr(operators_module, "StandardizeImag"), (
-        "The misspelled 'StandardizeImag' class name should have been removed; if something still references it, add a compatibility shim and revisit this assertion."
+        "The misspelled 'StandardizeImag' class name should have been "
+        "removed; if something still references it, add a compatibility "
+        "shim and revisit this assertion."
     )
 
 
@@ -151,7 +161,9 @@ def test_standardize_image_normalizes_input_with_mean_std_and_is_scale(operators
 
     # After /255 -> 1.0; (1.0 - 0.5) / 0.5 = 1.0
     assert out_im.shape == im.shape
-    assert np.allclose(out_im, [[[1.0, 1.0, 1.0]]]), f"Expected mean-std normalized output of [[[1,1,1]]], got {out_im!r}"
+    assert np.allclose(out_im, [[[1.0, 1.0, 1.0]]]), (
+        f"Expected mean-std normalized output of [[[1,1,1]]], got {out_im!r}"
+    )
     # im_info is passed through unchanged.
     assert out_info is im_info
 
@@ -174,7 +186,9 @@ def test_standardize_image_skips_scaling_when_is_scale_false(operators_module):
     out_im, _ = op(im, {})
 
     # No /255; (9 - 1) / 2 = 4
-    assert np.allclose(out_im, [[[4.0, 4.0, 4.0]]]), f"Expected is_scale=False path to skip /255, got {out_im!r}"
+    assert np.allclose(out_im, [[[4.0, 4.0, 4.0]]]), (
+        f"Expected is_scale=False path to skip /255, got {out_im!r}"
+    )
 
 
 def test_standardize_image_norm_type_none_passes_image_through(operators_module):
@@ -194,7 +208,9 @@ def test_standardize_image_norm_type_none_passes_image_through(operators_module)
     out_im, _ = op(im, {})
 
     # /255 = 1.0; no mean/std applied.
-    assert np.allclose(out_im, [[[1.0, 1.0, 1.0]]]), f"Expected norm_type='none' to skip mean/std, got {out_im!r}"
+    assert np.allclose(out_im, [[[1.0, 1.0, 1.0]]]), (
+        f"Expected norm_type='none' to skip mean/std, got {out_im!r}"
+    )
 
 
 def test_standardize_image_via_module_getattr_dispatch_path(operators_module):

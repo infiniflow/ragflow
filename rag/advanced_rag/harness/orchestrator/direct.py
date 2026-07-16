@@ -11,7 +11,7 @@ async def direct_search(state: dict, tools) -> dict:
     """Single hybrid search → merge into kbinfos."""
     question = state.get("question", "")
     keywords = state.get("keywords", "")
-    _LOG.info('[Direct search] Looking up the knowledge base for: "%s" (keywords: %s)', question, keywords)
+    _LOG.info("[Direct search] Looking up the knowledge base for: \"%s\" (keywords: %s)", question, keywords)
 
     result = await hybrid_search(tools, query=question, keywords=keywords)
     _merge_kbinfos(tools, result)

@@ -93,4 +93,7 @@ def test_inputs_reset_flag_is_passed_to_non_begin_components():
     canvas.reset_path_components_inputs()
     for cpn_id in ("fillup1", "agent1", "message1"):
         reset_calls = canvas.components[cpn_id]["obj"].reset_calls
-        assert reset_calls == [False], f"component {cpn_id} should be reset with only_output=False so _param.inputs is cleared between canvas runs; got {reset_calls}"
+        assert reset_calls == [False], (
+            f"component {cpn_id} should be reset with only_output=False "
+            f"so _param.inputs is cleared between canvas runs; got {reset_calls}"
+        )

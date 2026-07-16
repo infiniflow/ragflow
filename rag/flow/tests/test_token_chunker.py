@@ -5,7 +5,6 @@ import types
 from contextlib import contextmanager
 from pathlib import Path
 
-
 @contextmanager
 def _load_token_chunker_with_stubs():
     root = Path(__file__).resolve().parents[3]

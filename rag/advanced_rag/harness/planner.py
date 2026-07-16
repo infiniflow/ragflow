@@ -39,7 +39,7 @@ async def planner_node(state: dict, tools) -> dict:
         _LOG.warning("planner: no route found, using defaults")
         return _default_plan(state.get("question", ""))
 
-    _LOG.info('[Planner] Working out how to research this %s question: "%s"', route.question_type, _snip(route.question))
+    _LOG.info("[Planner] Working out how to research this %s question: \"%s\"", route.question_type, _snip(route.question))
     if not route.requires_decomposition:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)

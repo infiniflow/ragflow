@@ -226,19 +226,12 @@ export function SoMarkInstanceCard({
       llm_name: modelInfo?.llm_name ?? modelInfo?.model_name ?? '',
       somark_base_url: (merged.base_url as string) ?? '',
       somark_api_key: apiKey,
-      somark_image_format:
-        (extra.somark_image_format as (typeof IMAGE_FORMATS)[number]) ?? 'url',
-      somark_formula_format:
-        (extra.somark_formula_format as (typeof FORMULA_FORMATS)[number]) ??
-        'latex',
-      somark_table_format:
-        (extra.somark_table_format as (typeof TABLE_FORMATS)[number]) ?? 'html',
-      somark_cs_format:
-        (extra.somark_cs_format as (typeof CS_FORMATS)[number]) ?? 'image',
-      somark_enable_text_cross_page:
-        extra.somark_enable_text_cross_page ?? false,
-      somark_enable_table_cross_page:
-        extra.somark_enable_table_cross_page ?? false,
+      somark_image_format: (extra.somark_image_format as (typeof IMAGE_FORMATS)[number]) ?? 'url',
+      somark_formula_format: (extra.somark_formula_format as (typeof FORMULA_FORMATS)[number]) ?? 'latex',
+      somark_table_format: (extra.somark_table_format as (typeof TABLE_FORMATS)[number]) ?? 'html',
+      somark_cs_format: (extra.somark_cs_format as (typeof CS_FORMATS)[number]) ?? 'image',
+      somark_enable_text_cross_page: extra.somark_enable_text_cross_page ?? false,
+      somark_enable_table_cross_page: extra.somark_enable_table_cross_page ?? false,
       somark_enable_title_level_recognition:
         extra.somark_enable_title_level_recognition ?? false,
       somark_enable_inline_image: extra.somark_enable_inline_image ?? false,
@@ -410,7 +403,9 @@ export function SoMarkInstanceCard({
   // (no blur), so a `form.watch` watcher is needed to catch them.
   const blurSavingRef = useRef(false);
   const lastSavedSigRef = useRef('');
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const AUTO_SAVE_DEBOUNCE_MS = 500;
 
   const performSave = useCallback(async () => {
@@ -529,7 +524,11 @@ export function SoMarkInstanceCard({
   const renderFields = () => (
     <Form {...form}>
       <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-        <RAGFlowFormItem name="llm_name" label={tSetting('modelName')} required>
+        <RAGFlowFormItem
+          name="llm_name"
+          label={tSetting('modelName')}
+          required
+        >
           <Input placeholder="somark-from-env-1" />
         </RAGFlowFormItem>
 
@@ -541,10 +540,7 @@ export function SoMarkInstanceCard({
           <Input placeholder={tSetting('somark.baseUrlPlaceholder')} />
         </RAGFlowFormItem>
 
-        <RAGFlowFormItem
-          name="somark_api_key"
-          label={tSetting('somark.apiKey')}
-        >
+        <RAGFlowFormItem name="somark_api_key" label={tSetting('somark.apiKey')}>
           <Input
             type="password"
             placeholder={tSetting('somark.apiKeyPlaceholder')}
@@ -617,7 +613,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -627,7 +626,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -637,7 +639,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -647,7 +652,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -657,7 +665,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -667,7 +678,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
 
@@ -677,7 +691,10 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch checked={field.value} onCheckedChange={field.onChange} />
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
           )}
         </RAGFlowFormItem>
       </form>

@@ -85,7 +85,9 @@ def base_module(monkeypatch):
     fake_pandas.DataFrame = type("DataFrame", (), {})
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
 
-    spec = importlib.util.spec_from_file_location("_base_for_regex_test", repo_root / "agent" / "component" / "base.py")
+    spec = importlib.util.spec_from_file_location(
+        "_base_for_regex_test", repo_root / "agent" / "component" / "base.py"
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -109,7 +111,10 @@ def test_variable_ref_patt_matches_underscored_component_ids(base_module):
     for text, expected in cases:
         matches = list(patt.finditer(text))
         assert matches, f"Expected {text!r} to match variable_ref_patt"
-        assert matches[0].group(1) == expected, f"{text!r}: wrong capture — got {matches[0].group(1)!r}, expected {expected!r}"
+        assert matches[0].group(1) == expected, (
+            f"{text!r}: wrong capture — got {matches[0].group(1)!r}, "
+            f"expected {expected!r}"
+        )
 
 
 @pytest.mark.p2
@@ -136,8 +141,14 @@ def test_variable_ref_patt_matches_colon_bearing_component_ids(base_module):
 
     for text, expected in cases:
         matches = list(patt.finditer(text))
-        assert matches, f"Expected {text!r} to match variable_ref_patt — colon-bearing cqn_id lost its support."
-        assert matches[0].group(1) == expected, f"{text!r}: wrong capture — got {matches[0].group(1)!r}, expected {expected!r}"
+        assert matches, (
+            f"Expected {text!r} to match variable_ref_patt — colon-bearing "
+            f"cqn_id lost its support."
+        )
+        assert matches[0].group(1) == expected, (
+            f"{text!r}: wrong capture — got {matches[0].group(1)!r}, "
+            f"expected {expected!r}"
+        )
 
 
 @pytest.mark.p2
@@ -175,15 +186,30 @@ def test_variable_ref_patt_re_matches_variable_ref_patt(base_module):
     canonical = base_module.ComponentBase.variable_ref_patt_re
 
     # Same source pattern & flags.
-    assert canonical.pattern == rebuilt.pattern, "variable_ref_patt_re must be compiled from variable_ref_patt (patterns differ)."
-    assert canonical.flags == rebuilt.flags, "variable_ref_patt_re flags changed unexpectedly."
+    assert canonical.pattern == rebuilt.pattern, (
+        "variable_ref_patt_re must be compiled from variable_ref_patt "
+        "(patterns differ)."
+    )
+    assert canonical.flags == rebuilt.flags, (
+        "variable_ref_patt_re flags changed unexpectedly."
+    )
 
     # Same match positions / groups on a representative sample.
-    sample = "Repeat: {userfillup_abc@line} / also {Retrieval:KBSearch@f} / sys={sys.query}"
+    sample = (
+        "Repeat: {userfillup_abc@line} / also {Retrieval:KBSearch@f} / "
+        "sys={sys.query}"
+    )
 
-    canonical_matches = [(m.start(), m.end(), m.group(1)) for m in canonical.finditer(sample)]
-    rebuilt_matches = [(m.start(), m.end(), m.group(1)) for m in rebuilt.finditer(sample)]
-    assert canonical_matches == rebuilt_matches, "variable_ref_patt_re produces different matches than a fresh compile of variable_ref_patt — they have silently diverged."
+    canonical_matches = [
+        (m.start(), m.end(), m.group(1)) for m in canonical.finditer(sample)
+    ]
+    rebuilt_matches = [
+        (m.start(), m.end(), m.group(1)) for m in rebuilt.finditer(sample)
+    ]
+    assert canonical_matches == rebuilt_matches, (
+        "variable_ref_patt_re produces different matches than a fresh "
+        "compile of variable_ref_patt — they have silently diverged."
+    )
 
 
 @pytest.mark.p2
@@ -200,7 +226,10 @@ def test_get_input_elements_from_text_resolves_underscored_id(base_module):
     )
 
     elements = cpn.get_input_elements_from_text("Repeat: {userfillup_abc@line}")
-    assert "userfillup_abc@line" in elements, "Underscored `cpn_id@var_nm` template ref was not extracted — see #16758: Await-response variable ignored by Agent."
+    assert "userfillup_abc@line" in elements, (
+        "Underscored `cpn_id@var_nm` template ref was not extracted — "
+        "see #16758: Await-response variable ignored by Agent."
+    )
     assert elements["userfillup_abc@line"]["value"] == "user-text"
     assert elements["userfillup_abc@line"]["_cpn_id"] == "userfillup_abc"
 
@@ -226,4 +255,7 @@ def test_variable_ref_patt_does_not_match_bare_var_name(base_module):
     """
     patt = base_module.ComponentBase.variable_ref_patt_re
     matches = list(patt.finditer("{line}"))
-    assert not matches, "Bare `{line}` should not match — only `cpn_id@var` / `sys.*` / `env.*` are valid template refs."
+    assert not matches, (
+        "Bare `{line}` should not match — only `cpn_id@var` / `sys.*` / "
+        "`env.*` are valid template refs."
+    )

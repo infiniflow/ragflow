@@ -91,7 +91,7 @@ async def agentic_research(state: dict, tools) -> dict:
                                         description=dc,
                                     )
                                 )
-                                _LOG.info('[Agentic research] Found a new angle worth researching: "%s"', dc)
+                                _LOG.info("[Agentic research] Found a new angle worth researching: \"%s\"", dc)
 
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
@@ -140,7 +140,7 @@ async def _run_claim_research(
     mode,
     compilation_map: dict,
 ) -> dict:
-    _LOG.info('[Agentic research] Researching: "%s"', _snip(claim.description))
+    _LOG.info("[Agentic research] Researching: \"%s\"", _snip(claim.description))
     try:
         result = await asyncio.wait_for(
             research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
@@ -150,7 +150,7 @@ async def _run_claim_research(
         raise
     except asyncio.TimeoutError:
         _LOG.warning(
-            '[Agentic research] Gave up on "%s" — it took longer than %ss.',
+            "[Agentic research] Gave up on \"%s\" — it took longer than %ss.",
             _snip(claim.description),
             CLAIM_RESEARCH_TIMEOUT_SECONDS,
         )
@@ -163,7 +163,7 @@ async def _run_claim_research(
             "discovered_claims": [],
         }
     except Exception:
-        _LOG.exception('[Agentic research] Hit an error while researching "%s".', _snip(claim.description))
+        _LOG.exception("[Agentic research] Hit an error while researching \"%s\".", _snip(claim.description))
         return {
             "report": "",
             "is_verified": False,
@@ -174,7 +174,7 @@ async def _run_claim_research(
         }
 
     _LOG.info(
-        '[Agentic research] Finished "%s" — %s, backed by %d passage(s) (confidence %.0f%%)%s.',
+        "[Agentic research] Finished \"%s\" — %s, backed by %d passage(s) (confidence %.0f%%)%s.",
         _snip(claim.description),
         "answered" if result.get("is_verified") else "still unanswered",
         len(result.get("evidence_ids") or []),

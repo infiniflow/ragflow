@@ -33,7 +33,6 @@ def get_function_schemas(tool_names: list[str]) -> list[dict]:
 
 # Common schema builders
 
-
 def _search_schema(name: str, desc: str) -> dict:
     return {
         "type": "function",

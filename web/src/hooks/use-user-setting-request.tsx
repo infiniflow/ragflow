@@ -165,11 +165,8 @@ export const useSelectParserList = (): Array<{
   const parserList = useMemo(() => {
     // Go backend: prefer the dynamic pipeline catalog from the API.
     if (backendLang === 'go') {
-      const pipelineList: Array<{
-        parser_id: string;
-        title: string;
-        dsl: Record<string, any>;
-      }> = pipelineListData?.data ?? [];
+      const pipelineList: Array<{ parser_id: string; title: string; dsl: Record<string, any> }> =
+        pipelineListData?.data ?? [];
       if (pipelineList.length > 0) {
         const labelFromAPI = (parserId: string, title: string) => {
           const key = `knowledgeConfiguration.parserLabel.${parserId}`;
