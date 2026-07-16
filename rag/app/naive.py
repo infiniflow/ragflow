@@ -376,6 +376,15 @@ def by_mistral_ocr(
                 ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mistral_ocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
+                # Best-effort figure description: hand the parser the tenant's
+                # vision model so Mistral OCR's extracted images get VLM captions
+                # (parity with MinerU/deepdoc). Skip silently if none is configured.
+                if "vision_model" not in kwargs:
+                    try:
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+                    except Exception as vlm_err:
+                        logging.info(f"[Mistral OCR] no vision model for tenant; skipping figure description: {vlm_err}")
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,

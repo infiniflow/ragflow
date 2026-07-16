@@ -78,6 +78,9 @@ class MistralParser(RAGFlowPdfParser):
         # RAGFlowPdfParser.__init__ sets this default; MistralParser skips
         # that heavy __init__, so crop() needs it set before __images__ runs.
         self.page_from = 0
+        # Optional tenant vision model (LLMBundle) for figure description;
+        # set from parse_pdf's vision_model kwarg. None -> no enrichment.
+        self.vision_model = None
 
     # ------------------------------------------------------------------
     # Page image rendering
@@ -315,6 +318,26 @@ class MistralParser(RAGFlowPdfParser):
     # ------------------------------------------------------------------
     # Sections / tables
     # ------------------------------------------------------------------
+    def _describe_image(self, line_tag: str) -> str:
+        """Best-effort VLM caption of the figure at ``line_tag`` using the tenant
+        vision model (``self.vision_model``). Crops the figure from the locally
+        rendered page and describes it. Returns "" on any failure so figure
+        enrichment never breaks parsing (mirrors MinerU's image enhancement)."""
+        try:
+            img = self.crop("figure" + line_tag, ZM=1)
+            if img is None:
+                return ""
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            from rag.app.picture import vision_llm_chunk
+            from rag.prompts.generator import vision_llm_figure_describe_prompt
+
+            desc = vision_llm_chunk(binary=buf.getvalue(), vision_model=self.vision_model, prompt=vision_llm_figure_describe_prompt())
+            return (desc or "").strip()
+        except Exception:
+            self.logger.info("[Mistral OCR] figure description skipped", exc_info=True)
+            return ""
+
     def _transfer_to_sections(self, pages: list[dict], parse_method: Optional[str] = None) -> list[tuple]:
         """manual/pipeline (rag/flow DAG) want typed 3-tuples
         (text, layout_type, line_tag); every other caller (naive.py) wants
@@ -337,7 +360,8 @@ class MistralParser(RAGFlowPdfParser):
                     line_tag = self._line_tag(tag_input)
                     image_seq += 1
                     caption = (block.get("content") or "").strip()
-                    label = caption or f"image {image_seq}"
+                    description = self._describe_image(line_tag) if self.vision_model is not None else ""
+                    label = description or caption or f"image {image_seq}"
                     if typed:
                         sections.append((label, internal, line_tag))
                     else:
@@ -424,6 +448,9 @@ class MistralParser(RAGFlowPdfParser):
     # Public entry point
     # ------------------------------------------------------------------
     def parse_pdf(self, filepath: str | PathLike[str], binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple[list, list]:
+        # Optional tenant vision model for figure description (best-effort).
+        self.vision_model = kwargs.pop("vision_model", None)
+
         # Load bytes.
         if binary is not None:
             pdf_bytes = binary.getvalue() if hasattr(binary, "getvalue") else bytes(binary)

@@ -448,3 +448,53 @@ def test_parse_pdf_binary_stream_normalized(monkeypatch):
     _patch_render(m, p, 2)
     p.parse_pdf("x.pdf", binary=BytesIO(b"%PDF-1.4 stream"))
     assert seen["pdf_bytes"] == b"%PDF-1.4 stream"  # BytesIO normalized to raw bytes
+
+
+def test_image_description_injected_when_vision_model_present(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    p.vision_model = object()  # truthy -> enrichment path taken
+    p._describe_image = lambda line_tag: "A scatter plot of X versus Y"
+    pages = p._normalize_pages(_ocr_response())
+    secs = p._transfer_to_sections(pages)
+    img = [s for s in secs if "@@" in s[0] and "scatter plot" in s[0]]
+    assert len(img) == 1  # VLM caption injected into the image chunk text
+
+
+def test_image_description_skipped_without_vision_model(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    assert p.vision_model is None  # default: no enrichment
+    calls = {"n": 0}
+
+    def _boom(line_tag):
+        calls["n"] += 1
+        return "SHOULD NOT APPEAR"
+
+    p._describe_image = _boom
+    pages = p._normalize_pages(_ocr_response())
+    secs = p._transfer_to_sections(pages)
+    assert calls["n"] == 0  # _describe_image not called when vision_model is None
+    assert not any("SHOULD NOT APPEAR" in s[0] for s in secs)
+    # the image chunk still exists, labelled by fallback (empty caption -> "image N")
+    assert any("@@" in s[0] and "image 1" in s[0] for s in secs)
+
+
+def test_describe_image_returns_empty_when_crop_none(monkeypatch):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    p.vision_model = object()
+    p.crop = lambda *a, **k: None  # no image to crop
+    assert p._describe_image("@@1\t0\t0\t0\t0##") == ""
+
+
+def test_parse_pdf_consumes_vision_model_kwarg(monkeypatch, tmp_path):
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m, api_key="sk-test")
+    seen = {}
+    p._call_ocr = lambda pdf_bytes, filename, pages, callback=None: seen.setdefault("pages", pages) or _ocr_response()
+    _patch_render(m, p, 2)
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 minimal")
+    p.parse_pdf(str(pdf), vision_model="VM")
+    assert p.vision_model == "VM"  # popped from kwargs into self, not forwarded to _call_ocr
