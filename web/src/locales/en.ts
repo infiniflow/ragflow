@@ -690,6 +690,16 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
+      openDataLoaderOptions: 'OpenDataLoader Options',
+      openDataLoaderHybrid: 'Hybrid backend',
+      openDataLoaderHybridTip:
+        'Route complex pages (borderless tables, scanned images) to an AI-assisted backend instead of the deterministic local parser. Off = local parsing only.',
+      openDataLoaderHybridMode: 'Hybrid mode',
+      openDataLoaderHybridModeTip:
+        'Only applies when a hybrid backend is selected above. Auto lets the parser decide per page which pages need the hybrid backend. Full forces every page through it — use for scanned/image-only documents where OCR must run on the whole document.',
+      openDataLoaderSanitize: 'Sanitize output',
+      openDataLoaderSanitizeTip:
+        'Replace emails, phone numbers, IPs, credit card numbers, and URLs found in the document with placeholders.',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',

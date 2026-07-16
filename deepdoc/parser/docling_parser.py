@@ -376,6 +376,7 @@ class DoclingParser(RAGFlowPdfParser):
         parse_method: str = "raw",
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
+        page_range: Optional[tuple[int, int]] = None,
     ):
         """
         Parses a PDF document using a remote Docling server.
@@ -413,12 +414,20 @@ class DoclingParser(RAGFlowPdfParser):
 
         # Standard payloads
         # Standard fallback payloads (no chunking)
+        standard_opts = {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]}
+        if page_range is not None:
+            # docling-serve's ConvertDocumentsOptions.page_range is the exact same
+            # pydantic field (docling.datamodel.service.options) as the local
+            # DocumentConverter.convert()'s page_range - same 1-indexed/inclusive
+            # tuple, same underlying conversion pipeline, so it preserves absolute
+            # page numbers the same way local docling was empirically verified to.
+            standard_opts["page_range"] = list(page_range)
         v1_payload_standard = {
-            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "options": dict(standard_opts),
             "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
         }
         v1alpha_payload_standard = {
-            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "options": dict(standard_opts),
             "file_sources": [{"filename": filename, "base64_string": b64}],
         }
 
@@ -433,6 +442,8 @@ class DoclingParser(RAGFlowPdfParser):
                 "tokenizer": "sentencepiece",  # Required by Docling contract
             },
         }
+        if page_range is not None:
+            chunking_opts["page_range"] = list(page_range)
         v1_payload_chunked = {
             "options": chunking_opts,
             "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
@@ -552,11 +563,23 @@ class DoclingParser(RAGFlowPdfParser):
         parse_method: str = "raw",
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
+        from_page: int = 0,
+        to_page: int = MAXIMUM_PAGE_NUMBER,
     ):
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
         if not self.check_installation(docling_server_url=docling_server_url):
             raise RuntimeError("Docling not available, please install `docling`")
+
+        # Docling's page_range is 1-indexed and inclusive; RAGFlow's from_page/
+        # to_page are 0-indexed with to_page exclusive (Python slice convention).
+        # Only restrict when the caller actually narrowed the range, so a
+        # single-task document sees byte-for-byte the same request as before
+        # this support existed. Empirically verified (live conv.convert() call
+        # against a real multi-page PDF) that docling preserves absolute page
+        # numbers in doc.texts[*].prov[0].page_no when page_range is set - no
+        # rebasing needed, unlike MinerU.
+        page_range = (from_page + 1, to_page) if (from_page > 0 or to_page < MAXIMUM_PAGE_NUMBER) else None
 
         server_url = self._effective_server_url(docling_server_url)
         if server_url:
@@ -567,6 +590,7 @@ class DoclingParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 docling_server_url=server_url,
                 request_timeout=request_timeout,
+                page_range=page_range,
             )
 
         if binary is not None:
@@ -598,7 +622,7 @@ class DoclingParser(RAGFlowPdfParser):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_formula_enrichment = do_formula_enrichment
         conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
-        conv_res = conv.convert(str(src_path))
+        conv_res = conv.convert(str(src_path), page_range=page_range) if page_range is not None else conv.convert(str(src_path))
         doc = conv_res.document
         if callback:
             callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")

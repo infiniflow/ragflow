@@ -139,6 +139,8 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    start_page_id: int = 0
+    end_page_id: int = 99999
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -296,8 +298,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": options.start_page_id,
+            "end_page_id": options.end_page_id,
         }
 
         if options.server_url:
@@ -739,6 +741,8 @@ class MinerUParser(RAGFlowPdfParser):
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
+        from_page: int = 0,
+        to_page: int = MAXIMUM_PAGE_NUMBER,
         **kwargs,
     ) -> tuple:
         import shutil
@@ -791,6 +795,16 @@ class MinerUParser(RAGFlowPdfParser):
 
         self.__images__(pdf, zoomin=1)
 
+        # MinerU's remote API pre-slices the PDF down to [start_page_id, end_page_id]
+        # before analysis, so restricting the request avoids re-parsing/re-chunking
+        # the whole document on every RAGFlow task-executor page-range job. Only
+        # restrict when the caller actually narrowed the range - the sentinel
+        # 0/99999 pair below is byte-for-byte what this always sent before this
+        # from_page/to_page support existed, so unsplit documents see zero change.
+        restrict_pages = from_page > 0 or to_page < MAXIMUM_PAGE_NUMBER
+        mineru_start_page_id = from_page if restrict_pages else 0
+        mineru_end_page_id = (to_page - 1) if restrict_pages else 99999
+
         try:
             options = MinerUParseOptions(
                 backend=MinerUBackend(backend),
@@ -801,9 +815,23 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                start_page_id=mineru_start_page_id,
+                end_page_id=mineru_end_page_id,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+            if restrict_pages:
+                # MinerU re-bases page_idx to be relative to the requested slice
+                # (0 == the first page it was asked for), not the original document
+                # - verified by reading mineru.cli.common.convert_pdf_bytes_to_bytes,
+                # which rewrites the PDF to only contain the requested pages before
+                # analysis starts. __images__() above deliberately still rendered
+                # the *whole* document, so every downstream position/citation
+                # lookup (page_images indexing, _line_tag, crop) expects absolute
+                # page numbers - restore them here, once, before that logic runs.
+                for output in outputs:
+                    if isinstance(output.get("page_idx"), int):
+                        output["page_idx"] += mineru_start_page_id
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")

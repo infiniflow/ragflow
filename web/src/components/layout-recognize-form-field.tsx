@@ -6,6 +6,7 @@ import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
 import { buildModelTree } from './model-tree-select';
+import { OpenDataLoaderOptionsFormField } from './opendataloader-options-form-field';
 import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
 import { TreeSelect, TreeSelectNode } from './tree-select';
 import {
@@ -31,6 +32,7 @@ export function LayoutRecognizeFormField({
   label,
   showMineruOptions = true,
   showPaddleocrOptions = true,
+  showOpenDataLoaderOptions = true,
   testId,
   ownerTenantId,
 }: {
@@ -40,6 +42,7 @@ export function LayoutRecognizeFormField({
   label?: ReactNode;
   showMineruOptions?: boolean;
   showPaddleocrOptions?: boolean;
+  showOpenDataLoaderOptions?: boolean;
   testId?: string;
   ownerTenantId?: string;
 }) {
@@ -133,6 +136,7 @@ export function LayoutRecognizeFormField({
             </FormItem>
             {showMineruOptions && <MinerUOptionsFormField />}
             {showPaddleocrOptions && <PaddleOCROptionsFormField />}
+            {showOpenDataLoaderOptions && <OpenDataLoaderOptionsFormField />}
           </>
         );
       }}
