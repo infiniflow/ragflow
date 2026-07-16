@@ -35,7 +35,7 @@ func setupSearchDetailDAOTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.User{}, &entity.Search{}); err != nil {
+	if err = db.AutoMigrate(&entity.User{}, &entity.Search{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 

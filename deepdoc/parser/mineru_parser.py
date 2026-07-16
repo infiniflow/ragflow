@@ -269,10 +269,10 @@ class MinerUParser(RAGFlowPdfParser):
 
         return True, reason
 
-    def _run_mineru(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None) -> Path:
-        return self._run_mineru_api(input_path, output_dir, options, callback)
+    def _run_mineru(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, page_from: int = 0, page_to: int = MAXIMUM_PAGE_NUMBER) -> Path:
+        return self._run_mineru_api(input_path, output_dir, options, callback, page_from=page_from, page_to=page_to)
 
-    def _run_mineru_api(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None) -> Path:
+    def _run_mineru_api(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, page_from: int = 0, page_to: int = MAXIMUM_PAGE_NUMBER) -> Path:
         pdf_file_path = str(input_path)
 
         if not os.path.exists(pdf_file_path):
@@ -281,6 +281,14 @@ class MinerUParser(RAGFlowPdfParser):
         pdf_file_name = Path(pdf_file_path).stem.strip()
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
+
+        # RAGFlow's page_to is exclusive (Python slice stop index), MinerU's
+        # end_page_id is 0-based inclusive. Translate at the API boundary so
+        # the dispatcher can pass its native range through unchanged.
+        if page_to == MAXIMUM_PAGE_NUMBER:
+            end_page_id = 99999
+        else:
+            end_page_id = page_to - 1
 
         data = {
             "output_dir": "./output",
@@ -296,8 +304,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": page_from,
+            "end_page_id": end_page_id,
         }
 
         if options.server_url:
@@ -305,6 +313,7 @@ class MinerUParser(RAGFlowPdfParser):
         elif self.mineru_server_url:
             data["server_url"] = self.mineru_server_url
 
+        self.logger.info(f"[MinerU] resolved page range start_page_id={page_from} end_page_id={end_page_id} (from page_from={page_from} page_to={page_to})")
         self.logger.info(f"[MinerU] request {data=}")
         self.logger.info(f"[MinerU] request {options=}")
 
@@ -772,6 +781,8 @@ class MinerUParser(RAGFlowPdfParser):
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
+        page_from: int = 0,
+        page_to: int = MAXIMUM_PAGE_NUMBER,
         **kwargs,
     ) -> tuple:
         import shutil
@@ -835,7 +846,7 @@ class MinerUParser(RAGFlowPdfParser):
                 formula_enable=enable_formula,
                 table_enable=enable_table,
             )
-            final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
+            final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback, page_from=page_from, page_to=page_to)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:

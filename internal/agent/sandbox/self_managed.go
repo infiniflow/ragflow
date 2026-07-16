@@ -75,7 +75,7 @@ import (
 // selfManagedDefaultEndpoint is the canonical executor_manager
 // endpoint baked into the Python side. Operators override via
 // SANDBOX_EXECUTOR_MANAGER_URL.
-const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
+const selfManagedDefaultEndpoint = "http://localhost:9385"
 
 // SelfManagedProvider is the Go port of
 // `agent/sandbox/providers/self_managed.py::SelfManagedProvider`.

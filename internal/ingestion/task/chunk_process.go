@@ -18,84 +18,11 @@ package task
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
-
-	"github.com/pkoukk/tiktoken-go"
 )
-
-var keywordsSplitRE = regexp.MustCompile(`[,，;；、\r\n]+`)
-
-// TruncateTexts truncates each text by token count using cl100k_base encoding.
-// maxLength is reduced by 10 as a safety margin, matching Python.
-// Mirrors Python: EmbeddingUtils.truncate_texts()
-func TruncateTexts(texts []string, maxLength int) []string {
-	if texts == nil {
-		return nil
-	}
-	safeMax := maxLength - 10
-	if safeMax < 0 {
-		safeMax = 0
-	}
-	enc, err := tiktoken.GetEncoding("cl100k_base")
-	if err != nil {
-		// Fallback: if tiktoken fails, return as-is.
-		// NOTE: this path cannot be triggered in unit tests because
-		// tiktoken.GetEncoding always succeeds in normal environments.
-		// The fallback is simple (make+copy) and verified by code review.
-		result := make([]string, len(texts))
-		copy(result, texts)
-		return result
-	}
-	result := make([]string, len(texts))
-	for i, t := range texts {
-		tokens := enc.Encode(t, nil, nil)
-		if len(tokens) > safeMax {
-			result[i] = enc.Decode(tokens[:safeMax])
-		} else {
-			result[i] = t
-		}
-	}
-	return result
-}
-
-// SplitQuestions splits a questions string by newline, keeping all elements.
-// Mirrors Python: ck["questions"].split("\n") — keeps empty strings
-func SplitQuestions(questions string) []string {
-	return strings.Split(questions, "\n")
-}
-
-// SplitKeywords splits a keywords string by common delimiters.
-// Mirrors Python: re.split(r"[,，;；、\r\n]+", keywords)
-func SplitKeywords(keywords string) []string {
-	if keywords == "" {
-		return nil
-	}
-	parts := keywordsSplitRE.Split(keywords, -1)
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
-// CreateChunkTime returns the current timestamp as a formatted string and float Unix timestamp.
-// The float has sub-second precision, matching Python: datetime.now().timestamp()
-func CreateChunkTime() (string, float64) {
-	now := time.Now()
-	timeStr := now.Format("2006-01-02 15:04:05")
-	return timeStr, float64(now.UnixMicro()) / 1e6
-}
 
 // RenameTextToContentWithWeight renames the "text" key to "content_with_weight".
 // If "content_with_weight" already exists, the "text" key is simply removed.
@@ -127,16 +54,21 @@ func GetEmbeddingTokenConsumption(output map[string]any) int {
 }
 
 // ProcessChunksForPipeline mutates chunks into the pre-index structure used by
-// the pipeline and returns merged metadata.
+// the pipeline and returns merged metadata. It returns an error if a chunk's
+// "text" field is present but not a string: that is an upstream contract
+// violation (the chunker/parser must emit string text), and continuing would
+// collapse every such chunk onto the same empty-text ChunkID, silently
+// overwriting each other in the index. The caller fails the task so the
+// violation surfaces instead of corrupting the index.
 func ProcessChunksForPipeline(
 	chunks []map[string]any,
 	docID string,
 	kbID string,
 	docName string,
 	now time.Time,
-) map[string]any {
+) (map[string]any, error) {
 	if chunks == nil {
-		return nil
+		return nil, nil
 	}
 	metadata := make(map[string]any)
 	timeStr := now.Format("2006-01-02 15:04:05")
@@ -150,22 +82,20 @@ func ProcessChunksForPipeline(
 		ck["create_timestamp_flt"] = timestamp
 
 		if _, exists := ck["id"]; !exists {
-			text, err := MustGetChunkTextString(ck)
+			text, err := GetChunkTextString(ck)
 			if err != nil {
-				common.Error("unexpected error", err)
+				return nil, fmt.Errorf("process chunks for pipeline: doc=%s: %w", docID, err)
 			}
 			ck["id"] = ChunkID(text, docID)
 		}
 
-		processChunkQuestions(ck)
-		processChunkKeywords(ck)
-		processChunkSummary(ck)
+		cleanupConsumedChunkFields(ck)
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
 		processChunkPositions(ck)
 		removeInternalChunkFields(ck)
 	}
-	return metadata
+	return metadata, nil
 }
 
 func removeInternalChunkFields(ck map[string]any) {
@@ -173,59 +103,27 @@ func removeInternalChunkFields(ck map[string]any) {
 	delete(ck, "image")
 }
 
-func processChunkQuestions(ck map[string]any) {
-	if _, exists := ck["questions"]; !exists {
-		return
-	}
-	if _, hasTks := ck["question_tks"]; !hasTks {
-		q, _ := ck["questions"].(string)
-		ck["question_kwd"] = strings.Split(q, "\n")
-		tks, err := tokenizer.Tokenize(q)
-		if err == nil {
-			ck["question_tks"] = tks
-		} else {
-			ck["question_tks"] = q
+// cleanupConsumedChunkFields materializes the stored array form of the
+// questions/keywords fields (when the upstream Tokenizer did not already set
+// them) and strips the consumed source fields (questions/keywords/summary)
+// before persist. This is persist-schema mapping, NOT linguistic tokenization:
+// question_tks / important_tks / content_ltks are owned by the Tokenizer
+// component; the executor no longer falls back to producing them.
+func cleanupConsumedChunkFields(ck map[string]any) {
+	if q, ok := ck["questions"].(string); ok {
+		if _, has := ck["question_kwd"]; !has {
+			ck["question_kwd"] = utility.SplitQuestions(q)
 		}
 	}
 	delete(ck, "questions")
-}
 
-func processChunkKeywords(ck map[string]any) {
-	if _, exists := ck["keywords"]; !exists {
-		return
-	}
-	if _, hasTks := ck["important_tks"]; !hasTks {
-		kws, _ := ck["keywords"].(string)
-		ck["important_kwd"] = SplitKeywords(kws)
-		tks, err := tokenizer.Tokenize(kws)
-		if err == nil {
-			ck["important_tks"] = tks
-		} else {
-			ck["important_tks"] = kws
+	if kws, ok := ck["keywords"].(string); ok {
+		if _, has := ck["important_kwd"]; !has {
+			ck["important_kwd"] = utility.SplitKeywords(kws)
 		}
 	}
 	delete(ck, "keywords")
-}
 
-func processChunkSummary(ck map[string]any) {
-	if _, exists := ck["summary"]; !exists {
-		return
-	}
-	if _, hasLtks := ck["content_ltks"]; !hasLtks {
-		smmry, _ := ck["summary"].(string)
-		ltks, err := tokenizer.Tokenize(smmry)
-		if err == nil {
-			ck["content_ltks"] = ltks
-		} else {
-			ck["content_ltks"] = smmry
-		}
-		smLtks, err := tokenizer.FineGrainedTokenize(ck["content_ltks"].(string))
-		if err == nil {
-			ck["content_sm_ltks"] = smLtks
-		} else {
-			ck["content_sm_ltks"] = ck["content_ltks"].(string)
-		}
-	}
 	delete(ck, "summary")
 }
 
@@ -241,13 +139,35 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 	return metadata
 }
 
+// processChunkPositions converts the raw "positions" field into indexable
+// position fields (page_num_int, top_int, position_int) via AddPositions,
+// then removes the raw field.
+//
+// Two source types reach this point:
+//   - []float64 — flat array of 5-tuples [page,left,right,top,bottom,…] from
+//     parsers that emit positions directly as a flat float64 slice.
+//   - [][]float64 — the production path: positions flow through ChunkDoc
+//     (json.RawMessage → decodeStructuredValue) which produces a slice of
+//     5-element groups.
+//
+// Both are flattened into a single []float64 for AddPositions, which groups
+// by 5 internally. Unexpected types are logged and discarded.
 func processChunkPositions(ck map[string]any) {
 	poss, exists := ck["positions"]
 	if !exists {
 		return
 	}
-	if positions, ok := poss.([]float64); ok {
-		AddPositions(ck, positions)
+	switch v := poss.(type) {
+	case []float64:
+		AddPositions(ck, v)
+	case [][]float64:
+		flat := make([]float64, 0, len(v)*5)
+		for _, group := range v {
+			flat = append(flat, group...)
+		}
+		AddPositions(ck, flat)
+	default:
+		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}
 	delete(ck, "positions")
 }

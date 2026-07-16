@@ -60,7 +60,6 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             video_prompt = str(parser_config.get("video_prompt", "") or "")
             ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
-            ans += "\n" + ans
             tokenize(doc, ans, eng, language=lang)
             return [doc]
         except Exception as e:
