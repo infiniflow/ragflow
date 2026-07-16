@@ -24,7 +24,7 @@ import (
 
 // TestCompile_SetupOverrides exercises the full canvas-level wiring:
 //
-//	canvas.Compile(ctx, dsl, WithSetupOverrides(override))
+//	canvas.Compile(ctx, dsl, WithOverrideParams(override))
 //
 // threads the cpnID-keyed override through ctx into
 // BuildWorkflow → buildNodeBody → applySetupOverrides → mergeSetups, so
@@ -92,7 +92,7 @@ func TestCompile_SetupOverrides(t *testing.T) {
 	}
 
 	ctx := WithComponentFactory(context.Background(), factory)
-	if _, err := Compile(ctx, dsl, WithSetupOverrides(override)); err != nil {
+	if _, err := Compile(ctx, dsl, WithOverrideParams(override)); err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 

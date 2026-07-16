@@ -84,10 +84,10 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // package ever importing the ingestion layer.
 const ctxKeySetupOverrides ctxKey = "canvas_setup_overrides"
 
-// withSetupOverrides attaches a run-level setups override map to ctx. It is
+// WithOverrideParams attaches a run-level setups override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
 // straight through.
-func withSetupOverrides(ctx context.Context, m map[string]any) context.Context {
+func WithOverrideParams(ctx context.Context, m map[string]any) context.Context {
 	if m == nil {
 		return ctx
 	}

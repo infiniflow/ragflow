@@ -130,11 +130,11 @@ func WithInterruptAfterNonTerminalCpn() CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
 }
 
-// WithSetupOverrides attaches a run-level setups override map (keyed by
+// WithOverrideParams attaches a run-level setups override map (keyed by
 // cpnID) to the compile. Each component's `params["setups"]` is merged with
 // its own entry at compile time (run-level wins on key collision, see
 // node_body.go mergeSetups). Passing nil is a no-op.
-func WithSetupOverrides(m map[string]any) CompileOption {
+func WithOverrideParams(m map[string]any) CompileOption {
 	return func(o *CompileOptions) { o.SetupOverrides = m }
 }
 
@@ -218,7 +218,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	// buildNodeBody. The override is keyed by cpnID; the canvas package
 	// never imports ingestion.
 	if cfg.SetupOverrides != nil {
-		ctx = withSetupOverrides(ctx, cfg.SetupOverrides)
+		ctx = WithOverrideParams(ctx, cfg.SetupOverrides)
 	}
 
 	wf, err := BuildWorkflow(ctx, c)
