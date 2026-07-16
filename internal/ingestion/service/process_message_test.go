@@ -50,12 +50,26 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 }
 
 // TestProcessMessage_AlreadyCompletedAcks: a task already in a terminal state
-// (COMPLETED) is acked and skipped — no enqueue, no status change.
+// (COMPLETED) is acked and skipped — no enqueue, and the document is NOT
+// resurrected to RUNNING. A redelivered terminal task must not reset a
+// finished document's run status or counters.
 func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
-	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	// Mark the document as a finished parse: a non-RUNNING run status and
+	// non-zero counters that StartRunning would clobber to "1"/0.
+	finishedRun := "3"
+	if err := db.Model(&entity.Document{}).Where("id = ?", docID).
+		Updates(map[string]interface{}{
+			"run":       finishedRun,
+			"chunk_num": 42,
+			"token_num": 99,
+		}).Error; err != nil {
+		t.Fatalf("set document finished sentinel: %v", err)
+	}
 
 	// Set the task COMPLETED so the status switch skips it.
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
@@ -72,6 +86,18 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued for completed task")
+	}
+
+	// The finished document must be untouched - no resurrection to RUNNING.
+	var doc entity.Document
+	if err := db.Where("id = ?", docID).First(&doc).Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != finishedRun {
+		t.Fatalf("document.run = %v, want %q (must not be resurrected to RUNNING)", doc.Run, finishedRun)
+	}
+	if doc.ChunkNum != 42 || doc.TokenNum != 99 {
+		t.Fatalf("document counters changed: chunk_num=%d token_num=%d, want 42/99", doc.ChunkNum, doc.TokenNum)
 	}
 }
 

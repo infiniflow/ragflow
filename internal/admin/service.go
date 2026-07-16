@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -970,6 +971,14 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 				configDict["status"] = "timeout"
 			}
 			if serviceDetail != nil {
+				// delete element of configDict
+				delete(configDict, "extra")
+				delete(configDict, "database")
+				delete(configDict, "password")
+				delete(configDict, "sample_ratio")
+				delete(configDict, "secure")
+				delete(configDict, "stdout")
+				delete(configDict, "user")
 				results = append(results, configDict)
 			}
 		}
@@ -1042,6 +1051,10 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 		return s.checkRAGFlowServerAlive(name)
 	case "file_store":
 		return s.checkMinioAlive(name)
+	case "olap":
+		return s.checkOlapAlive(name)
+	case "tracing":
+		return s.checkTracingAlive(name)
 	default:
 		return nil, nil
 	}
@@ -1365,6 +1378,41 @@ func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]i
 	return map[string]interface{}{
 		"service_name": name,
 		"status":       status,
+	}, nil
+}
+
+// checkTracingAlive checks if tracing is alive
+func (s *Service) checkTracingAlive(name string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+		"message":      "Tracing health check not implemented",
+	}, nil
+}
+
+// checkOlapAlive checks if ClickHouse is alive
+func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
+	clickhouseDriver := clickhouse.GetDriver()
+	if clickhouseDriver == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "ClickHouse engine not initialized",
+		}, nil
+	}
+
+	status, err := clickhouseDriver.Status()
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "alive",
+		"message":      status,
 	}, nil
 }
 

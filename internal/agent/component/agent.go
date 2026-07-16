@@ -443,40 +443,11 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
 	}
 
-	// v3.6.1: derive the driver and bare model name from the
-	// composite llm_id when the Agent DSL didn't set `driver`. The
-	// Python side does the same in split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178. We
-	// also use this opportunity to look up the tenant's LLM
-	// credentials from `tenant_llm` when the DSL omitted `api_key`
-	// — mirrors Python's get_model_config_from_provider_instance,
-	// which is how the Python canvas finds the tenant's
-	// provider-specific API key + base URL without storing them
-	// in the canvas DSL.
-	// Save the original composite llm_id before the split drops the
-	// instance-name segment. We need it for the tenant_model_instance
-	// fallback path below.
-	originalModelID := p.ModelID
-
-	if p.Driver == "" && p.ModelID != "" {
-		if m, prov, ok := agentProviderLastSegmentSplit(p.ModelID); ok {
-			p.Driver = prov
-			p.ModelID = m
-		}
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, err
 	}
-	if p.Driver == "" && p.ModelID != "" {
-		modelID, driver, apiKey, baseURL, ok, err := resolveTenantChatModelByID(ctx, p.ModelID, p.APIKey, p.BaseURL)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			p.ModelID = modelID
-			p.Driver = driver
-			p.APIKey = apiKey
-			p.BaseURL = baseURL
-		}
-	}
-	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 
 	var state *runtime.CanvasState
 	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
