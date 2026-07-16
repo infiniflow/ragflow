@@ -169,8 +169,11 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
-	if doc.Run != nil {
+	if doc.Run == nil {
 		t.Fatalf("expected doc run to remain nil, got %q", *doc.Run)
+	}
+	if *doc.Run != "0" {
+		t.Fatalf("expected doc run status is '1', got %q", *doc.Run)
 	}
 	if doc.ChunkNum != 7 {
 		t.Fatalf("expected chunk_num to remain 7, got %d", doc.ChunkNum)
