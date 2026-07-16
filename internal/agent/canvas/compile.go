@@ -75,15 +75,15 @@ type CompileOptions struct {
 	// graph does not pause on completion and force an extra, needless
 	// ResumeWithData round.
 	InterruptAfterNonTerminal bool
-	// SetupOverrides is a run-level override map keyed by cpnID. Each
-	// component's `params["setups"]` is merged only with its own entry
+	// OverrideParams is a run-level override map keyed by cpnID. Each
+	// component's `params` is merged only with its own entry
 	// (an arbitrary string-keyed map); the override wins on top-level key
 	// collision (see node_body.go mergeSetups). Components absent from the
 	// map are left untouched. Used by the ingestion pipeline so a single
 	// Pipeline.Run can override the DSL-baked component setups without
-	// mutating the shared *Canvas (see node_body.go applySetupOverrides /
+	// mutating the shared *Canvas (see node_body.go applyOverrideParams /
 	// mergeSetups).
-	SetupOverrides map[string]any
+	OverrideParams map[string]any
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
@@ -135,7 +135,7 @@ func WithInterruptAfterNonTerminalCpn() CompileOption {
 // its own entry at compile time (run-level wins on key collision, see
 // node_body.go mergeSetups). Passing nil is a no-op.
 func WithOverrideParams(m map[string]any) CompileOption {
-	return func(o *CompileOptions) { o.SetupOverrides = m }
+	return func(o *CompileOptions) { o.OverrideParams = m }
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
@@ -217,8 +217,8 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	// component's `params["setups"]` is merged with its own entry inside
 	// buildNodeBody. The override is keyed by cpnID; the canvas package
 	// never imports ingestion.
-	if cfg.SetupOverrides != nil {
-		ctx = WithOverrideParams(ctx, cfg.SetupOverrides)
+	if cfg.OverrideParams != nil {
+		ctx = withOverrideParams(ctx, cfg.OverrideParams)
 	}
 
 	wf, err := BuildWorkflow(ctx, c)

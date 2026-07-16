@@ -22,16 +22,16 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-// TestCompile_SetupOverrides exercises the full canvas-level wiring:
+// TestCompile_OverrideParams exercises the full canvas-level wiring:
 //
 //	canvas.Compile(ctx, dsl, WithOverrideParams(override))
 //
 // threads the cpnID-keyed override through ctx into
-// BuildWorkflow → buildNodeBody → applySetupOverrides → mergeSetups, so
+// BuildWorkflow → buildNodeBody → applyOverrideParams → mergeSetups, so
 // each component's factory receives its own merged params["setups"]. Only
 // the entry for a component's own cpnID applies; components absent from the
 // override map keep their base params (no spurious "setups" injected).
-func TestCompile_SetupOverrides(t *testing.T) {
+func TestCompile_OverrideParams(t *testing.T) {
 	captured := map[string]map[string]any{} // component_name -> params received by factory
 	factory := func(name string, params map[string]any) (runtime.Component, error) {
 		// Deep-shallow copy so later mutations don't hide what the

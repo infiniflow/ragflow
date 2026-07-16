@@ -79,7 +79,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 
 func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	if _, err := p.Run(context.Background(), nil); err == nil {
+	if _, err := p.Run(context.Background(), nil, nil); err == nil {
 		t.Fatal("expected error for nil pipeline")
 	}
 }
@@ -125,7 +125,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}); err == nil {
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}, nil); err == nil {
 		t.Fatal("expected stage error")
 	}
 }
@@ -231,7 +231,7 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 		return &factorySentinelStage{marker: "instance"}, nil
 	})
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	results := make(chan result, 2)
 	run := func(pipe *Pipeline) {
 		defer wg.Done()
-		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 		if err != nil {
 			results <- result{err: err}
 			return
@@ -345,7 +345,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if !errors.Is(err, ErrResumeUnavailable) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
@@ -442,7 +442,7 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}); err != nil {
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -534,7 +534,7 @@ func TestRunPlain_WithTracker_Success(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -565,7 +565,7 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
 	}
