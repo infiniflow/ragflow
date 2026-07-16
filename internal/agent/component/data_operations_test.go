@@ -24,6 +24,34 @@ import (
 	"ragflow/internal/agent/canvas"
 )
 
+func TestDataOperations_GetInputForm(t *testing.T) {
+	c, err := NewDataOperationsComponent(map[string]any{
+		"query": []string{
+			"{{sys.query}}",
+			"{{CodeExec:Run@result}}",
+			"{{sys.query}}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataOperationsComponent: %v", err)
+	}
+
+	got := c.(*DataOperationsComponent).GetInputForm()
+	want := map[string]any{
+		"sys.query": map[string]any{
+			"name": "sys.query",
+			"type": "line",
+		},
+		"CodeExec:Run@result": map[string]any{
+			"name": "CodeExec:Run@result",
+			"type": "line",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetInputForm = %#v, want %#v", got, want)
+	}
+}
+
 // TestDataOperations_SelectKeys: keep only specified keys.
 func TestDataOperations_SelectKeys(t *testing.T) {
 	c, err := NewDataOperationsComponent(map[string]any{

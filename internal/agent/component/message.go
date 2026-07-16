@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"strings"
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/runtime"
@@ -178,6 +179,9 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	text := extractMessageText(inputs)
 	if text == "" {
 		text = m.text
+	}
+	if text == "" {
+		text = fallbackMessageText(inputs)
 	}
 	// Message is a display node, not parameter binding. Use the
 	// tolerant resolver (nil refs render as empty string) instead
@@ -324,6 +328,46 @@ func extractMemoryIDs(inputs map[string]any) []string {
 		return out
 	}
 	return nil
+}
+
+func fallbackMessageText(inputs map[string]any) string {
+	if inputs == nil {
+		return ""
+	}
+	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
+		return text
+	}
+
+	var only string
+	count := 0
+	for key, value := range inputs {
+		if isMessageInfraInput(key) {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			continue
+		}
+		only = text
+		count++
+		if count > 1 {
+			return ""
+		}
+	}
+	if count == 1 {
+		return only
+	}
+	return ""
+}
+
+func isMessageInfraInput(key string) bool {
+	switch key {
+	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
+		"output_format", "voice", "lang", "auto_play", "memory_save", "stream":
+		return true
+	default:
+		return false
+	}
 }
 
 // extractMemoryIDsFromParams looks for a "_memory_ids" hint in

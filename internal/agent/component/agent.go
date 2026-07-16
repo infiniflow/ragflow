@@ -1017,11 +1017,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
-	if v, ok := sliceFrom(inputs, "tools"); ok {
-		p.Tools = v
+	if tools, params, ok := agentToolsFrom(inputs, "tools"); ok {
+		p.Tools = tools
+		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
-		p.ToolParams = v
+		p.ToolParams = mergeToolParams(p.ToolParams, v)
 	}
 	if v, ok := boolFrom(inputs, "optimize_multi_turn"); ok {
 		p.OptimizeMultiTurn = v
@@ -1033,6 +1034,107 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Cite = v
 	}
 	return p
+}
+
+// agentToolsFrom extracts the Agent tools list. The Go-native shape is
+// []string; the canvas DSL shape stores tool component objects with
+// component_name and params.
+func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, bool) {
+	v, ok := inputs[name]
+	if !ok {
+		return nil, nil, false
+	}
+	switch x := v.(type) {
+	case []string:
+		return x, nil, true
+	case []any:
+		out := make([]string, 0, len(x))
+		params := make(map[string]map[string]any)
+		for _, item := range x {
+			switch tool := item.(type) {
+			case string:
+				if strings.TrimSpace(tool) == "" {
+					continue
+				}
+				out = append(out, tool)
+			case map[string]any:
+				toolName, toolParams, ok := agentToolObject(tool)
+				if !ok {
+					continue
+				}
+				out = append(out, toolName)
+				if len(toolParams) != 0 {
+					params[strings.ToLower(strings.TrimSpace(toolName))] = toolParams
+				}
+			}
+		}
+		return out, params, true
+	}
+	return nil, nil, false
+}
+
+func agentToolObject(item map[string]any) (string, map[string]any, bool) {
+	toolName, ok := stringFrom(item, "component_name")
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "tool_name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		return "", nil, false
+	}
+	toolName = strings.TrimSpace(toolName)
+
+	rawParams, _ := item["params"].(map[string]any)
+	toolParams := cloneMap(rawParams)
+	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
+		if toolParams == nil {
+			toolParams = make(map[string]any)
+		}
+		toolParams["function_name"] = strings.TrimSpace(fn)
+	}
+	return toolName, toolParams, true
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {
+	if len(base) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(base)+len(overrides))
+	for name, params := range base {
+		out[name] = cloneMap(params)
+		if lower := strings.ToLower(strings.TrimSpace(name)); lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	for name, params := range overrides {
+		if len(params) == 0 {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(name))
+		for k := range out {
+			if strings.ToLower(strings.TrimSpace(k)) == lower {
+				delete(out, k)
+			}
+		}
+		out[name] = cloneMap(params)
+		if lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	return out
 }
 
 // sliceFrom extracts []string from inputs[name].
@@ -1102,11 +1204,12 @@ func init() {
 			f := v
 			p.TopP = &f
 		}
-		if v, ok := sliceFrom(params, "tools"); ok {
-			p.Tools = v
+		if tools, toolParams, ok := agentToolsFrom(params, "tools"); ok {
+			p.Tools = tools
+			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
 		}
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
-			p.ToolParams = v
+			p.ToolParams = mergeToolParams(p.ToolParams, v)
 		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v
