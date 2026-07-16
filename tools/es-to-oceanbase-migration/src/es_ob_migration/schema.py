@@ -67,7 +67,7 @@ RAGFLOW_COLUMNS = {
     "metadata": {"ob_type": "JSON", "nullable": True, "is_json": True},
     "extra": {"ob_type": "JSON", "nullable": True, "is_json": True},
     # New columns
-    "_order_id": {"ob_type": "Integer", "nullable": True},
+    "_order_id": {"ob_type": "Integer", "nullable": True, "default": 0},
     "chunk_order_int": {"ob_type": "Integer", "nullable": True, "default": 0},
     "group_id": {"ob_type": "String(256)", "nullable": True},
     "mom_id": {"ob_type": "String(256)", "nullable": True},

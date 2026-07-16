@@ -384,6 +384,7 @@ class TestConstants:
         assert RAGFLOW_COLUMNS["metadata"]["is_json"] is True
         assert RAGFLOW_COLUMNS["extra"]["is_json"] is True
 
+        assert RAGFLOW_COLUMNS["_order_id"]["default"] == 0
         assert RAGFLOW_COLUMNS["chunk_order_int"]["default"] == 0
 
 
