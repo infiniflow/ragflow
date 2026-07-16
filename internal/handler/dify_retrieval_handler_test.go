@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,11 +31,9 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // --- Mock implementations ---
@@ -85,7 +84,6 @@ type mockMetadataService struct {
 	MetadataServiceIface
 	getFlattedMetaFn func(kbIDs []string) (common.MetaData, error)
 	labelQuestionFn  func(question string, kbs []*entity.Knowledgebase) map[string]float64
-	searchMetaFn     func(kbID, tenantID string, docIDs []string, size int) (*service.SearchMetadataResponse, error)
 }
 
 func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
@@ -100,13 +98,6 @@ func (m *mockMetadataService) LabelQuestion(question string, kbs []*entity.Knowl
 		return m.labelQuestionFn(question, kbs)
 	}
 	return nil
-}
-
-func (m *mockMetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*service.SearchMetadataResponse, error) {
-	if m.searchMetaFn != nil {
-		return m.searchMetaFn(kbID, tenantID, docIDs, size)
-	}
-	return nil, nil
 }
 
 type mockRetrievalService struct {
@@ -135,7 +126,7 @@ func (m *mockDocDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
 		return m.getByIDsFn(ids)
 	}
 	return []*entity.Document{
-		{ID: "doc1", Name: strPtr("Test Doc")},
+		{ID: "doc1", Name: strPtr("Test Doc"), MetaFields: &entity.JSONMap{"author": "Zhang San"}},
 	}, nil
 }
 
