@@ -359,7 +359,14 @@ jobs:
 
           # Determine runner number (default to 1 if not found)
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
-               RUNNER_NUM=${RUNNER_NUM:-1}
+               if [[ -z "${RUNNER_NUM:-}" ]]; then
+                 # GitHub self-hosted runners always expose RUNNER_NAME; hash it to spread candidates.
+                 if [[ -n "${RUNNER_NAME:-}" ]]; then
+                   RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+                 else
+                   RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+                 fi
+               fi
 
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
@@ -371,8 +378,12 @@ jobs:
                  infinity) PARTITION_BASE=31000 ;;
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
-               PORT_LOCK_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/port-locks
+               # Shared host-wide lock dir so concurrent runners (even different OS users) on the
+               # same host coordinate port reservations; per-runner paths would isolate lock files.
+               PORT_LOCK_DIR=/tmp/ragflow-ci-port-locks
                mkdir -p "${PORT_LOCK_DIR}"
+               sudo chown "$(id -u):$(id -g)" "${PORT_LOCK_DIR}" 2>/dev/null || true
+               chmod 1777 "${PORT_LOCK_DIR}"
 
                port_offset_available() {
                  local offset=$1
@@ -389,7 +400,7 @@ jobs:
                cleanup_stale_port_locks() {
                  local now stale_after lock lock_ts
                  now=$(date -u +%s)
-                 stale_after=$((6 * 60 * 60))
+                 stale_after=$((2 * 60 * 60))
                  for lock in "${PORT_LOCK_DIR}"/*.lock; do
                    [[ -e "${lock}" ]] || continue
                    lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
@@ -402,7 +413,7 @@ jobs:
                reserve_port_offset() {
                  local attempt candidate reservation
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 59); do
+                 for attempt in $(seq 0 5999); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
                    reservation="${PORT_LOCK_DIR}/${candidate}.lock"
                    if ( set -o noclobber; echo "${GITHUB_RUN_ID} ${DOC_ENGINE} $(date -u +%s)" > "${reservation}" ) 2>/dev/null; then
@@ -417,10 +428,17 @@ jobs:
                  return 1
                }
 
-               if ! reserve_port_offset; then
-                 echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
-                 exit 1
-               fi
+               # Serialize check-and-reserve across all runners on this host via a global flock.
+               # Use { } group (not subshell) so PORT_OFFSET/PORT_RESERVATION set by
+               # reserve_port_offset persist into the parent shell.
+               RESERVE_GLOBAL_LOCK="${PORT_LOCK_DIR}/reserve.global.lock"
+               {
+                 flock -x 9 || { echo "Failed to acquire port reservation lock" >&2; exit 1; }
+                 if ! reserve_port_offset; then
+                   echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
+                   exit 1
+                 fi
+               } 9>"${RESERVE_GLOBAL_LOCK}"
                echo "PORT_RESERVATION=${PORT_RESERVATION}" >> ${GITHUB_ENV}
                echo "Using ${DOC_ENGINE} host port offset ${PORT_OFFSET}"
                ES_PORT=$((1200 + PORT_OFFSET))
@@ -841,7 +859,14 @@ jobs:
 
           # Determine runner number (default to 1 if not found)
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
-               RUNNER_NUM=${RUNNER_NUM:-1}
+               if [[ -z "${RUNNER_NUM:-}" ]]; then
+                 # GitHub self-hosted runners always expose RUNNER_NAME; hash it to spread candidates.
+                 if [[ -n "${RUNNER_NAME:-}" ]]; then
+                   RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+                 else
+                   RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+                 fi
+               fi
 
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
@@ -853,8 +878,12 @@ jobs:
                  infinity) PARTITION_BASE=31000 ;;
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
-               PORT_LOCK_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/port-locks
+               # Shared host-wide lock dir so concurrent runners (even different OS users) on the
+               # same host coordinate port reservations; per-runner paths would isolate lock files.
+               PORT_LOCK_DIR=/tmp/ragflow-ci-port-locks
                mkdir -p "${PORT_LOCK_DIR}"
+               sudo chown "$(id -u):$(id -g)" "${PORT_LOCK_DIR}" 2>/dev/null || true
+               chmod 1777 "${PORT_LOCK_DIR}"
 
                port_offset_available() {
                  local offset=$1
@@ -871,7 +900,7 @@ jobs:
                cleanup_stale_port_locks() {
                  local now stale_after lock lock_ts
                  now=$(date -u +%s)
-                 stale_after=$((6 * 60 * 60))
+                 stale_after=$((2 * 60 * 60))
                  for lock in "${PORT_LOCK_DIR}"/*.lock; do
                    [[ -e "${lock}" ]] || continue
                    lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
@@ -884,7 +913,7 @@ jobs:
                reserve_port_offset() {
                  local attempt candidate reservation
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 59); do
+                 for attempt in $(seq 0 5999); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
                    reservation="${PORT_LOCK_DIR}/${candidate}.lock"
                    if ( set -o noclobber; echo "${GITHUB_RUN_ID} ${DOC_ENGINE} $(date -u +%s)" > "${reservation}" ) 2>/dev/null; then
@@ -899,10 +928,17 @@ jobs:
                  return 1
                }
 
-               if ! reserve_port_offset; then
-                 echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
-                 exit 1
-               fi
+               # Serialize check-and-reserve across all runners on this host via a global flock.
+               # Use { } group (not subshell) so PORT_OFFSET/PORT_RESERVATION set by
+               # reserve_port_offset persist into the parent shell.
+               RESERVE_GLOBAL_LOCK="${PORT_LOCK_DIR}/reserve.global.lock"
+               {
+                 flock -x 9 || { echo "Failed to acquire port reservation lock" >&2; exit 1; }
+                 if ! reserve_port_offset; then
+                   echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
+                   exit 1
+                 fi
+               } 9>"${RESERVE_GLOBAL_LOCK}"
                echo "PORT_RESERVATION=${PORT_RESERVATION}" >> ${GITHUB_ENV}
                echo "Using ${DOC_ENGINE} host port offset ${PORT_OFFSET}"
                ES_PORT=$((1200 + PORT_OFFSET))
