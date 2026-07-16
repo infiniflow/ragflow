@@ -70,27 +70,10 @@ pre-commit:
         else
           gofmt -w {staged_files}
         fi
-    - name: web-deps
-      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      run: |
-        # Ensure web/node_modules is populated. CI runners don't run `npm install`
-        # before lefthook, and `npx` without local node_modules fetches the
-        # latest packages from the registry - which breaks because the pinned
-        # prettier plugins (prettier-plugin-organize-imports,
-        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
-        # requires eslint.config.js.
-        # Serialized via lefthook 'deps' from web-prettier/web-eslint instead of
-        # a mkdir mutex, which left stale locks on interrupted commits and
-        # caused subsequent commits to hang forever in 'while ! mkdir'.
-        if [ ! -f web/node_modules/.package-lock.json ]; then
-          echo '==> web/node_modules missing or incomplete; running npm ci --prefix web'
-          rm -rf web/node_modules
-          npm ci --prefix web --no-audit --no-fund
-        fi
     - name: web-prettier
+      # prettier plugins removed from .prettierrc, so this job needs no node_modules.
       glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
       stage_fixed: true
-      deps: [web-deps]
       run: |
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
@@ -98,10 +81,16 @@ pre-commit:
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
         fi
     - name: web-eslint
+      # Only web-eslint needs node_modules (for @typescript-eslint/* plugins).
+      # web-prettier has no npm deps, so there is no race on node_modules.
       glob: "web/**/*.{js,jsx,ts,tsx}"
       stage_fixed: true
-      deps: [web-deps]
       run: |
+        if [ ! -f web/node_modules/.package-lock.json ]; then
+          echo '==> web/node_modules missing or incomplete; running npm ci --prefix web'
+          rm -rf web/node_modules
+          npm ci --prefix web --no-audit --no-fund
+        fi
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
         else

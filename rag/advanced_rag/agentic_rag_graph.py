@@ -160,11 +160,11 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     # ── Node: formalize_question ──
     async def formalize_question(state: AgenticState) -> dict:
         msgs = state.get("messages") or []
-        _LOG.info("[formalize_question] IN | %d msg(s)", len(msgs))
+        _LOG.info("[Formalizing the question] Reading the conversation (%d message(s)) to work out the standalone question...", len(msgs))
         q, kw = await tools.formalize(msgs)
         q = (q or "").strip()
         kw = (kw or "").strip()
-        _LOG.info("[formalize_question] OUT | question=%s | keywords=%s", _snip(q), _snip(kw))
+        _LOG.info("[Formalizing the question] Understood the question as: \"%s\" — searching with keywords: %s", _snip(q), _snip(kw))
         return {
             "question": q,
             "keywords": kw,
@@ -191,23 +191,23 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         """
         route = state.get("route")
         if not route or not getattr(route, "requires_decomposition", False):
-            _LOG.info("[pre_search] SKIP | direct/low mode (no decomposition)")
+            _LOG.info("[Preliminary search] Skipping the first look — this question goes straight to a single search.")
             return {"seed_chunks": []}
 
         from rag.advanced_rag.harness.tools.search import hybrid_search
 
         q = state.get("question", "")
         kw = state.get("keywords", "")
-        _LOG.info("[pre_search] IN | question=%s | keywords=%s", _snip(q), _snip(kw))
+        _LOG.info("[Preliminary search] Taking a first look in the knowledge base for: \"%s\" (keywords: %s)", _snip(q), _snip(kw))
         try:
             result = await hybrid_search(tools, query=q, keywords=kw)
         except Exception:
-            _LOG.exception("[pre_search] hybrid_search failed")
+            _LOG.exception("[Preliminary search] hybrid_search failed")
             return {"seed_chunks": []}
 
         chunks = result.get("chunks", []) or []
         _merge_result_into_kbinfos(tools, result)
-        _LOG.info("[pre_search] OUT | %d seed chunk(s), kbinfos now %d", len(chunks), len(tools.kbinfos.get("chunks", [])))
+        _LOG.info("[Preliminary search] First look found %d passage(s); %d gathered so far.", len(chunks), len(tools.kbinfos.get("chunks", [])))
         return {"seed_chunks": chunks}
 
     # ── Node: planner ──
@@ -230,7 +230,8 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         abstain = state.get("abstain", False)
         empty_result = state.get("empty_result", False)
 
-        _LOG.info("[formalize_answer] IN | question=%s | chunks=%d | partial=%s | abstain=%s", _snip(question), len(kbinfos["chunks"]), partial, abstain)
+        _note = " — partial answer, some gaps remain" if partial else (" — not enough evidence to answer" if abstain else "")
+        _LOG.info("[Composing the answer] Writing the final answer to \"%s\" from %d gathered passage(s)%s.", _snip(question), len(kbinfos["chunks"]), _note)
 
         tools.kbinfos = kbinfos
 
@@ -299,12 +300,9 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     return g.compile()
 
 
-# ── Runner ──
-
-
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
-    _LOG.info("[agentic-rag] RUN START | %d message(s), max_loops=%d", len(messages or []), max_loops)
+    _LOG.info("[Agentic RAG] Starting research to answer your question...")
 
     token_queue: asyncio.Queue = asyncio.Queue()
     graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf)
@@ -340,7 +338,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     if isinstance(final_kb, dict) and final_kb.get("chunks"):
         tools.kbinfos = final_kb
 
-    _LOG.info("[agentic-rag] RUN END | streamed=%s, loops=%d, chunks=%d", produced, state.get("loop", 0), len((state.get("kbinfos") or {}).get("chunks", [])))
+    _LOG.info("[Agentic RAG] Research complete — %d passage(s) gathered after %d round(s).", len((state.get("kbinfos") or {}).get("chunks", [])), state.get("loop", 0))
 
     if not produced and holder.get("error"):
         yield "I couldn't complete the search due to an internal error."

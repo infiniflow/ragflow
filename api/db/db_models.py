@@ -1155,7 +1155,7 @@ class CompilationTemplate(DataBaseModel):
 
     class Meta:
         db_table = "compilation_template"
-        indexes = ((("tenant_id", "name", "is_builtin", "status"), True),)
+        indexes = ((("tenant_id", "group_id", "name", "is_builtin", "status"), True),)
 
 
 class CompilationTemplateGroup(DataBaseModel):
