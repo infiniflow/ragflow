@@ -95,13 +95,13 @@ func decodeHistory(raw any) []map[string]any {
 		var role string
 		var payload any
 		switch value := item.(type) {
-		case []any:
+		case []any: // case：py  [role, payload]
 			if len(value) < 2 {
 				continue
 			}
 			role, _ = value[0].(string)
 			payload = value[1]
-		case map[string]any:
+		case map[string]any: // case: go  {"role": "...", "content/payload": "..."}
 			role, _ = value["role"].(string)
 			if preserved, exists := value["payload"]; exists {
 				payload = preserved
@@ -123,6 +123,7 @@ func decodeHistory(raw any) []map[string]any {
 	return history
 }
 
+// tool
 func decodeMemory(raw any) []map[string]any {
 	items, ok := raw.([]any)
 	if !ok || len(items) == 0 {
@@ -131,7 +132,7 @@ func decodeMemory(raw any) []map[string]any {
 	memory := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		switch value := item.(type) {
-		case []any:
+		case []any: // [[user_query, assistant_response, tool_summary], ...]
 			if len(value) < 3 {
 				continue
 			}
@@ -140,7 +141,7 @@ func decodeMemory(raw any) []map[string]any {
 				"assistant": value[1],
 				"summary":   value[2],
 			})
-		case map[string]any:
+		case map[string]any: // map
 			memory = append(memory, map[string]any{
 				"user":      value["user"],
 				"assistant": value["assistant"],
