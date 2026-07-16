@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/handler"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
@@ -362,6 +363,12 @@ func main() {
 	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
+
+	ctx := context.Background()
+	if err = clickhouse.Init(&config.Clickhouse, ctx); err != nil {
+		common.Error("Failed to initialize ClickHouse", err)
+	}
+	defer clickhouse.Close()
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
