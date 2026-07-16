@@ -651,7 +651,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     model_verify_result = {}
     # test if api key works
-    chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed, asr_passed, vlm_passed = False, False, False, False, False, False, False, False
+    chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed, asr_passed, vlm_passed = False, False, False, False, False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
