@@ -132,11 +132,19 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	if params == nil {
 		return &ParserComponent{Param: p}, nil
 	}
-	for _, ft := range schema.FileTypes {
-		if raw, ok := params[ft].(map[string]any); ok {
-			for k, v := range raw {
-				p.Setups[ft][k] = v
-			}
+	for k, raw := range params {
+		if k == "outputs" {
+			continue
+		}
+		ftCfg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := p.Setups[k]; !exists {
+			p.Setups[k] = schema.ParserSetup{}
+		}
+		for fk, fv := range ftCfg {
+			p.Setups[k][fk] = fv
 		}
 	}
 	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {

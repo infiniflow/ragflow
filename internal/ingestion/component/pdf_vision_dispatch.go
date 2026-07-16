@@ -61,7 +61,10 @@ func maybeDispatchPDFVision(
 	layout := getStringOr(setup, "layout_recognizer", "")
 
 	// MinerU dispatch: parse_method "mineru" or layout_recognizer "@MinerU"
-	if strings.EqualFold(method, "mineru") || strings.HasPrefix(strings.ToLower(layout), "mineru") || strings.Contains(layout, "@MinerU") {
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+	if strings.EqualFold(strings.TrimSpace(method), "mineru") ||
+		strings.HasPrefix(layoutLower, "mineru") ||
+		strings.Contains(layoutLower, "@mineru") {
 		tenantID := getStringOr(inputs, "tenant_id", "")
 		if tenantID == "" {
 			return parserDispatchResult{}, true,

@@ -535,6 +535,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		}
 		for i, ck := range in.chunks {
 			text, _ := ck["text"].(string)
+			if strings.TrimSpace(text) == "" {
+				text, _ = ck["content_with_weight"].(string)
+			}
 
 			if c.Param.AutoKeywords > 0 {
 				if err := c.runAutoKeywords(timeoutCtx, in, ck, text); err != nil {
@@ -696,17 +699,8 @@ func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunk
 }
 
 // resolveExtractorChatTarget splits a composite llm_id
-// "model@provider" into driver / model / api_key / base_url,
-// matching Python's resolve_model_config flow:
-//
-//	Extractor.__init__ → LLM.__init__
-//	  → resolve_model_config(tenant_id, "chat", llm_id)
-//	    → split_model_name(llm_id)       # rsplit("@", 2)
-//	    → get_model_config_from_provider_instance()
-//	      → TenantModelProviderService.get_by_tenant_id_and_provider_name()
-//	      → TenantModelInstanceService.get_by_provider_id_and_instance_name()
-//	      → TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name()
-//	    → returns {llm_factory, api_key, llm_name, api_base, model_type}
+// "model@provider" into driver / model / api_key / base_url
+// using the tenant-scoped provider → instance → model lookup.
 func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, modelName, apiKey, baseURL string) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
@@ -717,8 +711,7 @@ func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, mode
 		return "", "", "", ""
 	}
 
-	// Derive a fallback driver from the composite id (matches
-	// Python's behaviour when no tenant credentials are configured).
+	// Derive driver and model name from the composite llm_id.
 	modelName = llmID
 	parsedModel, _, parsedProvider := splitExtractorLLID(llmID)
 	if parsedProvider != "" {
@@ -726,9 +719,7 @@ func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, mode
 		driver = strings.ToLower(parsedProvider)
 	}
 
-	// Resolve tenant scoped credentials. Mirrors Python's path:
-	//   1. Try legacy tenant_llm table
-	//   2. Fall back to tenant_model_provider → instance → model
+	// Override with tenant-scoped credentials when available.
 	cfg := resolveExtractorChatConfig(ctx, llmID)
 	if cfg.driver != "" {
 		driver = cfg.driver
@@ -746,11 +737,7 @@ func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, mode
 	return driver, modelName, apiKey, baseURL
 }
 
-// extractorChatConfig holds the fully resolved chat model
-// configuration, mirroring the Python dict returned by
-// get_model_config_from_provider_instance:
-//
-//	{llm_factory, api_key, llm_name, api_base, model_type}
+// extractorChatConfig holds the resolved chat model configuration.
 type extractorChatConfig struct {
 	driver    string // llm_factory
 	modelName string // llm_name
@@ -759,15 +746,7 @@ type extractorChatConfig struct {
 }
 
 // resolveExtractorChatConfig resolves tenant-scoped credentials for
-// the given composite llm_id. Matches Python's
-// resolve_model_config → get_model_config_from_provider_instance:
-//
-//  1. Split composite id with rsplit("@", 2) (right-anchored)
-//  2. Lookup tenant_model_provider (case-insensitive, matching
-//     MySQL default collation)
-//  3. Lookup tenant_model_instance (with "default" → sole active fallback)
-//  4. Lookup tenant_model to validate the model is registered
-//  5. Return config with provider.provider_name as llm_factory
+// the given composite llm_id using tenant_model_provider → instance → model.
 func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) extractorChatConfig {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
@@ -779,24 +758,14 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) extr
 		return extractorChatConfig{}
 	}
 
-	// Split the composite id. Uses rsplit from the right (max 2
-	// splits) to match Python's split_model_name, which preserves
-	// embedded '@' in model names.
+	// Split the composite id with rsplit from the right
+	// (preserves embedded '@' in model names).
 	pureModelName, instanceName, providerName := splitExtractorLLID(compositeLLMID)
 	if providerName == "" {
 		return extractorChatConfig{}
 	}
-	driver := strings.ToLower(providerName)
 
-	// 0. Try legacy tenant_llm table (matches Python's
-	//    resolve_model_config → get_model_config_by_id first
-	//    attempt, and agent/component/llm_credentials.go's
-	//    resolveTenantLLMCredentials path).
-	if cfg := resolveExtractorLegacyCredentials(tid, driver, pureModelName); cfg != nil {
-		return *cfg
-	}
-
-	// 1. Lookup provider (case-insensitive, matching MySQL default collation).
+	// 1. Lookup provider (case-insensitive).
 	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(tid, providerName)
 	if err != nil || provider == nil {
 		common.Debug("extractor credentials: provider not found",
@@ -825,18 +794,21 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) extr
 		return extractorChatConfig{}
 	}
 
-	// 3. Lookup tenant_model to validate the model is registered
-	//    (matches Python's get_by_provider_id_and_instance_id_and_model_type_and_model_name).
+	// 3. Lookup tenant_model to validate the model is registered.
 	model, modelErr := dao.NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
 		provider.ID, instance.ID, int(entity.ModelTypeChat), pureModelName)
-	canonicalModelName := pureModelName
-	if modelErr == nil && model != nil {
-		if model.ModelName != "" {
-			canonicalModelName = model.ModelName
-		}
-		common.Debug("extractor credentials: tenant_model found",
-			zap.String("model", canonicalModelName))
+	if modelErr != nil || model == nil {
+		common.Debug("extractor credentials: tenant_model not found",
+			zap.String("model", pureModelName),
+			zap.Error(modelErr))
+		return extractorChatConfig{}
 	}
+	canonicalModelName := pureModelName
+	if model.ModelName != "" {
+		canonicalModelName = model.ModelName
+	}
+	common.Debug("extractor credentials: tenant_model found",
+		zap.String("model", canonicalModelName))
 
 	// 4. Assemble config from instance.
 	if instance.APIKey == "" {
@@ -867,40 +839,8 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) extr
 	}
 }
 
-// resolveExtractorLegacyCredentials tries the old tenant_llm table.
-// Mirrors Python's resolve_model_config → get_model_config_by_id and
-// agent/component/llm_credentials.go:resolveTenantLLMCredentials.
-func resolveExtractorLegacyCredentials(tid, driver, modelID string) *extractorChatConfig {
-	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tid, driver, modelID)
-	if err != nil || row == nil {
-		return nil
-	}
-	ak := ""
-	if row.APIKey != nil {
-		ak = *row.APIKey
-	}
-	if ak == "" {
-		return nil
-	}
-	bu := ""
-	if row.APIBase != nil {
-		bu = *row.APIBase
-	}
-	common.Debug("extractor credentials: resolved from tenant_llm",
-		zap.String("driver", driver),
-		zap.String("model", modelID))
-	return &extractorChatConfig{
-		driver:    driver,
-		modelName: modelID,
-		apiKey:    ak,
-		baseURL:   bu,
-	}
-}
-
-// splitExtractorLLID mirrors Python's split_model_name
-// (api/db/joint_services/tenant_model_service.py:204-227).
-// Uses rsplit("@", 2) from the right to preserve embedded '@'
-// characters in model names.
+// splitExtractorLLID splits a composite llm_id using rsplit("@", 2)
+// from the right to preserve embedded '@' in model names.
 //
 //	"model@provider"          → ("model",          "default",  "provider")
 //	"model@instance@provider" → ("model",          "instance", "provider")
@@ -925,8 +865,7 @@ func splitExtractorLLID(s string) (modelName, instanceName, providerName string)
 }
 
 // findExtractorSoleActiveInstance returns the sole active instance
-// for a provider when the "default" instance is not found. Mirrors
-// Python's _resolve_instance_for_model default→sole-active fallback.
+// for a provider when the "default" instance is not found.
 func findExtractorSoleActiveInstance(providerID string) *entity.TenantModelInstance {
 	instances, err := dao.NewTenantModelInstanceDAO().GetAllInstancesByProviderID(providerID)
 	if err != nil {
@@ -1017,6 +956,9 @@ func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string
 	var b strings.Builder
 	for i, ck := range chunks {
 		t, _ := ck["text"].(string)
+		if t == "" {
+			t, _ = ck["content_with_weight"].(string)
+		}
 		if t == "" {
 			continue
 		}

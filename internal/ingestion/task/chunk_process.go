@@ -18,6 +18,7 @@ package task
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -176,18 +177,16 @@ func processChunkPositions(ck map[string]any) {
 // for columns with role "metadata" or "both", merges them into document metadata.
 // Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, _ := parserConfig["table_column_mode"].(string)
+	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
 	if mode == "" {
 		mode = "auto"
 	}
 	if mode != "auto" && mode != "manual" {
 		return nil
 	}
-	roles, _ := parserConfig["table_column_roles"].(map[string]interface{})
 	if roles == nil {
 		roles = map[string]interface{}{}
 	}
-	tableColumnNames, _ := parserConfig["table_column_names"].([]interface{})
 	var metaCols []string
 	if len(tableColumnNames) > 0 {
 		for _, n := range tableColumnNames {
@@ -249,4 +248,40 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 		out[col] = deduped
 	}
 	return out
+}
+
+// resolveTableColumnConfig reads table column settings from parser_config.
+// Tries root-level flat keys first; falls back to resolving from a Parser
+// component entry's spreadsheet config in a component-ID-keyed parser_config.
+func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
+	mode, _ = parserConfig["table_column_mode"].(string)
+	roles, _ = parserConfig["table_column_roles"].(map[string]interface{})
+	rawNames, _ := parserConfig["table_column_names"].([]interface{})
+	if mode != "" || roles != nil || len(rawNames) > 0 {
+		return mode, roles, rawNames
+	}
+	for cid, raw := range parserConfig {
+		if !strings.HasPrefix(cid, "Parser:") {
+			continue
+		}
+		comp, _ := raw.(map[string]interface{})
+		if comp == nil {
+			continue
+		}
+		ss, _ := comp["spreadsheet"].(map[string]interface{})
+		if ss == nil {
+			continue
+		}
+		if v, ok := ss["column_mode"].(string); ok {
+			mode = v
+		}
+		if v, ok := ss["column_roles"].(map[string]interface{}); ok {
+			roles = v
+		}
+		if v, ok := ss["column_names"].([]interface{}); ok {
+			rawNames = v
+		}
+		return mode, roles, rawNames
+	}
+	return "", nil, nil
 }

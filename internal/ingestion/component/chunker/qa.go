@@ -148,7 +148,7 @@ type qaPair struct {
 	Answer   string
 }
 
-var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
+var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[ \t]*(?:[:：]|\t)[ \t]*`)
 
 func rmQAPrefix(txt string) string {
 	return strings.TrimSpace(rmQAPrefixRe.ReplaceAllString(txt, ""))

@@ -193,6 +193,30 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	}
 }
 
+func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
+	comp, err := NewQAChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.txt",
+		"output_format": "text",
+		"text":          "A language model is useful\tQ How does it work",
+	}
+	out, err := comp.Invoke(context.Background(), inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if cww != "Question: A language model is useful\tAnswer: Q How does it work" {
+		t.Fatalf("space-only separator should not strip prefix: %q", cww)
+	}
+}
+
 func TestQAChunker_HeadingNoTrailingSpace(t *testing.T) {
 	comp, err := NewQAChunker(nil)
 	if err != nil {

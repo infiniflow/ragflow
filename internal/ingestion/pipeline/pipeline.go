@@ -498,6 +498,14 @@ func PatchDSL(raw string, parserConfig map[string]interface{}) (string, error) {
 	}
 
 	components, _ := dslMap["components"].(map[string]any)
+	if components == nil {
+		if inner, ok := dslMap["dsl"].(map[string]any); ok {
+			components, _ = inner["components"].(map[string]any)
+		}
+		if components == nil {
+			return raw, nil
+		}
+	}
 	for cid, extraVal := range parserConfig {
 		compVal, ok := components[cid]
 		if !ok {
@@ -515,7 +523,14 @@ func PatchDSL(raw string, parserConfig map[string]interface{}) (string, error) {
 		if obj == nil {
 			continue
 		}
-		obj["params"] = extraParams
+		existing, _ := obj["params"].(map[string]any)
+		if existing == nil {
+			obj["params"] = extraParams
+		} else {
+			for k, v := range extraParams {
+				existing[k] = v
+			}
+		}
 	}
 
 	patched, err := json.Marshal(dslMap)
