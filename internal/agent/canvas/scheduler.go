@@ -391,6 +391,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 		}
+		st.EnsureSysDate()
 		return st
 	}
 

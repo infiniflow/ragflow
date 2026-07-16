@@ -910,21 +910,6 @@ def delete_index(tenant_id, dataset_id, index_type=None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/embedding", methods=["POST"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def run_embedding(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.run_embedding(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/datasets/<dataset_id>/embedding/check", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

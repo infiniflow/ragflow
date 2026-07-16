@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import time
 from abc import ABC
 from urllib.parse import urljoin
 from typing import Tuple, List
@@ -309,6 +310,112 @@ class CoHereRerank(Base):
                 rank[d.index] = d.relevance_score
         except Exception as _e:
             log_exception(_e, res)
+        return rank, token_count
+
+
+# Reranker connector for AWS Bedrock, calling the bedrock-agent-runtime Rerank
+# API (e.g. amazon.rerank-v1:0, cohere.rerank-v3-5:0). The JSON key protocol
+# (auth_mode / bedrock_region / bedrock_ak / bedrock_sk) mirrors BedrockEmbed in
+# embedding_model.py.
+class BedrockRerank(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    # Hard limits of the bedrock-agent-runtime Rerank API: each document text
+    # (RerankTextDocument.text) is capped at 32,000 characters, and a single
+    # request accepts at most 1,000 sources / numberOfResults.
+    _MAX_DOC_CHARS = 32000
+    _MAX_SOURCES = 1000
+
+    def __init__(self, key, model_name, **kwargs):
+        import boto3
+
+        key = json.loads(key)
+        mode = key.get("auth_mode")
+        if not mode:
+            logging.error("Bedrock auth_mode is not provided in the key")
+            raise ValueError("Bedrock auth_mode must be provided in the key")
+
+        self.bedrock_region = key.get("bedrock_region")
+        self.model_name = model_name
+        # On-demand foundation-model ARN; works for amazon.rerank-v1:0 / cohere.rerank-*.
+        self.model_arn = f"arn:aws:bedrock:{self.bedrock_region}::foundation-model/{self.model_name}"
+        # Per-document truncation guard sized to the model window. Cohere Rerank
+        # v3.5 shares a ~4k window between query and document (~2048 for docs);
+        # Amazon Rerank v1 handles 32k, but chunks are small so a generous cap
+        # just bounds pathological payloads. Bedrock also truncates internally.
+        self.doc_max_tokens = 2048 if self.model_name.split(".")[0] == "cohere" else 8192
+
+        # Rerank lives on the bedrock-agent-runtime service, not bedrock-runtime.
+        if mode == "access_key_secret":
+            self.client = boto3.client(
+                service_name="bedrock-agent-runtime",
+                region_name=self.bedrock_region,
+                aws_access_key_id=key.get("bedrock_ak"),
+                aws_secret_access_key=key.get("bedrock_sk"),
+            )
+        elif mode == "iam_role":
+            sts_client = boto3.client("sts", region_name=self.bedrock_region)
+            resp = sts_client.assume_role(RoleArn=key.get("aws_role_arn"), RoleSessionName="BedrockSession")
+            creds = resp["Credentials"]
+            self.client = boto3.client(
+                service_name="bedrock-agent-runtime",
+                region_name=self.bedrock_region,
+                aws_access_key_id=creds["AccessKeyId"],
+                aws_secret_access_key=creds["SecretAccessKey"],
+                aws_session_token=creds["SessionToken"],
+            )
+        else:  # assume_role: default AWS credential chain
+            self.client = boto3.client("bedrock-agent-runtime", region_name=self.bedrock_region)
+
+    def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
+        # Truncate to the model token window, then enforce the API's hard 32k-char
+        # per-text limit (a longer RerankTextQuery / RerankTextDocument is rejected).
+        query = query[: self._MAX_DOC_CHARS]
+        texts = [truncate(t, self.doc_max_tokens)[: self._MAX_DOC_CHARS] for t in texts]
+        # Bedrock does not report token usage; count locally like CoHereRerank.
+        token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(t) for t in texts)
+
+        rank = np.zeros(len(texts), dtype=float)
+        result_count = 0
+        started = time.perf_counter()
+        # Both `sources` and `numberOfResults` are capped at 1,000 per request;
+        # rerank in batches and map each score back to its global position.
+        for offset in range(0, len(texts), self._MAX_SOURCES):
+            batch = texts[offset : offset + self._MAX_SOURCES]
+            sources = [{"type": "INLINE", "inlineDocumentSource": {"type": "TEXT", "textDocument": {"text": t}}} for t in batch]
+            reranking_config = {
+                "type": "BEDROCK_RERANKING_MODEL",
+                "bedrockRerankingConfiguration": {
+                    "numberOfResults": len(batch),
+                    "modelConfiguration": {"modelArn": self.model_arn},
+                },
+            }
+            # Drain paginated results: the API may split a batch across nextToken pages.
+            next_token = None
+            while True:
+                request = {"queries": [{"type": "TEXT", "textQuery": {"text": query}}], "sources": sources, "rerankingConfiguration": reranking_config}
+                if next_token:
+                    request["nextToken"] = next_token
+                res = self.client.rerank(**request)
+                try:
+                    for d in res.get("results", []):
+                        rank[offset + d["index"]] = d["relevanceScore"]
+                        result_count += 1
+                except (KeyError, IndexError, TypeError) as _e:
+                    log_exception(_e, res)
+                next_token = res.get("nextToken")
+                if not next_token:
+                    break
+        # Safe diagnostics only: no query, document text or credentials.
+        logging.debug(
+            "BedrockRerank model=%s region=%s sources=%d tokens=%d results=%d elapsed=%.3fs",
+            self.model_name,
+            self.bedrock_region,
+            len(texts),
+            token_count,
+            result_count,
+            time.perf_counter() - started,
+        )
         return rank, token_count
 
 

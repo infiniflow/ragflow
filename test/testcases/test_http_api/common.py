@@ -483,12 +483,6 @@ def delete_index(auth, dataset_id, index_type, *, headers=HEADERS):
     return res.json()
 
 
-def run_embedding(auth, dataset_id, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/embedding"
-    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
-    return res.json()
-
-
 def list_tags(auth, dataset_id, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/tags"
     res = requests.get(url=url, headers=headers, auth=auth)
