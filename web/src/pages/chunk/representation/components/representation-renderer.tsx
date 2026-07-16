@@ -170,6 +170,38 @@ export function RepresentationRenderer({
           />
         </div>
       );
+    case CompilationTemplateKind.SessionGraph:
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <ArtifactForceGraph
+            data={adaptKnowledgeGraphToForceGraph(template)}
+            show
+            getNodeId={getArtifactNodeName}
+            onNodeClick={handleArtifactNodeClick}
+          />
+        </div>
+      );
+    case CompilationTemplateKind.SessionEssence:
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <MindMapG6Graph
+            template={template}
+            show
+            onNodeClick={handleMindMapNodeClick}
+          />
+        </div>
+      );
+    case CompilationTemplateKind.Empty:
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <ArtifactForceGraph
+            data={adaptKnowledgeGraphToForceGraph(template)}
+            show
+            getNodeId={getArtifactNodeName}
+            onNodeClick={handleArtifactNodeClick}
+          />
+        </div>
+      );
     default:
       return <UnsupportedPlaceholder kind={template.kind} />;
   }
