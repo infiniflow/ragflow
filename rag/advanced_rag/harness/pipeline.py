@@ -119,7 +119,10 @@ def filter_available_tools(tool_names: list[str], compilation_map: dict[str, set
             continue
         if tool.get("requires_compilation"):
             comp_type = tool.get("compilation_type")
-            if comp_type and not any(comp_type in comps for comps in compilation_map.values()):
+            # ``compilation_type`` may name one artifact or several (a tool that
+            # reads either one is available when ANY of them is compiled).
+            wanted = {comp_type} if isinstance(comp_type, str) else set(comp_type or ())
+            if wanted and not any(wanted & comps for comps in compilation_map.values()):
                 continue
         available.append(name)
     return available

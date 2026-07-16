@@ -291,8 +291,14 @@ async def web_search(tools, query: str, keywords: str = "") -> dict:
         return {"chunks": [], "doc_aggs": []}
 
 
-async def structured_query(tools, question: str, kb_ids: list[str] | None = None) -> dict:
-    _LOG.info(f'[Structured search] Querying the structured (table) data for "{question}"')
+async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[str] | None = None) -> dict:
+    """Answer from the structured (tabular) KBs by translating the query to SQL.
+
+    ``keywords`` is accepted for schema conformance but deliberately unused: the
+    query is translated to SQL rather than keyword-matched, and the rows it
+    returns are not prose to narrow.
+    """
+    _LOG.info(f'[Structured search] Querying the structured (table) data for "{query}"')
     sql_kbs = [kb for kb in tools.sql_kbs if kb_ids is None or kb.id in kb_ids]
     if not sql_kbs:
         return {"answer": "", "chunks": [], "doc_aggs": []}
@@ -301,7 +307,7 @@ async def structured_query(tools, question: str, kb_ids: list[str] | None = None
     tenant_id = sql_kbs[0].tenant_id
     sql_kb_ids = [kb.id for kb in sql_kbs]
     try:
-        ans = await use_sql(question, tools.field_map, tenant_id, tools.chat_mdl, quota=True, kb_ids=sql_kb_ids)
+        ans = await use_sql(query, tools.field_map, tenant_id, tools.chat_mdl, quota=True, kb_ids=sql_kb_ids)
     except Exception:
         _LOG.exception("structured_query failed")
         return {"answer": "", "chunks": [], "doc_aggs": []}
