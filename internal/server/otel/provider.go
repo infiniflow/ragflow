@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -77,21 +76,20 @@ type ProviderConfig struct {
 //
 // When config.OTLPEndpoint is empty the provider falls back to a stdout
 // exporter so local debugging works without an OTel collector.
-func NewTracerProvider(ctx context.Context, serviceName string) (*sdktrace.TracerProvider, error) {
+func NewTracerProvider(ctx context.Context, serviceName string, host string, port int, secure, stdout bool, sampleRatio float64) (*sdktrace.TracerProvider, error) {
 
-	ragflowConfig := server.GetConfig()
 	serviceVersion := common.GetRAGFlowVersion()
 	traceConfig := newTraceProviderConfig(
 		serviceName,
 		serviceVersion,
-		ragflowConfig.OTel.Host,
-		ragflowConfig.OTel.Port,
-		ragflowConfig.OTel.Secure,
-		ragflowConfig.OTel.SampleRatio,
+		host,
+		port,
+		secure,
+		sampleRatio,
 	)
 
 	// Short-circuit: no sampling requested → no-op provider.
-	if !ragflowConfig.OTel.Stdout || common.AlmostEqual64(traceConfig.SampleRatio, 0) {
+	if !stdout || common.AlmostEqual64(traceConfig.SampleRatio, 0) {
 		return sdktrace.NewTracerProvider(
 			sdktrace.WithSampler(sdktrace.NeverSample()),
 		), nil
@@ -106,7 +104,7 @@ func NewTracerProvider(ctx context.Context, serviceName string) (*sdktrace.Trace
 	//   1. OTLP endpoint configured → OTLP/HTTP exporter.
 	//   2. No endpoint → stdout exporter for local debugging.
 	var oTelExporter sdktrace.SpanExporter
-	if ragflowConfig.OTel.Stdout {
+	if stdout {
 		oTelExporter, err = stdouttrace.New(
 			stdouttrace.WithWriter(os.Stdout),
 			stdouttrace.WithPrettyPrint(),

@@ -71,15 +71,129 @@ def set_tenant_info():
 def _load_dify_retrieval_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
 
+    # ---- Stub all modules imported by dify_retrieval_api.py BEFORE exec_module ----
+    # 1. common and sub-modules (NO __path__ to avoid real imports)
     common_pkg = ModuleType("common")
-    common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    class _DummyRetCode:
+        SUCCESS = 0
+        ARGUMENT_ERROR = 1
+        NOT_FOUND = 2
+        SERVER_ERROR = 3
+        AUTHENTICATION_ERROR = 4
+
+    class _DummyLLMType:
+        CHAT = "chat"
+        EMBEDDING = "embedding"
+
+    common_constants_mod = ModuleType("common.constants")
+    common_constants_mod.RetCode = _DummyRetCode()
+    common_constants_mod.LLMType = _DummyLLMType()
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.retriever = None
+    common_settings_mod.kg_retriever = None
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    common_metadata_utils_mod = ModuleType("common.metadata_utils")
+    common_metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
+    common_metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_utils_mod)
+
+    # 2. quart + werkzeug (avoid heavy web framework imports)
+    qt_mod = ModuleType("quart")
+    qt_mod.jsonify = lambda *_args, **_kwargs: None
+    qt_mod.request = SimpleNamespace(method="POST", args={})
+    monkeypatch.setitem(sys.modules, "quart", qt_mod)
+
+    werkzeug_exc_mod = ModuleType("werkzeug.exceptions")
+    werkzeug_exc_mod.BadRequest = type("BadRequest", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "werkzeug.exceptions", werkzeug_exc_mod)
+
+    qt_exc_mod = ModuleType("quart.exceptions")
+    qt_exc_mod.BadRequest = type("BadRequest", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "quart.exceptions", qt_exc_mod)
+
+    # 3. api.db.services.* (avoid Peewee ORM imports)
+    api_db_svc_mod = ModuleType("api.db.services")
+    api_db_svc_mod.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.db.services", api_db_svc_mod)
+
+    class _StubDocumentService:
+        @staticmethod
+        def get_by_ids(*_args, **_kwargs):
+            return []
+
+    doc_svc_mod = ModuleType("api.db.services.document_service")
+    doc_svc_mod.DocumentService = _StubDocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", doc_svc_mod)
+
+    class _StubDocMetadataService:
+        @staticmethod
+        def get_flatted_meta_by_kbs(*_args, **_kwargs):
+            return []
+
+    doc_metadata_mod = ModuleType("api.db.services.doc_metadata_service")
+    doc_metadata_mod.DocMetadataService = _StubDocMetadataService
+    monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_mod)
+
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def get_by_id(*_args, **_kwargs):
+            return True, SimpleNamespace(tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1")
+
+        @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
+    kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
+    kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
+
+    llm_service_mod = ModuleType("api.db.services.llm_service")
+
+    class _StubLLM:
+        def __init__(self, llm_name):
+            self.llm_name = llm_name
+            self.is_tools = False
+
+    class _StubLLMBundle:
+        def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
+            self.tenant_id = tenant_id
+            self.model_config = model_config
+            self.lang = lang
+
+        def encode(self, texts: list):
+            import numpy as np
+
+            return [np.array([0.1, 0.2, 0.3]) for _ in texts], len(texts) * 10
+
+    llm_service_mod.LLMService = SimpleNamespace(query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else [])
+    llm_service_mod.LLMBundle = _StubLLMBundle
+    monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
+
+    # 4. api.utils.api_utils
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda f: f
+    api_utils_mod.build_error_result = lambda message, code: {"code": code, "message": message}
+    api_utils_mod.get_request_json = lambda: {}
+    api_utils_mod.get_json_result = lambda data=None, message="": {"data": data, "message": message}
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    # 5. rag.app.tag
+    tag_mod = ModuleType("rag.app.tag")
+    tag_mod.label_question = lambda *_args, **_kwargs: []
+    monkeypatch.setitem(sys.modules, "rag.app.tag", tag_mod)
+
+    # 6. api.apps
     api_apps_mod = ModuleType("api.apps")
     api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
     api_apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
+    # 7. deepdoc stubs (keep existing pattern)
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
     deepdoc_parser_pkg.__path__ = []
@@ -109,82 +223,7 @@ def _load_dify_retrieval_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
-    class _MockModelConfig:
-        def __init__(self, tenant_id, model_name):
-            self.tenant_id = tenant_id
-            self.llm_name = model_name
-            self.llm_factory = "Builtin"
-            self.api_key = "fake-api-key"
-            self.api_base = "https://api.example.com"
-            self.model_type = "chat"
-            self.max_tokens = 8192
-            self.used_tokens = 0
-            self.status = 1
-            self.id = 1
-
-        def to_dict(self):
-            return {
-                "tenant_id": self.tenant_id,
-                "llm_name": self.llm_name,
-                "llm_factory": self.llm_factory,
-                "api_key": self.api_key,
-                "api_base": self.api_base,
-                "model_type": self.model_type,
-                "max_tokens": self.max_tokens,
-                "used_tokens": self.used_tokens,
-                "status": self.status,
-                "id": self.id,
-            }
-
-    class _StubTenantService:
-        @staticmethod
-        def get_by_id(tenant_id):
-            return True, SimpleNamespace(
-                id=tenant_id,
-                llm_id="chat-model",
-                embd_id="embd-model",
-                asr_id="asr-model",
-                img2txt_id="img2txt-model",
-                rerank_id="rerank-model",
-                tts_id="tts-model",
-            )
-
-    class _StubTenantLLMService:
-        @staticmethod
-        def get_api_key(tenant_id, model_name):
-            return _MockModelConfig(tenant_id, model_name)
-
-        @staticmethod
-        def split_model_name_and_factory(model_name):
-            if "@" in model_name:
-                parts = model_name.split("@")
-                return parts[0], parts[1]
-            return model_name, None
-
-    llm_service_mod = ModuleType("api.db.services.llm_service")
-
-    class _StubLLM:
-        def __init__(self, llm_name):
-            self.llm_name = llm_name
-            self.is_tools = False
-
-    class _StubLLMBundle:
-        def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
-            self.tenant_id = tenant_id
-            self.model_config = model_config
-            self.lang = lang
-
-        def encode(self, texts: list):
-            import numpy as np
-
-            return [np.array([0.1, 0.2, 0.3]) for _ in texts], len(texts) * 10
-
-    llm_service_mod.LLMService = SimpleNamespace(query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else [])
-    llm_service_mod.LLMBundle = _StubLLMBundle
-    monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
-
-    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-
+    # 8. api.db.joint_services.tenant_model_service
     class _MockModelConfig2:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
@@ -236,12 +275,14 @@ def _load_dify_retrieval_module(monkeypatch):
     def _get_tenant_default_model_by_type(tenant_id: str, model_type):
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
 
+    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
+    # ---- Load the real module ----
     module_name = "test_dify_retrieval_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -319,7 +360,7 @@ def test_retrieval_kb_not_found(monkeypatch):
     assert "Knowledgebase not found" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_not_found_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})
@@ -353,6 +394,7 @@ def test_retrieval_generic_exception_mapping(monkeypatch):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(module.settings, "retriever", _BrokenRetriever())
+    monkeypatch.setattr(module.logger, "exception", lambda *args, **kwargs: None)
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
     assert res["code"] == module.RetCode.SERVER_ERROR, res

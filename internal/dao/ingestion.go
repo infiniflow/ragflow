@@ -194,6 +194,21 @@ func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.Ingesti
 	return tasks[0], nil
 }
 
+// DeleteIfTerminal deletes ingestion tasks for a document that are in a
+// terminal state (COMPLETED, STOPPED, FAILED) or still queued (CREATED).
+// RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
+// would keep writing chunks and corrupt a new run's results.
+// Returns the number of rows deleted.
+func (dao *IngestionTaskDAO) DeleteIfTerminal(documentID string) (int64, error) {
+	result := DB.Where("document_id = ? AND status NOT IN (?, ?)",
+		documentID, common.RUNNING, common.STOPPING).
+		Delete(&entity.IngestionTask{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 type IngestionTaskLogDAO struct{}
 
 func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {

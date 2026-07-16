@@ -209,8 +209,12 @@ jobs:
             api_proxy_schemes='["go","python"]'
           elif [[ "$has_go" == "true" ]]; then
             api_proxy_schemes='["go"]'
-          else
+          elif [[ "$has_python" == "true" ]]; then
             api_proxy_schemes='["python"]'
+          elif [[ "$has_web" == "true" ]]; then
+            api_proxy_schemes='["web"]'
+          else
+            api_proxy_schemes='["go","python"]'
           fi
 
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
@@ -328,11 +332,12 @@ jobs:
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
-            sudo docker pull ubuntu:24.04
+            ##sudo docker pull ubuntu:24.04
             sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
@@ -354,7 +359,14 @@ jobs:
 
           # Determine runner number (default to 1 if not found)
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
-               RUNNER_NUM=${RUNNER_NUM:-1}
+               if [[ -z "${RUNNER_NUM:-}" ]]; then
+                 # GitHub self-hosted runners always expose RUNNER_NAME; hash it to spread candidates.
+                 if [[ -n "${RUNNER_NAME:-}" ]]; then
+                   RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+                 else
+                   RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+                 fi
+               fi
 
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
@@ -366,15 +378,28 @@ jobs:
                  infinity) PARTITION_BASE=31000 ;;
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
-               PORT_LOCK_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/port-locks
-               mkdir -p "${PORT_LOCK_DIR}"
+               # Runners run inside docker containers that share the host docker daemon
+               # (/var/run/docker.sock), so neither /tmp nor `ss` can coordinate across runners:
+               # each container has its own /tmp and its own network namespace, and `ss` cannot
+               # see host ports bound by other runners' compose stacks. Use the shared daemon for
+               # both primitives:
+               #   - offset mutex = a docker network created atomically on the shared daemon
+               #     (docker network create is NOT idempotent: it fails on name conflict, which
+               #      is exactly the cross-runner test-and-set we need);
+               #   - port availability = docker ps published ports (sees every container on the
+               #     shared daemon regardless of which runner started it).
+               # No file-system sharing required, no host netns required.
+               PORT_GUARD_PREFIX=ragflow-ci-portguard
 
                port_offset_available() {
                  local offset=$1
-                 local base port
+                 local base port used
+                 # Enumerate host-published tcp ports across ALL containers on the shared daemon.
+                 # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
-                   if ss -ltnH "sport = :${port}" | grep -q .; then
+                   if grep -qx "${port}" <<< "${used}"; then
                      return 1
                    fi
                  done
@@ -382,31 +407,37 @@ jobs:
                }
 
                cleanup_stale_port_locks() {
-                 local now stale_after lock lock_ts
+                 local now stale_after net ts
                  now=$(date -u +%s)
-                 stale_after=$((6 * 60 * 60))
-                 for lock in "${PORT_LOCK_DIR}"/*.lock; do
-                   [[ -e "${lock}" ]] || continue
-                   lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
-                   if [[ "${lock_ts}" =~ ^[0-9]+$ ]] && (( now - lock_ts > stale_after )); then
-                     rm -f "${lock}"
+                 stale_after=$((2 * 60 * 60))
+                 for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
+                   ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
+                   if [[ "${ts}" =~ ^[0-9]+$ ]] && (( now - ts > stale_after )); then
+                     sudo docker network rm "${net}" >/dev/null 2>&1 || true
                    fi
                  done
                }
 
                reserve_port_offset() {
-                 local attempt candidate reservation
+                 local attempt candidate guard
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 59); do
+                 for attempt in $(seq 0 5999); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
-                   reservation="${PORT_LOCK_DIR}/${candidate}.lock"
-                   if ( set -o noclobber; echo "${GITHUB_RUN_ID} ${DOC_ENGINE} $(date -u +%s)" > "${reservation}" ) 2>/dev/null; then
-                     if port_offset_available "${candidate}"; then
-                       PORT_OFFSET=${candidate}
-                       PORT_RESERVATION=${reservation}
-                       return 0
-                     fi
-                     rm -f "${reservation}"
+                   guard="${PORT_GUARD_PREFIX}-${candidate}"
+                   # Already held by some runner on this shared daemon.
+                   if sudo docker network inspect "${guard}" >/dev/null 2>&1; then
+                     continue
+                   fi
+                   if ! port_offset_available "${candidate}"; then
+                     continue
+                   fi
+                   # Atomic cross-runner test-and-set: docker network create fails if the name
+                   # already exists on the shared daemon, so even if two runners race here, only
+                   # one wins; the loser retries the next candidate.
+                   if sudo docker network create --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                     PORT_OFFSET=${candidate}
+                     PORT_RESERVATION="${guard}"
+                     return 0
                    fi
                  done
                  return 1
@@ -517,6 +548,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run New RESTFUL api tests against Infinity
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -710,7 +742,9 @@ jobs:
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
           if [[ -n ${PORT_RESERVATION:-} ]]; then
-            rm -f "${PORT_RESERVATION}"
+            # PORT_RESERVATION is now a docker network name on the shared daemon (created by the
+            # prepare step as a cross-runner port-offset mutex). Remove it to free the offset.
+            sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
           fi
 
 
@@ -808,11 +842,12 @@ jobs:
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
-            sudo docker pull ubuntu:24.04
+            ##sudo docker pull ubuntu:24.04
             sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
@@ -834,7 +869,14 @@ jobs:
 
           # Determine runner number (default to 1 if not found)
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
-               RUNNER_NUM=${RUNNER_NUM:-1}
+               if [[ -z "${RUNNER_NUM:-}" ]]; then
+                 # GitHub self-hosted runners always expose RUNNER_NAME; hash it to spread candidates.
+                 if [[ -n "${RUNNER_NAME:-}" ]]; then
+                   RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+                 else
+                   RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+                 fi
+               fi
 
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
@@ -846,15 +888,28 @@ jobs:
                  infinity) PARTITION_BASE=31000 ;;
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
-               PORT_LOCK_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/port-locks
-               mkdir -p "${PORT_LOCK_DIR}"
+               # Runners run inside docker containers that share the host docker daemon
+               # (/var/run/docker.sock), so neither /tmp nor `ss` can coordinate across runners:
+               # each container has its own /tmp and its own network namespace, and `ss` cannot
+               # see host ports bound by other runners' compose stacks. Use the shared daemon for
+               # both primitives:
+               #   - offset mutex = a docker network created atomically on the shared daemon
+               #     (docker network create is NOT idempotent: it fails on name conflict, which
+               #      is exactly the cross-runner test-and-set we need);
+               #   - port availability = docker ps published ports (sees every container on the
+               #     shared daemon regardless of which runner started it).
+               # No file-system sharing required, no host netns required.
+               PORT_GUARD_PREFIX=ragflow-ci-portguard
 
                port_offset_available() {
                  local offset=$1
-                 local base port
+                 local base port used
+                 # Enumerate host-published tcp ports across ALL containers on the shared daemon.
+                 # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
-                   if ss -ltnH "sport = :${port}" | grep -q .; then
+                   if grep -qx "${port}" <<< "${used}"; then
                      return 1
                    fi
                  done
@@ -862,31 +917,37 @@ jobs:
                }
 
                cleanup_stale_port_locks() {
-                 local now stale_after lock lock_ts
+                 local now stale_after net ts
                  now=$(date -u +%s)
-                 stale_after=$((6 * 60 * 60))
-                 for lock in "${PORT_LOCK_DIR}"/*.lock; do
-                   [[ -e "${lock}" ]] || continue
-                   lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
-                   if [[ "${lock_ts}" =~ ^[0-9]+$ ]] && (( now - lock_ts > stale_after )); then
-                     rm -f "${lock}"
+                 stale_after=$((2 * 60 * 60))
+                 for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
+                   ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
+                   if [[ "${ts}" =~ ^[0-9]+$ ]] && (( now - ts > stale_after )); then
+                     sudo docker network rm "${net}" >/dev/null 2>&1 || true
                    fi
                  done
                }
 
                reserve_port_offset() {
-                 local attempt candidate reservation
+                 local attempt candidate guard
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 59); do
+                 for attempt in $(seq 0 5999); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
-                   reservation="${PORT_LOCK_DIR}/${candidate}.lock"
-                   if ( set -o noclobber; echo "${GITHUB_RUN_ID} ${DOC_ENGINE} $(date -u +%s)" > "${reservation}" ) 2>/dev/null; then
-                     if port_offset_available "${candidate}"; then
-                       PORT_OFFSET=${candidate}
-                       PORT_RESERVATION=${reservation}
-                       return 0
-                     fi
-                     rm -f "${reservation}"
+                   guard="${PORT_GUARD_PREFIX}-${candidate}"
+                   # Already held by some runner on this shared daemon.
+                   if sudo docker network inspect "${guard}" >/dev/null 2>&1; then
+                     continue
+                   fi
+                   if ! port_offset_available "${candidate}"; then
+                     continue
+                   fi
+                   # Atomic cross-runner test-and-set: docker network create fails if the name
+                   # already exists on the shared daemon, so even if two runners race here, only
+                   # one wins; the loser retries the next candidate.
+                   if sudo docker network create --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                     PORT_OFFSET=${candidate}
+                     PORT_RESERVATION="${guard}"
+                     return 0
                    fi
                  done
                  return 1
@@ -997,6 +1058,7 @@ jobs:
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-es-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run New RESTFUL api tests against Elasticsearch
+        if: env.API_PROXY_SCHEME != 'web'
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
@@ -1185,5 +1247,7 @@ jobs:
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
           if [[ -n ${PORT_RESERVATION:-} ]]; then
-            rm -f "${PORT_RESERVATION}"
+            # PORT_RESERVATION is now a docker network name on the shared daemon (created by the
+            # prepare step as a cross-runner port-offset mutex). Remove it to free the offset.
+            sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
           fi

@@ -32,13 +32,13 @@ import (
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
-	tracer "ragflow/internal/server/otel"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -249,7 +249,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -327,7 +327,7 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
-	if err = common.Init(logLevel, fileOut); err != nil {
+	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
@@ -370,11 +370,11 @@ func main() {
 	}
 
 	ctx := context.Background()
-	traceProvider, err := tracer.NewTracerProvider(ctx, serverName)
-	if err != nil {
-		common.Fatal("failed to init tracer", zap.Error(err))
+	if err = server.StartServer(ctx, serverName); err != nil {
+		common.Error("Failed to start EE server", err)
+		os.Exit(1)
 	}
-	defer traceProvider.Shutdown(ctx)
+	defer server.ShutdownServer(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName
@@ -496,7 +496,7 @@ func runIngestor(args *serverArgs) error {
 	}
 	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, int32(runtime.NumCPU()), []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()
@@ -805,6 +805,7 @@ func startServer(config *server.Config) {
 	)
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
+	pipelineHandler := handler.NewPipelineHandler()
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -835,7 +836,8 @@ func startServer(config *server.Config) {
 		fileCommitHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler)
+		componentsHandler,
+		pipelineHandler)
 
 	// Create Gin enginegit diff
 

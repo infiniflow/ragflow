@@ -175,8 +175,7 @@ func IsZeroVector(v []float64) bool {
 	return true
 }
 
-const epsilon = 1e-9
-
 func AlmostEqual64(a, b float64) bool {
+	const epsilon = 1e-9
 	return math.Abs(a-b) <= epsilon
 }

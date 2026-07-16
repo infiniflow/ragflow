@@ -285,6 +285,21 @@ services:
       timeout: 10s
       retries: 30
 
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
+
   tei-cpu:
     profiles:
       - tei-cpu
