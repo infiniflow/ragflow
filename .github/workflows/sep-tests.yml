@@ -15,7 +15,7 @@ on:
   # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
   # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [synchronize, labeled]
     paths-ignore:
       - 'docs/**'
       - '*.md'
