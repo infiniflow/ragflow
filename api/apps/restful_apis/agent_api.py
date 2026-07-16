@@ -845,7 +845,6 @@ async def create_agent(tenant_id):
 
 
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
-@login_required
 @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
