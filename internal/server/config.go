@@ -54,6 +54,7 @@ type Config struct {
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
 	OTel             OtelConfig             `mapstructure:"otel"`
+	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
 }
 
 // AdminConfig admin server configuration
@@ -90,7 +91,14 @@ type OtelConfig struct {
 	Stdout      bool    `mapstructure:"stdout"`
 }
 
-// UserDefaultLLMConfig user default LLM configuration
+type ClickhouseConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	Database string `mapstructure:"database"`
+}
+
 type UserDefaultLLMConfig struct {
 	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
 }
@@ -427,13 +435,17 @@ func Init(configPath string) error {
 			}
 			delete(configDict, "message_queue_type")
 		case "nats":
-			host := getString(configDict, "host")
-			port := getInt(configDict, "port")
 			configDict["id"] = id
 			configDict["name"] = "nats"
-			configDict["host"] = host
-			configDict["port"] = port
 			configDict["service_type"] = "message_queue"
+		case "otel":
+			configDict["id"] = id
+			configDict["name"] = "jaeger"
+			configDict["service_type"] = "tracing"
+		case "clickhouse":
+			configDict["id"] = id
+			configDict["name"] = "clickhouse"
+			configDict["service_type"] = "olap"
 		case "admin":
 			// Skip admin section
 			continue

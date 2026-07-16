@@ -63,6 +63,12 @@ redis:
 nats:
   host: ${NATS_HOST:-0.0.0.0}
   port: ${NATS_PORT:-4222}
+clickhouse:
+  host: '${CLICKHOUSE_HOST:-clickhouse}'
+  port: ${CLICKHOUSE_TCP_PORT:-9000}
+  user: '${CLICKHOUSE_USER:-ragflow}'
+  password: '${CLICKHOUSE_PASSWORD:-infini_rag_flow}'
+  database: '${CLICKHOUSE_DATABASE:-ragflow}'
 otel:
   host: ${OTEL_HOST:-0.0.0.0}
   port: ${OTEL_PORT:-4318}
