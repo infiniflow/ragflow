@@ -1922,6 +1922,9 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	}
 
 	if err = d.kbDAO.Create(kb); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", name)
+		}
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
@@ -2278,6 +2281,12 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 
 	if len(updates) > 0 {
 		if err = d.kbDAO.UpdateByID(kb.ID, updates); err != nil {
+			if dao.IsDuplicateKeyErr(err) {
+				if nameValue, ok := updates["name"].(string); ok {
+					return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", nameValue)
+				}
+				return nil, common.CodeDataError, errors.New("Dataset name already exists")
+			}
 			return nil, common.CodeServerError, errors.New("Update dataset error.(Database error)")
 		}
 	}

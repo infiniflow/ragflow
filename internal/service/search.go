@@ -17,15 +17,12 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"strings"
-
-	"gorm.io/gorm"
 )
 
 // SearchService search service
@@ -341,14 +338,7 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 
 // AccessibleForCompletion check if it is accessible
 func (s *SearchService) AccessibleForCompletion(userID string, searchID string) (bool, error) {
-	ok, err := s.searchDAO.Accessible4Deletion(searchID, userID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return ok, nil
+	return s.searchDAO.Accessible4Deletion(searchID, userID)
 }
 
 type SearchCompletionPlan struct {
@@ -568,7 +558,10 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 	// Only creator can update. A missing or non-owned search is treated as
 	// unauthorized so the contract returns a clear "no authorization" error.
 
-	accessible, _ := s.searchDAO.Accessible4Deletion(searchID, userID)
+	accessible, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
+	}
 	if !accessible {
 		return nil, fmt.Errorf("no authorization")
 	}

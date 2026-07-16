@@ -48,6 +48,11 @@ func IsNotFoundErr(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
+// IsDuplicateKeyErr returns true if the error is a unique-constraint violation.
+func IsDuplicateKeyErr(err error) bool {
+	return errors.Is(err, gorm.ErrDuplicatedKey)
+}
+
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
