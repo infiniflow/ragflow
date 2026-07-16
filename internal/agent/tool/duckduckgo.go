@@ -18,33 +18,44 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"html"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	xhtml "golang.org/x/net/html"
+
+	"ragflow/internal/tokenizer"
 )
 
-const duckduckgoToolName = "duckduckgo"
+const duckduckgoToolName = "duckduckgo_search"
 
 const duckduckgoToolDescription = "Search DuckDuckGo web or news results. Returns results[].{title, url, body}."
 
 const duckduckgoChannelGeneral = "general"
 const duckduckgoChannelNews = "news"
 
+const duckduckgoPromptMaxTokens = 200000
+
 var duckduckgoSearchEndpoint = "https://duckduckgo.com/html/"
 var duckduckgoNewsEndpoint = "https://duckduckgo.com/news.js"
 var duckduckgoNewsBootstrapEndpoint = "https://duckduckgo.com/"
 
 var duckduckgoVQDPattern = regexp.MustCompile(`vqd="([^"]+)"`)
+
+var duckduckgoDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
+
+var duckduckgoNewlinePattern = regexp.MustCompile(`\n+`)
 
 type duckduckgoParams struct {
 	Query   string `json:"query"`
@@ -74,18 +85,32 @@ type duckduckgoNewsItem struct {
 }
 
 type DuckDuckGoTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults duckduckgoParams
 }
 
+var _ ToolComponent = (*DuckDuckGoTool)(nil)
+var _ ReferenceBuilder = (*DuckDuckGoTool)(nil)
+
 func NewDuckDuckGoTool() *DuckDuckGoTool {
-	return NewDuckDuckGoToolWith(NewHTTPHelper())
+	return newDuckDuckGoTool(nil, duckduckgoParams{})
 }
 
 func NewDuckDuckGoToolWith(h *HTTPHelper) *DuckDuckGoTool {
+	return newDuckDuckGoTool(h, duckduckgoParams{})
+}
+
+func newDuckDuckGoTool(h *HTTPHelper, defaults duckduckgoParams) *DuckDuckGoTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &DuckDuckGoTool{helper: h}
+	if defaults.TopN == 0 {
+		defaults.TopN = 10
+	}
+	if defaults.Channel == "" {
+		defaults.Channel = duckduckgoChannelGeneral
+	}
+	return &DuckDuckGoTool{helper: h, defaults: defaults}
 }
 
 func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -105,6 +130,26 @@ func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 		}),
 	}, nil
+}
+
+func (d *DuckDuckGoTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query":   "Search query.",
+			"channel": "Search channel: general or news.",
+			"top_n":   "Maximum number of results.",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered DuckDuckGo references for downstream prompts.",
+			"json":               "DuckDuckGo result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{"name": "Query", "type": "line"},
+			"channel": map[string]any{
+				"name": "Channel", "type": "options", "value": "general", "options": []string{"general", "news"},
+			},
+		},
+	}
 }
 
 func buildDuckDuckGoSearchURL(query string, topN int) string {
@@ -156,9 +201,9 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 			fmt.Errorf("duckduckgo: parse arguments: %w", err)
 	}
 	if strings.TrimSpace(p.Query) == "" {
-		return duckduckgoErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("duckduckgo: query is required")
+		return duckduckgoJSON(duckduckgoEnvelope{Results: []duckduckgoResult{}}), nil
 	}
+	p = mergeDuckDuckGoParams(d.defaults, p)
 
 	channel := normalizeDuckDuckGoChannel(p.Channel)
 	topN := p.TopN
@@ -193,6 +238,106 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 			fmt.Errorf("duckduckgo: parse html: %w", err)
 	}
 	return duckduckgoJSON(duckduckgoEnvelope{Results: results}), nil
+}
+
+func mergeDuckDuckGoParams(defaults, params duckduckgoParams) duckduckgoParams {
+	if params.Channel == "" {
+		params.Channel = defaults.Channel
+	}
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	return params
+}
+
+func (d *DuckDuckGoTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildDuckDuckGoReferences(envelope)
+}
+
+func (d *DuckDuckGoTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildDuckDuckGoReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderDuckDuckGoReferences(chunks, duckduckgoPromptMaxTokens),
+		"json":               results,
+	}
+}
+
+func buildDuckDuckGoReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := duckduckgoDataImagePattern.ReplaceAllString(duckduckgoText(item["body"]), "")
+		content = truncateDuckDuckGoRunes(content, 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(duckduckgoHashInt(content, 100000000), 10)
+		displayID := strconv.FormatInt(duckduckgoHashInt(documentID, 500), 10)
+		title := duckduckgoText(item["title"])
+		resultURL := duckduckgoText(item["url"])
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{"doc_name": title, "doc_id": documentID, "count": 1, "url": resultURL})
+	}
+	return chunks, docAggs
+}
+
+func renderDuckDuckGoReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := duckduckgoText(chunk["content"])
+		usedTokens += tokenizer.NumTokensFromString(content)
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + duckduckgoText(chunk["id"]),
+			"├── Title: " + duckduckgoNewlinePattern.ReplaceAllString(duckduckgoText(chunk["document_name"]), " "),
+			"├── URL: " + duckduckgoNewlinePattern.ReplaceAllString(duckduckgoText(chunk["url"]), " "),
+			"└── Content:\n" + content,
+		}, "\n"))
+		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+			break
+		}
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func duckduckgoText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func duckduckgoHashInt(value string, modulus int64) int64 {
+	digest := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(digest[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateDuckDuckGoRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN int) (string, error) {
