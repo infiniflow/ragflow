@@ -20,7 +20,7 @@ async def orchestrator_loop(state: dict, tools) -> dict:
     mode_label = route.thinking_mode if isinstance(route, dict) else route.thinking_mode
     mode = get_mode(mode_label)
 
-    _LOG.info("[orchestrator] strategy=%s mode=%s", mode.execution_strategy, mode_label)
+    _LOG.info("[Orchestrator] Researching with the \"%s\" approach (%s thinking).", mode.execution_strategy, mode_label)
 
     if mode.execution_strategy == "direct_search":
         return await direct_search(state, tools)
