@@ -578,6 +578,7 @@ def list_provider_instances(tenant_id: str, provider_id_or_name: str):
     if not instance_objs:
         return True, []
     instances = []
+    instance_objs.sort(key=lambda x: x.create_time, reverse=True)
     for instance_obj in instance_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
         instances.append(
