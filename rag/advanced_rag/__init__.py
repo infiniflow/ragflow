@@ -15,6 +15,17 @@
 #
 
 from .tree_structured_query_decomposition_retrieval import TreeStructuredQueryDecompositionRetrieval as DeepResearcher
+from .harness.config import THINKING_MODES, get_mode
+from .harness.types import RouteDecision, ExecutionStrategy, ClaimTarget, WorkflowPlan, SufficiencyVerdict
 
 
-__all__ = ["DeepResearcher"]
+__all__ = [
+    "DeepResearcher",
+    "THINKING_MODES",
+    "get_mode",
+    "RouteDecision",
+    "ExecutionStrategy",
+    "ClaimTarget",
+    "WorkflowPlan",
+    "SufficiencyVerdict",
+]

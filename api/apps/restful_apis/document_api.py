@@ -287,11 +287,6 @@ async def update_document(tenant_id, dataset_id, document_id):
     elif parser_config_template_group_changed:
         if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
             return error
-    else:
-        # Direct-parser updates do not carry a pipeline_id. Clear any stale
-        # pipeline selection and its generated document-store data.
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
-            return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
         # "enabled" flag provided, the update method will check if it's changed and then update if so

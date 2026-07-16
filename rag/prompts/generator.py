@@ -968,6 +968,23 @@ async def sufficiency_check(chat_mdl, question: str, ret_content: str):
     return {}
 
 
+SUFFICIENCY_SELECT = load_prompt("sufficiency_select")
+
+
+async def sufficiency_select(chat_mdl, question: str, ret_content: str):
+    """Sufficiency judgement that also returns the IDs of the useful chunks.
+
+    ``ret_content`` must label each chunk with an ``ID: n`` marker (as
+    :func:`kb_prompt` does). Returns a dict with ``is_sufficient``,
+    ``reasoning``, ``missing_information`` and ``useful_chunk_ids``.
+    """
+    try:
+        return await gen_json(PROMPT_JINJA_ENV.from_string(SUFFICIENCY_SELECT).render(question=question, retrieved_docs=ret_content), "Output:\n", chat_mdl)
+    except Exception as e:
+        logging.exception(e)
+    return {}
+
+
 MULTI_QUERIES_GEN = load_prompt("multi_queries_gen")
 
 

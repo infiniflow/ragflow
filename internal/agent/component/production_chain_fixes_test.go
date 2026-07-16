@@ -59,12 +59,8 @@ func (s *codeExecSandboxRecorder) ExecuteCode(_ context.Context, req agenttool.S
 // host/port/password/top_n, no db_type) into the tool's required shape
 // (db_type/database/username/host/port/password/max_records).
 //
-// Without the translator, NewExeSQLConnParams would reject the v1
-// shape with "missing required connection params (db_type/host/
-// database/username)" and every legacy v1 ExeSQL canvas would fail
-// at buildNodeBody time. With the translator in place, the v1 shape
-// compiles cleanly (db_type defaults to "mysql"; port is coerced from
-// float64; top_n is mapped to max_records).
+// The tool factory accepts the v1 shape directly: db_type defaults to mysql,
+// JSON numeric ports are accepted, and top_n becomes max_records.
 func TestExeSQL_V1DSLParamsAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -90,39 +86,8 @@ func TestExeSQL_V1DSLParamsAccepted(t *testing.T) {
 		t.Errorf("ExeSQL c.Name() = %q, want %q", got, componentNameExeSQL)
 	}
 
-	// translateExeSQLParamsToToolShape should also be directly
-	// testable as a pure function: the same shape, the same result.
-	got := translateExeSQLParamsToToolShape(v1Params)
-	if got["db_type"] != "mysql" {
-		t.Errorf("translated db_type = %v, want %q", got["db_type"], "mysql")
-	}
-	if v, ok := got["port"].(int); !ok || v != 3306 {
-		t.Errorf("translated port = %v (%T), want int 3306", got["port"], got["port"])
-	}
-	if v, ok := got["max_records"].(int); !ok || v != 50 {
-		t.Errorf("translated max_records = %v (%T), want int 50", got["max_records"], got["max_records"])
-	}
-	if _, ok := got["top_n"]; ok {
-		t.Errorf("translated map should drop top_n (mapped to max_records)")
-	}
-
-	// Idempotency: a second pass must not double-default.
-	got2 := translateExeSQLParamsToToolShape(got)
-	if got2["db_type"] != "mysql" {
-		t.Errorf("idempotent db_type = %v, want %q", got2["db_type"], "mysql")
-	}
-	if v, ok := got2["port"].(int); !ok || v != 3306 {
-		t.Errorf("idempotent port = %v (%T), want int 3306", got2["port"], got2["port"])
-	}
-
-	// Explicit override wins: passing db_type=postgres must be
-	// preserved through the translator.
-	override := translateExeSQLParamsToToolShape(map[string]any{
-		"db_type": "postgres",
-		"host":    "10.0.0.1",
-	})
-	if override["db_type"] != "postgres" {
-		t.Errorf("override db_type = %v, want %q", override["db_type"], "postgres")
+	if _, ok := c.(*ToolBackedComponent); !ok {
+		t.Fatalf("New(ExeSQL) returned %T, want *ToolBackedComponent", c)
 	}
 }
 
@@ -623,6 +588,52 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 	}
 	if got := out["result"]; got != float64(16) {
 		t.Fatalf("CodeExec result = %v, want 16", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   "532",
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(num):\n" +
+			"    return num\n",
+		"arguments": map[string]any{
+			"num": "sys.query",
+		},
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "String",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
+	state.Sys["query"] = "532"
+	ctx := runtime.WithState(context.Background(), state)
+	out, err := c.Invoke(ctx, nil)
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := recorder.req.Arguments["num"]; got != "532" {
+		t.Fatalf("sandbox arguments[num] = %#v, want \"532\"", got)
+	}
+	if got := out["result"]; got != "532" {
+		t.Fatalf("CodeExec result = %v, want 532", got)
 	}
 }
 
