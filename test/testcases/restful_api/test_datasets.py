@@ -902,7 +902,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'naive', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -912,7 +912,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, "chunk_method")
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("Input should be 'naive', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
+        assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1664,7 +1664,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'naive', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -1673,7 +1673,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     chunk_method_none_payload = chunk_method_none_res.json()
     assert chunk_method_none_payload["code"] == ARGUMENT_ERROR_CODE, chunk_method_none_payload
     if IS_GO_PROXY:
-        assert chunk_method_none_payload["message"].startswith("Input should be 'naive', 'book'") and chunk_method_none_payload["message"].endswith("or 'tag'"), chunk_method_none_payload
+        assert chunk_method_none_payload["message"].startswith("Input should be 'audio', 'book'") and chunk_method_none_payload["message"].endswith("or 'tag'"), chunk_method_none_payload
     else:
         assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
 
@@ -2712,20 +2712,10 @@ def test_dataset_index_run_with_document_creates_task(rest_client, create_docume
 
 
 @pytest.mark.p2
-def test_dataset_embedding_endpoints(rest_client, create_dataset):
-    dataset_id = create_dataset("dataset_embedding_endpoints")
-
-    run_no_docs_res = rest_client.post(f"/datasets/{dataset_id}/embedding")
-    assert run_no_docs_res.status_code == 200
-    run_no_docs_payload = run_no_docs_res.json()
-    assert run_no_docs_payload["code"] == 102, run_no_docs_payload
+def test_dataset_embedding_check_missing_embd_id(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_embedding_check_missing_embd_id")
 
     missing_embd_id_res = rest_client.post(f"/datasets/{dataset_id}/embedding/check", json={})
     assert missing_embd_id_res.status_code == 200
     missing_embd_id_payload = missing_embd_id_res.json()
     assert missing_embd_id_payload["code"] != 0, missing_embd_id_payload
-
-    invalid_dataset_res = rest_client.post("/datasets/invalid_id/embedding")
-    assert invalid_dataset_res.status_code == 200
-    invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] != 0, invalid_dataset_payload

@@ -917,7 +917,7 @@ class DocumentService(CommonService):
             info["run"] = TaskStatus.RUNNING.value
             # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
 
-        cls.update_by_id(doc_id, info)
+        cls.model.update(info).where((cls.model.id == doc_id) & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))).execute()
 
     @classmethod
     @DB.connection_context()
