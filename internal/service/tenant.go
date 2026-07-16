@@ -699,6 +699,24 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 		return err
 	}
 
+	// Static bypass: deepdoc is a built-in model that doesn't need DB checks (mirrors Python _check_model_available).
+	if providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return nil
+	}
+
+	// Static bypass: OCR with infiniflow@default@deepdoc is always enabled (mirrors Python _check_model_available).
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return nil
+	}
+
+	// Static bypass: TEI Builtin embedding model when COMPOSE_PROFILES includes tei- (mirrors Python _check_model_available).
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if modelType == "embedding" && strings.Contains(composeProfiles, "tei-") && teiModel != "" &&
+		modelName == teiModel && (providerName == "" || providerName == "Builtin") {
+		return nil
+	}
+
 	// Check if the provider and instance exists
 	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
