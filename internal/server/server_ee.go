@@ -16,7 +16,12 @@
 
 package server
 
-import "errors"
+import (
+	"context"
+	"errors"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
 
 var serverEE *EEServer
 
@@ -25,20 +30,22 @@ func init() {
 }
 
 type EEServer struct {
+	tracerProvider *sdktrace.TracerProvider
 }
 
 func newEEServer() *EEServer {
 	return &EEServer{}
 }
 
-func StartServer() error {
+func StartServer(ctx context.Context, serverName string) error {
 	if serverEE == nil {
 		return errors.New("server EE is nil")
 	}
+
 	return nil
 }
 
-func ShutdownServer() error {
+func ShutdownServer(ctx context.Context) error {
 	if serverEE == nil {
 		return errors.New("server EE is nil")
 	}

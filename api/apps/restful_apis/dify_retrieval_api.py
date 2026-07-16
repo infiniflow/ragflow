@@ -308,7 +308,7 @@ async def retrieval(tenant_id):
     except Exception as e:
         if "not_found" in str(e):
             return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
-        logging.exception(e)
+        logger.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 

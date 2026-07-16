@@ -57,16 +57,6 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
-	// Create skill search tables
-	if err := migrateSkillSearchTables(db); err != nil {
-		return fmt.Errorf("failed to migrate skill search tables: %w", err)
-	}
-
-	// Create skill space tables
-	if err := migrateSkillSpaceTables(db); err != nil {
-		return fmt.Errorf("failed to migrate skill space tables: %w", err)
-	}
-
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
@@ -92,7 +82,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 	if idColumnExists > 0 {
 		// Check if id is already a primary key with auto_increment
 		var count int64
-		err := db.Raw(`
+		err = db.Raw(`
 			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_NAME = 'tenant_llm'
 			AND COLUMN_NAME = 'id'
@@ -116,7 +106,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
 		if tempIdExists > 0 {
-			if err := tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
+			if err = tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
 				common.Warn("Failed to drop temp_id column", zap.Error(err))
 			}
 		}
@@ -124,7 +114,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		// Check if there's already an 'id' column
 		if idColumnExists > 0 {
 			// Modify existing id column to be auto_increment primary key
-			if err := tx.Exec(`
+			if err = tx.Exec(`
 				ALTER TABLE tenant_llm
 				MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY
 			`).Error; err != nil {
@@ -132,7 +122,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 			}
 		} else {
 			// Add id column as auto_increment primary key
-			if err := tx.Exec(`
+			if err = tx.Exec(`
 				ALTER TABLE tenant_llm
 				ADD COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
 			`).Error; err != nil {
@@ -145,7 +135,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 			WHERE TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
 		if idxExists == 0 {
-			if err := tx.Exec(`
+			if err = tx.Exec(`
 				ALTER TABLE tenant_llm
 				ADD UNIQUE INDEX idx_tenant_llm_unique (tenant_id, llm_factory, llm_name)
 			`).Error; err != nil {
@@ -273,7 +263,7 @@ func modifyColumnTypes(db *gorm.DB) error {
 		return count > 0
 	}
 
-	// dialog.top_k: ensure it's INTEGER with default 1024
+	// dialog.top_k: ensure its INTEGER with default 1024
 	if db.Migrator().HasTable("dialog") && columnExists("dialog", "top_k") {
 		if err := db.Exec(`ALTER TABLE dialog MODIFY COLUMN top_k BIGINT NOT NULL DEFAULT 1024`).Error; err != nil {
 			common.Warn("Failed to modify dialog.top_k", zap.Error(err))
@@ -282,7 +272,7 @@ func modifyColumnTypes(db *gorm.DB) error {
 
 	// tenant_llm.api_key: ensure it's TEXT type
 	if db.Migrator().HasTable("tenant_llm") && columnExists("tenant_llm", "api_key") {
-		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key LONGTEXT`).Error; err != nil {
+		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key VARCHAR(8192)`).Error; err != nil {
 			common.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
 		}
 	}

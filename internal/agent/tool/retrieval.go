@@ -55,10 +55,14 @@ const retrievalToolDescription = "This tool can be utilized for relevant content
 // accept both `query` (canonical) and `dataset_ids` / `use_kg` etc. to
 // match the Python ToolMeta field set.
 type retrievalArgs struct {
-	Query      string   `json:"query"`
-	DatasetIDs []string `json:"dataset_ids,omitempty"`
-	TopN       int      `json:"top_n,omitempty"`
-	UseKG      bool     `json:"use_kg,omitempty"`
+	Query                    string   `json:"query"`
+	DatasetIDs               []string `json:"dataset_ids,omitempty"`
+	KBIDs                    []string `json:"kb_ids,omitempty"`
+	TopN                     int      `json:"top_n,omitempty"`
+	TopK                     int      `json:"top_k,omitempty"`
+	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
+	UseKG                    bool     `json:"use_kg,omitempty"`
+	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -86,12 +90,23 @@ type chunkPayload struct {
 // dispatches to the registered RetrievalService via
 // SetRetrievalService. When no service is registered, the call
 // surfaces ErrRetrievalServiceMissing.
-type RetrievalTool struct{}
+type RetrievalTool struct {
+	defaults retrievalArgs
+}
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
 // tool.InvokableTool interface.
 func NewRetrievalTool() *RetrievalTool {
-	return &RetrievalTool{}
+	return NewRetrievalToolWithDefaults(retrievalArgs{})
+}
+
+// NewRetrievalToolWithDefaults returns a RetrievalTool with node-level
+// defaults from the Agent tool configuration.
+func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
+	if len(defaults.DatasetIDs) == 0 && len(defaults.KBIDs) != 0 {
+		defaults.DatasetIDs = append([]string(nil), defaults.KBIDs...)
+	}
+	return &RetrievalTool{defaults: defaults}
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
@@ -111,14 +126,34 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "Optional list of dataset IDs to restrict the search to.",
 				Required: false,
 			},
+			"kb_ids": {
+				Type:     schema.Array,
+				Desc:     "Optional list of knowledge base IDs to restrict the search to.",
+				Required: false,
+			},
 			"top_n": {
 				Type:     schema.Integer,
 				Desc:     "Number of top chunks to return. Defaults to 8 if omitted.",
 				Required: false,
 			},
+			"top_k": {
+				Type:     schema.Integer,
+				Desc:     "Maximum candidate chunks retrieved before final top_n trimming.",
+				Required: false,
+			},
+			"keywords_similarity_weight": {
+				Type:     schema.Number,
+				Desc:     "Keyword similarity weight in [0,1]; vector similarity weight is 1 - this value.",
+				Required: false,
+			},
 			"use_kg": {
 				Type:     schema.Boolean,
 				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
+				Required: false,
+			},
+			"similarity_threshold": {
+				Type:     schema.Number,
+				Desc:     "Minimum similarity threshold for dataset retrieval.",
 				Required: false,
 			},
 		}),
@@ -136,10 +171,13 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			return "", fmt.Errorf("retrieval: parse arguments: %w", err)
 		}
 	}
+	args = r.mergeDefaults(args)
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
 		zap.Int("top_n", args.TopN),
+		zap.Int("top_k", args.TopK),
+		zap.Float64p("keywords_similarity_weight", args.KeywordsSimilarityWeight),
 		zap.Bool("use_kg", args.UseKG),
 	)
 
@@ -159,14 +197,14 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// dev), the chunks flow through normally.
 	svc := GetRetrievalService()
 	chunks, err := svc.Search(ctx, RetrievalRequest{
-		Query:          args.Query,
-		DatasetIDs:     args.DatasetIDs,
-		TopN:           args.TopN,
-		UseKG:          args.UseKG,
-		UseRerank:      false, // future enhancement
-		RerankID:       "",
-		TOCEnhance:     false, // future enhancement
-		MetadataFilter: nil,   // future enhancement
+		Query:                    args.Query,
+		DatasetIDs:               args.DatasetIDs,
+		TopN:                     args.TopN,
+		TopK:                     args.TopK,
+		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
+		UseKG:                    args.UseKG,
+		SimilarityThreshold:      args.SimilarityThreshold,
+		TenantID:                 retrievalTenantID(ctx),
 	})
 	if err != nil {
 		return stubJSON(retrievalResult{
@@ -198,22 +236,36 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// best-effort — when the canvas state is not
 	// attached (e.g. unit tests), we skip silently.
 	if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil && len(chunks) > 0 {
-		asMap := make([]map[string]any, 0, len(chunks))
-		for _, c := range chunks {
-			asMap = append(asMap, map[string]any{
-				"id":          c.ID,
-				"content":     c.Content,
-				"document_id": c.DocumentID,
-				"score":       c.Score,
-			})
-		}
-		state.SetRetrievalChunks(asMap)
+		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
 	}
 	result, err := stubJSONWithErr(out)
 	if err != nil {
 		return "", err
 	}
 	return result, nil
+}
+
+func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
+	if len(args.DatasetIDs) == 0 && len(args.KBIDs) != 0 {
+		args.DatasetIDs = append([]string(nil), args.KBIDs...)
+	}
+	if len(args.DatasetIDs) == 0 && len(r.defaults.DatasetIDs) != 0 {
+		args.DatasetIDs = append([]string(nil), r.defaults.DatasetIDs...)
+	}
+	if args.TopN <= 0 {
+		args.TopN = r.defaults.TopN
+	}
+	if args.TopK <= 0 {
+		args.TopK = r.defaults.TopK
+	}
+	if args.KeywordsSimilarityWeight == nil {
+		args.KeywordsSimilarityWeight = r.defaults.KeywordsSimilarityWeight
+	}
+	if args.SimilarityThreshold <= 0 {
+		args.SimilarityThreshold = r.defaults.SimilarityThreshold
+	}
+	args.UseKG = args.UseKG || r.defaults.UseKG
+	return args
 }
 
 // renderChunks concatenates the retrieved chunks into a human-
@@ -226,6 +278,89 @@ func renderChunks(chunks []RetrievalChunk, query string) string {
 		fmt.Fprintf(&sb, "[ID:%s] %s\n", c.ID, c.Content)
 	}
 	return sb.String()
+}
+
+func retrievalTenantID(ctx context.Context) string {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+		return tenantID
+	}
+	userID, _ := state.Sys["user_id"].(string)
+	return userID
+}
+
+func referenceChunksFromRetrieval(chunks []RetrievalChunk) []map[string]any {
+	out := make([]map[string]any, 0, len(chunks))
+	for idx, c := range chunks {
+		id := c.ID
+		if id == "" {
+			id = fmt.Sprint(idx)
+		}
+		chunk := map[string]any{
+			"id":                  id,
+			"chunk_id":            c.ID,
+			"content":             c.Content,
+			"content_with_weight": c.Content,
+			"document_id":         c.DocumentID,
+			"doc_id":              c.DocumentID,
+			"document_name":       c.DocumentName,
+			"docnm_kwd":           c.DocumentName,
+			"dataset_id":          c.DatasetID,
+			"kb_id":               c.DatasetID,
+			"image_id":            c.ImageID,
+			"img_id":              c.ImageID,
+			"similarity":          c.Score,
+			"term_similarity":     c.TermSimilarity,
+			"vector_similarity":   c.VectorSimilarity,
+		}
+		if c.URL != "" {
+			chunk["url"] = c.URL
+			chunk["document_url"] = c.URL
+		}
+		if c.Positions != nil {
+			chunk["positions"] = c.Positions
+			chunk["position_int"] = c.Positions
+		}
+		out = append(out, chunk)
+	}
+	return out
+}
+
+func referenceDocAggsFromRetrieval(chunks []RetrievalChunk) []map[string]any {
+	byDocID := make(map[string]map[string]any)
+	order := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		if c.DocumentID == "" && c.DocumentName == "" {
+			continue
+		}
+		key := c.DocumentID
+		if key == "" {
+			key = c.DocumentName
+		}
+		agg, exists := byDocID[key]
+		if !exists {
+			agg = map[string]any{
+				"count":    0,
+				"doc_id":   c.DocumentID,
+				"doc_name": c.DocumentName,
+			}
+			if c.URL != "" {
+				agg["url"] = c.URL
+			}
+			byDocID[key] = agg
+			order = append(order, key)
+		}
+		agg["count"] = agg["count"].(int) + 1
+	}
+
+	out := make([]map[string]any, 0, len(order))
+	for _, key := range order {
+		out = append(out, byDocID[key])
+	}
+	return out
 }
 
 // stubJSONWithErr is the (string, error) variant for call sites
