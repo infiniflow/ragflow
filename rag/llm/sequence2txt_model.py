@@ -18,6 +18,7 @@ import io
 import json
 import os
 import re
+import struct
 from abc import ABC
 import tempfile
 import logging
@@ -43,6 +44,47 @@ class Base(ABC):
         with open(audio_path, "rb") as audio_file:
             transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
+
+    @staticmethod
+    def _generate_test_wav(duration_seconds=0.5, sample_rate=16000):
+        """Generate a minimal silent WAV file as bytes (pure stdlib, no dependencies)."""
+        n_samples = int(sample_rate * duration_seconds)
+        data_size = n_samples * 2  # 16-bit mono = 2 bytes per sample
+        header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",
+            36 + data_size,
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
+            1,
+            sample_rate,
+            sample_rate * 2,
+            2,
+            16,
+            b"data",
+            data_size,
+        )
+        return header + b"\x00" * data_size
+
+    def check_available(self) -> tuple[bool, str]:
+        """Check if the ASR model is available by transcribing a minimal test WAV."""
+        try:
+            wav_data = self._generate_test_wav()
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(wav_data)
+                temp_path = f.name
+            try:
+                text, _ = self.transcription(temp_path)
+                if text.find("**ERROR**") >= 0:
+                    return False, text.replace("**ERROR**: ", "").strip()
+                return True, ""
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except Exception as e:
+            return False, str(e)
 
     def audio2base64(self, audio):
         if isinstance(audio, bytes):
@@ -332,6 +374,17 @@ class TencentCloudSeq2txt(Base):
         self.client = asr_client.AsrClient(cred, "")
         self.model_name = model_name
 
+    def check_available(self) -> tuple[bool, str]:
+        """Tencent Cloud ASR transcription expects raw bytes, not a file path."""
+        try:
+            wav_data = self._generate_test_wav()
+            text, _ = self.transcription(wav_data)
+            if text.find("**ERROR**") >= 0:
+                return False, text.replace("**ERROR**: ", "").strip()
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
     def transcription(self, audio, max_retries=60, retry_interval=5):
         import time
 
@@ -391,6 +444,10 @@ class GPUStackSeq2txt(Base):
         self.base_url = base_url
         self.model_name = model_name
         self.key = key
+
+    def check_available(self) -> tuple[bool, str]:
+        """GPUStack ASR transcription endpoint is not yet implemented."""
+        return False, "GPUStack ASR transcription is not yet implemented"
 
 
 class GiteeSeq2txt(Base):

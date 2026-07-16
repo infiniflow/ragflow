@@ -252,6 +252,7 @@ def ensure_parsed_document(rest_client, create_document):
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     import time
+
     start = time.perf_counter()
     yield
     duration = time.perf_counter() - start
