@@ -321,8 +321,7 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 		"canvas-1",      // we're running canvas-1…
 		"",              // session ID auto-generated
 		"v-on-canvas-2", // …with a version that belongs to canvas-2
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected error when version belongs to a different canvas (IDOR guard)")
 	}
@@ -368,8 +367,7 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 		"canvas-1",
 		"",
 		"does-not-exist",
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected error when explicit version id does not exist")
 	}
@@ -426,8 +424,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		"canvas-empty",
 		"test-session",
 		"", // no explicit version → use GetLatest, which returns ErrUserCanvasVersionNotFound
-		"hi",
-	)
+		"hi", nil)
 	if err != nil {
 		t.Fatalf("RunAgent should proceed with placeholder when no version published: %v", err)
 	}
@@ -542,8 +539,7 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 		"canvas-1",
 		"",
 		"",
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected storage error from closed DB")
 	}

@@ -85,7 +85,7 @@ func (s *AgentService) RunAgentWithWebhook(
 	if payload != nil {
 		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
 	}
-	return s.RunAgent(ctx, userID, canvasID, "", "", "")
+	return s.RunAgent(ctx, userID, canvasID, "", "", "", nil)
 }
 
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
@@ -700,7 +700,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -806,6 +806,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
+	}
+	if len(files) > 0 {
+		root["files"] = files
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
@@ -1018,11 +1021,21 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
+		state.Sys["files"] = []string{}
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
+		}
+		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
+			fileSvc := NewFileService()
+			files, ferr := fileSvc.parseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
+			if ferr != nil {
+				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
+				return nil, fmt.Errorf("parse agent files: %w", ferr)
+			}
+			state.Sys["files"] = files
 		}
 		ctx2 = runtime.WithState(ctx2, state)
 
@@ -1227,6 +1240,20 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		s.markRunSucceeded(ctx2, runID)
 		return state, nil
 	}
+}
+
+func beginLayoutRecognize(c *canvas.Canvas) string {
+	if c == nil {
+		return ""
+	}
+	for _, comp := range c.Components {
+		if !strings.EqualFold(comp.Obj.ComponentName, "Begin") {
+			continue
+		}
+		layout, _ := comp.Obj.Params["layout_recognize"].(string)
+		return layout
+	}
+	return ""
 }
 
 // runIDFor builds the per-run CanvasState identifier: canvasID

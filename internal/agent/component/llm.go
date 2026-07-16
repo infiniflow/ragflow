@@ -806,23 +806,27 @@ func extractDataImages(values []string) []string {
 	return out
 }
 
-// collectSysFiles splits sys.files from canvas globals into text parts
+// collectSysFiles splits sys.files from canvas state into text parts
 // and image data URIs. The caller is responsible for handling any
 // {sys.files} placeholder replacement in the prompts.
 func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
-	files, ok := state.Globals["sys.files"]
+	files, ok := state.Sys["files"]
 	if !ok {
 		return nil, nil
 	}
-	fileList, ok := files.([]any)
-	if !ok || len(fileList) == 0 {
-		return nil, nil
-	}
-	for _, f := range fileList {
-		s, ok := f.(string)
-		if !ok {
-			continue
+	var fileList []string
+	switch values := files.(type) {
+	case []string:
+		fileList = values
+	case []any:
+		fileList = make([]string, 0, len(values))
+		for _, value := range values {
+			if s, ok := value.(string); ok {
+				fileList = append(fileList, s)
+			}
 		}
+	}
+	for _, s := range fileList {
 		if strings.HasPrefix(s, "data:image/") {
 			imageURIs = append(imageURIs, s)
 		} else {

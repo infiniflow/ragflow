@@ -51,6 +51,7 @@ import (
 	_ "ragflow/internal/agent/component" // blank import: registers factories via component.init()
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -168,6 +169,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	dsl := map[string]any{
+		"globals": map[string]any{"sys.files": []any{"stale file"}},
 		"components": map[string]any{
 			"begin_0": map[string]any{
 				"obj": map[string]any{
@@ -195,8 +197,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		"canvas-hello",
 		"session-hello",
 		"", // latest version
-		"world",
-	)
+		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -310,8 +311,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"canvas-fillup",
 		"session-fillup",
 		"",
-		"please ask",
-	)
+		"please ask", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -340,8 +340,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"canvas-fillup",
 		"session-fillup", // SAME sessionID as run 1
 		"",
-		"my follow-up",
-	)
+		"my follow-up", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -420,8 +419,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
-		"please ask",
-	)
+		"please ask", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -444,8 +442,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
-		"my follow-up",
-	)
+		"my follow-up", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -563,8 +560,7 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 		"canvas-parallel",
 		"session-parallel",
 		"",
-		"a,b,c",
-	)
+		"a,b,c", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -633,8 +629,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		"canvas-all",
 		"session-all-loop",
 		"",
-		"loop",
-	)
+		"loop", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -674,8 +669,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		"canvas-all",
 		"session-all-loop",
 		"",
-		"1",
-	)
+		"1", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -744,8 +738,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 			"canvas-all-multi",
 			sessionID,
 			"",
-			input,
-		)
+			input, nil)
 		if err != nil {
 			t.Fatalf("RunAgent run %d (%q): %v", i+1, input, err)
 		}
@@ -831,8 +824,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		"canvas-all-iteration",
 		sessionID,
 		"",
-		"iteration",
-	)
+		"iteration", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -858,8 +850,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		"canvas-all-iteration",
 		sessionID,
 		"",
-		"a,b,c,d,e",
-	)
+		"a,b,c,d,e", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -922,8 +913,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
 		"",
-		"var_assigner",
-	)
+		"var_assigner", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -984,8 +974,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 		"canvas-all-data-ops",
 		"session-all-data-ops",
 		"",
-		"data_ops",
-	)
+		"data_ops", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -1072,8 +1061,7 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 		"canvas-bogus",
 		"session-bogus",
 		"",
-		"hello",
-	)
+		"hello", nil)
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
@@ -1144,8 +1132,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
-		"categorize",
-	)
+		"categorize", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -1173,8 +1160,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
-		"hello",
-	)
+		"hello", nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -1283,8 +1269,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 		"canvas-invoke-fail",
 		"session-invoke-fail",
 		"",
-		"hello",
-	)
+		"hello", nil)
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
@@ -1388,8 +1373,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		"canvas-cp",
 		"session-cp",
 		"", // latest version
-		"world",
-	)
+		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -1447,5 +1431,281 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	}
 	if got["finished_at"] == "" {
 		t.Error("finished_at is empty — MarkSucceeded missing the timestamp?")
+	}
+}
+
+// TestRunAgent_FilesPopulateIteration verifies the full upload object ->
+// sys.files -> Parallel/Iteration item path.
+func TestRunAgent_FilesPopulateIteration(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	canvasID := "canvas-files-e2e"
+	sessionID := "session-files-e2e"
+	versionID := "v-files-e2e"
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put("user-1-downloads", "upload-1", []byte("iteration payload")); err != nil {
+		t.Fatalf("put upload: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         map[string]any{"layout_recognize": "Plain Text"},
+				},
+				"downstream": []any{"parallel_0"},
+			},
+			"parallel_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parallel",
+					"params": map[string]any{
+						"items_ref": "sys.files",
+						"outputs": map[string]any{
+							"lines": map[string]any{"ref": "format_0@result"},
+						},
+					},
+				},
+				"upstream":   []any{"begin_0"},
+				"downstream": []any{"message_0"},
+			},
+			"iteration_item_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "IterationItem",
+					"params":         map[string]any{},
+				},
+				"upstream":   []any{"parallel_0"},
+				"downstream": []any{"format_0"},
+				"parent_id":  "parallel_0",
+			},
+			"format_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "StringTransform",
+					"params": map[string]any{
+						"method":     "merge",
+						"script":     "{item}",
+						"delimiters": []any{"|"},
+					},
+				},
+				"upstream":  []any{"iteration_item_0"},
+				"parent_id": "parallel_0",
+			},
+			"message_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params":         map[string]any{"content": []any{"{parallel_0@lines}"}},
+				},
+				"upstream": []any{"parallel_0"},
+			},
+		},
+		"path": []any{"begin_0", "parallel_0", "message_0"},
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{"id": "iteration_item_0", "parentId": "parallel_0"},
+				map[string]any{"id": "format_0", "parentId": "parallel_0"},
+			},
+		},
+	}
+	makeCanvasWithDSL(t, canvasID, "user-1", "tenant-1", versionID, dsl)
+
+	testFiles := []map[string]interface{}{
+		{
+			"id":         "upload-1",
+			"name":       "notes.txt",
+			"mime_type":  "text/plain",
+			"created_by": "user-1",
+		},
+	}
+
+	svc := NewAgentService()
+	events, err := svc.RunAgent(
+		context.Background(),
+		"user-1",
+		canvasID,
+		sessionID,
+		"",
+		"hello-files", testFiles)
+	if err != nil {
+		t.Fatalf("RunAgent with files: %v", err)
+	}
+	messages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected error events with files: %+v", errs)
+	}
+	if len(waiting) > 0 {
+		t.Fatalf("unexpected waiting_for_user events with files: %+v", waiting)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message event with files, got %d", len(messages))
+	}
+	if !strings.Contains(messages[0].Content, "File: notes.txt") || !strings.Contains(messages[0].Content, "iteration payload") {
+		t.Errorf("Content = %q, want parsed upload from iteration", messages[0].Content)
+	}
+	if !done {
+		t.Error("missing terminator done event with files")
+	}
+}
+
+func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = origDB })
+
+	memory := storage.NewMemoryStorage()
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+				"downstream": []any{"message"},
+			},
+			"message": map[string]any{
+				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"text": "should not run"}},
+				"upstream": []any{"begin"},
+			},
+		},
+		"path": []any{"begin", "message"},
+	}
+	makeCanvasWithDSL(t, "canvas-missing-upload", "user-1", "tenant-1", "v-missing-upload", dsl)
+
+	events, err := NewAgentService().RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-missing-upload",
+		"session-missing-upload",
+		"",
+		"hello",
+		[]map[string]interface{}{{
+			"id":         "missing",
+			"name":       "missing.txt",
+			"mime_type":  "text/plain",
+			"created_by": "user-1",
+		}},
+	)
+	if err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	messages, _, errs, done := drainAgentEvents(t, events)
+	if len(messages) != 0 {
+		t.Fatalf("messages = %+v, want none", messages)
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Message, "parse agent files") {
+		t.Fatalf("errors = %+v, want parse agent files error", errs)
+	}
+	if !done {
+		t.Fatal("missing done event")
+	}
+}
+
+// TestRunAgent_NoFilesRunsNormally verifies that the files-aware
+// RunAgent path does not regress when no files are passed (nil
+// parameter). This is a counterpart to the existing
+// TestRunAgent_RealCanvas_BeginMessage to ensure backward
+// compatibility.
+func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	canvasID := "canvas-nofiles-e2e"
+	sessionID := "session-nofiles-e2e"
+	versionID := "v-nofiles-e2e"
+
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params":         map[string]any{"text": "echo: {{sys.query}}"},
+				},
+				"upstream": []any{"begin_0"},
+			},
+		},
+		"path": []any{"begin_0", "message_0"},
+	}
+	makeCanvasWithDSL(t, canvasID, "user-1", "tenant-1", versionID, dsl)
+
+	svc := NewAgentService()
+	events, err := svc.RunAgent(
+		context.Background(),
+		"user-1",
+		canvasID,
+		sessionID,
+		"",
+		"hello-nofiles", nil)
+	if err != nil {
+		t.Fatalf("RunAgent without files: %v", err)
+	}
+	messages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected error events without files: %+v", errs)
+	}
+	if len(waiting) > 0 {
+		t.Fatalf("unexpected waiting_for_user events without files: %+v", waiting)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message event without files, got %d", len(messages))
+	}
+	if !strings.Contains(messages[0].Content, "hello-nofiles") {
+		t.Errorf("Content = %q, want substring %q", messages[0].Content, "hello-nofiles")
+	}
+	if !done {
+		t.Error("missing terminator done event without files")
 	}
 }
