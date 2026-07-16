@@ -339,7 +339,7 @@ class DataflowService:
         """Update document metadata."""
         existing_meta = DocMetadataService.get_document_metadata(doc_id)
         existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-        metadata = update_metadata_to(metadata, existing_meta)
+        metadata = update_metadata_to(existing_meta, metadata)
         self._task_context.recording_context.record("run_dataflow_metadata", metadata)
         if self._task_context.write_interceptor:
             self._task_context.write_interceptor.intercept("DocMetadataService.update_document_metadata")
