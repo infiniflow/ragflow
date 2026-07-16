@@ -4039,12 +4039,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "coloredlogs" },
+    { name = "flatbuffers" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy" },
 ]
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/03/05/40d561636e4114b54aa06d2371bfbca2d03e12cfdf5d4b85814802f18a75/onnxruntime_gpu-1.23.2-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1e8f75af5da07329d0c3a5006087f4051d8abd133b4be7c9bae8cdab7bea4c26" },
@@ -5085,11 +5085,11 @@ wheels = [
 
 [[package]]
 name = "pyjwt"
-version = "2.8.0"
+version = "2.13.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/30/72/8259b2bccfe4673330cea843ab23f86858a419d8f1493f66d413a76c7e3b/PyJWT-2.8.0.tar.gz", hash = "sha256:57e28d156e3d5c10088e0c68abb90bfac3df82b40a71bd0daa20c65ccd5c23de" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/2b/4f/e04a8067c7c96c364cef7ef73906504e2f40d690811c021e1a1901473a19/PyJWT-2.8.0-py3-none-any.whl", hash = "sha256:59127c392cc44c2da5bb3192169a91f429924e17aff6534d70fdc02ab3e04320" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728" },
 ]
 
 [package.optional-dependencies]
@@ -8149,7 +8149,7 @@ dependencies = [
     { name = "xgboost" },
     { name = "xpinyin" },
     { name = "yfinance" },
-    { name = "zhipuai" },
+    { name = "zai-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -8305,7 +8305,7 @@ requires-dist = [
     { name = "xgboost", specifier = "==1.6.0" },
     { name = "xpinyin", specifier = "==0.7.6" },
     { name = "yfinance", specifier = "==0.2.65" },
-    { name = "zhipuai", specifier = "==2.0.1" },
+    { name = "zai-sdk", specifier = ">=0.2.3,<1.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -10121,18 +10121,20 @@ wheels = [
 ]
 
 [[package]]
-name = "zhipuai"
-version = "2.0.1"
+name = "zai-sdk"
+version = "0.2.3"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "cachetools" },
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pydantic-core" },
     { name = "pyjwt" },
+    { name = "sniffio" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a4/90/299e3456ee7ee1e118593552e03b86da2e9adaa0d454e467aeb4b22032a4/zhipuai-2.0.1.tar.gz", hash = "sha256:297bbdbe9393da2d1dc8066c39cf39bb2342f170d86f2b7b7a13ba368c53d701" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/29/e6/f4954be9a8c70260a5de7a83035d5fbe7ec74799d7dd58857a82141c9a2f/zai_sdk-0.2.3.tar.gz", hash = "sha256:1481f6db746e64fe9e7e0da9a3727fd083890613f9eb8e1d14139ff76ef68a57" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/8f/05/c3d4556886b5c6cf8c0b96eb80448ee8154c0dcc87086df018e817779ed4/zhipuai-2.0.1-py3-none-any.whl", hash = "sha256:738033d95696c3d5117dc4487e37d924e3ebbcdfa0072812b3f63a08ff72274a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4b/18/2b2c012421936ed370436d844e250e9dbdefa20e845d6aeea7152c26a403/zai_sdk-0.2.3-py3-none-any.whl", hash = "sha256:f8d6417f8cff58d5b6cba5c27577ee55aa817ae825c6c88fe883f6f6f9265d90" },
 ]
 
 [[package]]

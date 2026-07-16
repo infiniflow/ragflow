@@ -26,7 +26,7 @@ import numpy as np
 import requests
 from ollama import Client
 from openai import OpenAI
-from zhipuai import ZhipuAI
+from zai import ZhipuAiClient
 
 from common import settings
 from common.exceptions import ModelException
@@ -436,7 +436,8 @@ class ZhipuEmbed(Base):
     _FACTORY_NAME = "ZHIPU-AI"
 
     def __init__(self, key, model_name="embedding-2", **kwargs):
-        self.client = ZhipuAI(api_key=key)
+        logger.info("ZhipuEmbed initialized: provider=%s, model=%s", self._FACTORY_NAME, model_name)
+        self.client = ZhipuAiClient(api_key=key)
         self.model_name = model_name
 
     def _max_len(self):
