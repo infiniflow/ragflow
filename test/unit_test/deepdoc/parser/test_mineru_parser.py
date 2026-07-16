@@ -1,6 +1,7 @@
 import importlib.util
 import logging
 import sys
+from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 
@@ -113,3 +114,149 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
 
     assert [section[0] for section in sections] == ["Primary content", "Next content"]
     assert "Skip unsupported section type=sidebar" in caplog.text
+
+
+class _FakeZipResponse:
+    """Stand-in for the streaming response returned by requests.post.
+
+    Provides the minimum surface that _run_mineru_api touches: status code,
+    headers (Content-Type), and a `.raw` stream that copyfileobj can drain.
+    """
+
+    def __init__(self, body: bytes = b"zip-bytes"):
+        self._body = body
+        self.headers = {"Content-Type": "application/zip"}
+        self.raw = BytesIO(body)
+
+    def raise_for_status(self):
+        return None
+
+
+class _FakePostContext:
+    def __init__(self, response: _FakeZipResponse, captured: dict):
+        self._response = response
+        self._captured = captured
+
+    def __enter__(self):
+        return self._response
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def _capture_run_mineru_api(monkeypatch, module, *, pdf_path: Path, extracted_dir: Path):
+    """Stub everything around requests.post so _run_mineru_api runs end-to-end
+    against an in-memory response. Returns the captured kwargs dict.
+    """
+    captured: dict = {}
+
+    def fake_post(url, files, data, headers, timeout, stream):
+        captured["url"] = url
+        captured["data"] = data
+        captured["files"] = files
+        return _FakePostContext(_FakeZipResponse(), captured)
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(module.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(
+        module.MinerUParser,
+        "_extract_zip_no_root",
+        lambda self, *_a, **_kw: None,
+    )
+    monkeypatch.setattr(
+        module.shutil,
+        "copyfileobj",
+        lambda _src, _dst: None,
+    )
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda prefix="", dir=None: str(extracted_dir))
+    return captured
+
+
+def test_run_mineru_api_threads_page_range_into_request_payload(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    parser.mineru_server_url = ""
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    captured = _capture_run_mineru_api(monkeypatch, module, pdf_path=pdf_path, extracted_dir=extracted_dir)
+    options = module.MinerUParseOptions()
+
+    # Mid-document range: pages 0..12 inclusive in RAGFlow slice terms.
+    parser._run_mineru_api(
+        pdf_path,
+        extracted_dir,
+        options,
+        callback=None,
+        page_from=0,
+        page_to=13,
+    )
+
+    assert captured["data"]["start_page_id"] == 0
+    assert captured["data"]["end_page_id"] == 12
+
+    # End-of-document range: still need the full doc to come back.
+    captured.clear()
+    parser._run_mineru_api(
+        pdf_path,
+        extracted_dir,
+        options,
+        callback=None,
+        page_from=5,
+        page_to=20,
+    )
+
+    assert captured["data"]["start_page_id"] == 5
+    assert captured["data"]["end_page_id"] == 19
+
+
+def test_run_mineru_api_uses_full_document_when_no_range_given(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    parser.mineru_server_url = ""
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    captured = _capture_run_mineru_api(monkeypatch, module, pdf_path=pdf_path, extracted_dir=extracted_dir)
+    options = module.MinerUParseOptions()
+
+    # No page_from/page_to: defaults should keep the prior behavior (0 / 99999).
+    parser._run_mineru_api(pdf_path, extracted_dir, options, callback=None)
+
+    assert captured["data"]["start_page_id"] == 0
+    assert captured["data"]["end_page_id"] == 99999
+
+
+def test_end_page_minus_one_normalizes_for_mineru_api(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    parser.mineru_server_url = ""
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    captured = _capture_run_mineru_api(monkeypatch, module, pdf_path=pdf_path, extracted_dir=extracted_dir)
+    options = module.MinerUParseOptions()
+
+    # RAGFlow to_page is exclusive (Python slice stop); MinerU end_page_id is
+    # 0-based inclusive, so to_page - 1 is the correct translation.
+    parser._run_mineru_api(
+        pdf_path,
+        extracted_dir,
+        options,
+        callback=None,
+        page_from=0,
+        page_to=13,
+    )
+
+    assert captured["data"]["end_page_id"] == 12
