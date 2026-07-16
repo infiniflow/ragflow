@@ -279,7 +279,7 @@ func (d *DataOperationsComponent) GetInputForm() map[string]any {
 			}
 		}
 	}
-	return map[string]any{}
+	return res
 }
 
 // Outputs returns the transformed payload.

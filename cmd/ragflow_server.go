@@ -249,7 +249,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -327,7 +327,7 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
-	if err = common.Init(logLevel, fileOut); err != nil {
+	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 

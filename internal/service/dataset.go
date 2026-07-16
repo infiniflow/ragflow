@@ -70,7 +70,6 @@ var (
 const (
 	// Keep the legacy worker marker in queue payloads; persisted tasks use a real document ID.
 	graphRaptorQueueDocID    = "graph_raptor_x"
-	maximumPageNumber        = int64(100000)
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -635,143 +634,6 @@ type embeddingCheckSample struct {
 	QuestionKeywords  []string
 }
 
-// RunEmbedding runs embedding for all documents in a dataset.
-func (d *DatasetService) RunEmbedding(userID, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
-	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
-	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
-	}
-
-	kb, err := d.kbDAO.GetByID(datasetID)
-	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
-		}
-		return nil, common.CodeServerError, errors.New("Internal server error")
-	}
-
-	documents, _, err := d.documentDAO.GetByKBID(datasetID)
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Internal server error")
-	}
-	if len(documents) == 0 {
-		return nil, common.CodeDataError, fmt.Errorf("No documents in Dataset %s", datasetID)
-	}
-
-	tableDoneCountByKB := make(map[string]int64)
-	scheduledCount := 0
-	for _, doc := range documents {
-		if doc == nil {
-			continue
-		}
-		if err := d.runEmbeddingDocument(kb, doc, tableDoneCountByKB); err != nil {
-			common.Warn("Failed to schedule dataset embedding document",
-				zap.String("datasetID", datasetID),
-				zap.String("docID", doc.ID),
-				zap.Error(err))
-			return nil, common.CodeServerError, errors.New("Internal server error")
-		}
-		scheduledCount++
-	}
-
-	return map[string]interface{}{
-		"scheduled_count": scheduledCount,
-	}, common.CodeSuccess, nil
-}
-
-func (d *DatasetService) runEmbeddingDocument(kb *entity.Knowledgebase, doc *entity.Document, tableDoneCountByKB map[string]int64) error {
-	// Determine the flow ID: pipeline_id takes precedence, parser_id acts as
-	// fallback (builtin DSL from registry). Both paths go through the unified
-	// DSL ingestion worker.
-	flowID := ""
-	if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
-		flowID = strings.TrimSpace(*doc.PipelineID)
-	} else if doc.ParserID != "" {
-		flowID = doc.ParserID
-	}
-	if flowID == "" {
-		return fmt.Errorf("document %s: no pipeline_id or parser_id configured", doc.ID)
-	}
-
-	// Invalidate the cached column schema (field_map) when re-running table
-	// documents so the schema is rebuilt from the fresh parse result.
-	if doc.ParserID == string(entity.ParserTypeTable) {
-		doneCount, ok := tableDoneCountByKB[doc.KbID]
-		if !ok {
-			count, err := d.countDoneDocuments(doc.KbID)
-			if err != nil {
-				return err
-			}
-			doneCount = count
-			tableDoneCountByKB[doc.KbID] = doneCount
-			if doneCount <= 0 {
-				if err := d.kbDAO.DeleteFieldMap(doc.KbID); err != nil && !dao.IsNotFoundErr(err) {
-					return err
-				}
-			}
-		}
-	}
-
-	return d.queueDatasetDataflowTask(kb, doc, flowID, 0)
-}
-
-func (d *DatasetService) queueDatasetDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, flowID string, priority int64) error {
-	if _, err := d.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
-		return err
-	}
-	if err := d.beginDatasetParseDocument(doc.ID); err != nil {
-		return err
-	}
-
-	now := time.Now()
-	task := &entity.Task{
-		ID:       utility.GenerateUUID(),
-		DocID:    doc.ID,
-		FromPage: 0,
-		ToPage:   maximumTaskPageNumber,
-		TaskType: "dataflow",
-		Priority: priority,
-		BeginAt:  &now,
-		Progress: 0,
-	}
-	if err := d.taskDAO.CreateMany([]*entity.Task{task}); err != nil {
-		return err
-	}
-
-	message := datasetParseTaskMessage(task)
-	message["task_type"] = task.TaskType
-	message["kb_id"] = doc.KbID
-	message["tenant_id"] = kb.TenantID
-	message["dataflow_id"] = flowID
-	message["file"] = nil
-	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(datasetParseQueueName(doc, priority), message) {
-		return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
-	}
-	return nil
-}
-
-func (d *DatasetService) countDoneDocuments(datasetID string) (int64, error) {
-	var count int64
-	err := dao.GetDB().Model(&entity.Document{}).
-		Where("kb_id = ? AND run = ?", datasetID, string(entity.TaskStatusDone)).
-		Count(&count).Error
-	return count, err
-}
-
-func (d *DatasetService) beginDatasetParseDocument(docID string) error {
-	now := time.Now()
-	return dao.GetDB().Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]interface{}{
-		"progress_msg":     "Task is queued...",
-		"process_begin_at": now,
-		"progress":         rand.Float64() * 0.01,
-		"run":              string(entity.TaskStatusRunning),
-		"chunk_num":        0,
-		"token_num":        0,
-	}).Error
-}
-
 // CheckEmbedding checks whether a new embedding model is compatible with stored vectors.
 func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *CheckEmbeddingRequest) (*EmbeddingCheckResponse, common.ErrorCode, error) {
 	if datasetID == "" {
@@ -1187,35 +1049,6 @@ func datasetStringSlice(value interface{}) []string {
 		return []string{typedValue}
 	default:
 		return nil
-	}
-}
-
-func datasetParseQueueName(doc *entity.Document, priority int64) string {
-	suffix := "common"
-	if doc.ParserID == string(entity.ParserTypeResume) {
-		suffix = "resume"
-	}
-	return fmt.Sprintf("%s.%d.%s", serverQueueNamePrefix, priority, suffix)
-}
-
-func datasetParseTaskMessage(task *entity.Task) map[string]interface{} {
-	beginAt := ""
-	if task.BeginAt != nil {
-		beginAt = task.BeginAt.Format("2006-01-02 15:04:05")
-	}
-	digest := ""
-	if task.Digest != nil {
-		digest = *task.Digest
-	}
-	return map[string]interface{}{
-		"id":        task.ID,
-		"doc_id":    task.DocID,
-		"from_page": task.FromPage,
-		"to_page":   task.ToPage,
-		"progress":  task.Progress,
-		"priority":  task.Priority,
-		"begin_at":  beginAt,
-		"digest":    digest,
 	}
 }
 

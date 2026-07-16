@@ -158,7 +158,7 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 
 	var taskCount int64
-	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+	if err = dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount != 1 {

@@ -16,21 +16,6 @@
 
 package entity
 
-// LLMFactories LLM factory model
-type LLMFactories struct {
-	Name   string  `gorm:"column:name;primaryKey;size:128" json:"name"`
-	Logo   *string `gorm:"column:logo;type:longtext" json:"logo,omitempty"`
-	Tags   string  `gorm:"column:tags;size:255;not null;index" json:"tags"`
-	Rank   int64   `gorm:"column:rank;default:0" json:"rank"`
-	Status *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
-	BaseModel
-}
-
-// TableName specify table name
-func (LLMFactories) TableName() string {
-	return "llm_factories"
-}
-
 // LLM LLM model
 type LLM struct {
 	LLMName   string  `gorm:"column:llm_name;size:128;not null;primaryKey" json:"llm_name"`
@@ -46,20 +31,6 @@ type LLM struct {
 // TableName specify table name
 func (LLM) TableName() string {
 	return "llm"
-}
-
-// TenantLangfuse tenant langfuse model
-type TenantLangfuse struct {
-	TenantID  string `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
-	SecretKey string `gorm:"column:secret_key;size:2048;not null" json:"secret_key"`
-	PublicKey string `gorm:"column:public_key;size:2048;not null" json:"public_key"`
-	Host      string `gorm:"column:host;size:128;not null;index" json:"host"`
-	BaseModel
-}
-
-// TableName specify table name
-func (TenantLangfuse) TableName() string {
-	return "tenant_langfuse"
 }
 
 // LangfuseInfoResponse is the GET /langfuse/api-key payload: the stored
