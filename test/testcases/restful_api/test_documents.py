@@ -1303,7 +1303,7 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     _wait_document_runs(rest_client, dataset_id, doc_ids, expected_run="DONE")
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dataset, tmp_path):
     single_dataset_id, single_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=1)
     single_doc_id = single_docs[0]["id"]
