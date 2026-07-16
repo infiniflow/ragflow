@@ -55,6 +55,7 @@ type ModelServiceIface interface {
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
 type MetadataServiceIface interface {
 	GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error)
+	SearchMetadataByKBs(kbIDs []string, size int) (*service.SearchMetadataResponse, error)
 	LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
@@ -333,6 +334,21 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	}
 
+	metaMap := make(map[string]map[string]interface{})
+	metaResult, err := h.metadataSvc.SearchMetadataByKBs([]string{kb.ID}, 10000)
+	if err == nil {
+		for _, metadata := range metaResult.MetadataRecords {
+			docID, ok := service.ExtractDocumentID(metadata)
+			if !ok {
+				continue
+			}
+			metaFields, err := service.ExtractMetaFields(metadata)
+			if err == nil {
+				metaMap[docID] = metaFields
+			}
+		}
+	}
+
 	// Build response
 	records := make([]difyRecord, 0, len(chunks))
 	for _, ch := range chunks {
@@ -346,8 +362,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		delete(ch, "vector")
 
 		meta := make(map[string]interface{})
-		if doc.MetaFields != nil {
-			for k, v := range *doc.MetaFields {
+		if metaFields := metaMap[docID]; metaFields != nil {
+			for k, v := range metaFields {
 				meta[k] = v
 			}
 		}
