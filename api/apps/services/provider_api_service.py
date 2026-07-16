@@ -25,7 +25,7 @@ from api.db.services.tenant_model_provider_service import TenantModelProviderSer
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 from api.utils.model_utils import get_model_type_human, calculate_model_type
-from rag.llm import ChatModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, TTSModel
+from rag.llm import ChatModel, CvModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
 def _to_int(v, default=500):
@@ -651,7 +651,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     model_verify_result = {}
     # test if api key works
-    chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed = False, False, False, False, False
+    chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed, asr_passed, vlm_passed = False, False, False, False, False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
@@ -782,11 +782,62 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 )
                 model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
-        if any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed]):
+        elif not vlm_passed and LLMType.VISION.value in model_types:
+            if provider_name not in CvModel:
+                unsupported_msg = f"Image to text model from {provider_name} is not supported yet."
+                logging.warning(unsupported_msg)
+                msg += f"\n{unsupported_msg}"
+                continue
+            from rag.utils.base64_image import test_image
+
+            mdl = CvModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+            try:
+                image_data = test_image
+                m, tc = await asyncio.wait_for(
+                    asyncio.to_thread(mdl.describe, image_data),
+                    timeout=timeout_seconds,
+                )
+                if not tc and m.find("**ERROR**:") >= 0:
+                    raise Exception(m)
+                vlm_passed = True
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
+            except Exception as e:
+                logging.exception(
+                    "Fail to access vision model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
+        elif not asr_passed and LLMType.ASR.value in model_types:
+            if provider_name not in Seq2txtModel:
+                unsupported_msg = f"Speech model from {provider_name} is not supported yet."
+                logging.warning(unsupported_msg)
+                msg += f"\n{unsupported_msg}"
+                continue
+            mdl = Seq2txtModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+            try:
+                ok, reason = await asyncio.wait_for(
+                    asyncio.to_thread(mdl.check_available),
+                    timeout=timeout_seconds,
+                )
+                if not ok:
+                    raise RuntimeError(reason or "Model not available")
+                asr_passed = True
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
+            except Exception as e:
+                logging.exception(
+                    "Fail to access ASR model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
+        if any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed, vlm_passed, asr_passed]):
             msg = ""
             break
 
-    success = any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed])
+    success = any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed, vlm_passed, asr_passed])
     return success, "success" if success else msg, model_verify_result
 
 
