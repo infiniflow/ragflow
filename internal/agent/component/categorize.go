@@ -77,6 +77,9 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	if len(p.Categories) == 0 {
 		return nil, &ParamError{Field: "categories", Reason: "at least one category is required"}
 	}
+	if p.MessageHistoryWindowSize < 0 {
+		return nil, &ParamError{Field: "message_history_window_size", Reason: "cannot be negative"}
+	}
 	if p.DefaultCategory == "" {
 		// Fall back to the first category so the run never fails purely
 		// because the user omitted the default.
@@ -88,7 +91,8 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	if sysPrompt == "" {
 		sysPrompt = buildCategorizeSystemPrompt(p)
 	}
-	userPrompt := buildCategorizePrompt(p, resolveCategorizeQuery(ctx, p, inputs))
+	query := resolveCategorizeQuery(ctx, p, inputs)
+	userPrompt := buildCategorizePrompt(categorizeHistory(ctx, p.MessageHistoryWindowSize, query))
 	msgs := []schema.Message{
 		{Role: schema.System, Content: sysPrompt},
 		{Role: schema.User, Content: userPrompt},
@@ -135,14 +139,15 @@ func (c *CategorizeComponent) Stream(ctx context.Context, inputs map[string]any)
 // Inputs returns parameter metadata for tooling.
 func (c *CategorizeComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":         "Provider-side model identifier",
-		"query":            "Variable reference or literal text to classify. Defaults to sys.query.",
-		"items":            "Optional list of items to classify (added to the prompt as context)",
-		"categories":       "List of allowed category names (response must match one)",
-		"sys_prompt":       "Optional system prompt; defaults to a strict classifier instruction",
-		"default_category": "Category returned if the model's answer is not in `categories` (defaults to categories[0])",
-		"driver":           "Provider driver name",
-		"api_key":          "Override API key",
+		"model_id":                    "Provider-side model identifier",
+		"query":                       "Variable reference or literal text to classify. Defaults to sys.query.",
+		"items":                       "Optional list of items to classify (added to the prompt as context)",
+		"categories":                  "List of allowed category names (response must match one)",
+		"sys_prompt":                  "Optional system prompt; defaults to a strict classifier instruction",
+		"default_category":            "Category returned if the model's answer is not in `categories` (defaults to categories[0])",
+		"message_history_window_size": "How many prior conversation turns to include in the Real Data prompt.",
+		"driver":                      "Provider driver name",
+		"api_key":                     "Override API key",
 	}
 }
 
@@ -240,9 +245,48 @@ func categorizeExamples(p CategorizeParam, cats []string) []string {
 	return lines
 }
 
-func buildCategorizePrompt(_ CategorizeParam, query string) string {
-	query = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(query)
-	return fmt.Sprintf("\n---- Real Data ----\nUSER: %q ->\n", query)
+type categorizeHistoryMessage struct {
+	Role    string
+	Content string
+}
+
+func categorizeHistory(ctx context.Context, window int, query string) []categorizeHistoryMessage {
+	msgs := []categorizeHistoryMessage{}
+	if window > 0 {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			start := 0
+			if len(state.History) > window {
+				start = len(state.History) - window
+			}
+			for i := start; i < len(state.History); i++ {
+				entry := state.History[i]
+				role, _ := entry["role"].(string)
+				content, _ := entry["content"].(string)
+				if role == "" || content == "" {
+					continue
+				}
+				msgs = append(msgs, categorizeHistoryMessage{Role: role, Content: content})
+			}
+		}
+	}
+	if len(msgs) == 0 {
+		msgs = append(msgs, categorizeHistoryMessage{Role: "user"})
+	}
+	msgs[len(msgs)-1].Content = query
+	return msgs
+}
+
+func buildCategorizePrompt(history []categorizeHistoryMessage) string {
+	parts := make([]string, 0, len(history))
+	for _, msg := range history {
+		role := strings.ToUpper(strings.TrimSpace(msg.Role))
+		if role == "" {
+			role = "USER"
+		}
+		content := strings.NewReplacer("\r\n", "", "\n", "", "\r", "").Replace(msg.Content)
+		parts = append(parts, fmt.Sprintf("%s: %q", role, content))
+	}
+	return fmt.Sprintf("\n---- Real Data ----\n%s ->\n", strings.Join(parts, " | "))
 }
 
 func resolveCategorizeQuery(ctx context.Context, p CategorizeParam, inputs map[string]any) string {
@@ -356,6 +400,9 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 	}
 	if v, ok := stringFrom(inputs, "default_category"); ok {
 		p.DefaultCategory = v
+	}
+	if v, ok := intFrom(inputs, "message_history_window_size"); ok {
+		p.MessageHistoryWindowSize = v
 	}
 	if v, ok := stringFrom(inputs, "driver"); ok {
 		p.Driver = v
@@ -485,7 +532,7 @@ func categoryRoutesFrom(inputs map[string]any, name string) (map[string]string, 
 // init registers CategorizeComponent with the orchestrator-owned registry.
 func init() {
 	Register("Categorize", func(params map[string]any) (Component, error) {
-		var p CategorizeParam
+		p := CategorizeParam{MessageHistoryWindowSize: 1}
 		if v, ok := stringFrom(params, "model_id"); ok {
 			p.ModelID = v
 		} else if v, ok := stringFrom(params, "llm_id"); ok {

@@ -207,6 +207,94 @@ func TestCategorize_PromptUsesInputQueryValue(t *testing.T) {
 	}
 }
 
+func TestCategorize_HistoryWindowRealData(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "English", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.History = []map[string]any{
+		{"role": "user", "content": "old user"},
+		{"role": "assistant", "content": "prior answer"},
+		{"role": "user", "content": "stale latest"},
+	}
+	ctx := canvas.WithState(context.Background(), state)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:                  "stub",
+		Query:                    "sys.query",
+		Categories:               []string{"Number", "chinese", "English"},
+		MessageHistoryWindowSize: 2,
+	})
+	_, err := c.Invoke(ctx, map[string]any{"query": "current question"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "user" {
+			userContent = m.Content
+		}
+	}
+	if !strings.Contains(userContent, `ASSISTANT: "prior answer" | USER: "current question"`) {
+		t.Fatalf("user prompt = %q, want bounded history plus current query", userContent)
+	}
+	if strings.Contains(userContent, "old user") || strings.Contains(userContent, "stale latest") {
+		t.Fatalf("user prompt should truncate old history and overwrite latest content, got %q", userContent)
+	}
+}
+
+func TestCategorizeRegistered_DefaultHistoryWindow(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "English", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.History = []map[string]any{
+		{"role": "user", "content": "old user"},
+		{"role": "assistant", "content": "stale latest"},
+	}
+	ctx := canvas.WithState(context.Background(), state)
+
+	c, err := New("Categorize", map[string]any{
+		"model_id":   "stub",
+		"query":      "sys.query",
+		"categories": []any{"Number", "chinese", "English"},
+	})
+	if err != nil {
+		t.Fatalf("New(Categorize): %v", err)
+	}
+	_, err = c.Invoke(ctx, map[string]any{"query": "current question"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "user" {
+			userContent = m.Content
+		}
+	}
+	if !strings.Contains(userContent, `ASSISTANT: "current question"`) {
+		t.Fatalf("user prompt = %q, want default one-message history with current query", userContent)
+	}
+	if strings.Contains(userContent, "old user") || strings.Contains(userContent, "stale latest") {
+		t.Fatalf("user prompt should only include default one-message window with overwritten content, got %q", userContent)
+	}
+}
+
+func TestCategorize_HistoryWindowRejectsNegative(t *testing.T) {
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:                  "stub",
+		Categories:               []string{"Number", "chinese", "English"},
+		MessageHistoryWindowSize: -1,
+	})
+	_, err := c.Invoke(context.Background(), map[string]any{"query": "current question"})
+	if err == nil {
+		t.Fatal("expected negative message_history_window_size error")
+	}
+	if !strings.Contains(err.Error(), "message_history_window_size") {
+		t.Fatalf("error = %v, want message_history_window_size", err)
+	}
+}
+
 func TestCategorize_OtherInstructionOnlyWhenAllowed(t *testing.T) {
 	withoutOther := buildCategorizeSystemPrompt(CategorizeParam{
 		Categories: []string{"Number", "Chinese", "English"},
