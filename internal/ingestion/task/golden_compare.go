@@ -34,14 +34,17 @@ func ProcessPipelineOutputForGolden(
 	docID string,
 	kbID string,
 	docName string,
-) GoldenCompareResult {
+) (GoldenCompareResult, error) {
 	normalized := NormalizeChunks(pipelineOutput)
 	if normalized == nil {
 		normalized = []map[string]any{}
 	}
 
 	processed := deepCopyChunks(normalized)
-	metadata := ProcessChunksForPipeline(processed, docID, kbID, docName, time.Now())
+	metadata, err := ProcessChunksForPipeline(processed, docID, kbID, docName, time.Now())
+	if err != nil {
+		return GoldenCompareResult{}, err
+	}
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
@@ -50,5 +53,5 @@ func ProcessPipelineOutputForGolden(
 		NormalizedChunks: normalized,
 		ProcessedChunks:  processed,
 		MergedMetadata:   metadata,
-	}
+	}, nil
 }

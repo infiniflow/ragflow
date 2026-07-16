@@ -74,6 +74,7 @@ export enum LLMFactory {
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
   NewAPI = 'New API',
+  FunASR = 'FunASR',
 }
 
 // Please lowercase the file name

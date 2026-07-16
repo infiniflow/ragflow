@@ -241,12 +241,26 @@ func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask
 }
 
 func (s *IngestionTaskService) MarkCompleted(taskID string) error {
-	_, err := s.transition(taskID, common.COMPLETED)
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED {
+		return nil // already terminal, idempotent — mirrors MarkStopped
+	}
+	_, err = s.transition(taskID, common.COMPLETED)
 	return err
 }
 
 func (s *IngestionTaskService) MarkFailed(taskID string) error {
-	_, err := s.transition(taskID, common.FAILED)
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
+		return nil // already terminal, idempotent — mirrors MarkStopped
+	}
+	_, err = s.transition(taskID, common.FAILED)
 	return err
 }
 

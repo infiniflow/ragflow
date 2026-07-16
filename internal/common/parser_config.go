@@ -53,7 +53,7 @@ func DeepMergeMaps(base, override map[string]interface{}) map[string]interface{}
 
 // GetParserConfig builds the final parser_config stored on a dataset:
 // base defaults -> chunk-method defaults -> caller overrides.
-func GetParserConfig(chunkMethod string, parserConfig map[string]interface{}) map[string]interface{} {
+func GetParserConfig(parserID string, parserConfig map[string]interface{}) map[string]interface{} {
 	baseDefaults := map[string]interface{}{
 		"table_context_size": 0,
 		"image_context_size": 0,
@@ -107,15 +107,8 @@ func GetParserConfig(chunkMethod string, parserConfig map[string]interface{}) ma
 			"raptor":   map[string]interface{}{"use_raptor": false},
 			"graphrag": map[string]interface{}{"use_graphrag": false},
 		},
-		"knowledge_graph": {
-			"chunk_token_num": 8192,
-			"delimiter":       "\\n",
-			"entity_types":    []interface{}{"organization", "person", "location", "event", "time"},
-			"raptor":          map[string]interface{}{"use_raptor": false},
-			"graphrag":        map[string]interface{}{"use_graphrag": false},
-		},
 	}
 
-	merged := DeepMergeMaps(baseDefaults, defaultConfigs[chunkMethod])
+	merged := DeepMergeMaps(baseDefaults, defaultConfigs[parserID])
 	return DeepMergeMaps(merged, parserConfig)
 }
