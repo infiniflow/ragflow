@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -77,20 +78,25 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
+	apiMessages := make([]map[string]any, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMessages[i] = map[string]any{
 			"role":    msg.Role,
 			"content": msg.Content,
+		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
 		}
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 0.6,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -120,6 +126,15 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 					"type": "disabled",
 				}
 			}
+		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			toolChoice := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				toolChoice = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
 		}
 	}
 
@@ -175,9 +190,9 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	var content string
+	if c, ok := messageMap["content"].(string); ok {
+		content = c
 	}
 
 	var reasonContent string
@@ -189,9 +204,24 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		}
 	}
 
+	var toolCalls []map[string]any
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]any); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
+	}
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
 	}
 
 	return chatResponse, nil
@@ -226,6 +256,12 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
+		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
 		}
 	}
 
@@ -268,6 +304,15 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 				}
 			}
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			toolChoice := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				toolChoice = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -300,6 +345,10 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+	}
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -314,6 +363,36 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			return nil
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if hasExisting {
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if args, ok := fn["arguments"].(string); ok {
+							if ef, ok := existing["function"].(map[string]interface{}); ok {
+								if ea, ok := ef["arguments"].(string); ok {
+									ef["arguments"] = ea + args
+								} else {
+									ef["arguments"] = args
+								}
+							}
+						}
+					}
+				} else {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+				}
+			}
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -342,6 +421,19 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	if !done && !sawTerminal {
 		return fmt.Errorf("moonshot: stream ended before [DONE] or finish_reason")
+	}
+
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		chatModelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility

@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 func TestGoogle_BuildURL(t *testing.T) {
@@ -145,8 +147,8 @@ func TestGoogle_InfoAndInputForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "google" {
-		t.Errorf("Name = %q, want google", info.Name)
+	if info.Name != "google_search" {
+		t.Errorf("Name = %q, want google_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "Google") {
 		t.Errorf("Desc = %q, want to mention Google", info.Desc)
@@ -160,6 +162,11 @@ func TestGoogle_InfoAndInputForm(t *testing.T) {
 	}
 	if _, ok := form["num"]; !ok {
 		t.Fatalf("InputForm missing num: %+v", form)
+	}
+	for _, configField := range []string{"api_key", "country", "language"} {
+		if _, exists := form[configField]; exists {
+			t.Fatalf("InputForm leaked node configuration %q: %+v", configField, form)
+		}
 	}
 }
 
@@ -220,17 +227,89 @@ func TestGoogle_BuildByNameAcceptsNodeParams(t *testing.T) {
 	}
 }
 
-func TestGoogle_BuildByNameRejectsRemovedAliasNodeParams(t *testing.T) {
+func TestGoogle_BuildByNameIgnoresUnrelatedCanvasParams(t *testing.T) {
 	t.Parallel()
 
-	_, err := BuildByName("google", map[string]any{
+	built, err := BuildByName("google", map[string]any{
 		"query":       "ragflow",
 		"max_results": 5,
+		"outputs":     map[string]any{"json": map[string]any{}},
 	})
-	if err == nil {
-		t.Fatal("expected error for removed google alias node params")
+	if err != nil {
+		t.Fatalf("BuildByName rejected unrelated Canvas params: %v", err)
 	}
-	if !strings.Contains(err.Error(), "does not accept node-level param") {
-		t.Fatalf("err = %q, want unsupported node-level param error", err.Error())
+	google := built.(*GoogleTool)
+	if google.defaults.Q != "" || google.defaults.Num != 0 {
+		t.Fatalf("unrelated params changed defaults: %+v", google.defaults)
+	}
+}
+
+func TestGoogle_ComponentReferencesAndOutputs(t *testing.T) {
+	t.Parallel()
+
+	google := NewGoogleTool()
+	spec := google.ComponentSpec()
+	if query, ok := spec.InputForm["q"].(map[string]any); !ok || query["name"] != "Query" || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["q"])
+	}
+	envelope := map[string]any{"results": []any{
+		map[string]any{
+			"title":   "RAGFlow",
+			"link":    "https://ragflow.io",
+			"snippet": "Go-first snippet",
+			"about_this_result": map[string]any{"source": map[string]any{
+				"description": "fallback description",
+			}},
+			"custom": "preserved",
+		},
+		map[string]any{
+			"title": "Fallback",
+			"link":  "https://example.com",
+			"about_this_result": map[string]any{"source": map[string]any{
+				"description": "about content",
+			}},
+		},
+	}}
+	chunks, docAggs := google.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 2 || len(docAggs) != 2 {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	if chunks[0]["content"] != "Go-first snippet" || chunks[1]["content"] != "about content" || chunks[0]["similarity"] != 1 {
+		t.Fatalf("reference content = %#v", chunks)
+	}
+	outputs := google.BuildComponentOutputs(envelope)
+	results, ok := outputs["json"].([]any)
+	if !ok || len(results) != 2 || results[0].(map[string]any)["custom"] != "preserved" {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	rendered, _ := outputs["formalized_content"].(string)
+	for _, want := range []string{"Title: RAGFlow", "Go-first snippet", "about content"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("formalized_content missing %q: %q", want, rendered)
+		}
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
 	}
 }
