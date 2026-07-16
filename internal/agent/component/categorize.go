@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // CategorizeComponent is an LLM classifier.
@@ -24,15 +26,19 @@ type CategorizeComponent struct {
 
 // CategorizeParam captures the (resolved) DSL parameters for a Categorize node.
 type CategorizeParam struct {
-	ModelID         string
-	Items           []string
-	Categories      []string
-	CategoryRoutes  map[string]string
-	SysPrompt       string
-	DefaultCategory string
-	Driver          string
-	APIKey          string
-	BaseURL         string
+	ModelID                  string
+	Query                    string
+	Items                    []string
+	Categories               []string
+	CategoryRoutes           map[string]string
+	CategoryDescriptions     map[string]string
+	CategoryExamples         map[string][]string
+	SysPrompt                string
+	DefaultCategory          string
+	MessageHistoryWindowSize int
+	Driver                   string
+	APIKey                   string
+	BaseURL                  string
 }
 
 // CategorizeOutput mirrors the outputs map (per plan §2.11.3 row 6):
@@ -60,14 +66,11 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 // something outside the configured set).
 func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
-	originalModelID := p.ModelID
-	if p.Driver == "" && p.ModelID != "" {
-		if modelID, driver, ok := splitCompositeLLMID(p.ModelID); ok {
-			p.Driver = driver
-			p.ModelID = modelID
-		}
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, err
 	}
-	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -83,9 +86,9 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	inv := getDefaultChatInvoker()
 	sysPrompt := p.SysPrompt
 	if sysPrompt == "" {
-		sysPrompt = "You are a strict classifier."
+		sysPrompt = buildCategorizeSystemPrompt(p)
 	}
-	userPrompt := buildCategorizePrompt(p)
+	userPrompt := buildCategorizePrompt(p, resolveCategorizeQuery(ctx, p, inputs))
 	msgs := []schema.Message{
 		{Role: schema.System, Content: sysPrompt},
 		{Role: schema.User, Content: userPrompt},
@@ -133,12 +136,22 @@ func (c *CategorizeComponent) Stream(ctx context.Context, inputs map[string]any)
 func (c *CategorizeComponent) Inputs() map[string]string {
 	return map[string]string{
 		"model_id":         "Provider-side model identifier",
+		"query":            "Variable reference or literal text to classify. Defaults to sys.query.",
 		"items":            "Optional list of items to classify (added to the prompt as context)",
 		"categories":       "List of allowed category names (response must match one)",
 		"sys_prompt":       "Optional system prompt; defaults to a strict classifier instruction",
 		"default_category": "Category returned if the model's answer is not in `categories` (defaults to categories[0])",
 		"driver":           "Provider driver name",
 		"api_key":          "Override API key",
+	}
+}
+
+func (c *CategorizeComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"type": "line",
+			"name": "Query",
+		},
 	}
 }
 
@@ -152,29 +165,112 @@ func (c *CategorizeComponent) Outputs() map[string]string {
 	}
 }
 
-// buildCategorizePrompt assembles a prompt that asks the model to pick a
-// category. The categories are listed deterministically (sorted) so the
-// prompt is stable across runs.
-func buildCategorizePrompt(p CategorizeParam) string {
+func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	cats := append([]string(nil), p.Categories...)
 	sort.Strings(cats)
 	var b strings.Builder
-	b.WriteString("Classify the following item into exactly one of these categories:\n")
+	b.WriteString("You are an advanced classification system that categorizes user questions into specific types. Analyze the input question and classify it into ONE of the following categories:\n")
 	for _, c := range cats {
 		b.WriteString("- ")
 		b.WriteString(c)
 		b.WriteString("\n")
 	}
-	if len(p.Items) > 0 {
-		b.WriteString("\nItems:\n")
-		for _, it := range p.Items {
-			b.WriteString("- ")
-			b.WriteString(it)
+
+	if len(p.CategoryDescriptions) > 0 {
+		b.WriteString("\nHere's description of each category:\n")
+		for _, c := range cats {
+			desc := strings.TrimSpace(p.CategoryDescriptions[c])
+			if desc == "" {
+				continue
+			}
+			b.WriteString("\n------\nCategory: ")
+			b.WriteString(c)
+			b.WriteString("\nDescription: ")
+			b.WriteString(desc)
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString("\nRespond with ONLY the category name, no other text.")
+
+	b.WriteString("\n---- Instructions ----\n")
+	b.WriteString("- Consider both explicit mentions and implied context\n")
+	b.WriteString("- Prioritize the most specific applicable category\n")
+	b.WriteString("- Return only the category name without explanations\n")
+	b.WriteString("- Use \"Other\" only when no other category fits\n")
+
+	examples := categorizeExamples(p, cats)
+	if len(examples) > 0 {
+		b.WriteString("\n---- Examples ----\n")
+		for _, line := range examples {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
 	return b.String()
+}
+
+func categorizeExamples(p CategorizeParam, cats []string) []string {
+	lines := []string{}
+	for _, c := range cats {
+		for _, example := range p.CategoryExamples[c] {
+			example = strings.TrimSpace(strings.ReplaceAll(example, "\n", "    "))
+			if example == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("USER: %q -> %s", example, c))
+		}
+	}
+	if len(lines) > 0 {
+		return lines
+	}
+	for _, it := range p.Items {
+		it = strings.TrimSpace(strings.ReplaceAll(it, "\n", "    "))
+		if it == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("USER: %q", it))
+	}
+	return lines
+}
+
+// buildCategorizePrompt mirrors Python's Categorize user prompt: the system
+// prompt carries category definitions/examples, while the user prompt carries
+// the actual runtime query to classify.
+func buildCategorizePrompt(_ CategorizeParam, query string) string {
+	query = strings.ReplaceAll(query, "\n", "")
+	return fmt.Sprintf("\n---- Real Data ----\nUSER: %q ->\n", query)
+}
+
+func resolveCategorizeQuery(ctx context.Context, p CategorizeParam, inputs map[string]any) string {
+	if v, ok := stringValueFromAny(inputs["query"]); ok {
+		return v
+	}
+	queryRef := strings.TrimSpace(p.Query)
+	if queryRef == "" {
+		queryRef = "sys.query"
+	}
+	if v, ok := stringValueFromAny(inputs[queryRef]); ok {
+		return v
+	}
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if v, err := state.GetVar(queryRef); err == nil {
+			if s, ok := stringValueFromAny(v); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func stringValueFromAny(v any) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	switch t := v.(type) {
+	case string:
+		return t, true
+	default:
+		return fmt.Sprint(t), true
+	}
 }
 
 // pickCategory extracts a category from the model's response. Strategy:
@@ -229,20 +325,20 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 	} else if v, ok := stringFrom(inputs, "llm_id"); ok {
 		p.ModelID = v
 	}
+	if v, ok := stringFrom(inputs, "query"); ok {
+		p.Query = v
+	}
 	if v, ok := sliceFrom(inputs, "items"); ok {
 		p.Items = v
 	}
 	if v, ok := sliceFrom(inputs, "categories"); ok {
 		p.Categories = v
-	} else if m, ok := stringMapFrom(inputs, "category_description"); ok && len(m) > 0 {
+	} else if meta, ok := categoryMetadataFrom(inputs, "category_description"); ok && len(meta.Names) > 0 {
 		// v1 stores the categories as a map of {name: description}.
 		// We only need the keys to drive the picker.
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		p.Categories = keys
+		p.Categories = meta.Names
+		p.CategoryDescriptions = meta.Descriptions
+		p.CategoryExamples = meta.Examples
 	}
 	if routes, ok := categoryRoutesFrom(inputs, "category_description"); ok {
 		p.CategoryRoutes = routes
@@ -267,35 +363,63 @@ func mergeCategorizeParam(base CategorizeParam, inputs map[string]any) Categoriz
 	return p
 }
 
-// stringMapFrom extracts map[string]string from inputs[name]. The v1
-// "category_description" field is shaped this way (name → human
-// description); we only consume the keys.
-func stringMapFrom(inputs map[string]any, name string) (map[string]string, bool) {
+type categorizeMetadata struct {
+	Names        []string
+	Descriptions map[string]string
+	Examples     map[string][]string
+}
+
+func categoryMetadataFrom(inputs map[string]any, name string) (categorizeMetadata, bool) {
 	v, ok := inputs[name]
 	if !ok {
-		return nil, false
+		return categorizeMetadata{}, false
 	}
 	raw, ok := v.(map[string]any)
 	if !ok {
-		return nil, false
+		return categorizeMetadata{}, false
 	}
-	out := make(map[string]string, len(raw))
+	out := categorizeMetadata{
+		Names:        make([]string, 0, len(raw)),
+		Descriptions: make(map[string]string, len(raw)),
+		Examples:     make(map[string][]string, len(raw)),
+	}
 	for k, child := range raw {
+		out.Names = append(out.Names, k)
 		if s, ok := child.(string); ok {
-			out[k] = s
+			out.Descriptions[k] = s
 			continue
 		}
-		// Some encoders nest the description under a "description"
-		// key; handle that fallback defensively.
 		if nested, ok := child.(map[string]any); ok {
 			if s, ok := nested["description"].(string); ok {
-				out[k] = s
-				continue
+				out.Descriptions[k] = s
+			}
+			out.Examples[k] = examplesFromAny(nested["examples"])
+			continue
+		}
+	}
+	sort.Strings(out.Names)
+	return out, true
+}
+
+func examplesFromAny(v any) []string {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		switch t := item.(type) {
+		case string:
+			if t != "" {
+				out = append(out, t)
+			}
+		case map[string]any:
+			if s, _ := t["value"].(string); s != "" {
+				out = append(out, s)
 			}
 		}
-		out[k] = ""
 	}
-	return out, true
+	return out
 }
 
 func categoryRoutesFrom(inputs map[string]any, name string) (map[string]string, bool) {
@@ -333,6 +457,9 @@ func init() {
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
 			p.ModelID = v
 		}
+		if v, ok := stringFrom(params, "query"); ok {
+			p.Query = v
+		}
 		// Check the object-style []any of maps first. sliceFrom would
 		// otherwise match the same []any input and return (empty, true)
 		// for non-string elements, making the object branch unreachable.
@@ -349,6 +476,12 @@ func init() {
 					continue
 				}
 				names = append(names, name)
+				if desc, _ := m["description"].(string); desc != "" {
+					if p.CategoryDescriptions == nil {
+						p.CategoryDescriptions = map[string]string{}
+					}
+					p.CategoryDescriptions[name] = desc
+				}
 				if route, ok := firstRouteTarget(m["to"]); ok {
 					routes[name] = route
 				} else if uuid, _ := m["uuid"].(string); uuid != "" {
@@ -356,12 +489,18 @@ func init() {
 				}
 				if examples, ok := m["examples"].([]any); ok {
 					for _, example := range examples {
-						em, ok := example.(map[string]any)
-						if !ok {
-							continue
+						if p.CategoryExamples == nil {
+							p.CategoryExamples = map[string][]string{}
 						}
-						if v, _ := em["value"].(string); v != "" {
-							p.Items = append(p.Items, v)
+						switch em := example.(type) {
+						case map[string]any:
+							if v, _ := em["value"].(string); v != "" {
+								p.CategoryExamples[name] = append(p.CategoryExamples[name], v)
+							}
+						case string:
+							if em != "" {
+								p.CategoryExamples[name] = append(p.CategoryExamples[name], em)
+							}
 						}
 					}
 				}
@@ -377,15 +516,13 @@ func init() {
 		}
 		if v, ok := sliceFrom(params, "categories"); ok {
 			p.Categories = v
-		} else if m, ok := params["category_description"].(map[string]any); ok && len(m) > 0 {
-			keys := make([]string, 0, len(m))
-			for k := range m {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			p.Categories = keys
-			routes := make(map[string]string, len(m))
-			for k, child := range m {
+		} else if meta, ok := categoryMetadataFrom(params, "category_description"); ok && len(meta.Names) > 0 {
+			p.Categories = meta.Names
+			p.CategoryDescriptions = meta.Descriptions
+			p.CategoryExamples = meta.Examples
+			routes := make(map[string]string, len(meta.Names))
+			raw, _ := params["category_description"].(map[string]any)
+			for k, child := range raw {
 				nested, ok := child.(map[string]any)
 				if !ok {
 					continue
@@ -407,6 +544,9 @@ func init() {
 		}
 		if v, ok := stringFrom(params, "default_category"); ok {
 			p.DefaultCategory = v
+		}
+		if v, ok := intFrom(params, "message_history_window_size"); ok {
+			p.MessageHistoryWindowSize = v
 		}
 		if v, ok := stringFrom(params, "driver"); ok {
 			p.Driver = v

@@ -125,19 +125,85 @@ func TestCategorize_PromptListsCategories(t *testing.T) {
 	if stub.captured == nil {
 		t.Fatal("invoker not called")
 	}
+	var systemContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "system" {
+			systemContent = m.Content
+		}
+	}
+	if systemContent == "" {
+		t.Fatal("no system message in captured invoker request")
+	}
+	for _, want := range []string{"x", "y", "z", "foo", "bar"} {
+		if !strings.Contains(systemContent, want) {
+			t.Errorf("prompt missing %q; got: %s", want, systemContent)
+		}
+	}
+}
+
+func TestCategorize_PromptIncludesRuntimeQuery(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "English", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "he who desires but acts not"
+	ctx := canvas.WithState(context.Background(), state)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:    "stub",
+		Query:      "sys.query",
+		Categories: []string{"Number", "chinese", "English"},
+		CategoryDescriptions: map[string]string{
+			"Number":  "This query has only a number",
+			"chinese": "this query only has chinese",
+			"English": "this query has english letter",
+		},
+	})
+	_, err := c.Invoke(ctx, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
 	var userContent string
 	for _, m := range stub.captured.Messages {
 		if m.Role == "user" {
 			userContent = m.Content
 		}
 	}
-	if userContent == "" {
-		t.Fatal("no user message in captured invoker request")
+	if !strings.Contains(userContent, "he who desires but acts not") {
+		t.Fatalf("user prompt = %q, want runtime query", userContent)
 	}
-	for _, want := range []string{"x", "y", "z", "foo", "bar"} {
-		if !strings.Contains(userContent, want) {
-			t.Errorf("prompt missing %q; got: %s", want, userContent)
+	if strings.Contains(userContent, "Number") || strings.Contains(userContent, "chinese") {
+		t.Fatalf("user prompt should carry real data only, got %q", userContent)
+	}
+}
+
+func TestCategorize_PromptUsesInputQueryValue(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "chinese", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:    "stub",
+		Query:      "sys.query",
+		Categories: []string{"Number", "chinese", "English"},
+	})
+	_, err := c.Invoke(context.Background(), map[string]any{"query": "测试"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == "user" {
+			userContent = m.Content
 		}
+	}
+	if !strings.Contains(userContent, "测试") {
+		t.Fatalf("user prompt = %q, want input query value", userContent)
 	}
 }
 
@@ -240,6 +306,66 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	}
 	if stub.captured.BaseURL != "https://instance.example" {
 		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "https://instance.example")
+	}
+}
+
+func TestCategorize_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "SILICONFLOW",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "prod-east",
+		APIKey:       "instance-key",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "3d2d824e7e5d11f1a845455b140cef90",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "Qwen/Qwen3-8B",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "support", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:         "3d2d824e7e5d11f1a845455b140cef90",
+		Categories:      []string{"sales", "support"},
+		DefaultCategory: "support",
+	})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if stub.captured.Driver != "SILICONFLOW" {
+		t.Fatalf("Driver=%q, want SILICONFLOW", stub.captured.Driver)
+	}
+	if stub.captured.ModelName != "Qwen/Qwen3-8B" {
+		t.Fatalf("ModelName=%q, want Qwen/Qwen3-8B", stub.captured.ModelName)
+	}
+	if stub.captured.APIKey != "instance-key" {
+		t.Fatalf("APIKey=%q, want instance-key", stub.captured.APIKey)
+	}
+	if stub.captured.BaseURL != "https://instance.example" {
+		t.Fatalf("BaseURL=%q, want https://instance.example", stub.captured.BaseURL)
 	}
 }
 
