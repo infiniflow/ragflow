@@ -59,6 +59,7 @@ const (
 	ParserTypeAudio        ParserType = "audio"
 	ParserTypeEmail        ParserType = "email"
 	ParserTypeTag          ParserType = "tag"
+	ParserTypeKG           ParserType = "knowledge_graph"
 )
 
 // TaskStatus represents the status of a processing task

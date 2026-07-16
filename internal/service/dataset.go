@@ -2981,6 +2981,9 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 // legacy hardcoded allow-list is gone. Legacy values (e.g. "naive") are
 // accepted via registry aliases.
 func validateParserID(chunkMethod string) error {
+	if chunkMethod == "knowledge_graph" {
+		return nil
+	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
 		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
