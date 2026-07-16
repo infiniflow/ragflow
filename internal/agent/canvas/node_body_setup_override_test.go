@@ -33,13 +33,13 @@ func (s *stubComponent) Invoke(_ context.Context, in map[string]any) (map[string
 	return in, nil
 }
 
-// TestBuildNodeBody_SetupOverrides asserts that a run-level setups override
+// TestBuildNodeBody_OverrideParams asserts that a run-level setups override
 // (threaded via ctx, keyed by cpnID) is merged into the component's
 // `params["setups"]` before the factory is called. Only the entry for the
 // component's own cpnID applies. The merge is shallow: a top-level key
 // present in the override fully replaces the base entry for that key
 // (no inner deep-merge), while base keys absent from the override survive.
-func TestBuildNodeBody_SetupOverrides(t *testing.T) {
+func TestBuildNodeBody_OverrideParams(t *testing.T) {
 	captured := map[string]any{}
 	factory := func(name string, params map[string]any) (runtime.Component, error) {
 		// Deep-shallow copy so later mutations by the builder don't
@@ -84,7 +84,7 @@ func TestBuildNodeBody_SetupOverrides(t *testing.T) {
 	}
 
 	ctx := WithComponentFactory(context.Background(), factory)
-	ctx = withSetupOverrides(ctx, override)
+	ctx = withOverrideParams(ctx, override)
 
 	body, err := buildNodeBody(ctx, "cpn-parser", "Parser", baseParams)
 	if err != nil {
@@ -120,10 +120,10 @@ func TestBuildNodeBody_SetupOverrides(t *testing.T) {
 	}
 }
 
-// TestBuildNodeBody_SetupOverridesNilIsNoOp asserts that with no override in
+// TestBuildNodeBody_OverrideParamsNilIsNoOp asserts that with no override in
 // ctx the component receives exactly its base params (no spurious setups key
 // injected, and the original map is untouched).
-func TestBuildNodeBody_SetupOverridesNilIsNoOp(t *testing.T) {
+func TestBuildNodeBody_OverrideParamsNilIsNoOp(t *testing.T) {
 	captured := map[string]any{}
 	factory := func(name string, params map[string]any) (runtime.Component, error) {
 		cp := make(map[string]any, len(params))

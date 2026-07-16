@@ -74,7 +74,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
-// ctxKeySetupOverrides carries the run-level setups override map into
+// ctxKeyOverrideParams carries the run-level setups override map into
 // BuildWorkflow so a component's `params["setups"]` can be merged with it
 // at compile time. The map is keyed by cpnID; each component only sees the
 // entry for its own id (an arbitrary string-keyed map). It mirrors the ctx
@@ -82,30 +82,30 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // (componentFactoryFromContext): the override is threaded through
 // canvas.Compile → BuildWorkflow → buildNodeBody without the canvas
 // package ever importing the ingestion layer.
-const ctxKeySetupOverrides ctxKey = "canvas_setup_overrides"
+const ctxKeyOverrideParams ctxKey = "canvas_override_params"
 
-// withSetupOverrides attaches a run-level setups override map to ctx. It is
+// withOverrideParams attaches a run-level setups override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
 // straight through.
-func withSetupOverrides(ctx context.Context, m map[string]any) context.Context {
+func withOverrideParams(ctx context.Context, m map[string]any) context.Context {
 	if m == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, ctxKeySetupOverrides, m)
+	return context.WithValue(ctx, ctxKeyOverrideParams, m)
 }
 
-func setupOverridesFromContext(ctx context.Context) map[string]any {
-	m, _ := ctx.Value(ctxKeySetupOverrides).(map[string]any)
+func overrideParamsFromContext(ctx context.Context) map[string]any {
+	m, _ := ctx.Value(ctxKeyOverrideParams).(map[string]any)
 	return m
 }
 
-// applySetupOverrides returns a clone of params with the per-component
+// applyOverrideParams returns a clone of params with the per-component
 // setups override (already resolved for this cpnID by the caller) merged
 // into params["setups"]. The override wins on top-level key collisions. The
 // original params map is never mutated — the merge result is a fresh map —
 // because the params come from the shared *Canvas and a per-run override
 // must not leak into the next Run on the same Pipeline.
-func applySetupOverrides(params, cpnOverride map[string]any) map[string]any {
+func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
 	}
@@ -136,11 +136,11 @@ func mergeSetups(base, override map[string]any) map[string]any {
 }
 
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
-	if overrides := setupOverridesFromContext(ctx); len(overrides) > 0 {
+	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
 		if cpnOverride, ok := overrides[cpnID].(map[string]any); ok && len(cpnOverride) > 0 {
-			params = applySetupOverrides(params, cpnOverride)
+			params = applyOverrideParams(params, cpnOverride)
 		}
 	}
 	if isLegacyNoOp(name) {
