@@ -11,7 +11,10 @@ import {
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import kbService from '@/services/knowledge-service';
-import { fetchBackendLanguage } from '@/utils/backend-runtime';
+import {
+  getBackendLanguage,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -20,7 +23,8 @@ import userService, {
   listTenantUser,
 } from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -109,13 +113,11 @@ export const useSelectParserList = (): Array<{
   // the matching parser-list code path at runtime.
   // fetchBackendLanguage / getBackendLanguage handle their own caching
   // internally; no need for an extra useQuery layer.
-  const [backendLang, setBackendLang] = useState<string | null>(
-    getBackendLanguage(),
+  const backendLang = useSyncExternalStore(
+    subscribeBackendLanguage,
+    getBackendLanguage,
+    getBackendLanguage,
   );
-
-  useEffect(() => {
-    fetchBackendLanguage().then(setBackendLang);
-  }, []);
 
   // Go backend: fetch pipeline catalog dynamically.
   const { data: pipelineListData } = useQuery({

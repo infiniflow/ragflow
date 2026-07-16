@@ -1,33 +1,40 @@
 /**
  * Backend runtime language detection.
  *
- * Fetches /api/v1/language at runtime (once, then caches) so the front end
- * can choose between Go-specific and Python-specific code paths without a
- * build-time flag.
+ * Fetches /api/v1/language once at module load (app start) and caches the
+ * result. Components subscribe via React's useSyncExternalStore; there is no
+ * per-component fetch or useEffect.
  *
- * Pattern: same lightweight fetch-once approach as enterprise billingStatus.ts.
+ * Pattern: module-level fetch + listener set, same subscription approach as
+ * enterprise billingStatus.ts.
  */
 
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
 let backendLanguage: string | null = null;
-let fetching: Promise<string> | null = null;
 
-export const fetchBackendLanguage = async (): Promise<string> => {
-  if (backendLanguage) return backendLanguage;
-  if (fetching) return fetching;
+// Kick off the fetch at module load — app start, not component mount.
+const promise: Promise<string> = fetch('/api/v1/language')
+  .then((r) => r.json())
+  .then((body: { data?: { language?: string } }) => {
+    backendLanguage = body.data?.language === 'go' ? 'go' : 'python';
+    listeners.forEach((fn) => fn());
+    return backendLanguage;
+  })
+  .catch(() => {
+    backendLanguage = 'python';
+    listeners.forEach((fn) => fn());
+    return 'python';
+  });
 
-  fetching = (async () => {
-    try {
-      const res = await fetch('/api/v1/language');
-      const body = await res.json();
-      backendLanguage = body.data?.language === 'go' ? 'go' : 'python';
-      return backendLanguage;
-    } catch {
-      backendLanguage = 'python';
-      return 'python';
-    }
-  })();
-
-  return fetching;
-};
+export const fetchBackendLanguage = (): Promise<string> => promise;
 
 export const getBackendLanguage = (): string | null => backendLanguage;
+
+export const subscribeBackendLanguage = (listener: Listener): (() => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
