@@ -49,7 +49,7 @@ func setupHandlerAgentsTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},

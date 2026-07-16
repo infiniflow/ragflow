@@ -48,6 +48,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -59,6 +60,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // ExeSQL-specific errors. ErrExeSQLDAOMissing is surfaced when
@@ -155,6 +158,8 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 	}
 	if v, ok := intParam(params, "max_records"); ok {
 		conn.MaxRecords = v
+	} else if v, ok := intParam(params, "top_n"); ok {
+		conn.MaxRecords = v
 	}
 	if conn.DBType == "" || conn.Host == "" || conn.Username == "" || conn.Database == "" {
 		return conn, fmt.Errorf("ExeSQL: missing required connection params (db_type/host/database/username)")
@@ -209,6 +214,8 @@ type ExeSQLTool struct {
 	dialer exesqlDialer
 }
 
+var _ ToolComponent = (*ExeSQLTool)(nil)
+
 // NewExeSQLTool returns an ExeSQLTool wired to the given connection
 // params. The dialer defaults to `sql.Open`; tests can pass a
 // sqlmock-backed dialer via WithExeSQLDialer.
@@ -261,6 +268,21 @@ func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
+func (e *ExeSQLTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"sql": "SQL statement to execute (SELECT-only; DML/DDL rejected).",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "SQL result rendered as Markdown.",
+			"json":               "Raw SQL statement results.",
+		},
+		InputForm: map[string]any{
+			"sql": map[string]any{"name": "SQL", "type": "line"},
+		},
+	}
+}
+
 // InvokableRun validates the SQL, opens a fresh connection scoped to
 // the tool's params, executes each semicolon-separated statement, and
 // returns the rows. Per-statement errors do not abort the node: they
@@ -274,6 +296,13 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 		return exesqlErrorResult(fmt.Errorf("exesql: parse arguments: %w", err)),
 			fmt.Errorf("exesql: parse arguments: %w", err)
+	}
+	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		resolved, resolveErr := runtime.ResolveTemplate(args.SQL, state)
+		if resolveErr != nil {
+			return exesqlErrorResult(resolveErr), resolveErr
+		}
+		args.SQL = resolved
 	}
 	if strings.TrimSpace(args.SQL) == "" {
 		return exesqlErrorResult(errors.New("exesql: empty sql")), errors.New("exesql: empty sql")
@@ -328,6 +357,73 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 		return exesqlErrorResult(err), err
 	}
 	return exesqlMarshalResult(res)
+}
+
+func (e *ExeSQLTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	rows := envelopeSlice(envelope, "rows")
+	columns := envelopeSlice(envelope, "columns")
+	jsonResult := make([]any, 0, 1)
+	if len(rows) == 1 {
+		if row, ok := rows[0].(map[string]any); ok && len(row) == 1 {
+			if _, hasContent := row["content"]; hasContent {
+				jsonResult = append(jsonResult, row)
+			}
+		}
+	}
+	if len(jsonResult) == 0 && len(rows) > 0 {
+		jsonResult = append(jsonResult, rows)
+	}
+	return map[string]any{
+		"formalized_content": renderExeSQLMarkdown(columns, rows),
+		"json":               jsonResult,
+	}
+}
+
+func renderExeSQLMarkdown(columns, rows []any) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	for _, value := range rows {
+		if row, ok := value.(map[string]any); ok && len(row) == 1 {
+			if message, exists := row["content"]; exists {
+				return fmt.Sprint(message)
+			}
+		}
+	}
+	columnNames := make([]string, 0, len(columns))
+	for _, column := range columns {
+		columnNames = append(columnNames, fmt.Sprint(column))
+	}
+	if len(columnNames) == 0 {
+		if first, ok := rows[0].(map[string]any); ok {
+			for column := range first {
+				columnNames = append(columnNames, column)
+			}
+			sort.Strings(columnNames)
+		}
+	}
+	if len(columnNames) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(columnNames, " | "))
+	separators := make([]string, len(columnNames))
+	for i := range separators {
+		separators[i] = "---"
+	}
+	fmt.Fprintf(&builder, "| %s |\n", strings.Join(separators, " | "))
+	for _, value := range rows {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		cells := make([]string, len(columnNames))
+		for i, column := range columnNames {
+			cells[i] = strings.ReplaceAll(strings.ReplaceAll(fmt.Sprint(row[column]), "|", "\\|"), "\n", "<br>")
+		}
+		fmt.Fprintf(&builder, "| %s |\n", strings.Join(cells, " | "))
+	}
+	return strings.TrimSuffix(builder.String(), "\n")
 }
 
 // exesqlExecute splits the SQL on statement-delimiting semicolons and runs

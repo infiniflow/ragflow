@@ -112,6 +112,41 @@ func TestMessage_RuntimeContentInput(t *testing.T) {
 	}
 }
 
+func TestMessage_FormalizedContentFallback(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-5", "task-5")
+	ctx := withStateForTest(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{
+		"formalized_content": "retrieved answer",
+		"_created_time":      "2026-07-15T00:00:00Z",
+		"_elapsed_time":      0.01,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "retrieved answer" {
+		t.Errorf("content: got %q, want %q", got, "retrieved answer")
+	}
+}
+
+func TestMessage_SingleStringFallback(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-6", "task-6")
+	ctx := withStateForTest(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{
+		"value":         "single upstream text",
+		"_elapsed_time": 0.01,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "single upstream text" {
+		t.Errorf("content: got %q, want %q", got, "single upstream text")
+	}
+}
+
 // withStateForTest is a thin alias for canvas.WithState kept for
 // readability at the test call sites (also defined in begin_test.go).
 // Same package → same symbol; defining it twice is a compile error,

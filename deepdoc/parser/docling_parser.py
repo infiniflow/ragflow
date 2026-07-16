@@ -347,6 +347,26 @@ class DoclingParser(RAGFlowPdfParser):
             return docs
         return []
 
+    @staticmethod
+    def _looks_like_chunk_response(payload: Any) -> bool:
+        """Return True iff ``payload`` looks like a chunking endpoint response.
+
+        A chunk response is either a non-empty top-level list or a dict that
+        carries a non-empty ``results`` or ``chunks`` list. A standard
+        conversion response (``{"document": ..., "status": ...}``) does not
+        match, so a server that silently ignored the ``do_chunking`` flag is
+        correctly classified as standard even when the request payload asked
+        for chunking.
+        """
+        if isinstance(payload, list):
+            return bool(payload)
+        if isinstance(payload, dict):
+            for key in ("results", "chunks"):
+                value = payload.get(key)
+                if isinstance(value, list) and value:
+                    return True
+        return False
+
     def _parse_pdf_remote(
         self,
         filepath: str | PathLike[str],
@@ -360,9 +380,13 @@ class DoclingParser(RAGFlowPdfParser):
         """
         Parses a PDF document using a remote Docling server.
 
-        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source)
-        to prevent token overflow, with a graceful fallback to standard conversion
-        endpoints if chunking is unavailable.
+        Sends the document with chunking options first, then falls back to a
+        standard conversion payload if the server rejects the chunking parameters.
+        The chunked-vs-standard parsing decision is made from the **response
+        shape**, not the request shape: Docling Serve silently drops unknown
+        fields such as ``do_chunking`` and returns a standard conversion
+        response, so the response is treated as standard even when chunking
+        was requested.
         """
         server_url = self._effective_server_url(docling_server_url)
         if not server_url:
@@ -437,10 +461,13 @@ class DoclingParser(RAGFlowPdfParser):
                 )
                 if resp.status_code < 300:
                     response_json = resp.json()
-                    is_chunked_response = chunk_flag
+                    response_is_chunk = self._looks_like_chunk_response(response_json)
+                    is_chunked_response = chunk_flag and response_is_chunk
 
-                    if chunk_flag:
+                    if chunk_flag and response_is_chunk:
                         self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
+                    elif chunk_flag:
+                        self.logger.warning(f"[Docling] Server ignored chunking request on {endpoint}; treating response as standard conversion.")
                     else:
                         self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
                     break

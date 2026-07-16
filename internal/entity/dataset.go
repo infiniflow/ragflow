@@ -235,19 +235,3 @@ type KnowledgebaseListItem struct {
 	TenantAvatar *string `json:"tenant_avatar,omitempty"`
 	UpdateTime   *int64  `json:"update_time,omitempty"`
 }
-
-// InvitationCode represents the invitation code model
-type InvitationCode struct {
-	ID        string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	Code      string     `gorm:"column:code;size:32;not null;index" json:"code"`
-	VisitTime *time.Time `gorm:"column:visit_time;index" json:"visit_time,omitempty"`
-	UserID    *string    `gorm:"column:user_id;size:32;index" json:"user_id,omitempty"`
-	TenantID  *string    `gorm:"column:tenant_id;size:32;index" json:"tenant_id,omitempty"`
-	Status    *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
-	BaseModel
-}
-
-// TableName returns the table name for InvitationCode model
-func (InvitationCode) TableName() string {
-	return "invitation_code"
-}
