@@ -142,7 +142,7 @@ const TokenChunkerForm = ({
                 ))}
               </div>
             </section>
-            <BlockButton onClick={() => append({ value: '\n' })}>
+            <BlockButton type="button" onClick={() => append({ value: '\n' })}>
               {t('common.add')}
             </BlockButton>
           </>

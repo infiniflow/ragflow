@@ -190,7 +190,7 @@ export function transformApiConfigToForm(
 ): Record<string, any> {
   switch (operatorType) {
     case Operator.Parser:
-      return config ?? {}; // transformParserConfigSetups handles the setups conversion in normalizeOperatorForm
+      return { setups: transformParserConfigSetups(config) };
     case Operator.Extractor:
       return transformExtractorConfigToForm(config);
     case Operator.Tokenizer:
@@ -238,12 +238,12 @@ function normalizeOperatorForm(
 
   switch (operatorType) {
     case Operator.Parser: {
-      const setups = transformParserConfigSetups(rawForm?.setups);
       return {
         ...cloneDeep(initialParserValues),
         ...rawForm,
-        setups:
-          setups.length > 0 ? setups : cloneDeep(initialParserValues.setups),
+        setups: rawForm?.setups?.length
+          ? rawForm.setups
+          : cloneDeep(initialParserValues.setups),
       };
     }
     case Operator.TitleChunker:

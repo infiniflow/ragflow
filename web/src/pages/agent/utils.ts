@@ -326,7 +326,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
     return pre;
   }, {});
 
-  return { ...params, setups };
+  return { ...omit(params, ['setups']), ...setups };
 }
 
 export function transformTokenChunkerParams(

@@ -1,3 +1,7 @@
+import {
+  AutoKeywordsFormField,
+  AutoQuestionsFormField,
+} from '@/components/auto-keywords-form-field';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
@@ -30,6 +34,8 @@ export const FormSchema = z.object({
   field_name: z.string(),
   sys_prompt: z.string(),
   prompts: z.string().optional(),
+  auto_keywords: z.number().optional(),
+  auto_questions: z.number().optional(),
   ...LlmSettingSchema,
 });
 
@@ -75,6 +81,8 @@ const ExtractorForm = ({
         <LargeModelFormField
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
+        <AutoKeywordsFormField name="auto_keywords"></AutoKeywordsFormField>
+        <AutoQuestionsFormField name="auto_questions"></AutoQuestionsFormField>
         <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch
