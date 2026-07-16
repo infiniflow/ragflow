@@ -844,10 +844,19 @@ func (s *ChatPipelineService) AsyncChat(
 		// return the user-configured fallback message (if set).
 		// If empty_response is not configured, fall through to the LLM call
 		// with an empty knowledge context.
+		//
+		// Two results are yielded (mirroring Python dialog_service.py):
+		//   1. Final=false — carries the answer text so streaming consumers
+		//      actually display the fallback message.
+		//   2. Final=true   — closes the stream with the reference/prompt.
 		if len(knowledges) == 0 {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
-					Answer:      emptyResp,
+					Answer:    emptyResp,
+					Reference: map[string]interface{}{},
+				}
+				out <- AsyncChatResult{
+					Answer:      "",
 					Reference:   kbinfos,
 					AudioBinary: s.synthesizeTTS(ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),

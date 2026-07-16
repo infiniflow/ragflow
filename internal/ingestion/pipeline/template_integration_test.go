@@ -87,7 +87,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -543,7 +543,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -623,7 +623,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -745,7 +745,7 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
 		"llm_id": model + "@openai",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			attachFixedEmbedderFactory(t, pipe)
 			out, err := pipe.Run(context.Background(), map[string]any{
 				"doc_id": docID,
-			})
+			}, nil)
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}

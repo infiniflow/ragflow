@@ -60,7 +60,8 @@ def _navigate_schema(name: str, desc: str) -> dict:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {"type": "string", "description": "navigate by topic"},
+                    "topic": {"type": "string", "description": "the topic to navigate to."},
+                    "keywords": {"type": "string", "description": "the keywords used for searching split by space or ','."},
                 },
                 "required": ["topic"],
             },

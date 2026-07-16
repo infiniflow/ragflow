@@ -82,7 +82,7 @@ func (s *PipelineExecutor) defaultRunPipeline(ctx context.Context, dsl string) (
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
 
-	output, err := pipe.Run(ctx, inputs)
+	output, err := pipe.Run(ctx, inputs, nil)
 	if err != nil {
 		return nil, dsl, err
 	}

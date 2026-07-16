@@ -56,9 +56,9 @@ func defaultResolveTenantModelByType(tenantID string, modelType entity.ModelType
 	case entity.ModelTypeImage2Text:
 		modelID = tenant.Img2TxtID
 	case entity.ModelTypeTTS:
-		modelID = tenant.TTSID
+		modelID = *tenant.TTSID
 	case entity.ModelTypeOCR:
-		modelID = tenant.OCRID
+		modelID = *tenant.OCRID
 	default:
 		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
 	}

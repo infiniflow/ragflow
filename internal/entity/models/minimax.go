@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -85,14 +86,19 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -112,7 +118,7 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 			reqBody["do_sample"] = *chatModelConfig.DoSample
 		}
 
-		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
 					"type": "adaptive",
@@ -123,6 +129,10 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 					"type": "disabled",
 				}
 			}
+		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
 		}
 	}
 
@@ -178,25 +188,36 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("no message in response")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
+	content, _ := messageMap["content"].(string)
 
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
+		if rc, ok := messageMap["reasoning_content"].(string); ok {
+			reasonContent = rc
+			if reasonContent != "" && reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
+			}
 		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+	}
+
+	var toolCalls []map[string]any
+	if tcs, ok := messageMap["tool_calls"].([]any); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]any); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
 		}
 	}
 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
+	}
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
 	}
 
 	return chatResponse, nil
@@ -232,14 +253,19 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if modelConfig != nil {
@@ -275,6 +301,10 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 				}
 			}
 		}
+
+		if modelConfig.Tools != nil {
+			reqBody["tools"] = modelConfig.Tools
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -307,6 +337,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -321,6 +352,36 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			return nil
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if hasExisting {
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if args, ok := fn["arguments"].(string); ok {
+							if ef, ok := existing["function"].(map[string]interface{}); ok {
+								if ea, ok := ef["arguments"].(string); ok {
+									ef["arguments"] = ea + args
+								} else {
+									ef["arguments"] = args
+								}
+							}
+						}
+					}
+				} else {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+				}
+			}
 		}
 
 		content, ok := delta["content"].(string)
@@ -349,6 +410,19 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 	if !done && !sawTerminal {
 		return fmt.Errorf("minimax: stream ended before [DONE] or finish_reason")
+	}
+
+	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		modelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
