@@ -241,6 +241,16 @@ func (v *VariableAggregatorComponent) Stream(ctx context.Context, inputs map[str
 	return ch, nil
 }
 
+// GetInputForm returns the runtime input form consumed by the debug UI.
+func (v *VariableAggregatorComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"variables": map[string]any{
+			"name": "Variables",
+			"type": "line",
+		},
+	}
+}
+
 // Inputs returns the public parameter surface. The "variables" key
 // accepts a runtime override of the per-group variable list (matching
 // the Python get_input_form contract).

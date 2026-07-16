@@ -96,7 +96,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput) error {
+func Init(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -107,7 +107,7 @@ func Init(level string, file FileOutput) error {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:       "timestamp",
 		LevelKey:      "level",
-		NameKey:       "logger",
+		NameKey:       "service",
 		CallerKey:     "",
 		FunctionKey:   "",
 		MessageKey:    "msg",
@@ -119,9 +119,10 @@ func Init(level string, file FileOutput) error {
 		// / "-HH:MM"). Easier to ingest than the default "2006-01-02
 		// 15:04:05" layout — which had no ms and no zone — and avoids
 		// the variable-width output of RFC3339Nano.
-		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02T15:04:05.000Z07:00"),
+		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000-07:00"),
 		EncodeDuration: zapcore.SecondsDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
 	}
 
 	maxSize := file.MaxSize
@@ -156,7 +157,11 @@ func Init(level string, file FileOutput) error {
 		atomicLevel,
 	)
 
-	Logger = zap.New(core, zap.AddCallerSkip(1))
+	if serviceName != "" {
+		Logger = zap.New(core, zap.AddCallerSkip(1)).Named(serviceName)
+	} else {
+		Logger = zap.New(core, zap.AddCallerSkip(1))
+	}
 	Sugar = Logger.Sugar()
 
 	return nil
