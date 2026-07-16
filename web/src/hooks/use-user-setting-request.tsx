@@ -20,7 +20,7 @@ import userService, {
   listTenantUser,
 } from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -40,7 +40,6 @@ export const enum UserSettingApiAction {
   AgreeTenant = 'agreeTenant',
   SetLangfuseConfig = 'setLangfuseConfig',
   DeleteLangfuseConfig = 'deleteLangfuseConfig',
-  BackendLanguage = 'backendLanguage',
   ListPipelines = 'listPipelines',
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
@@ -108,11 +107,15 @@ export const useSelectParserList = (): Array<{
 
   // Detect backend runtime language (Go vs Python) so we can choose
   // the matching parser-list code path at runtime.
-  const { data: backendLang } = useQuery({
-    queryKey: [UserSettingApiAction.BackendLanguage],
-    queryFn: fetchBackendLanguage,
-    staleTime: Infinity,
-  });
+  // fetchBackendLanguage / getBackendLanguage handle their own caching
+  // internally; no need for an extra useQuery layer.
+  const [backendLang, setBackendLang] = useState<string | null>(
+    getBackendLanguage(),
+  );
+
+  useEffect(() => {
+    fetchBackendLanguage().then(setBackendLang);
+  }, []);
 
   // Go backend: fetch pipeline catalog dynamically.
   const { data: pipelineListData } = useQuery({
