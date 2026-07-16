@@ -68,7 +68,6 @@ type DocumentListItem struct {
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash" json:"content_hash,omitempty"`
-	MetaFields      *string    `gorm:"column:meta_fields" json:"meta_fields,omitempty"`
 	Suffix          string     `gorm:"column:suffix" json:"suffix"`
 	Run             *string    `gorm:"column:run" json:"run,omitempty"`
 	Status          *string    `gorm:"column:status" json:"status,omitempty"`
