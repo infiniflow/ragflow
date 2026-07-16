@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"sort"
 	"strings"
 )
 
@@ -65,11 +66,17 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
+	apiMessages := make([]map[string]any, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMessages[i] = map[string]any{
 			"role":    msg.Role,
 			"content": msg.Content,
+		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
 		}
 	}
 
@@ -142,6 +149,12 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 				}
 			}
 		}
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+		}
+		if chatModelConfig.ToolChoice != nil {
+			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -201,6 +214,15 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("invalid content format")
 	}
 
+	var toolCalls []map[string]any
+	if tcs, ok := messageMap["tool_calls"].([]any); ok {
+		for _, tc := range tcs {
+			if toolCall, ok := tc.(map[string]any); ok {
+				toolCalls = append(toolCalls, toolCall)
+			}
+		}
+	}
+
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
@@ -216,6 +238,12 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
+	}
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
 	}
 
 	return chatResponse, nil
@@ -243,14 +271,19 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if modelConfig != nil {
@@ -318,6 +351,13 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 				}
 			}
 		}
+
+		if modelConfig.Tools != nil {
+			reqBody["tools"] = modelConfig.Tools
+		}
+		if modelConfig.ToolChoice != nil {
+			reqBody["tool_choice"] = *modelConfig.ToolChoice
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -349,6 +389,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -365,6 +406,56 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			return nil
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if !hasExisting {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					continue
+				}
+				if id, ok := tcMap["id"].(string); ok && id != "" {
+					if eid, ok := existing["id"].(string); ok {
+						existing["id"] = eid + id
+					} else {
+						existing["id"] = id
+					}
+				}
+				if typ, ok := tcMap["type"].(string); ok && typ != "" {
+					existing["type"] = typ
+				}
+				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+					ef, ok := existing["function"].(map[string]interface{})
+					if !ok {
+						ef = make(map[string]interface{})
+						existing["function"] = ef
+					}
+					if name, ok := fn["name"].(string); ok && name != "" {
+						if en, ok := ef["name"].(string); ok {
+							ef["name"] = en + name
+						} else {
+							ef["name"] = name
+						}
+					}
+					if args, ok := fn["arguments"].(string); ok && args != "" {
+						if ea, ok := ef["arguments"].(string); ok {
+							ef["arguments"] = ea + args
+						} else {
+							ef["arguments"] = args
+						}
+					}
+				}
+			}
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -393,6 +484,19 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 	if !done && !sawTerminal {
 		return fmt.Errorf("baidu: stream ended before [DONE] or finish_reason")
+	}
+
+	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		modelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
