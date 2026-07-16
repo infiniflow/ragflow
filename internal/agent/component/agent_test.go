@@ -94,6 +94,44 @@ func TestAgent_EmitsThinking(t *testing.T) {
 	}
 }
 
+func TestAgent_MessageEmissionIsScopedPerInvocation(t *testing.T) {
+	responses := []string{"first answer", "second answer"}
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		if len(responses) == 0 {
+			t.Fatal("agent runner called too many times")
+		}
+		content := responses[0]
+		responses = responses[1:]
+		return &schema.Message{Role: schema.Assistant, Content: content}, nil
+	})
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	ctx := runtime.WithState(context.Background(), state)
+	var contents []string
+	ctx = runtime.WithAgentMessageEmitterControl(ctx,
+		func(contentDelta, _ string) {
+			if contentDelta != "" {
+				contents = append(contents, contentDelta)
+			}
+		},
+		func() bool { return false },
+		func() {},
+	)
+
+	first := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	if _, err := first.Invoke(ctx, map[string]any{"user_prompt": "first"}); err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	second := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	if _, err := second.Invoke(ctx, map[string]any{"user_prompt": "second"}); err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+
+	if got, want := strings.Join(contents, "|"), "first answer|second answer"; got != want {
+		t.Fatalf("emitted contents = %q, want %q", got, want)
+	}
+}
+
 func TestAgent_ForwardsThinkingParam(t *testing.T) {
 	var gotThinking string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {

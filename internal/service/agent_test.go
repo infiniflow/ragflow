@@ -184,6 +184,69 @@ func TestAgentMessageDeltaEmitterStreamsReasoningBeforeAnswer(t *testing.T) {
 	}
 }
 
+func TestAgentMessageDeltaEmitterProcessesThinkingAndContentTogether(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("answer", "think")
+	finalize()
+
+	if len(events) != 4 {
+		t.Fatalf("events len = %d, want 4: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think" {
+		t.Fatalf("thinking content = %q, want think", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if events[3].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[3].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterFinalizeClosesReasoning(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("", "think only")
+	finalize()
+
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want 3: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think only" {
+		t.Fatalf("thinking content = %q, want think only", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+}
+
 // TestListVersions_Success verifies that ListVersions returns all versions
 // for a canvas, ordered by update_time DESC.
 func TestListVersions_Success(t *testing.T) {

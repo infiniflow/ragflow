@@ -205,7 +205,6 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
-		emitted := false
 		iter := future.GetMessageStreams()
 		for {
 			msgStream, hasNext, err := iter.Next()
@@ -239,23 +238,12 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
-				if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-					if v, ok := state.GetGlobal(runtime.AgentMessageEventsEmittedKey); ok {
-						if alreadyEmitted, _ := v.(bool); alreadyEmitted {
-							continue
-						}
-					}
+				if runtime.AgentMessageEventsEmitted(ctx) {
+					continue
 				}
-				if runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent) {
-					emitted = true
-				}
+				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
 			}
 			msgStream.Close()
-		}
-		if emitted {
-			if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-				state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
-			}
 		}
 		done <- firstErr
 	}()
@@ -528,6 +516,9 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // Invoke runs the ReAct loop via the configured agentRunner and returns
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	runtime.ResetAgentMessageEmission(ctx)
+	defer runtime.FinalizeAgentMessage(ctx)
+
 	p := mergeAgentParam(c.param, inputs)
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -688,16 +679,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	alreadyEmitted := false
-	if state != nil {
-		if v, ok := state.GetGlobal(runtime.AgentMessageEventsEmittedKey); ok {
-			alreadyEmitted, _ = v.(bool)
-		}
-	}
-	if !alreadyEmitted {
-		if emitted := runtime.EmitAgentMessage(ctx, content+artifactMD, thinking); emitted && state != nil {
-			state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
-		}
+	if !runtime.AgentMessageEventsEmitted(ctx) {
+		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
 }
@@ -812,11 +795,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 		}
 		if runtime.HasAgentMessageEmitter(ctx) {
 			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
-				if emitted := runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta); emitted {
-					if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-						state.SetGlobal(runtime.AgentMessageEventsEmittedKey, true)
-					}
-				}
+				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
 			}
 		}
 	}

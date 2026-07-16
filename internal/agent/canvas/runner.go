@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// runner.go — Canvas execution runtime. Drives a Canvas invocation
+// Package canvas runner.go — Canvas execution runtime. Drives a Canvas invocation
 // (the caller supplies the RunFunc that does Compile+Invoke), catches
 // the four possible outcomes, and surfaces them as RunEvent values on
 // a channel that the HTTP layer streams as SSE frames.
@@ -44,9 +44,6 @@
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
 //   - RunEvent.Type == "error"            → {message: <string>}
-//
-// The HTTP/SSE handler owns the final data:[DONE] frame after this
-// channel closes, matching Python's agent_api.py finally block.
 package canvas
 
 import (
