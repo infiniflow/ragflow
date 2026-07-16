@@ -208,6 +208,12 @@ func (ParserParam) Defaults() ParserParam {
 // that runs in the component implementation.
 func (ParserParam) Validate() error { return nil }
 
+// FileTypes lists the known file-type keys in the Parser component's params.
+var FileTypes = []string{
+	"pdf", "spreadsheet", "doc", "docx", "markdown", "text&code",
+	"html", "slides", "image", "email", "audio", "video", "epub", "json",
+}
+
 // ParserOutputs is the result of invoking the Parser component. The
 // Python component calls `self.set_output(...)` with a mix of
 // string-typed, list-typed, and dict-typed values. The wire schema

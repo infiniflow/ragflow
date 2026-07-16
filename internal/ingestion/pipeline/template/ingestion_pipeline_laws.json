@@ -49,72 +49,69 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "doc": {
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "doc"
-                                ]
-                            },
-                            "docx": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "docx"
-                                ],
-                                "vlm": {}
-                            },
-                            "html": {
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "htm",
-                                    "html"
-                                ]
-                            },
-                            "markdown": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "md",
-                                    "markdown",
-                                    "mdx"
-                                ],
-                                "vlm": {}
-                            },
-                            "pdf": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            },
-                            "text&code": {
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "txt",
-                                    "py",
-                                    "js",
-                                    "java",
-                                    "c",
-                                    "cpp",
-                                    "h",
-                                    "php",
-                                    "go",
-                                    "ts",
-                                    "sh",
-                                    "cs",
-                                    "kt",
-                                    "sql"
-                                ]
-                            }
+                        "doc": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "doc"
+                            ]
+                        },
+                        "docx": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "docx"
+                            ],
+                            "vlm": {}
+                        },
+                        "html": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "htm",
+                                "html"
+                            ]
+                        },
+                        "markdown": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "md",
+                                "markdown",
+                                "mdx"
+                            ],
+                            "vlm": {}
+                        },
+                        "pdf": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
+                        },
+                        "text&code": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "txt"
+                            ]
                         }
                     }
                 },
@@ -124,7 +121,7 @@
             },
             "TitleChunker:SpicyKeysKick": {
                 "downstream": [
-                    "Tokenizer:PublicJobsTake"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "TitleChunker",
@@ -188,8 +185,31 @@
                     }
                 },
                 "upstream": [
-                    "TitleChunker:SpicyKeysKick"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TitleChunker:SpicyKeysKick"
+                ],
+                "downstream": [
+                    "Tokenizer:PublicJobsTake"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -215,11 +235,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TitleChunker:SpicyKeysKickstart-Tokenizer:PublicJobsTakeend",
+                    "id": "xy-edge__TitleChunker:SpicyKeysKickstart-Extractor:AutoExtractDefaultend",
                     "source": "TitleChunker:SpicyKeysKick",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:PublicJobsTakeend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:PublicJobsTake",
                     "targetHandle": "end"
@@ -271,34 +295,46 @@
                                     "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "markdown",
                                     "flatten_media_to_text": false,
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "text&code",
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "html",
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "doc",
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 }
                             ]
                         },
@@ -468,6 +504,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

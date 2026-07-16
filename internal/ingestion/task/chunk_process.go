@@ -171,3 +171,82 @@ func processChunkPositions(ck map[string]any) {
 	}
 	delete(ck, "positions")
 }
+
+// AggregateTableDocMetadata collects unique per-column values across all chunks
+// for columns with role "metadata" or "both", merges them into document metadata.
+// Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
+func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
+	mode, _ := parserConfig["table_column_mode"].(string)
+	if mode == "" {
+		mode = "auto"
+	}
+	if mode != "auto" && mode != "manual" {
+		return nil
+	}
+	roles, _ := parserConfig["table_column_roles"].(map[string]interface{})
+	if roles == nil {
+		roles = map[string]interface{}{}
+	}
+	tableColumnNames, _ := parserConfig["table_column_names"].([]interface{})
+	var metaCols []string
+	if len(tableColumnNames) > 0 {
+		for _, n := range tableColumnNames {
+			col, _ := n.(string)
+			if col == "" {
+				continue
+			}
+			role, _ := roles[col].(string)
+			if role == "" {
+				role = "both"
+			}
+			if role == "metadata" || role == "both" {
+				metaCols = append(metaCols, col)
+			}
+		}
+	} else {
+		for col, v := range roles {
+			role, _ := v.(string)
+			if role == "metadata" || role == "both" {
+				metaCols = append(metaCols, col)
+			}
+		}
+	}
+	if len(metaCols) == 0 {
+		return nil
+	}
+
+	acc := make(map[string]map[string]struct{}, len(metaCols))
+	for _, col := range metaCols {
+		acc[col] = make(map[string]struct{})
+	}
+	for _, ck := range chunks {
+		cd, _ := ck["chunk_data"].(map[string]interface{})
+		if cd == nil {
+			continue
+		}
+		for _, col := range metaCols {
+			val, ok := cd[col]
+			if !ok {
+				continue
+			}
+			s, _ := val.(string)
+			if s == "" {
+				continue
+			}
+			acc[col][s] = struct{}{}
+		}
+	}
+
+	out := make(map[string]any, len(acc))
+	for col, vals := range acc {
+		if len(vals) == 0 {
+			continue
+		}
+		deduped := make([]string, 0, len(vals))
+		for v := range vals {
+			deduped = append(deduped, v)
+		}
+		out[col] = deduped
+	}
+	return out
+}

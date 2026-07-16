@@ -104,14 +104,11 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	if persisted.ParserConfig["chunk_token_num"] != float64(128) {
 		t.Fatalf("expected existing parser_config value preserved, got %#v", persisted.ParserConfig)
 	}
-	if persisted.ParserConfig["enable_children"] != true {
-		t.Fatalf("expected enable_children normalized, got %#v", persisted.ParserConfig)
+	if pc, ok := persisted.ParserConfig["parent_child"].(map[string]interface{}); !ok || pc["use_parent_child"] != true {
+		t.Fatalf("expected parent_child preserved as nested, got %#v", persisted.ParserConfig)
 	}
-	if persisted.ParserConfig["children_delimiter"] != "\n" {
-		t.Fatalf("expected default children delimiter, got %#v", persisted.ParserConfig["children_delimiter"])
-	}
-	if persisted.ParserConfig["delimiter"] != "\n\n" {
-		t.Fatalf("expected ext parser config fields flattened, got %#v", persisted.ParserConfig)
+	if pc, ok := persisted.ParserConfig["ext"].(map[string]interface{}); !ok || pc["delimiter"] != "\n\n" {
+		t.Fatalf("expected ext preserved as nested, got %#v", persisted.ParserConfig)
 	}
 }
 

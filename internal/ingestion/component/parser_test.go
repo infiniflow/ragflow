@@ -196,14 +196,12 @@ func TestParserComponent_New_Defaults(t *testing.T) {
 }
 
 // TestParserComponent_New_Overrides verifies that a non-nil
-// param map with a "setups" entry is layered on top of the
+// param map with a file-type entry is layered on top of the
 // defaults.
 func TestParserComponent_New_Overrides(t *testing.T) {
 	c, err := NewParserComponent(map[string]any{
-		"setups": map[string]any{
-			"text&code": map[string]any{
-				"chunk_token_num": 256,
-			},
+		"text&code": map[string]any{
+			"chunk_token_size": 256,
 		},
 	})
 	if err != nil {
@@ -217,8 +215,8 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 	if !ok {
 		t.Fatalf("Setups[text&code] missing after override")
 	}
-	if got, _ := setup["chunk_token_num"].(int); got != 256 {
-		t.Errorf("Setups[text&code][chunk_token_num] = %v, want 256", setup["chunk_token_num"])
+	if got, _ := setup["chunk_token_size"].(int); got != 256 {
+		t.Errorf("Setups[text&code][chunk_token_size] = %v, want 256", setup["chunk_token_size"])
 	}
 	// Defaults must still be present for other file types.
 	if _, ok := pc.Param.Setups["pdf"]; !ok {

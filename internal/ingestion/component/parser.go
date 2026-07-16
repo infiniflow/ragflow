@@ -119,7 +119,9 @@ type ParserComponent struct {
 // schema.ParserParam.Defaults() values):
 //
 //	{
-//	  "setups":               map[string]map[string]any,
+//	  "pdf":                  map[string]any,
+//	  "docx":                 map[string]any,
+//	  ...
 //	  "allowed_output_format": map[string][]string,
 //	}
 //
@@ -130,29 +132,11 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	if params == nil {
 		return &ParserComponent{Param: p}, nil
 	}
-	// Setups — best-effort decode. A type mismatch in a single
-	// setup entry drops just that entry; the rest of the table
-	// remains usable. This matches the python behaviour of
-	// accepting whatever shape the JSON loader hands back.
-	if rawSetups, ok := params["setups"].(map[string]any); ok {
-		for fileType, raw := range rawSetups {
-			setupMap, ok := raw.(map[string]any)
-			if !ok {
-				continue
+	for _, ft := range schema.FileTypes {
+		if raw, ok := params[ft].(map[string]any); ok {
+			for k, v := range raw {
+				p.Setups[ft][k] = v
 			}
-			if p.Setups == nil {
-				p.Setups = make(map[string]schema.ParserSetup)
-			}
-			// Normalise to the canonical family name ("picture",
-			// "video", …) so downstream lookups via
-			// resolveParserFamily, maybeDispatchImage, etc. find
-			// the entry regardless of what key the template DSL
-			// used (e.g. "image", "visual", "picture").
-			family := pythonFamilyName(fileType)
-			if family == "" {
-				family = fileType
-			}
-			p.Setups[family] = schema.ParserSetup(setupMap)
 		}
 	}
 	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {
@@ -245,6 +229,15 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
+
+	// Inject run-level metadata from Globals into inputs so media
+	// dispatch branches (audio/image/video) can resolve tenant_id.
+	// The File component upstream does not emit tenant_id; the pipeline
+	// runner seeds it into CanvasState.Globals, and the Parser must pull
+	// it back into the local inputs map for the dispatch functions.
+	if tid := globals.GlobalOrInput(ctx, inputs, "tenant_id", ""); tid != "" {
+		inputs["tenant_id"] = tid
+	}
 
 	// 2. Resolve the file family from the inputs. When the family
 	//    is known, dispatchParse returns a typed parser payload.

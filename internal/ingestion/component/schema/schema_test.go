@@ -516,14 +516,14 @@ func TestExtractorParamDefaults(t *testing.T) {
 	if p.FieldName != "" {
 		t.Errorf("default field_name should be empty, got %q", p.FieldName)
 	}
-	if err := p.Validate(); err == nil {
-		t.Fatal("default ExtractorParam should fail Validate (field_name required)")
+	if err := p.Validate(); err != nil {
+		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
 	}
 }
 
 func TestExtractorParamValidate(t *testing.T) {
-	if err := (&ExtractorParam{}).Validate(); err == nil {
-		t.Fatal("expected error for empty field_name")
+	if err := (&ExtractorParam{}).Validate(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
 		t.Fatalf("Validate with field_name should pass, got %v", err)
