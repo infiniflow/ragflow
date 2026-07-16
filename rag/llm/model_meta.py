@@ -500,3 +500,7 @@ class NewAPI(OpenAIAPICompatible):
         except (JSONDecodeError, TypeError):
             pass
         return self.api_key
+
+
+class RAGcon(OpenAIAPICompatible):
+    _FACTORY_NAME = "RAGcon"
