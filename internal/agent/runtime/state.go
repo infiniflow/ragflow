@@ -37,6 +37,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -74,7 +75,7 @@ type CanvasState struct {
 // The atomic CancelFlag is allocated eagerly so nodes can safely poll it
 // even before any cancel signal has been wired.
 func NewCanvasState(runID, taskID string) *CanvasState {
-	return &CanvasState{
+	s := &CanvasState{
 		Outputs:    make(map[string]map[string]any),
 		Sys:        make(map[string]any),
 		Env:        make(map[string]any),
@@ -87,6 +88,26 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 		RunID:      runID,
 		TaskID:     taskID,
 	}
+	s.EnsureSysDate()
+	return s
+}
+
+// EnsureSysDate fills sys.date with the current UTC timestamp when it
+// is missing or blank. Python canvas initializes the same variable with
+// "%Y-%m-%d %H:%M:%S"; keep that wire format for DSL compatibility.
+func (s *CanvasState) EnsureSysDate() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	if v, ok := s.Sys["date"]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
+		return
+	}
+	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 }
 
 // init registers CanvasState with eino's internal type registry so

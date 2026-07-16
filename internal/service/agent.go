@@ -1028,6 +1028,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		state.SetHistory(c.History)
 		state.SetMemory(c.Memory)
+		state.EnsureSysDate()
 		state.Sys["query"] = userInput
 		state.AppendHistory("user", userInput)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
