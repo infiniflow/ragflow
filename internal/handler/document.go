@@ -431,11 +431,11 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		ids = *req.IDs
 	}
 	if len(ids) > 0 && req.DeleteAll {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "should not provide both ids and delete_all")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should not provide both ids and delete_all")
 		return
 	}
 	if len(ids) == 0 && !req.DeleteAll {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "should either provide doc ids or set delete_all(true)")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should either provide doc ids or set delete_all(true)")
 		return
 	}
 
@@ -527,7 +527,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if !h.datasetService.Accessible(datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
 
@@ -559,7 +559,9 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	// Use kbID to filter documents
+	// Use kbID to filter documents.
+	// Note: create_time_from / create_time_to are applied post-query (not at DB level)
+	// so that total reflects the unfiltered count, matching the Python API contract.
 	documents, total, err := h.documentService.ListDocumentsByDatasetIDWithOptions(opts, page, pageSize)
 	if err != nil {
 		common.ResponseWithCodeData(c, 1, map[string]interface{}{"total": 0, "docs": []interface{}{}}, "failed to get documents")
@@ -568,6 +570,12 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	docs := make([]map[string]interface{}, 0, len(documents))
 	for _, doc := range documents {
+		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
+			continue
+		}
+		if opts.CreateTimeTo > 0 && doc.CreateTime != nil && *doc.CreateTime > opts.CreateTimeTo {
+			continue
+		}
 		metaFields, err := h.documentService.GetDocumentMetadataByID(doc.ID)
 		if err != nil {
 			metaFields = make(map[string]interface{})
@@ -1417,31 +1425,38 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 }
 
 type StartParseDocumentsRequest struct {
-	DatasetID string   `json:"dataset_id" binding:"required"`
-	Documents []string `json:"documents" binding:"required"`
+	DocumentIDs []string `json:"document_ids" binding:"required"`
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+
 	var req StartParseDocumentsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
 		return
 	}
 
 	userID := c.GetString("user_id")
 
-	if !h.datasetService.Accessible(req.DatasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
+	if !h.datasetService.Accessible(datasetID, userID) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
 
-	parseResult, err := h.documentService.IngestDocuments(req.DatasetID, userID, req.Documents)
+	parseResult, err := h.documentService.IngestDocuments(datasetID, userID, req.DocumentIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, parseResult, "success")
+	successCount := 0
+	for _, r := range parseResult {
+		if strings.HasPrefix(r.Result, "task_id:") {
+			successCount++
+		}
+	}
+	common.SuccessWithData(c, map[string]interface{}{"success_count": successCount}, "success")
 }
 
 type StopIngestionsRequest struct {
@@ -1540,7 +1555,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if !h.datasetService.Accessible(datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "You don't own the dataset.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
 
@@ -1714,19 +1729,32 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 
-	var req documentMetadataBatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	var rawBody map[string]interface{}
+	if err := c.ShouldBindJSON(&rawBody); err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request payload: expected object, got "+inferJSONType(err))
 		return
 	}
-	if req.Selector == nil {
-		req.Selector = &service.DocumentMetadataSelector{}
+
+	selector, errMsg := parseMetadataSelector(rawBody["selector"])
+	if errMsg != "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		return
 	}
-	if req.Updates == nil {
-		req.Updates = []service.DocumentMetadataUpdate{}
+	updates, errMsg := parseMetadataUpdates(rawBody["updates"])
+	if errMsg != "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		return
 	}
-	if req.Deletes == nil {
-		req.Deletes = []service.DocumentMetadataDelete{}
+	deletes, errMsg := parseMetadataDeletes(rawBody["deletes"])
+	if errMsg != "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		return
+	}
+
+	req := documentMetadataBatchRequest{
+		Selector: selector,
+		Updates:  updates,
+		Deletes:  deletes,
 	}
 
 	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(datasetID, req.Selector, req.Updates, req.Deletes)
@@ -1735,4 +1763,96 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, resp, "success")
+}
+
+func inferJSONType(err error) string {
+	s := err.Error()
+	if strings.Contains(s, "array") {
+		return "array"
+	}
+	if strings.Contains(s, "number") {
+		return "number"
+	}
+	if strings.Contains(s, "string") {
+		return "string"
+	}
+	if strings.Contains(s, "bool") {
+		return "bool"
+	}
+	return "unknown"
+}
+
+func parseMetadataSelector(raw interface{}) (*service.DocumentMetadataSelector, string) {
+	if raw == nil {
+		return &service.DocumentMetadataSelector{}, ""
+	}
+	m, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, "selector must be an object."
+	}
+	selector := &service.DocumentMetadataSelector{}
+	if v, ok := m["document_ids"]; ok && v != nil {
+		ids, ok := v.([]interface{})
+		if !ok {
+			return nil, "document_ids must be a list."
+		}
+		for _, id := range ids {
+			selector.DocumentIDs = append(selector.DocumentIDs, id.(string))
+		}
+	}
+	if v, ok := m["metadata_condition"]; ok && v != nil {
+		mc, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, "metadata_condition must be an object."
+		}
+		selector.MetadataCondition = mc
+	}
+	return selector, ""
+}
+
+func parseMetadataUpdates(raw interface{}) ([]service.DocumentMetadataUpdate, string) {
+	if raw == nil {
+		return []service.DocumentMetadataUpdate{}, ""
+	}
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil, "updates and deletes must be lists."
+	}
+	updates := make([]service.DocumentMetadataUpdate, 0, len(arr))
+	for _, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, "Each update requires key and value."
+		}
+		key, _ := m["key"].(string)
+		if key == "" {
+			return nil, "Each update requires key and value."
+		}
+		value := m["value"]
+		updates = append(updates, service.DocumentMetadataUpdate{Key: key, Value: value})
+	}
+	return updates, ""
+}
+
+func parseMetadataDeletes(raw interface{}) ([]service.DocumentMetadataDelete, string) {
+	if raw == nil {
+		return []service.DocumentMetadataDelete{}, ""
+	}
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil, "updates and deletes must be lists."
+	}
+	deletes := make([]service.DocumentMetadataDelete, 0, len(arr))
+	for _, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, "Each delete requires key."
+		}
+		key, _ := m["key"].(string)
+		if key == "" {
+			return nil, "Each delete requires key."
+		}
+		deletes = append(deletes, service.DocumentMetadataDelete{Key: key})
+	}
+	return deletes, ""
 }

@@ -518,7 +518,7 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 	}
 	doc, err := s.documentDAO.GetByID(docID)
 	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("The dataset not own the document %s.", docID)
+		return nil, fmt.Errorf("Document not found!")
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(doc)
 	if err != nil {
@@ -1611,7 +1611,7 @@ func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID strin
 		}
 	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("these documents do not belong to dataset %s: %v", datasetID, invalid)
+		return nil, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
 	}
 	return docs, nil
 }
@@ -2270,8 +2270,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, re
 	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
 		return common.CodeDataError, errors.New("Can't change `token_count`.")
 	}
-	if present["progress"] && req.Progress != nil && *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-		return common.CodeDataError, errors.New("Can't change `progress`.")
+	if present["progress"] && req.Progress != nil {
+		if *req.Progress > 1 {
+			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%v>", *req.Progress)
+		}
+		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
+			return common.CodeDataError, errors.New("Can't change `progress`.")
+		}
 	}
 
 	if present["enabled"] {
