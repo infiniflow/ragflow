@@ -458,6 +458,29 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class FunASR(Base):
+    _FACTORY_NAME = "FunASR"
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else None
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict) or not model.get("id"):
+                continue
+            model_list.append(
+                {
+                    "name": model["id"],
+                    "model_types": [LLMType.ASR.value],
+                    "features": [],
+                    "max_tokens": 8192,
+                }
+            )
+        return model_list
+
+
 class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
 
@@ -477,3 +500,7 @@ class NewAPI(OpenAIAPICompatible):
         except (JSONDecodeError, TypeError):
             pass
         return self.api_key
+
+
+class RAGcon(OpenAIAPICompatible):
+    _FACTORY_NAME = "RAGcon"

@@ -109,7 +109,7 @@ func NewPDFParser() *PDFParser {
 		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
-		SoMarkBaseURL:                  "https://somark.tech/api/v1",
+		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
 		SoMarkTableFormat:              "html",

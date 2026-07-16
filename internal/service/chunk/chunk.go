@@ -17,28 +17,18 @@
 package chunk
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/csv"
-	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"io"
 	"math"
-	"math/rand"
-	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,11 +49,6 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
-)
-
-const (
-	maximumPageNumber     = 100000
-	maximumTaskPageNumber = maximumPageNumber * 1000
 )
 
 var chunkImageMergeLocks = struct {
@@ -97,20 +82,24 @@ type ChunkService struct {
 	taskDAO        *dao.TaskDAO
 	searchService  *service.SearchService
 
-	accessibleFunc                func(string, string) bool
-	getKnowledgebaseByIDFunc      func(string) (*entity.Knowledgebase, error)
-	getDocumentsByIDsFunc         func([]string) ([]*entity.Document, error)
-	getDocumentStorageAddressFunc func(*entity.Document) (string, string, error)
-	queueParseTasksFunc           func(*entity.Document, string, string, int64) error
-	beginParseDocumentFunc        func(string) error
-	deleteTasksByDocIDsFunc       func([]string) (int64, error)
-	getEmbeddingModelFunc         func(string, string) (*models.EmbeddingModel, error)
-	incrementChunkStatsFunc       func(string, string, int64, int64, float64) error
-	decrementChunkStatsFunc       func(string, string, int64, int64, float64) error
-	storeChunkImageFunc           func(string, string, []byte) error
-	tokenizeFunc                  func(string) (string, error)
-	fineGrainedTokenizeFunc       func(string) (string, error)
-	numTokensFunc                 func(string) int
+	accessibleFunc           func(string, string) bool
+	getKnowledgebaseByIDFunc func(string) (*entity.Knowledgebase, error)
+	getDocumentsByIDsFunc    func([]string) ([]*entity.Document, error)
+	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
+	// uses service.DocumentService.StartParseDocuments; tests inject a fake
+	// to avoid the MQ publisher.
+	startParseDocumentsFunc func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts service.StartParseOptions) error
+	// cancelIngestionTaskFunc overrides the document-parsing cancellation.
+	// Production uses service.DocumentService.CancelDocParse; tests inject
+	// a fake to avoid the MQ publisher.
+	cancelIngestionTaskFunc func(doc *entity.Document) error
+	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
+	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
+	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
+	storeChunkImageFunc     func(string, string, []byte) error
+	tokenizeFunc            func(string) (string, error)
+	fineGrainedTokenizeFunc func(string) (string, error)
+	numTokensFunc           func(string) int
 }
 
 // NewChunkService creates chunk service
@@ -611,26 +600,12 @@ const (
 	docStopParsingInvalidStateErrorCode = "DOC_STOP_PARSING_INVALID_STATE"
 )
 
-func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
-	tasks, err := s.taskDAO.GetByDocID(docID)
-	if err != nil {
-		return fmt.Errorf("failed to get tasks for document %s: %w", docID, err)
+func (s *ChunkService) cancelAllTasksOfDoc(doc *entity.Document) error {
+	cancel := s.cancelIngestionTaskFunc
+	if cancel == nil {
+		cancel = service.NewDocumentService().CancelDocParse
 	}
-
-	redisClient := redis.Get()
-	if redisClient == nil {
-		common.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
-		return nil
-	}
-
-	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
-		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
-	}
-
-	return nil
+	return cancel(doc)
 }
 
 func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
@@ -642,15 +617,13 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	_, err := s.kbDAO.GetByID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
 
 	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
 	successCount := 0
-	ctx := context.Background()
-	indexName := service.IndexName(kb.TenantID)
 
 	for _, docID := range docIDs {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(docID, datasetID)
@@ -658,40 +631,21 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", docID)
 		}
 
-		if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
+		task, _ := dao.NewIngestionTaskDAO().GetByDocumentID(docID)
+		if task == nil || task.Status == common.COMPLETED ||
+			task.Status == common.STOPPED || task.Status == common.FAILED {
 			return &service.StopParsingResponse{
 				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
 			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
 		}
 
-		if err := s.cancelAllTasksOfDoc(docID); err != nil {
+		if err := s.cancelAllTasksOfDoc(doc); err != nil {
 			return nil, common.CodeServerError, err
 		}
-
-		updates := map[string]interface{}{
-			"run":       string(entity.TaskStatusCancel),
-			"progress":  0,
-			"chunk_num": 0,
-		}
-		if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
-		}
-
-		if s.docEngine != nil {
-			exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
-			if err != nil {
-				return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
-			}
-			if exists {
-				if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
-					return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
-				}
-			} else {
-				common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
-			}
-		} else {
-			common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
-		}
+		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
+		// RequestStop (STOPPING) and updates doc.run=CANCEL. Defer
+		// destruction (chunk deletion, counter reset) until the worker
+		// detects STOPPING and reaches a terminal state.
 
 		successCount++
 	}
@@ -729,184 +683,6 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) queueParseTasks(doc *entity.Document, bucket, objectName string, priority int64) error {
-	if s.queueParseTasksFunc != nil {
-		return s.queueParseTasksFunc(doc, bucket, objectName, priority)
-	}
-	tasks, err := s.buildParseTasks(doc, bucket, objectName, priority)
-	if err != nil {
-		return err
-	}
-	if len(tasks) == 0 {
-		return nil
-	}
-	if err := dao.NewTaskDAO().CreateMany(tasks); err != nil {
-		return err
-	}
-
-	queueName := s.parseQueueName(doc, priority)
-	for _, task := range tasks {
-		if task.Progress >= 1 {
-			continue
-		}
-		message := parseTaskMessage(task)
-		if ok := redis.Get().QueueProduct(queueName, message); !ok {
-			if _, err := dao.NewTaskDAO().DeleteByDocIDs([]string{doc.ID}); err != nil {
-				common.Warn("Failed to clean parse tasks after Redis enqueue failure",
-					zap.String("docID", doc.ID),
-					zap.Error(err))
-			}
-			return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
-		}
-	}
-	return nil
-}
-
-func (s *ChunkService) buildParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
-	now := time.Now()
-	ranges, err := s.parseTaskRanges(doc, bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	tasks := make([]*entity.Task, 0, len(ranges))
-	for _, pageRange := range ranges {
-		taskID := utility.GenerateUUID()
-		progressMsg := ""
-		digest := s.parseTaskDigest(doc, pageRange.from, pageRange.to)
-		chunkIDs := ""
-		tasks = append(tasks, &entity.Task{
-			ID:          taskID,
-			DocID:       doc.ID,
-			FromPage:    pageRange.from,
-			ToPage:      pageRange.to,
-			TaskType:    "",
-			Priority:    priority,
-			BeginAt:     &now,
-			Progress:    0,
-			ProgressMsg: &progressMsg,
-			Digest:      &digest,
-			ChunkIDs:    &chunkIDs,
-		})
-	}
-	return tasks, nil
-}
-
-type parsePageRange struct {
-	from int64
-	to   int64
-}
-
-func (s *ChunkService) parseTaskRanges(doc *entity.Document, bucket, objectName string) ([]parsePageRange, error) {
-	if doc.Type == "pdf" {
-		return s.pdfParseTaskRanges(doc, bucket, objectName)
-	}
-	if doc.ParserID == string(entity.ParserTypeTable) {
-		return s.tableParseTaskRanges(doc, bucket, objectName)
-	}
-	return []parsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
-}
-
-func (s *ChunkService) pdfParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]parsePageRange, error) {
-	binary, err := s.getStorageBinary(bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	pages := estimatePDFPageCount(binary)
-	pageSize := int64(parserConfigInt(doc.ParserConfig, "task_page_size", 12))
-	if doc.ParserID == string(entity.ParserTypePaper) {
-		pageSize = int64(parserConfigInt(doc.ParserConfig, "task_page_size", 22))
-	}
-	if doc.ParserID == string(entity.ParserTypeOne) ||
-		parserConfigString(doc.ParserConfig, "layout_recognize", "DeepDOC") != "DeepDOC" ||
-		parserConfigBool(doc.ParserConfig, "toc_extraction", false) {
-		pageSize = maximumTaskPageNumber
-	}
-	if pageSize <= 0 {
-		pageSize = 12
-	}
-
-	pageRanges := parserConfigPageRanges(doc.ParserConfig)
-	ranges := make([]parsePageRange, 0)
-	for _, configuredRange := range pageRanges {
-		start := configuredRange.from - 1
-		if start < 0 {
-			start = 0
-		}
-		end := configuredRange.to - 1
-		if pages >= 0 && end > pages {
-			end = pages
-		}
-		for page := start; page < end; page += pageSize {
-			to := page + pageSize
-			if to > end {
-				to = end
-			}
-			ranges = append(ranges, parsePageRange{from: page, to: to})
-		}
-	}
-	if len(ranges) == 0 {
-		ranges = append(ranges, parsePageRange{from: 0, to: maximumTaskPageNumber})
-	}
-	return ranges, nil
-}
-
-func (s *ChunkService) tableParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]parsePageRange, error) {
-	binary, err := s.getStorageBinary(bucket, objectName)
-	if err != nil {
-		return nil, err
-	}
-	rows := estimateTableRowCount(docName(doc), binary)
-	if rows <= 0 {
-		return []parsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
-	}
-	ranges := make([]parsePageRange, 0, (rows+2999)/3000)
-	for row := int64(0); row < int64(rows); row += 3000 {
-		to := row + 3000
-		if to > int64(rows) {
-			to = int64(rows)
-		}
-		ranges = append(ranges, parsePageRange{from: row, to: to})
-	}
-	return ranges, nil
-}
-
-func (s *ChunkService) getStorageBinary(bucket, objectName string) ([]byte, error) {
-	storageImpl := storage.GetStorageFactory().GetStorage()
-	if storageImpl == nil {
-		return nil, fmt.Errorf("storage not initialized")
-	}
-	return storageImpl.Get(bucket, objectName)
-}
-
-func (s *ChunkService) beginParseDocument(docID string) error {
-	if s.beginParseDocumentFunc != nil {
-		return s.beginParseDocumentFunc(docID)
-	}
-	now := time.Now()
-	return dao.GetDB().Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]interface{}{
-		"progress_msg":     "Task is queued...",
-		"process_begin_at": now,
-		"progress":         rand.Float64() * 0.01,
-		"run":              string(entity.TaskStatusRunning),
-		"chunk_num":        0,
-		"token_num":        0,
-	}).Error
-}
-
-func (s *ChunkService) getDocumentStorageAddress(doc *entity.Document) (string, string, error) {
-	if s.getDocumentStorageAddressFunc != nil {
-		return s.getDocumentStorageAddressFunc(doc)
-	}
-	return service.NewDocumentService().GetDocumentStorageAddress(doc)
-}
-
-func (s *ChunkService) deleteTasksByDocIDs(docIDs []string) (int64, error) {
-	if s.deleteTasksByDocIDsFunc != nil {
-		return s.deleteTasksByDocIDsFunc(docIDs)
-	}
-	return dao.NewTaskDAO().DeleteByDocIDs(docIDs)
-}
-
 func (s *ChunkService) accessible(datasetID, userID string) bool {
 	if s.accessibleFunc != nil {
 		return s.accessibleFunc(datasetID, userID)
@@ -926,282 +702,6 @@ func (s *ChunkService) getDocumentsByIDs(docIDs []string) ([]*entity.Document, e
 		return s.getDocumentsByIDsFunc(docIDs)
 	}
 	return s.documentDAO.GetByIDs(docIDs)
-}
-
-func (s *ChunkService) parseQueueName(doc *entity.Document, priority int64) string {
-	suffix := "common"
-	if doc.ParserID == string(entity.ParserTypeResume) {
-		suffix = "resume"
-	}
-	return fmt.Sprintf("te.%d.%s", priority, suffix)
-}
-
-func (s *ChunkService) parseTaskDigest(doc *entity.Document, fromPage, toPage int64) string {
-	hasher := xxhash.New()
-	config := chunkingConfigForDigest(doc)
-	keys := make([]string, 0, len(config))
-	for key := range config {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		hasher.WriteString(stableString(config[key]))
-	}
-	hasher.WriteString(doc.ID)
-	hasher.WriteString(strconv.FormatInt(fromPage, 10))
-	hasher.WriteString(strconv.FormatInt(toPage, 10))
-	return fmt.Sprintf("%x", hasher.Sum64())
-}
-
-func parseTaskMessage(task *entity.Task) map[string]interface{} {
-	beginAt := ""
-	if task.BeginAt != nil {
-		beginAt = task.BeginAt.Format("2006-01-02 15:04:05")
-	}
-	digest := ""
-	if task.Digest != nil {
-		digest = *task.Digest
-	}
-	return map[string]interface{}{
-		"id":        task.ID,
-		"doc_id":    task.DocID,
-		"from_page": task.FromPage,
-		"to_page":   task.ToPage,
-		"progress":  task.Progress,
-		"priority":  task.Priority,
-		"begin_at":  beginAt,
-		"digest":    digest,
-	}
-}
-
-func chunkingConfigForDigest(doc *entity.Document) map[string]interface{} {
-	return map[string]interface{}{
-		"doc_id":        doc.ID,
-		"kb_id":         doc.KbID,
-		"parser_id":     doc.ParserID,
-		"parser_config": copyParserConfigForDigest(doc.ParserConfig),
-	}
-}
-
-func copyParserConfigForDigest(config map[string]interface{}) map[string]interface{} {
-	copied := make(map[string]interface{}, len(config))
-	for key, value := range config {
-		if key == "raptor" || key == "graphrag" {
-			continue
-		}
-		copied[key] = value
-	}
-	return copied
-}
-
-func stableString(value interface{}) string {
-	binary, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Sprint(value)
-	}
-	return string(binary)
-}
-
-func parserConfigInt(config map[string]interface{}, key string, fallback int) int {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	switch typedValue := value.(type) {
-	case int:
-		return typedValue
-	case int64:
-		return int(typedValue)
-	case float64:
-		return int(typedValue)
-	case json.Number:
-		if intValue, err := typedValue.Int64(); err == nil {
-			return int(intValue)
-		}
-	case string:
-		if intValue, err := strconv.Atoi(strings.TrimSpace(typedValue)); err == nil {
-			return intValue
-		}
-	}
-	return fallback
-}
-
-func parserConfigString(config map[string]interface{}, key, fallback string) string {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	if stringValue, ok := value.(string); ok {
-		return stringValue
-	}
-	return fmt.Sprint(value)
-}
-
-func parserConfigBool(config map[string]interface{}, key string, fallback bool) bool {
-	value, ok := config[key]
-	if !ok || value == nil {
-		return fallback
-	}
-	switch typedValue := value.(type) {
-	case bool:
-		return typedValue
-	case string:
-		switch strings.ToLower(strings.TrimSpace(typedValue)) {
-		case "true", "1", "yes", "on":
-			return true
-		case "false", "0", "no", "off":
-			return false
-		}
-	}
-	return fallback
-}
-
-func parserConfigPageRanges(config map[string]interface{}) []parsePageRange {
-	defaultRanges := []parsePageRange{{from: 1, to: maximumPageNumber}}
-	raw, ok := config["pages"]
-	if !ok || raw == nil {
-		return defaultRanges
-	}
-	rawRanges, ok := raw.([]interface{})
-	if !ok || len(rawRanges) == 0 {
-		return defaultRanges
-	}
-
-	ranges := make([]parsePageRange, 0, len(rawRanges))
-	for _, rawRange := range rawRanges {
-		rangeValues, ok := rawRange.([]interface{})
-		if !ok || len(rangeValues) < 2 {
-			continue
-		}
-		from, okFrom := toInt64(rangeValues[0])
-		to, okTo := toInt64(rangeValues[1])
-		if okFrom && okTo && to > from {
-			ranges = append(ranges, parsePageRange{from: from, to: to})
-		}
-	}
-	if len(ranges) == 0 {
-		return defaultRanges
-	}
-	return ranges
-}
-
-func toInt64(value interface{}) (int64, bool) {
-	switch typedValue := value.(type) {
-	case int:
-		return int64(typedValue), true
-	case int64:
-		return typedValue, true
-	case float64:
-		return int64(typedValue), true
-	case json.Number:
-		intValue, err := typedValue.Int64()
-		return intValue, err == nil
-	case string:
-		intValue, err := strconv.ParseInt(strings.TrimSpace(typedValue), 10, 64)
-		return intValue, err == nil
-	default:
-		return 0, false
-	}
-}
-
-var pdfPagePattern = regexp.MustCompile(`/Type\s*/Page\b`)
-
-func estimatePDFPageCount(binary []byte) int64 {
-	if len(binary) == 0 {
-		return 0
-	}
-	return int64(len(pdfPagePattern.FindAll(binary, -1)))
-}
-
-func estimateTableRowCount(name string, binary []byte) int {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".xlsx":
-		if rows, err := countXLSXRows(binary); err == nil {
-			return rows
-		}
-	case ".csv", ".tsv", ".txt":
-		return countDelimitedRows(name, binary)
-	}
-	return 0
-}
-
-func countDelimitedRows(name string, binary []byte) int {
-	reader := csv.NewReader(bytes.NewReader(binary))
-	reader.FieldsPerRecord = -1
-	reader.ReuseRecord = true
-	if strings.EqualFold(filepath.Ext(name), ".tsv") {
-		reader.Comma = '\t'
-	}
-	rows := 0
-	for {
-		_, err := reader.Read()
-		if err == nil {
-			rows++
-			continue
-		}
-		if err == io.EOF {
-			break
-		}
-		rows += bytes.Count(binary, []byte{'\n'})
-		if len(binary) > 0 && binary[len(binary)-1] != '\n' {
-			rows++
-		}
-		break
-	}
-	return rows
-}
-
-func countXLSXRows(binary []byte) (int, error) {
-	zipReader, err := zip.NewReader(bytes.NewReader(binary), int64(len(binary)))
-	if err != nil {
-		return 0, err
-	}
-	maxRows := 0
-	for _, file := range zipReader.File {
-		if !strings.HasPrefix(file.Name, "xl/worksheets/") || !strings.HasSuffix(file.Name, ".xml") {
-			continue
-		}
-		rows, err := countWorksheetRows(file)
-		if err != nil {
-			return 0, err
-		}
-		if rows > maxRows {
-			maxRows = rows
-		}
-	}
-	return maxRows, nil
-}
-
-func countWorksheetRows(file *zip.File) (int, error) {
-	reader, err := file.Open()
-	if err != nil {
-		return 0, err
-	}
-	defer reader.Close()
-
-	decoder := xml.NewDecoder(reader)
-	rows := 0
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-		start, ok := token.(xml.StartElement)
-		if ok && start.Name.Local == "row" {
-			rows++
-		}
-	}
-	return rows, nil
-}
-
-func docName(doc *entity.Document) string {
-	if doc.Name == nil {
-		return ""
-	}
-	return *doc.Name
 }
 
 func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
@@ -1244,34 +744,23 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 		}
 	}
 
+	// Batch pre-check: refuse the whole request if any document's ingestion
+	// task is non-terminal (RUNNING/STOPPING), so we never partially clean.
+	if err := (service.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
+		return nil, common.CodeDataError, err
+	}
+
+	startParse := s.startParseDocumentsFunc
+	if startParse == nil {
+		docSvc := service.NewDocumentService()
+		startParse = docSvc.StartParseDocuments
+	}
+
 	successCount := 0
 
 	for _, docID := range docIDs {
 		doc := docByID[docID]
-
-		if s.docEngine != nil {
-			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": docID}, indexName, datasetID); err != nil {
-				return nil, common.CodeServerError, err
-			}
-		}
-		if _, err := s.deleteTasksByDocIDs([]string{docID}); err != nil {
-			return nil, common.CodeServerError, err
-		}
-
-		bucket, objectName, err := s.getDocumentStorageAddress(doc)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if err := s.queueParseTasks(doc, bucket, objectName, 0); err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if err := s.beginParseDocument(doc.ID); err != nil {
-			if _, delErr := s.deleteTasksByDocIDs([]string{doc.ID}); delErr != nil {
-				common.Warn("Failed to clean parse tasks after document state update failure",
-					zap.String("docID", doc.ID),
-					zap.Error(delErr))
-			}
+		if err := startParse(doc, kb, userID, service.StartParseOptions{RerunWithDelete: true}); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++

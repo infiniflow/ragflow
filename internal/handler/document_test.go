@@ -519,7 +519,7 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
@@ -1028,7 +1028,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},

@@ -260,3 +260,9 @@ func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 
 	common.SuccessWithData(c, environments, "SUCCESS")
 }
+
+// Language returns the backend runtime language so the front end can
+// choose the appropriate code path (Go vs Python).
+func (h *SystemHandler) Language(c *gin.Context) {
+	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
+}

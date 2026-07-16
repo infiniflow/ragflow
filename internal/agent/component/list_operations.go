@@ -341,6 +341,16 @@ func (l *ListOperationsComponent) Stream(ctx context.Context, inputs map[string]
 	return ch, nil
 }
 
+// GetInputForm returns the runtime input form consumed by the debug UI.
+func (l *ListOperationsComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
 // Inputs returns the public parameter surface (declared so the editor
 // can render per-input hints). All values map to the static DSL param
 // unless overridden via the orchestrator's input map.
