@@ -116,7 +116,7 @@ func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 			text, _ = chunk["summary"].(string)
 		}
 		if text == "" {
-			chunkText, err := MustGetChunkTextString(chunk)
+			chunkText, err := GetChunkTextString(chunk)
 			if err != nil {
 				common.Error("chunk[text] is not string", err)
 			} else {
@@ -130,9 +130,11 @@ func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 	return texts
 }
 
-// MustGetChunkTextString returns chunk["text"] when it is a string.
-// Missing text is allowed and returns empty string.
-func MustGetChunkTextString(chunk map[string]any) (string, error) {
+// GetChunkTextString returns chunk["text"] when it is a string.
+// Missing text is allowed and returns empty string. A present-but-non-string
+// value is an upstream contract violation and returns an error; the caller
+// decides whether to fail the task or skip the chunk.
+func GetChunkTextString(chunk map[string]any) (string, error) {
 	val, exists := chunk["text"]
 	if !exists || val == nil {
 		return "", nil
@@ -141,9 +143,5 @@ func MustGetChunkTextString(chunk map[string]any) (string, error) {
 	if ok {
 		return text, nil
 	}
-
-	msg := fmt.Sprintf("invalid chunk text type %T, expected string, chunk=%v", val, chunk)
-	err := fmt.Errorf("unexpected chunk text type - not string")
-	common.Error(msg, err)
-	return "", err
+	return "", fmt.Errorf("invalid chunk text type %T, expected string", val)
 }

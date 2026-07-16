@@ -346,7 +346,7 @@ func scheduleConnectorTask(tx *gorm.DB, connectorID, kbID, taskType string, rein
 		return nil
 	}
 
-	var pollRangeStart *string
+	var pollRangeStart *time.Time
 	var totalDocsIndexed int64
 	if taskType == connectorTaskTypeSync {
 		var latest entity.SyncLogs

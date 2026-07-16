@@ -1,4 +1,4 @@
-# There are 8 fix-capable jobs and 5 pure-check jobs.
+# There are 8 fix-capable jobs and 6 pure-check jobs.
 # Dual-mode pre-commit: by default (local dev) jobs fix and stage changes
 # (`stage_fixed: true` batches the `git add` per job to avoid the index lock
 # that parallel `git add` calls would hit). In CI, set LEFTHOOK_CHECK_ONLY=1
@@ -71,43 +71,26 @@ pre-commit:
           gofmt -w {staged_files}
         fi
     - name: web-prettier
+      # prettier plugins removed from .prettierrc, so this job needs no node_modules.
       glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
       stage_fixed: true
       run: |
-        # Ensure web/node_modules is populated. CI runners don't run `npm install`
-        # before lefthook, and `npx` without local node_modules fetches the
-        # latest packages from the registry — which breaks because the pinned
-        # prettier plugins (prettier-plugin-organize-imports,
-        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
-        # requires eslint.config.js.
-        # Use a mkdir-based mutex to prevent parallel npm ci from multiple hooks
-        # racing (ETXTBSY error on esbuild). mkdir is atomic on both Linux and macOS.
-        LOCKDIR=/tmp/ragflow-web-npm-lock
-        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
-        if [ ! -f web/node_modules/.package-lock.json ]; then
-          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
-          rm -rf web/node_modules
-          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
-        fi
-        rm -rf "$LOCKDIR"
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
         else
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
         fi
     - name: web-eslint
+      # Only web-eslint needs node_modules (for @typescript-eslint/* plugins).
+      # web-prettier has no npm deps, so there is no race on node_modules.
       glob: "web/**/*.{js,jsx,ts,tsx}"
       stage_fixed: true
       run: |
-        # Same npm ci guard as web-prettier; mkdir mutex serialises concurrent installs.
-        LOCKDIR=/tmp/ragflow-web-npm-lock
-        while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.5; done
         if [ ! -f web/node_modules/.package-lock.json ]; then
-          echo "==> web/node_modules missing or incomplete; running npm ci --prefix web"
+          echo '==> web/node_modules missing or incomplete; running npm ci --prefix web'
           rm -rf web/node_modules
-          npm ci --prefix web --no-audit --no-fund || { rm -rf "$LOCKDIR"; exit 1; }
+          npm ci --prefix web --no-audit --no-fund
         fi
-        rm -rf "$LOCKDIR"
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
           cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
         else

@@ -84,6 +84,22 @@ func TestStop_GracefulShutdown(t *testing.T) {
 	}
 }
 
+// TestStop_ClosesShutdownCh verifies that Stop closes ShutdownCh so the
+// cmd-side select on <-ingestor.ShutdownCh unblocks and the orchestrator
+// knows shutdown completed. Mirrors syncer.go which closes its ShutdownCh in
+// Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
+// forever on the receive).
+func TestStop_ClosesShutdownCh(t *testing.T) {
+	ingestor := NewIngestor("test-shutdown-ch", 1, nil)
+	ingestor.Stop(context.Background())
+	select {
+	case <-ingestor.ShutdownCh:
+		// closed - pass
+	default:
+		t.Fatal("ShutdownCh should be closed after Stop returns")
+	}
+}
+
 // TestStop_TimesOutWhenWorkerStuck verifies the B1 fix: when a worker is
 // blocked in a stage that does not honor ctx cancellation (e.g. a native
 // CGO parse), Stop returns once its deadline expires instead of hanging on
@@ -144,4 +160,43 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	// Release the stuck worker so it finishes and the test goroutine stays clean.
 	close(release)
 	ingestor.workerWg.Wait()
+}
+
+// TestPollCancel_ExitsWhenDoneClosed verifies that closing the done channel
+// causes pollCancel to return even when cancelCheck is blocked (e.g. on a
+// long DB query). Without BP3, the initial cancelCheck call runs
+// synchronously and pollCancel cannot observe done until it returns.
+func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+
+	// Block cancelCheck until released — simulate a stuck DB call.
+	blocking := make(chan struct{})
+	released := make(chan struct{})
+	ingestor.cancelCheck = func(taskID string) bool {
+		close(blocking)
+		<-released
+		return false
+	}
+
+	done := make(chan struct{})
+	exited := make(chan struct{})
+	go func() {
+		ingestor.pollCancel("task-1", func() {}, done)
+		close(exited)
+	}()
+
+	// Wait for cancelCheck to enter the blocking call.
+	<-blocking
+
+	// Close done — pollCancel must exit even though cancelCheck is stuck.
+	close(done)
+
+	select {
+	case <-exited:
+		// pollCancel returned — BP3 fix works.
+	case <-time.After(2 * time.Second):
+		t.Fatal("pollCancel did not exit when done closed (stuck in blocking cancelCheck)")
+	}
+
+	close(released) // cleanup
 }

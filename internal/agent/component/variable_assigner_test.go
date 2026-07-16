@@ -245,3 +245,20 @@ func TestVariableAssigner_Registered(t *testing.T) {
 		t.Errorf("Name()=%q, want VariableAssigner", c.Name())
 	}
 }
+
+func TestVariableAssignerGetInputForm(t *testing.T) {
+	c, err := New("VariableAssigner", map[string]any{
+		"variables": []map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("New(VariableAssigner): %v", err)
+	}
+	getter, ok := c.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		t.Fatal("VariableAssigner component does not expose GetInputForm")
+	}
+	items, ok := getter.GetInputForm()["items"].(map[string]any)
+	if !ok || items["type"] != "line" || items["name"] != "Items" {
+		t.Errorf("GetInputForm()[items] = %#v", items)
+	}
+}
