@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 	"errors"
-	tracer "ragflow/internal/server/otel"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -43,14 +42,6 @@ func StartServer(ctx context.Context, serverName string) error {
 		return errors.New("server EE is nil")
 	}
 
-	config := GetConfig()
-
-	var err error
-	serverEE.tracerProvider, err = tracer.NewTracerProvider(ctx, serverName, config.OTel.Host, config.OTel.Port, config.OTel.Secure, config.OTel.Stdout, config.OTel.SampleRatio)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -58,6 +49,5 @@ func ShutdownServer(ctx context.Context) error {
 	if serverEE == nil {
 		return errors.New("server EE is nil")
 	}
-	serverEE.tracerProvider.Shutdown(ctx)
 	return nil
 }
