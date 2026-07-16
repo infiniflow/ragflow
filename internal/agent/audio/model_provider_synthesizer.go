@@ -87,7 +87,7 @@ func SetModelProviderSynthesizer(fn ModelProviderFunc) {
 
 type modelProviderSynthesizer struct {
 	fn    ModelProviderFunc
-	redis *redis.RedisClient
+	redis *redis.Client
 }
 
 func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req SynthesizeRequest) (*SynthesizeResponse, error) {
