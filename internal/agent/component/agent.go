@@ -32,6 +32,7 @@ type AgentParam struct {
 	ModelID               string
 	SystemPrompt          string
 	UserPrompt            string
+	Thinking              string
 	TopP                  *float64
 	Tools                 []string                  // Agent-visible tool names resolved into BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
@@ -422,6 +423,12 @@ func buildToolDefs(p AgentParam) []map[string]any {
 	return defs
 }
 
+func emitAgentModelStreams(ctx context.Context, _ any) <-chan error {
+	done := make(chan error, 1)
+	close(done)
+	return done
+}
+
 // addToolCallMemory summarizes the tool calls observed in msg via
 // a small LLM call and returns a one-line history entry. Mirrors
 // Python's `add_memory(user, assist, func_name, params, results,
@@ -681,10 +688,20 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // Invoke runs the ReAct loop via the configured agentRunner and returns
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	runtime.ResetAgentMessageEmission(ctx)
+	defer runtime.FinalizeAgentMessage(ctx)
+
 	p := mergeAgentParam(c.param, inputs)
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
+	// Resolve chat model ref (model ID → driver + credentials).
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+
 	// Resolve {{cpn_id@var}} template references in system and user
 	// prompts against the canvas state. This MUST run BEFORE the
 	// user_prompt fallback — otherwise template refs like {{begin@query}}
@@ -785,6 +802,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		zap.String("modelID", p.ModelID),
 		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
+	thinking := msg.ReasoningContent
+
 	var groundingStatus string
 	if p.Cite {
 		chunks := chunksFromState(ctx)
@@ -805,10 +824,14 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	out := map[string]any{
 		"content":    content + artifactMD,
 		"tool_calls": extractToolCallsSimple(msg),
+		"thinking":   thinking,
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
+	}
+	if !runtime.AgentMessageEventsEmitted(ctx) {
+		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
 }
@@ -849,6 +872,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
 		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
@@ -1059,6 +1083,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+		p.Thinking = v
+	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
 	}
@@ -1071,8 +1098,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
-	if v, ok := sliceFrom(inputs, "tools"); ok {
-		p.Tools = v
+	if tools, params, ok := agentToolsFrom(inputs, "tools"); ok {
+		p.Tools = tools
+		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if sa := parseSubAgentConfigs(inputs["tools"]); sa != nil {
 		if p.SubAgents == nil {
@@ -1084,12 +1112,113 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		}
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
-		p.ToolParams = v
+		p.ToolParams = mergeToolParams(p.ToolParams, v)
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
 	}
 	return p
+}
+
+// agentToolsFrom extracts the Agent tools list. The Go-native shape is
+// []string; the canvas DSL shape stores tool component objects with
+// component_name and params.
+func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, bool) {
+	v, ok := inputs[name]
+	if !ok {
+		return nil, nil, false
+	}
+	switch x := v.(type) {
+	case []string:
+		return x, nil, true
+	case []any:
+		out := make([]string, 0, len(x))
+		params := make(map[string]map[string]any)
+		for _, item := range x {
+			switch tool := item.(type) {
+			case string:
+				if strings.TrimSpace(tool) == "" {
+					continue
+				}
+				out = append(out, tool)
+			case map[string]any:
+				toolName, toolParams, ok := agentToolObject(tool)
+				if !ok {
+					continue
+				}
+				out = append(out, toolName)
+				if len(toolParams) != 0 {
+					params[strings.ToLower(strings.TrimSpace(toolName))] = toolParams
+				}
+			}
+		}
+		return out, params, true
+	}
+	return nil, nil, false
+}
+
+func agentToolObject(item map[string]any) (string, map[string]any, bool) {
+	toolName, ok := stringFrom(item, "component_name")
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "tool_name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		toolName, ok = stringFrom(item, "name")
+	}
+	if !ok || strings.TrimSpace(toolName) == "" {
+		return "", nil, false
+	}
+	toolName = strings.TrimSpace(toolName)
+
+	rawParams, _ := item["params"].(map[string]any)
+	toolParams := cloneMap(rawParams)
+	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
+		if toolParams == nil {
+			toolParams = make(map[string]any)
+		}
+		toolParams["function_name"] = strings.TrimSpace(fn)
+	}
+	return toolName, toolParams, true
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {
+	if len(base) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(base)+len(overrides))
+	for name, params := range base {
+		out[name] = cloneMap(params)
+		if lower := strings.ToLower(strings.TrimSpace(name)); lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	for name, params := range overrides {
+		if len(params) == 0 {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(name))
+		for k := range out {
+			if strings.ToLower(strings.TrimSpace(k)) == lower {
+				delete(out, k)
+			}
+		}
+		out[name] = cloneMap(params)
+		if lower != "" && lower != name {
+			out[lower] = cloneMap(params)
+		}
+	}
+	return out
 }
 
 // sliceFrom extracts []string from inputs[name].
@@ -1237,12 +1366,16 @@ func init() {
 			f := v
 			p.TopP = &f
 		}
-		if v, ok := sliceFrom(params, "tools"); ok {
-			p.Tools = v
+		if tools, toolParams, ok := agentToolsFrom(params, "tools"); ok {
+			p.Tools = tools
+			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
 		}
 		p.SubAgents = parseSubAgentConfigs(params["tools"])
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
-			p.ToolParams = v
+			p.ToolParams = mergeToolParams(p.ToolParams, v)
+		}
+		if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
+			p.Thinking = v
 		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v

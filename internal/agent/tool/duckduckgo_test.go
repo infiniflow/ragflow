@@ -229,14 +229,15 @@ func TestDuckDuckGo_ToolMeta(t *testing.T) {
 	}
 }
 
-func TestDuckDuckGo_RequiresQuery(t *testing.T) {
+func TestDuckDuckGo_EmptyQuery(t *testing.T) {
 	tool := NewDuckDuckGoTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope duckduckgoEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
@@ -279,5 +280,48 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 	}
 	if hitCount == 0 {
 		t.Error("test server was never hit; the tool did not actually call the upstream")
+	}
+}
+
+func TestDuckDuckGo_ComponentReferencesAndDefaults(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("duckduckgo", map[string]any{
+		"top_n":   float64(4),
+		"channel": "news",
+		"outputs": map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	duck := built.(*DuckDuckGoTool)
+	if duck.defaults.TopN != 4 || duck.defaults.Channel != "news" {
+		t.Fatalf("defaults = %+v", duck.defaults)
+	}
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"channel": "images"}} {
+		if _, err := BuildByName("duckduckgo", params); err == nil {
+			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
+	}
+	spec := duck.ComponentSpec()
+	if channel, ok := spec.InputForm["channel"].(map[string]any); !ok || channel["value"] != "general" {
+		t.Fatalf("channel input form = %#v", spec.InputForm["channel"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Story", "url": "https://news.example/story", "body": "Breaking update",
+	}}}
+	chunks, docAggs := duck.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["content"] != "Breaking update" {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := duck.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Breaking update") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
 	}
 }

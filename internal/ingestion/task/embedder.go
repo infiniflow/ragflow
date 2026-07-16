@@ -39,6 +39,9 @@ func (e *embedder) MaxTokens() int {
 }
 
 func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+	if e.model.ModelDriver == nil {
+		return nil, fmt.Errorf("embedder: embedding model driver is nil for model %v", e.model.ModelName)
+	}
 	config := &models.EmbeddingConfig{Dimension: 0}
 	embeds, err := e.model.ModelDriver.Embed(e.model.ModelName, texts, e.model.APIConfig, config)
 	if err != nil {

@@ -26,126 +26,263 @@ import (
 	"testing"
 )
 
-func TestYahooFinance_BuildURL(t *testing.T) {
+func TestYahooFinanceBuildURL(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name        string
-		symbols     []string
-		fields      []string
-		wantSymbols string
-		wantFields  string
-		wantHost    string
-	}{
-		{
-			name:        "single symbol, no fields",
-			symbols:     []string{"AAPL"},
-			fields:      nil,
-			wantSymbols: "AAPL",
-			wantHost:    "query1.finance.yahoo.com",
-		},
-		{
-			name:        "multi symbol, with fields",
-			symbols:     []string{"AAPL", "MSFT", "0005.HK"},
-			fields:      []string{"symbol", "regularMarketPrice"},
-			wantSymbols: "AAPL,MSFT,0005.HK",
-			wantFields:  "symbol,regularMarketPrice",
-			wantHost:    "query1.finance.yahoo.com",
-		},
+	got := buildYahooFinanceURL("0005.HK")
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got, err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := buildYahooFinanceURL(tc.symbols, tc.fields)
-			u, _ := url.Parse(got)
-			if u.Host != tc.wantHost {
-				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
+	if parsed.Host != "query1.finance.yahoo.com" {
+		t.Fatalf("host = %q", parsed.Host)
+	}
+	if parsed.Path != "/v7/finance/quote" {
+		t.Fatalf("path = %q", parsed.Path)
+	}
+	if symbols := parsed.Query().Get("symbols"); symbols != "0005.HK" {
+		t.Fatalf("symbols = %q", symbols)
+	}
+	if _, exists := parsed.Query()["fields"]; exists {
+		t.Fatalf("unexpected legacy fields query: %s", parsed.RawQuery)
+	}
+}
+
+func TestYahooFinanceInvokableRunBuildsMarkdownReport(t *testing.T) {
+	t.Parallel()
+
+	var gotSymbols, gotUserAgent string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotSymbols = request.URL.Query().Get("symbols")
+		gotUserAgent = request.Header.Get("User-Agent")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+			"quoteResponse": {
+				"result": [{
+					"symbol":"AAPL",
+					"regularMarketPrice":189.5,
+					"currency":"USD",
+					"marketState":"REGULAR",
+					"note":"left|right"
+				}],
+				"error": null
 			}
-			if u.Path != "/v7/finance/quote" {
-				t.Errorf("path = %q, want /v7/finance/quote", u.Path)
+		}`))
+	}))
+	defer server.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
+	raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"stock_code":" AAPL "}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotSymbols != "AAPL" {
+		t.Fatalf("symbols = %q", gotSymbols)
+	}
+	if !strings.Contains(gotUserAgent, "ragflow") {
+		t.Fatalf("User-Agent = %q", gotUserAgent)
+	}
+
+	var envelope yahooFinanceEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("unmarshal output %q: %v", raw, err)
+	}
+	for _, expected := range []string{
+		"# Information:",
+		"| currency | USD |",
+		"| marketState | REGULAR |",
+		`| note | left\|right |`,
+		"| regularMarketPrice | 189.5 |",
+		"| symbol | AAPL |",
+	} {
+		if !strings.Contains(envelope.Report, expected) {
+			t.Fatalf("report missing %q:\n%s", expected, envelope.Report)
+		}
+	}
+	if envelope.Error != "" {
+		t.Fatalf("unexpected error = %q", envelope.Error)
+	}
+}
+
+func TestYahooFinanceEmptyStockCodeSkipsRequest(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
+
+	for _, args := range []string{`{"stock_code":""}`, `{"stock_code":"   "}`} {
+		raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), args)
+		if err != nil {
+			t.Fatalf("InvokableRun(%s): %v", args, err)
+		}
+		var envelope yahooFinanceEnvelope
+		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+			t.Fatalf("unmarshal output: %v", err)
+		}
+		if envelope.Report != "" || envelope.Error != "" {
+			t.Fatalf("empty input output = %#v", envelope)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("server calls = %d, want 0", calls)
+	}
+}
+
+func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
+	yahoo := NewYahooFinanceToolWithDefaults(helper, yahooFinanceParams{})
+
+	raw, err := yahoo.InvokableRun(context.Background(), `{"stock_code":"AAPL"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var envelope yahooFinanceEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if envelope.Report != "" || calls != 0 {
+		t.Fatalf("output = %#v, server calls = %d", envelope, calls)
+	}
+}
+
+func TestMergeYahooFinanceParamsKeepsStockCodeAndUsesNodeConfig(t *testing.T) {
+	t.Parallel()
+
+	defaults := yahooFinanceParams{Info: true}
+	params := yahooFinanceParams{
+		StockCode: "AAPL",
+		Info:      false,
+	}
+
+	got := mergeYahooFinanceParams(defaults, params)
+	want := defaults
+	want.StockCode = "AAPL"
+	if got != want {
+		t.Fatalf("merged params = %#v, want %#v", got, want)
+	}
+}
+
+func TestYahooFinanceErrorsReturnEnvelope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantError  string
+	}{
+		{name: "http status", statusCode: http.StatusUnauthorized, body: `denied`, wantError: "upstream returned 401"},
+		{name: "invalid json", statusCode: http.StatusOK, body: `{`, wantError: "decode response"},
+		{name: "upstream envelope", statusCode: http.StatusOK, body: `{"quoteResponse":{"result":[],"error":{"code":"Not Found"}}}`, wantError: "upstream error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(test.statusCode)
+				_, _ = writer.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			helper := NewHTTPHelperWithRetry(RetryConfig{MaxAttempts: 1}).WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
+
+			raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"stock_code":"AAPL"}`)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("err = %v, want %q", err, test.wantError)
 			}
-			q := u.Query()
-			if q.Get("symbols") != tc.wantSymbols {
-				t.Errorf("symbols = %q, want %q", q.Get("symbols"), tc.wantSymbols)
+			var envelope yahooFinanceEnvelope
+			if decodeErr := json.Unmarshal([]byte(raw), &envelope); decodeErr != nil {
+				t.Fatalf("error result is not JSON: %s: %v", raw, decodeErr)
 			}
-			if tc.wantFields != "" && q.Get("fields") != tc.wantFields {
-				t.Errorf("fields = %q, want %q", q.Get("fields"), tc.wantFields)
+			if !strings.Contains(envelope.Error, test.wantError) || envelope.Report != "" {
+				t.Fatalf("envelope = %#v", envelope)
 			}
 		})
 	}
 }
 
-func TestYahooFinance_ParseQuote(t *testing.T) {
+func TestYahooFinanceMalformedArguments(t *testing.T) {
 	t.Parallel()
 
-	var gotUA string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotUA = r.Header.Get("User-Agent")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"quoteResponse": {
-				"result": [
-					{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD","regularMarketChangePercent":1.23},
-					{"symbol":"MSFT","regularMarketPrice":421.0,"currency":"USD","regularMarketChangePercent":-0.5}
-				]
-			}
-		}`))
-	}))
-	defer srv.Close()
-
-	helper := NewHTTPHelper().WithClient(&http.Client{
-		Transport: rewriteHostTransport(srv.URL),
-	})
-	tool := NewYahooFinanceToolWith(helper)
-	out, _ := tool.InvokableRun(context.Background(),
-		`{"symbols":["AAPL","MSFT"]}`)
-	if !strings.Contains(gotUA, "ragflow") {
-		t.Errorf("User-Agent = %q, want to contain ragflow", gotUA)
+	raw, err := NewYahooFinanceTool().InvokableRun(context.Background(), `{`)
+	if err == nil || !strings.Contains(err.Error(), "parse arguments") {
+		t.Fatalf("err = %v", err)
 	}
-
-	var env yahooFinanceEnvelope
-	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	var envelope yahooFinanceEnvelope
+	if decodeErr := json.Unmarshal([]byte(raw), &envelope); decodeErr != nil {
+		t.Fatalf("error result is not JSON: %s: %v", raw, decodeErr)
 	}
-	if env.Error != "" {
-		t.Errorf("Error = %q, want empty", env.Error)
-	}
-	if len(env.Results) != 2 {
-		t.Fatalf("Results len = %d, want 2", len(env.Results))
-	}
-	if env.Results[0].Symbol != "AAPL" {
-		t.Errorf("Results[0].Symbol = %q, want AAPL", env.Results[0].Symbol)
-	}
-	if env.Results[0].RegularMarketPrice != 189.5 {
-		t.Errorf("Results[0].Price = %v, want 189.5", env.Results[0].RegularMarketPrice)
-	}
-	if env.Results[1].RegularMarketChangePercent != -0.5 {
-		t.Errorf("Results[1].ChangePct = %v, want -0.5", env.Results[1].RegularMarketChangePercent)
+	if !strings.Contains(envelope.Error, "parse arguments") {
+		t.Fatalf("envelope = %#v", envelope)
 	}
 }
 
-func TestYahooFinance_RequiresSymbols(t *testing.T) {
+func TestYahooFinanceComponentContract(t *testing.T) {
 	t.Parallel()
 
-	tool := NewYahooFinanceTool()
-	_, err := tool.InvokableRun(context.Background(), `{"symbols":[]}`)
-	if err == nil {
-		t.Fatal("expected error for empty symbols")
+	yahoo := NewYahooFinanceTool()
+	spec := yahoo.ComponentSpec()
+	stockCode, ok := spec.InputForm["stock_code"].(map[string]any)
+	if !ok || stockCode["type"] != "line" || stockCode["name"] != "Stock code/Company name" {
+		t.Fatalf("stock_code input form = %#v", spec.InputForm["stock_code"])
 	}
-	if !strings.Contains(err.Error(), "symbols") {
-		t.Errorf("err = %v, want to mention symbols", err)
+	if _, exists := spec.Outputs["report"]; !exists {
+		t.Fatalf("outputs = %#v", spec.Outputs)
+	}
+	outputs := yahoo.BuildComponentOutputs(map[string]any{"report": "# Information:\nAAPL"})
+	if report, ok := outputs["report"].(string); !ok || report != "# Information:\nAAPL" {
+		t.Fatalf("report = %#v", outputs["report"])
 	}
 }
 
-func TestYahooFinance_Info(t *testing.T) {
+func TestYahooFinanceInfoOnlyExposesStockCode(t *testing.T) {
 	t.Parallel()
 
-	tool := NewYahooFinanceTool()
-	meta := tool.ToolMeta()
+	meta := NewYahooFinanceTool().ToolMeta()
 	if meta.Name != "yahoo_finance" {
 		t.Errorf("Name = %q, want yahoo_finance", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Yahoo") {
 		t.Errorf("Desc = %q, want to mention Yahoo", meta.Description)
+	}
+}
+
+func TestBuildYahooFinanceToolUsesNodeDefaults(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("yahoo_finance", map[string]any{
+		"info": false, "history": true, "balance_sheet": true, "news": true,
+		"stock_code": "sys.query", "outputs": map[string]any{"report": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	yahoo, ok := built.(*YahooFinanceTool)
+	if !ok {
+		t.Fatalf("tool type = %T", built)
+	}
+	if yahoo.defaults.Info {
+		t.Fatalf("defaults = %#v", yahoo.defaults)
+	}
+	if yahoo.defaults.StockCode != "" {
+		t.Fatalf("runtime stock_code leaked into defaults: %#v", yahoo.defaults)
+	}
+}
+
+func TestBuildYahooFinanceToolRejectsInvalidInfoParam(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildByName("yahoo_finance", map[string]any{"info": "true"})
+	if err == nil || !strings.Contains(err.Error(), "requires boolean node-level param info") {
+		t.Fatalf("err = %v", err)
 	}
 }

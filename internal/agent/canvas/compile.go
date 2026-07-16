@@ -115,12 +115,12 @@ type CompileOptions struct {
 	// ResumeWithData round.
 	InterruptAfterNonTerminal bool
 	// SetupOverrides is a run-level override map keyed by cpnID. Each
-	// component's `params["setups"]` is merged only with its own entry
+	// component's `params` is merged only with its own entry
 	// (an arbitrary string-keyed map); the override wins on top-level key
 	// collision (see node_body.go mergeSetups). Components absent from the
 	// map are left untouched. Used by the ingestion pipeline so a single
 	// Pipeline.Run can override the DSL-baked component setups without
-	// mutating the shared *Canvas (see node_body.go applySetupOverrides /
+	// mutating the shared *Canvas (see node_body.go applyOverrideParams /
 	// mergeSetups).
 	SetupOverrides map[string]any
 }

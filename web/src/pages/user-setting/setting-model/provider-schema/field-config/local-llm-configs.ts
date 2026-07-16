@@ -42,6 +42,25 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     undefined,
     'https://inference.readthedocs.io/en/latest/user_guide',
   ),
+  [LLMFactory.FunASR]: buildLocalConfig(
+    LLMFactory.FunASR,
+    'FunASR',
+    ['speech2text'],
+    undefined,
+    false,
+    [
+      {
+        name: 'base_url',
+        label: 'addLlmBaseUrl',
+        type: 'inputSelect',
+        required: true,
+        defaultValue: 'http://localhost:8000/v1',
+        placeholder: 'baseUrlNameMessage',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+    ],
+    'https://github.com/modelscope/FunASR',
+  ),
   [LLMFactory.ModelScope]: buildLocalConfig(
     LLMFactory.ModelScope,
     'ModelScope',

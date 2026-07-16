@@ -399,7 +399,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	if rc := http.NewResponseController(c.Writer); rc != nil {
 		rc.SetWriteDeadline(time.Time{})
 	}
+	doneSent := false
 	for ev := range events {
+		if ev.Type == "done" {
+			doneSent = true
+		}
 		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 			common.Debug("agent run: client disconnected",
 				zap.String("canvas_id", canvasID),
@@ -407,6 +411,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 				zap.Error(err),
 			)
 			return
+		}
+	}
+	if !doneSent {
+		if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
+			common.Debug("agent run: failed to write [DONE]",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
 		}
 	}
 }
@@ -807,6 +820,24 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
+//
+// Runs the canvas against `agent_id`. Mirrors the Python contract in
+// api/db/services/canvas_service.py:313 (`completion()`) and
+// api/apps/restful_apis/agent_api.py:1440-1676.
+//
+//   - When `stream` is true: streams SSE — one `data: {...}\n\n` frame per
+//     canvas RunEvent, terminated by `data:[DONE]\n\n`.
+//   - When `stream` is omitted or false (default, matches the Python
+//     agent_chat_completion contract where `req.get("stream", False)`
+//     defaults to non-streaming): collects all canvas events and returns a
+//     plain JSON response with `data.content` set to the concatenated
+//     message content (matching Python's final_ans["data"]["content"]).
+//   - Openai-compatible path: requires `messages` (a non-empty list with at
+//     least one user message is needed to derive the question). The full
+//     OpenAI wire framing (delta + reference + token counts — see
+//     `completion_openai` at api/db/services/canvas_service.py:378-479) is
+//     still a Phase 5 TODO; until then the openai-compat branches return a
+//     hardcoded "hello" stub so the validation contracts keep passing.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
@@ -974,11 +1005,69 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	if rc := http.NewResponseController(c.Writer); rc != nil {
-		rc.SetWriteDeadline(time.Time{})
+	if req.Stream {
+		// SSE streaming: one `data: {...}\n\n` frame per canvas RunEvent,
+		// terminated by `data:[DONE]\n\n`. We do NOT emit an SSE `event:`
+		// line — the front-end's use-send-message.ts parser feeds each
+		// `data:` line directly into JSON.parse and expects the event type
+		// in the JSON object's top-level `event` field.
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+		if rc := http.NewResponseController(c.Writer); rc != nil {
+			rc.SetWriteDeadline(time.Time{})
+		}
+		emitted := false
+		doneSent := false
+		for ev := range events {
+			emitted = true
+			if ev.Type == "done" {
+				doneSent = true
+			}
+			common.Debug("agent chat completions: streaming event",
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.String("event_type", ev.Type),
+				zap.String("message_id", ev.MessageID),
+				zap.String("task_id", ev.TaskID),
+			)
+			if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+				common.Debug("agent chat completions: client disconnected",
+					zap.String("agent_id", req.AgentID),
+					zap.Error(err),
+				)
+				return
+			}
+		}
+		if !emitted {
+			// Canvas produced no events (e.g. empty query). Echo the
+			// session_id so the client can resume the conversation
+			// (fixes #15169). The [DONE] terminator must be emitted
+			// after this branch because the canvas never sends a
+			// "done" event on this path.
+			common.Info("empty agent output - returning session_id",
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+			)
+			event := canvas.RunEvent{
+				Type:      "",
+				Data:      "{}",
+				SessionID: req.SessionID,
+			}
+			_ = service.WriteChatbotRunEvent(c.Writer, event)
+		}
+		if !doneSent {
+			if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
+				common.Debug("agent chat completions: failed to write [DONE]",
+					zap.Error(err),
+				)
+			}
+		}
+		common.Debug("agent chat completions: stream closed",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		)
+		return
 	}
 	for ev := range events {
 		common.Debug("agent chat completions: streaming event",

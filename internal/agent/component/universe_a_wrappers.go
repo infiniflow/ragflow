@@ -177,6 +177,15 @@ func (c *retrievalComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *retrievalComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
 func (c *retrievalComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered chunks for downstream LLM prompts.",
@@ -331,9 +340,7 @@ func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any)
 		if kbName != "" && !hasDatasetIDs {
 			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
 				out["dataset_ids"] = []string{datasetID}
-				common.Debug("agent retrieval component: resolved dataset id",
-					zap.String("kb", strings.TrimSpace(kbName)),
-					zap.String("dataset_id", datasetID))
+				common.Debug("agent retrieval component: resolved dataset id")
 			}
 		}
 		if queryText != "" {
@@ -351,37 +358,23 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 		return ""
 	}
 	if kb, err := dao.NewKnowledgebaseDAO().GetByID(kbName); err == nil && kb != nil {
-		common.Debug("agent retrieval component: resolved dataset id by direct id",
-			zap.String("kb", kbName),
-			zap.String("dataset_id", kb.ID))
+		common.Debug("agent retrieval component: resolved dataset id by direct id")
 		return kb.ID
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		common.Warn("agent retrieval component: resolve dataset id by id failed",
-			zap.String("kb", kbName),
 			zap.Error(err))
 	}
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-		common.Debug("agent retrieval component: resolve dataset id context",
-			zap.String("kb", kbName),
-			zap.Any("sys_query", state.Sys["query"]),
-			zap.Any("tenant_id", state.Sys["tenant_id"]),
-			zap.Any("user_id", state.Sys["user_id"]))
+		common.Debug("agent retrieval component: resolve dataset id context")
 		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
 			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(kbName, tenantID); lookupErr == nil && kb != nil {
-				common.Debug("agent retrieval component: resolved dataset id by tenant",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID),
-					zap.String("dataset_id", kb.ID))
+				common.Debug("agent retrieval component: resolved dataset id by tenant")
 				return kb.ID
 			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 				common.Warn("agent retrieval component: resolve dataset id by tenant failed",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID),
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: tenant lookup missed",
-					zap.String("kb", kbName),
-					zap.String("tenant_id", tenantID))
+				common.Debug("agent retrieval component: tenant lookup missed")
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
@@ -390,30 +383,21 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
 						continue
 					}
-					common.Debug("agent retrieval component: resolved dataset id by user visibility",
-						zap.String("kb", kbName),
-						zap.String("user_id", userID),
-						zap.String("dataset_id", kb.ID))
+					common.Debug("agent retrieval component: resolved dataset id by user visibility")
 					return kb.ID
 				}
 			} else if lookupErr != nil {
 				common.Warn("agent retrieval component: resolve dataset id by name failed",
-					zap.String("kb", kbName),
-					zap.String("user_id", userID),
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: user visibility lookup missed",
-					zap.String("kb", kbName),
-					zap.String("user_id", userID))
+				common.Debug("agent retrieval component: user visibility lookup missed")
 			}
 		}
 	} else {
 		common.Debug("agent retrieval component: resolve dataset id missing canvas state",
-			zap.String("kb", kbName),
 			zap.Error(err))
 	}
-	common.Debug("agent retrieval component: dataset id unresolved",
-		zap.String("kb", kbName))
+	common.Debug("agent retrieval component: dataset id unresolved")
 	return ""
 }
 
@@ -593,7 +577,8 @@ func (c *codeExecComponentDelegate) Invoke(ctx context.Context, inputs map[strin
 
 	// Resolve code-exec-specific argument references against merged state.
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
 
 	common.Debug("CodeExec wrapper invoke",
@@ -792,29 +777,29 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+func resolveCodeExecArguments(args map[string]any, merged map[string]any, state *runtime.CanvasState) map[string]any {
 	if args == nil {
 		return nil
 	}
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		out[k] = resolveCodeExecArgumentValue(v, merged)
+		out[k] = resolveCodeExecArgumentValue(v, merged, state)
 	}
 	return out
 }
 
-func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+func resolveCodeExecArgumentValue(v any, merged map[string]any, state *runtime.CanvasState) any {
 	switch x := v.(type) {
 	case map[string]any:
-		return resolveCodeExecArguments(x, merged)
+		return resolveCodeExecArguments(x, merged, state)
 	case []any:
 		out := make([]any, 0, len(x))
 		for _, item := range x {
-			out = append(out, resolveCodeExecArgumentValue(item, merged))
+			out = append(out, resolveCodeExecArgumentValue(item, merged, state))
 		}
 		return out
 	case string:
-		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged, state); ok {
 			return resolved
 		}
 		return x
@@ -823,10 +808,15 @@ func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
 	}
 }
 
-func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime.CanvasState) (any, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, false
+	}
+	if state != nil {
+		if v, err := state.GetVar(ref); err == nil && v != nil {
+			return v, true
+		}
 	}
 	at := strings.Index(ref, "@")
 	if at <= 0 || at >= len(ref)-1 {
@@ -1325,21 +1315,3 @@ var (
 	_ Component = (*pubMedComponent)(nil)
 	_ Component = (*yahooFinanceComponent)(nil)
 )
-
-// stringParam coerces an any value to string. Returns "" for nil.
-func stringParam(v any) string {
-	if v == nil {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
-}
-
-// anySlice coerces an any value to []any. Returns nil for non-slice types.
-func anySlice(v any) []any {
-	if v == nil {
-		return nil
-	}
-	s, _ := v.([]any)
-	return s
-}

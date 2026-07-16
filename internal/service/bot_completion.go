@@ -169,7 +169,7 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // data.answer, the browser receives bytes but cannot render the
 // assistant message or correlate the current Log panel.
 //
-// The "done" event type emits `data: [DONE]\n\n` (no envelope),
+// The "done" event type emits `data:[DONE]\n\n` (no envelope),
 // matching the Python agent API terminator.
 //
 // Returns the write error so callers can short-circuit; both nil
@@ -177,7 +177,7 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // disconnected mid-stream.
 func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.Type == "done" {
-		_, err := w.Write([]byte("data: [DONE]\n\n"))
+		_, err := w.Write([]byte("data:[DONE]\n\n"))
 		if err != nil {
 			return err
 		}

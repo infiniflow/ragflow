@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-// runner.go — Canvas execution runtime. Drives a Canvas invocation
+// Package canvas runner.go — Canvas execution runtime. Drives a Canvas invocation
 // (the caller supplies the RunFunc that does Compile+Invoke), catches
 // the four possible outcomes, and surfaces them as RunEvent values on
 // a channel that the HTTP layer streams as SSE frames.
@@ -85,8 +85,16 @@ type RunEvent struct {
 type MessageEvent struct {
 	Content      string        `json:"content,omitempty"`
 	Reference    []interface{} `json:"reference,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"`
 	StartToThink bool          `json:"start_to_think,omitempty"`
 	EndToThink   bool          `json:"end_to_think,omitempty"`
+}
+
+// MessageEndEvent is the JSON payload for Type=="message_end" frames.
+type MessageEndEvent struct {
+	Status     *string       `json:"status,omitempty"`
+	Attachment []interface{} `json:"attachment,omitempty"`
+	Reference  interface{}   `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"

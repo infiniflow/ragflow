@@ -30,6 +30,7 @@ import (
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/harness/graph/types"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/utility"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -77,8 +78,8 @@ func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan §6.a
-// M4 方案 A: a deployment that cannot persist checkpoints must not silently
+// resolved (no injected store AND no global Redis client). This is plan A: a
+// deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
 // Production ingestion wiring sets this; unit tests leave it off to exercise
@@ -221,22 +222,12 @@ func pipelineConfig(cpID string) *types.RunnableConfig {
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_params map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
 	if p.canvas == nil {
 		return nil, fmt.Errorf("pipeline: canvas is nil")
-	}
-	// runSetups, when non-nil, overrides components' DSL-baked
-	// `params["setups"]` at compile time. It is keyed by cpnID; each
-	// component is merged only with its own entry, and within that entry a
-	// top-level key fully replaces the base entry for that key (see
-	// canvas.mergeSetups). It is variadic so existing callers that pass
-	// only (ctx, inputs) keep working.
-	var runSetups map[string]any
-	if len(setups) > 0 {
-		runSetups = setups[0]
 	}
 	if runtime.DefaultFactory() == nil {
 		runtime.InstallDefaultRegistryFactory()
@@ -278,7 +269,9 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
 	// setups at compile time (higher priority; see canvas.WithSetupOverrides).
-	compileOpts = append(compileOpts, canvas.WithSetupOverrides(runSetups))
+	if override_params != nil {
+		compileOpts = append(compileOpts, canvas.WithSetupOverrides(override_params))
+	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
@@ -358,17 +351,17 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				_ = tracker.MarkCancelled(runCtx, p.taskID)
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			_ = tracker.MarkFailed(runCtx, p.taskID, err.Error())
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		_ = tracker.MarkSucceeded(runCtx, p.taskID)
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -386,6 +379,9 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		if tracker != nil {
 			_ = tracker.ClearInterruptID(ctx, cpID)
 			_ = tracker.MarkSucceeded(ctx, cpID)
+		}
+		if store != nil {
+			_ = store.Delete(ctx, cpID)
 		}
 		return finalizeResult(current, out, runState), nil
 	}

@@ -46,9 +46,6 @@ var registry = map[string]Factory{
 
 func noConfig(name string, fn func() Tool) Factory {
 	return func(params map[string]any) (Tool, error) {
-		if len(params) != 0 {
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level params", name)
-		}
 		return fn(), nil
 	}
 }
@@ -114,13 +111,6 @@ func buildAkShareTool(params map[string]any) (Tool, error) {
 func buildArxivTool(params map[string]any) (Tool, error) {
 	topN := defaultArxivTopN
 	sortBy := defaultArxivSortBy
-	for key := range params {
-		switch key {
-		case "top_n", "sort_by":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "arxiv", key)
-		}
-	}
 	if v, ok := intParam(params, "top_n"); ok {
 		topN = v
 	}
@@ -148,13 +138,6 @@ func buildGoogleTool(params map[string]any) (Tool, error) {
 	if len(params) == 0 {
 		return NewGoogleTool(), nil
 	}
-	for key := range params {
-		switch key {
-		case "api_key", "country", "language", "q", "start", "num":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google", key)
-		}
-	}
 	defaults := googleParams{}
 	if v, ok := stringParam(params, "api_key"); ok {
 		defaults.APIKey = v
@@ -179,11 +162,6 @@ func buildGoogleTool(params map[string]any) (Tool, error) {
 
 func buildGitHubTool(params map[string]any) (Tool, error) {
 	topN := defaultGitHubTopN
-	for key := range params {
-		if key != "top_n" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param top_n", "github")
-		}
-	}
 	if raw, exists := params["top_n"]; exists {
 		value, ok := intParam(params, "top_n")
 		if !ok {
@@ -218,41 +196,57 @@ func buildGoogleScholarTool(params map[string]any) (Tool, error) {
 	if v, ok := stringParam(params, "query"); ok {
 		defaults.Query = v
 	}
-	if v, ok := intParam(params, "top_n"); ok {
-		defaults.TopN = v
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "google_scholar")
+		}
+		defaults.TopN = topN
 	}
-	if v, ok := stringParam(params, "sort_by"); ok {
-		defaults.SortBy = v
+	if value, ok := params["sort_by"]; ok {
+		sortBy, valid := value.(string)
+		if !valid || (sortBy != "date" && sortBy != "relevance") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported sort_by %q", "google_scholar", sortBy)
+		}
+		defaults.SortBy = sortBy
 	}
-	if v, ok := intParam(params, "year_low"); ok {
-		defaults.YearLow = v
+	if value, ok := params["year_low"]; ok && value != nil {
+		yearLow, valid := strictInt(value)
+		if !valid || yearLow <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param year_low", "google_scholar")
+		}
+		defaults.YearLow = yearLow
 	}
-	if v, ok := intParam(params, "year_high"); ok {
-		defaults.YearHigh = v
+	if value, ok := params["year_high"]; ok && value != nil {
+		yearHigh, valid := strictInt(value)
+		if !valid || yearHigh <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param year_high", "google_scholar")
+		}
+		defaults.YearHigh = yearHigh
 	}
 	if v, ok := boolParam(params, "patents"); ok {
 		defaults.Patents = &v
+	}
+	if value, ok := params["patents"]; ok {
+		if _, valid := value.(bool); !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param patents", "google_scholar")
+		}
 	}
 	return NewGoogleScholarToolWithDefaults(nil, defaults), nil
 }
 
 func buildPubMedTool(params map[string]any) (Tool, error) {
 	defaults := pubmedParams{}
-	for key := range params {
-		switch key {
-		case "top_n", "email":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "pubmed", key)
-		}
-	}
-	if topN, ok := intParam(params, "top_n"); ok {
-		if topN <= 0 {
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
 			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "pubmed")
 		}
 		defaults.TopN = topN
 	}
-	if email, ok := stringParam(params, "email"); ok {
-		if strings.TrimSpace(email) == "" {
+	if value, ok := params["email"]; ok {
+		email, valid := value.(string)
+		if !valid || strings.TrimSpace(email) == "" {
 			return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param email", "pubmed")
 		}
 		defaults.Email = email
@@ -260,41 +254,8 @@ func buildPubMedTool(params map[string]any) (Tool, error) {
 	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
 
-func buildSearXNGTool(params map[string]any) (Tool, error) {
-	defaults := defaultSearXNGParams()
-	for key := range params {
-		switch key {
-		case "top_n", "searxng_url":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "searxng", key)
-		}
-	}
-	if value, ok := params["top_n"]; ok {
-		topN, valid := parseSearXNGTopN(value)
-		if !valid || topN <= 0 {
-			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "searxng")
-		}
-		defaults.TopN = topN
-	}
-	if value, ok := params["searxng_url"]; ok {
-		searxngURL, valid := value.(string)
-		if !valid {
-			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param searxng_url", "searxng")
-		}
-		defaults.SearXNGURL = searxngURL
-	}
-	return newSearXNGToolWithDefaults(nil, defaults), nil
-}
-
 func buildWencaiTool(params map[string]any) (Tool, error) {
 	defaults := wencaiParams{}
-	for key := range params {
-		switch key {
-		case "top_n", "query_type":
-		default:
-			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "wencai", key)
-		}
-	}
 	if value, ok := params["top_n"]; ok {
 		topN, valid := strictInt(value)
 		if !valid || topN <= 0 {
@@ -316,26 +277,64 @@ func buildKeenableTool(params map[string]any) (Tool, error) {
 	if len(params) == 0 {
 		return NewKeenableTool(), nil
 	}
-	for key := range params {
-		if key != "api_key" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
+	defaults := keenableParams{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "keenable")
 		}
 	}
-	apiKey, ok := params["api_key"].(string)
-	if !ok || strings.TrimSpace(apiKey) == "" {
-		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
+	if value, ok := params["mode"]; ok {
+		mode, valid := value.(string)
+		if !valid || (mode != "pro" && mode != "realtime") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported mode %q", "keenable", mode)
+		}
+		defaults.Mode = mode
 	}
-	return NewKeenableToolWithAPIKey(nil, apiKey), nil
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "keenable")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["site"]; ok {
+		site, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param site", "keenable")
+		}
+		defaults.Site = site
+	}
+	if defaults.Mode == "realtime" && strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires api_key for realtime mode", "keenable")
+	}
+	return newKeenableTool(nil, nil, apiKey, defaults), nil
+}
+
+func buildSearXNGTool(params map[string]any) (Tool, error) {
+	defaults := defaultSearXNGParams()
+	if value, ok := params["top_n"]; ok {
+		topN, valid := parseSearXNGTopN(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "searxng")
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["searxng_url"]; ok {
+		searxngURL, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param searxng_url", "searxng")
+		}
+		defaults.SearXNGURL = searxngURL
+	}
+	return newSearXNGToolWithDefaults(nil, defaults), nil
 }
 
 func buildWikipediaTool(params map[string]any) (Tool, error) {
 	topN := defaultWikipediaTopN
 	language := defaultWikipediaLanguage
-	for key := range params {
-		if key != "top_n" && key != "language" {
-			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level params top_n/language", "wikipedia")
-		}
-	}
 	if v, ok := intParam(params, "top_n"); ok {
 		topN = v
 	}
@@ -361,27 +360,9 @@ func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {
 				"(db_type/host/port/database/username/password)",
 		)
 	}
-	conn := exesqlConnParams{}
-	if v, ok := stringParam(params, "db_type"); ok {
-		conn.DBType = v
-	}
-	if v, ok := stringParam(params, "database"); ok {
-		conn.Database = v
-	}
-	if v, ok := stringParam(params, "username"); ok {
-		conn.Username = v
-	}
-	if v, ok := stringParam(params, "host"); ok {
-		conn.Host = v
-	}
-	if v, ok := intParam(params, "port"); ok {
-		conn.Port = v
-	}
-	if v, ok := stringParam(params, "password"); ok {
-		conn.Password = v
-	}
-	if v, ok := intParam(params, "max_records"); ok {
-		conn.MaxRecords = v
+	conn, err := NewExeSQLConnParams(params)
+	if err != nil {
+		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)
 	}
 	if err := conn.check(); err != nil {
 		return exesqlConnParams{}, fmt.Errorf("agent tool: execute_sql config: %w", err)
@@ -414,6 +395,52 @@ func intParam(params map[string]any, key string) (int, bool) {
 		return int(x), true
 	default:
 		return 0, false
+	}
+}
+
+func floatParam(params map[string]any, key string) (float64, bool) {
+	v, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	default:
+		return 0, false
+	}
+}
+
+func stringSliceParam(params map[string]any, key string) ([]string, bool, error) {
+	v, ok := params[key]
+	if !ok {
+		return nil, false, nil
+	}
+	switch x := v.(type) {
+	case []string:
+		return append([]string(nil), x...), true, nil
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, item := range x {
+			s, ok := item.(string)
+			if !ok {
+				return nil, true, fmt.Errorf("%s must be a string list", key)
+			}
+			if strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out, true, nil
+	default:
+		return nil, true, fmt.Errorf("%s must be a string list", key)
 	}
 }
 

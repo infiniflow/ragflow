@@ -57,11 +57,16 @@ func TestGoogleComponent_MissingAPIKeyReturnsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Google): %v", err)
 	}
-	_, err = c.Invoke(context.Background(), map[string]any{"q": "ragflow"})
-	if err == nil {
-		t.Fatal("expected error for missing api_key")
+	out, err := c.Invoke(context.Background(), map[string]any{"q": "ragflow"})
+	if err != nil {
+		if !strings.Contains(err.Error(), "api_key") {
+			t.Fatalf("error = %v, want api_key error", err)
+		}
+		return
 	}
-	if !strings.Contains(err.Error(), "api_key") {
-		t.Fatalf("error = %v, want api_key error", err)
+	// Component may embed error in output map instead of returning Go error.
+	if errStr, ok := out["_ERROR"].(string); ok && strings.Contains(errStr, "api_key") {
+		return
 	}
+	t.Fatalf("expected api_key error, got out=%+v err=%v", out, err)
 }

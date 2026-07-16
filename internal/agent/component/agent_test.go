@@ -17,6 +17,8 @@ import (
 	"errors"
 	"testing"
 
+	"strings"
+
 	"ragflow/internal/agent/runtime"
 )
 
@@ -62,6 +64,91 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
+	}
+}
+
+func TestAgent_EmitsThinking(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{
+			Role:             RoleAssistant,
+			Content:          "final answer",
+			ReasoningContent: "model reasoning",
+		}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"user_prompt": "hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["content"], "final answer"; got != want {
+		t.Errorf("content=%v, want %v", got, want)
+	}
+	if got, want := out["thinking"], "model reasoning"; got != want {
+		t.Errorf("thinking=%v, want %v", got, want)
+	}
+}
+
+func TestAgent_MessageEmissionIsScopedPerInvocation(t *testing.T) {
+	responses := []string{"first answer", "second answer"}
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		if len(responses) == 0 {
+			t.Fatal("agent runner called too many times")
+		}
+		content := responses[0]
+		responses = responses[1:]
+		return &ComponentMessage{Role: RoleAssistant, Content: content}, nil
+	})
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	ctx := runtime.WithState(context.Background(), state)
+	var contents []string
+	ctx = runtime.WithAgentMessageEmitterControl(ctx,
+		func(contentDelta, _ string) {
+			if contentDelta != "" {
+				contents = append(contents, contentDelta)
+			}
+		},
+		func() bool { return false },
+		func() {},
+	)
+
+	first := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	if _, err := first.Invoke(ctx, map[string]any{"user_prompt": "first"}); err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	second := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	if _, err := second.Invoke(ctx, map[string]any{"user_prompt": "second"}); err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+
+	if got, want := strings.Join(contents, "|"), "first answer|second answer"; got != want {
+		t.Fatalf("emitted contents = %q, want %q", got, want)
+	}
+}
+
+func TestAgent_ForwardsThinkingParam(t *testing.T) {
+	var gotThinking string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
+		gotThinking = p.Thinking
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "hello",
+		"thinking":    "enabled",
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	if _, err := cmp.Invoke(context.Background(), nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotThinking != "enabled" {
+		t.Fatalf("runner thinking = %q, want enabled", gotThinking)
 	}
 }
 
@@ -298,6 +385,74 @@ func TestAgent_AllRegisteredToolsConfigPassesToRunner(t *testing.T) {
 	}
 	if captured.ToolParams == nil || captured.ToolParams["execute_sql"] == nil {
 		t.Fatalf("captured.ToolParams missing execute_sql: %#v", captured.ToolParams)
+	}
+}
+
+func TestAgent_AcceptsCanvasToolObjects(t *testing.T) {
+	var captured AgentParam
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
+		captured = p
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	_, err := c.Invoke(context.Background(), map[string]any{
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"name":           "Docs Retrieval",
+				"params": map[string]any{
+					"kb_ids": []any{"kb-1"},
+					"top_n":  float64(3),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(captured.Tools) != 1 || captured.Tools[0] != "Retrieval" {
+		t.Fatalf("captured.Tools = %#v, want [Retrieval]", captured.Tools)
+	}
+	params := captured.ToolParams["retrieval"]
+	if params == nil {
+		t.Fatalf("captured.ToolParams missing retrieval: %#v", captured.ToolParams)
+	}
+	ids, ok := params["kb_ids"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "kb-1" {
+		t.Fatalf("retrieval kb_ids = %#v, want [kb-1]", params["kb_ids"])
+	}
+}
+
+func TestAgent_NewAcceptsCanvasToolObjects(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"params": map[string]any{
+					"dataset_ids": []any{"kb-1"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	if len(agent.param.Tools) != 1 || agent.param.Tools[0] != "Retrieval" {
+		t.Fatalf("agent.param.Tools = %#v, want [Retrieval]", agent.param.Tools)
+	}
+	if agent.param.ToolParams["retrieval"] == nil {
+		t.Fatalf("agent.param.ToolParams missing retrieval: %#v", agent.param.ToolParams)
+	}
+	if _, err := buildAgentTools(agent.param); err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
 	}
 }
 

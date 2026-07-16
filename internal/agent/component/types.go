@@ -8,11 +8,12 @@ package component
 // ComponentMessage is a message type used within the component
 // package. It replaces eino's schema.Message.
 type ComponentMessage struct {
-	Role         string
-	Content      string
-	ToolCalls    []ComponentToolCall
-	ToolCallID   string // Required for role="tool" messages — matches the tool call ID
-	MultiContent []ComponentMessagePart
+	Role             string
+	Content          string
+	ReasoningContent string // Thinking/reasoning content from the model
+	ToolCalls        []ComponentToolCall
+	ToolCallID       string // Required for role="tool" messages — matches the tool call ID
+	MultiContent     []ComponentMessagePart
 }
 
 // ComponentToolCall represents a tool invocation within a message.

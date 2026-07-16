@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -72,10 +73,17 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body
@@ -105,6 +113,13 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
+		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+		}
+		if chatModelConfig.ToolChoice != nil {
+			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
 		}
 
 		if chatModelConfig.Thinking != nil {
@@ -200,26 +215,38 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	var content string
+	if c, ok := messageMap["content"].(string); ok {
+		content = c
 	}
 
 	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
+	if rc, ok := messageMap["reasoning_content"].(string); ok {
+		reasonContent = rc
 		// if first char of reasonContent is \n remove the '\n'
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
+	}
+	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
+		chatResponse.Usage = &ChatUsage{
+			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		}
 	}
 
 	return chatResponse, nil
@@ -244,10 +271,17 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body with streaming enabled
@@ -281,6 +315,12 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
+		}
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+		}
+		if chatModelConfig.ToolChoice != nil {
+			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
 		}
 
 		if chatModelConfig.Thinking != nil {
@@ -353,8 +393,8 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Debug("deepseek SSE chunk", zap.Any("event", event))
 
@@ -370,6 +410,37 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
+			return nil
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if hasExisting {
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if args, ok := fn["arguments"].(string); ok {
+							if ef, ok := existing["function"].(map[string]interface{}); ok {
+								if ea, ok := ef["arguments"].(string); ok {
+									ef["arguments"] = ea + args
+								} else {
+									ef["arguments"] = args
+								}
+							}
+						}
+					}
+				} else {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+				}
+			}
 			return nil
 		}
 
@@ -398,6 +469,19 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	if !done && !sawTerminal {
 		return fmt.Errorf("deepseek: stream ended before [DONE] or finish_reason")
+	}
+
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		chatModelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility

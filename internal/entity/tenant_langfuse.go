@@ -14,25 +14,18 @@
 //  limitations under the License.
 //
 
-package common
+package entity
 
-// CoalesceInt returns *val if val is non-nil and positive; otherwise returns
-// defaultVal. It is useful for optional int parameters (e.g. pagination)
-// where nil or a value <= 0 means "use the default".
-func CoalesceInt(val *int, defaultVal int) int {
-	if val != nil && *val > 0 {
-		return *val
-	}
-	return defaultVal
+// TenantLangfuse tenant langfuse model
+type TenantLangfuse struct {
+	TenantID  string `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
+	SecretKey string `gorm:"column:secret_key;size:2048;not null" json:"secret_key"`
+	PublicKey string `gorm:"column:public_key;size:2048;not null" json:"public_key"`
+	Host      string `gorm:"column:host;size:128;not null" json:"host"`
+	BaseModel
 }
 
-// IsZeroVector reports whether every element of v is zero. An empty or nil
-// slice is considered a zero vector.
-func IsZeroVector(v []float64) bool {
-	for _, x := range v {
-		if x != 0 {
-			return false
-		}
-	}
-	return true
+// TableName specify table name
+func (TenantLangfuse) TableName() string {
+	return "tenant_langfuse"
 }

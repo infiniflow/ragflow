@@ -18,17 +18,29 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"ragflow/internal/tokenizer"
 )
 
-const googleToolName = "google"
+const googleToolName = "google_search"
 
 const googleToolDescription = "Search the web via Google using SerpApi. Returns organic_results[].{title, link, snippet}."
+
+const googlePromptMaxTokens = 200000
+
+var googleDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
+
+var googleNewlinePattern = regexp.MustCompile(`\n+`)
 
 // googleParams is the JSON shape the model or canvas sends into InvokableRun.
 type googleParams struct {
@@ -55,6 +67,9 @@ type GoogleTool struct {
 	helper   *HTTPHelper
 	defaults googleParams
 }
+
+var _ ToolComponent = (*GoogleTool)(nil)
+var _ ReferenceBuilder = (*GoogleTool)(nil)
 
 func NewGoogleTool() *GoogleTool {
 	return NewGoogleToolWith(NewHTTPHelper())
@@ -116,6 +131,24 @@ func (g *GoogleTool) InputForm() map[string]any {
 			"type":  "integer",
 			"value": 12,
 		},
+	}
+}
+
+func (g *GoogleTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"q":        "Search query.",
+			"start":    "Result offset.",
+			"num":      "Maximum number of results.",
+			"api_key":  "SerpApi API key.",
+			"country":  "Google country code.",
+			"language": "Google language code.",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered Google references for downstream prompts.",
+			"json":               "Raw Google organic result list.",
+		},
+		InputForm: g.InputForm(),
 	}
 }
 
@@ -206,6 +239,126 @@ func mergeGoogleDefaults(defaults, p googleParams) googleParams {
 		p.Language = defaults.Language
 	}
 	return p
+}
+
+func (g *GoogleTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildGoogleReferences(envelope)
+}
+
+func (g *GoogleTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildGoogleReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderGoogleReferences(chunks, googlePromptMaxTokens),
+		"json":               results,
+	}
+}
+
+func buildGoogleReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := strings.TrimSpace(googleText(item["snippet"]))
+		if content == "" {
+			content = strings.TrimSpace(googleAboutDescription(item["about_this_result"]))
+		}
+		content = googleDataImagePattern.ReplaceAllString(content, "")
+		content = truncateGoogleRunes(content, 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(googleHashInt(content, 100000000), 10)
+		displayID := strconv.FormatInt(googleHashInt(documentID, 500), 10)
+		title := strings.TrimSpace(googleText(item["title"]))
+		resultURL := strings.TrimSpace(googleText(item["link"]))
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      resultURL,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderGoogleReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := googleText(chunk["content"])
+		if content == "" {
+			continue
+		}
+		block := strings.Join([]string{
+			"\nID: " + googleText(chunk["id"]),
+			"├── Title: " + googlePromptField(chunk["document_name"]),
+			"├── URL: " + googlePromptField(chunk["url"]),
+			"└── Content:\n" + content,
+		}, "\n")
+		blockTokens := tokenizer.NumTokensFromString(block)
+		if maxTokens > 0 && float64(usedTokens+blockTokens) > float64(maxTokens)*0.97 {
+			break
+		}
+		usedTokens += blockTokens
+		blocks = append(blocks, block)
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func googleAboutDescription(value any) string {
+	about, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	source, ok := about["source"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return googleText(source["description"])
+}
+
+func googleText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func googlePromptField(value any) string {
+	return googleNewlinePattern.ReplaceAllString(googleText(value), " ")
+}
+
+func googleHashInt(value string, modulus int64) int64 {
+	digest := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(digest[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateGoogleRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func googleJSON(env googleEnvelope) string {

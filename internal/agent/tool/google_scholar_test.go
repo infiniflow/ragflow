@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 const cannedScholarHTML = `<html><body>
@@ -225,16 +227,17 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 	}
 }
 
-func TestGoogleScholar_RequiresQuery(t *testing.T) {
+func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleScholarTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope googleScholarEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
@@ -248,6 +251,72 @@ func TestGoogleScholar_ToolMeta(t *testing.T) {
 	}
 	if !strings.Contains(meta.Description, "Scholar") {
 		t.Errorf("Description = %q, want to mention Scholar", meta.Description)
+	}
+}
+
+func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("google_scholar", map[string]any{
+		"top_n":    float64(7),
+		"sort_by":  "date",
+		"year_low": float64(2020),
+		"patents":  false,
+		"outputs":  map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	scholar := built.(*GoogleScholarTool)
+	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
+		t.Fatalf("defaults = %+v", scholar.defaults)
+	}
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+		if _, err := BuildByName("google_scholar", params); err == nil {
+			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
+	}
+	spec := scholar.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Paper", "link": "https://paper.example", "authors": "A Author", "year": "2024", "snippet": "Abstract",
+	}}}
+	chunks, docAggs := scholar.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || !strings.Contains(chunks[0]["content"].(string), "Authors: A Author") {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := scholar.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Snippet: Abstract") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleScholarReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleScholarReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleScholarReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleScholarReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
 	}
 }
 

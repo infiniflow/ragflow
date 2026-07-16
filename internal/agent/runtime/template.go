@@ -28,20 +28,16 @@ import (
 )
 
 // VarRefPattern matches the RAGFlow variable reference syntax.
-// Mirrors agent/component/base.py:368 in spirit with one deviation: the
-// cpn_id part includes '_' (real RAGFlow cpn_ids are like "begin_0",
-// "llm_0", "cpn_0"). The Python regex as documented in the plan
-// (`[a-zA-Z:0-9]+`) would not match those — this looks like a
-// documentation bug in the plan; the Python source likely has
-// the underscore too. The pattern uses underscore-friendly
-// matching; a future cross-check against the live Python source
-// can confirm the exact behavior.
+// Matches agent/component/base.py variable_ref_patt exactly after
+// PR #16792 (which widened cpn_id from [a-zA-Z:0-9]+ to
+// [a-zA-Z0-9_:]+ to accept underscores in frontend-emitted ids as
+// well as colons in legacy DSL ids).
 //
 // Pattern:
 //
 //	\{+\s*(<ref>)\s*\}+
 //	where <ref> = cpn_id@param | sys.x | env.x | item | index
-//	cpn_id = [a-zA-Z:0-9_]+   (note: underscore added; see deviation note)
+//	cpn_id = [a-zA-Z:0-9_]+   (character classes match Python's [a-zA-Z0-9_:]+)
 //	param  = [A-Za-z0-9_.-]+
 //
 // Capture group 1 holds the bare ref without braces (e.g. "cpn_0@content",

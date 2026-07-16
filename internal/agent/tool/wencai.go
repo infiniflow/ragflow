@@ -70,6 +70,8 @@ type WencaiTool struct {
 	defaults wencaiParams
 }
 
+var _ ToolComponent = (*WencaiTool)(nil)
+
 func NewWencaiTool() *WencaiTool {
 	return newWencaiTool(wencaiParams{})
 }
@@ -133,6 +135,31 @@ func mergeWencaiParams(defaults, params wencaiParams) wencaiParams {
 		params.QueryType = defaults.QueryType
 	}
 	return params
+}
+
+// ComponentSpec returns the Python-compatible WenCai Canvas surface.
+func (w *WencaiTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query": "The question/conditions to select stocks.",
+		},
+		Outputs: map[string]string{
+			"report": "WenCai query report.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{
+				"name": "Query",
+				"type": "line",
+			},
+		},
+	}
+}
+
+// BuildComponentOutputs converts WenCai's complete tool envelope into its
+// public Canvas outputs.
+func (w *WencaiTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	report, _ := envelope["report"].(string)
+	return map[string]any{"report": report}
 }
 
 func isWencaiQueryTypeSupported(queryType string) bool {

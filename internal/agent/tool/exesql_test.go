@@ -80,18 +80,42 @@ func TestExeSQL_RejectsNonSelect(t *testing.T) {
 		{"kill", `KILL 1234`},
 		{"use", `USE rag_flow`},
 		{"uppercase drop", `DROP DATABASE rag_flow`},
+		{"select into", `SELECT * INTO archived_users FROM users`},
+		{"select outfile", `SELECT * FROM users INTO OUTFILE '/tmp/users'`},
+		{"select dumpfile", `SELECT payload FROM files INTO DUMPFILE '/tmp/payload'`},
+		{"delete cte", `WITH deleted AS (DELETE FROM users RETURNING *) SELECT * FROM deleted`},
+		{"update cte", `WITH changed AS (UPDATE users SET active = false RETURNING *) SELECT * FROM changed`},
+		{"insert cte", `WITH added AS (INSERT INTO users(name) VALUES ('alice') RETURNING *) SELECT * FROM added`},
+		{"merge cte", `WITH changed AS (MERGE INTO users USING incoming ON users.id = incoming.id WHEN MATCHED THEN UPDATE SET name = incoming.name RETURNING *) SELECT * FROM changed`},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			e := NewExeSQLTool(testConn())
+			e := NewExeSQLTool(testConn()).
+				WithExeSQLDialer(func(_, _ string) (*sql.DB, error) {
+					t.Fatal("dialer called for rejected SQL")
+					return nil, nil
+				})
 			_, err := e.InvokableRun(context.Background(),
 				`{"sql":`+jsonString(c.sql)+`}`)
 			if !errors.Is(err, ErrExeSQLNotSelect) {
 				t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
 			}
 		})
+	}
+}
+
+func TestExeSQL_RejectsMixedBatchBeforeDatabaseAccess(t *testing.T) {
+	e := NewExeSQLTool(testConn()).
+		WithExeSQLDialer(func(_, _ string) (*sql.DB, error) {
+			t.Fatal("dialer called before every SQL statement was validated")
+			return nil, nil
+		})
+
+	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1; DROP TABLE users"}`)
+	if !errors.Is(err, ErrExeSQLNotSelect) {
+		t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
 	}
 }
 
@@ -103,7 +127,7 @@ func TestExeSQL_AllowsSelect(t *testing.T) {
 		`select * from t`,
 		`  SELECT * FROM t WHERE a = 1`,
 		`WITH cte AS (SELECT 1) SELECT * FROM cte`,
-		`SELECT * FROM t INTO OUTFILE '/tmp/x'`,
+		`WITH cte AS (SELECT 'DELETE; UPDATE' AS note) SELECT * FROM cte`,
 		`SHOW TABLES`,
 		`DESCRIBE t`,
 		`EXPLAIN SELECT * FROM t`,
@@ -172,6 +196,96 @@ func TestExeSQL_RejectsEmptyArgs(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatementsIgnoresQuotedAndCommentedSemicolons(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		dbType string
+		sql    string
+	}{
+		{"single quoted string", "mysql", `SELECT 'hello; world'; SELECT 2`},
+		{"doubled single quote", "postgres", `SELECT 'it''s; intact'; SELECT 2`},
+		{"mysql backslash escape", "mysql", `SELECT 'it\'; is intact'; SELECT 2`},
+		{"double quoted identifier", "postgres", `SELECT "column;name" FROM t; SELECT 2`},
+		{"backtick identifier", "mysql", "SELECT `column;name` FROM t; SELECT 2"},
+		{"bracketed identifier", "mssql", `SELECT [column;name] FROM t; SELECT 2`},
+		{"line comment", "postgres", "SELECT 1 -- ignored; delimiter\n; SELECT 2"},
+		{"mysql hash comment", "mysql", "SELECT 1 # ignored; delimiter\n; SELECT 2"},
+		{"block comment", "mysql", `SELECT 1 /* ignored; delimiter */; SELECT 2`},
+		{"dollar quoted string", "postgres", `SELECT $$hello; world$$; SELECT 2`},
+		{"tagged dollar quoted string", "postgres", `SELECT $body$hello; world$body$; SELECT 2`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			statements := splitSQLStatements(tc.sql, tc.dbType)
+			if len(statements) != 2 {
+				t.Fatalf("splitSQLStatements(%q) = %#v, want 2 statements", tc.sql, statements)
+			}
+			if !strings.Contains(statements[0], ";") {
+				t.Fatalf("first statement = %q, want the quoted/commented semicolon preserved", statements[0])
+			}
+			if statements[1] != " SELECT 2" {
+				t.Fatalf("second statement = %q, want %q", statements[1], " SELECT 2")
+			}
+		})
+	}
+}
+
+func TestExeSQL_ReadOnlyValidationIgnoresQuotedAndCommentedKeywords(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		dbType string
+		sql    string
+	}{
+		{"mysql", `SELECT 'DELETE; DROP TABLE users' AS note`},
+		{"postgres", `WITH note AS (SELECT $$UPDATE users; DELETE FROM users$$ AS value) SELECT * FROM note`},
+		{"postgres", "WITH note AS (SELECT 1 /* DELETE FROM users; */) SELECT * FROM note"},
+	}
+	for _, tc := range cases {
+		if err := validateExeSQLStatements(tc.sql, tc.dbType); err != nil {
+			t.Errorf("validateExeSQLStatements(%q, %q) = %v, want nil", tc.sql, tc.dbType, err)
+		}
+	}
+}
+
+func TestExeSQL_ExecutesStatementsWithQuotedSemicolonsIntact(t *testing.T) {
+	t.Parallel()
+
+	dialer, mock, cleanup := sqlmockDialer(t)
+	defer cleanup()
+	mock.ExpectPing()
+	mock.ExpectQuery("SELECT 'hello; world'").
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("hello; world"))
+	mock.ExpectQuery("SELECT 2").
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(2))
+
+	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
+	if _, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 'hello; world'; SELECT 2"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL statements were not executed intact: %v", err)
+	}
+}
+
+func TestExeSQL_RejectsMySQLExecutableComment(t *testing.T) {
+	t.Parallel()
+
+	e := NewExeSQLTool(testConn()).
+		WithExeSQLDialer(func(_, _ string) (*sql.DB, error) {
+			t.Fatal("dialer called for an executable comment")
+			return nil, nil
+		})
+	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1 /*!; DROP TABLE users */"}`)
+	if !errors.Is(err, ErrExeSQLNotSelect) {
+		t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
+	}
+}
+
 func TestExeSQL_Info(t *testing.T) {
 	t.Parallel()
 
@@ -179,6 +293,91 @@ func TestExeSQL_Info(t *testing.T) {
 	meta := e.ToolMeta()
 	if meta.Name != "execute_sql" {
 		t.Errorf("Name = %q, want execute_sql", meta.Name)
+	}
+	paramsJSON, _ := json.Marshal(meta.Parameters)
+	params := string(paramsJSON)
+	if !strings.Contains(params, `sql`) {
+		t.Fatalf("schema missing sql: %s", params)
+	}
+	if strings.Contains(params, `database`) {
+		t.Fatalf("schema leaked node-level database param: %s", params)
+	}
+	if !strings.Contains(params, `"required":["sql"]`) {
+		t.Fatalf("schema does not require sql: %s", params)
+	}
+}
+
+func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
+	dialer, mock, cleanup := sqlmockDialer(t)
+	defer cleanup()
+	mock.ExpectPing()
+	mock.ExpectQuery("SELECT 1").WillReturnRows(
+		sqlmock.NewRows([]string{"value"}).AddRow(1),
+	)
+	conn := testConn()
+	conn.SQL = "SELECT 1"
+	e := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
+
+	out, err := e.InvokableRun(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if !strings.Contains(out, `"value":1`) {
+		t.Fatalf("output = %s, want configured SQL result", out)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
+	t.Skip("requires agent/runtime import which would create cycle")
+	dialer, mock, cleanup := sqlmockDialer(t)
+	defer cleanup()
+	mock.ExpectPing()
+	mock.ExpectQuery("SELECT id FROM orders WHERE status = 'Completed'").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow(1, "Completed"))
+	conn := testConn()
+	conn.SQL = "{Agent:Result@content}"
+	exesql := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
+	state := runtime.NewCanvasState("run", "task")
+	state.SetVar("Agent:Result", "content", "SELECT id FROM orders WHERE status = 'Completed'")
+	out, err := exesql.InvokableRun(runtime.WithState(context.Background(), state), `{}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	outputs := exesql.BuildComponentOutputs(envelope)
+	if !strings.Contains(outputs["formalized_content"].(string), "Completed") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	jsonRows, ok := outputs["json"].([]any)
+	if !ok || len(jsonRows) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	spec := exesql.ComponentSpec()
+	if sqlInput, ok := spec.InputForm["sql"].(map[string]any); !ok || sqlInput["type"] != "line" {
+		t.Fatalf("sql input form = %#v", spec.InputForm["sql"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestExeSQL_BuildByNameAcceptsCanvasShape(t *testing.T) {
+	built, err := BuildByName("execute_sql", map[string]any{
+		"database": "demo", "username": "root", "host": "db.example.com", "port": float64(3306), "password": "secret",
+		"top_n": float64(50), "sql": "SELECT 1", "outputs": map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	exesql := built.(*ExeSQLTool)
+	if exesql.conn.DBType != "mysql" || exesql.conn.Port != 3306 || exesql.conn.MaxRecords != 50 || exesql.conn.SQL != "SELECT 1" {
+		t.Fatalf("connection defaults = %+v", exesql.conn)
 	}
 }
 

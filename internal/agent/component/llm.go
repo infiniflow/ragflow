@@ -174,6 +174,7 @@ type ChatInvokeResponse struct {
 	Tokens        int
 	ToolCalls     []ToolCallResult // non-empty when the model wants to call a tool
 	ReasonContent string           // thinking/reasoning content (DeepSeek, etc.)
+	Thinking      string
 }
 
 // ToolCallResult captures a single function-call from the LLM response.
@@ -778,10 +779,11 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	}
 
 	out := map[string]any{
-		"content": cleaned,
-		"model":   resp.Model,
-		"stopped": resp.Stopped,
-		"tokens":  resp.Tokens,
+		"content":  cleaned,
+		"thinking": resp.Thinking,
+		"model":    resp.Model,
+		"stopped":  resp.Stopped,
+		"tokens":   resp.Tokens,
 	}
 	if p.JSONOutput {
 		var parsed map[string]any
@@ -827,6 +829,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
+	out["thinking"] = resp.Thinking
 	return out, nil
 }
 
@@ -875,7 +878,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		// A real streaming integration would loop over a channel
 		// here and emit multiple chunks with partial content.
 		chunk := map[string]any{
-			"thinking": "",
+			"thinking": result["thinking"],
 			"content":  result["content"],
 		}
 		select {

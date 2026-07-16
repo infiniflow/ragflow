@@ -77,7 +77,7 @@ interface BedrockInstanceCardProps {
   instance: IProviderInstance;
   isDraft?: boolean;
   onSaved?: (values: Record<string, any>) => void | Promise<void>;
-  onNameSaved?: () => void;
+  onNameSaved?: (instanceName: string) => void;
   onDelete?: () => void;
   /**
    * When true, this card starts expanded and fetches its instance
@@ -324,7 +324,7 @@ export function BedrockInstanceCard({
       instance_name: trimmed,
     } as any);
     if (ret?.code === 0) {
-      onNameSaved?.();
+      onNameSaved?.(trimmed);
     }
   }, [draftName, addProviderInstance, providerName, onNameSaved]);
 
@@ -376,9 +376,7 @@ export function BedrockInstanceCard({
   // spurious blur-save fired when focus moves into the Portal.
   const blurSuppressRef = useRef(false);
   const lastSavedSigRef = useRef('');
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const AUTO_SAVE_DEBOUNCE_MS = 500;
 
   const performSave = useCallback(async () => {

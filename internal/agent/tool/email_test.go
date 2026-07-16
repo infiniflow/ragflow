@@ -25,6 +25,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/agent/runtime"
 )
 
 func TestEmail_BuildMessage(t *testing.T) {
@@ -32,15 +34,18 @@ func TestEmail_BuildMessage(t *testing.T) {
 
 	msg := buildEmailMessage(
 		"alice@example.com",
-		[]string{"bob@example.com", "carol@example.com"},
+		"Alice Sender",
+		[]string{"bob@example.com"},
+		[]string{"carol@example.com"},
 		"Hello, world",
 		"Body of the message.",
 	)
 
 	s := string(msg)
 	for _, want := range []string{
-		"From: alice@example.com",
-		"To: bob@example.com, carol@example.com",
+		`From: "Alice Sender" <alice@example.com>`,
+		"To: bob@example.com\r\n",
+		"Cc: carol@example.com\r\n",
 		"Subject: Hello, world",
 		"Content-Type: text/plain; charset=UTF-8",
 		"Body of the message.",
@@ -49,147 +54,165 @@ func TestEmail_BuildMessage(t *testing.T) {
 			t.Errorf("message missing %q\n--- message ---\n%s\n---", want, s)
 		}
 	}
+	if strings.Contains(s, "To: bob@example.com, carol@example.com") {
+		t.Fatalf("CC recipient leaked into To header:\n%s", s)
+	}
 	// RFC 822 mandates a blank line between headers and body.
 	if !strings.Contains(s, "\r\n\r\n") {
 		t.Errorf("message missing blank line between headers and body\n%s", s)
 	}
 }
 
-func TestEmail_SendAgainstMockSMTP(t *testing.T) {
+func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
+	originalSendEmail := sendEmail
+	t.Cleanup(func() { sendEmail = originalSendEmail })
+	var sentParams emailParams
+	var sentMessage []byte
+	sendEmail = func(_ context.Context, p emailParams, msg []byte) error {
+		sentParams = p
+		sentMessage = append([]byte(nil), msg...)
+		return nil
+	}
+
+	built, err := BuildByName("email", map[string]any{
+		"smtp_server": "smtp.example.com",
+		"smtp_port":   587,
+		"email":       "alice@example.com",
+		"sender_name": "Alice Sender",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(email): %v", err)
+	}
+	args := map[string]any{
+		"to_email": "bob@example.com",
+		"cc_email": "carol@example.com, dave@example.com",
+		"subject":  "Test {sys.date}",
+		"content":  "Test body content.",
+	}
+	argsJSON, _ := json.Marshal(args)
+	state := runtime.NewCanvasState("run-email", "task-email")
+	state.Sys["date"] = "2026-07-15"
+	out, err := built.(*EmailTool).InvokableRun(runtime.WithState(context.Background(), state), string(argsJSON))
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var env emailEnvelope
+	if err := json.Unmarshal([]byte(out), &env); err != nil || !env.OK || env.Error != "" {
+		t.Fatalf("output = %s, decode error = %v", out, err)
+	}
+
+	message := string(sentMessage)
+	for _, want := range []string{
+		`From: "Alice Sender" <alice@example.com>`,
+		"To: bob@example.com\r\n",
+		"Cc: carol@example.com, dave@example.com\r\n",
+		"Subject: Test 2026-07-15",
+		"Test body content.",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing %q:\n%s", want, message)
+		}
+	}
+	if got := emailRecipients(sentParams.ToEmail, sentParams.CCEmail); strings.Join(got, ",") != "bob@example.com,carol@example.com,dave@example.com" {
+		t.Fatalf("SMTP envelope recipients = %#v", got)
+	}
+}
+
+func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
 	t.Parallel()
 
-	// Spin up a minimal SMTP server: read commands, respond 250 to
-	// everything, and copy the DATA payload bytes so the test can
-	// inspect them.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen: %v", err)
 	}
-	defer ln.Close()
-
-	var receivedData strings.Builder
-	done := make(chan struct{})
+	defer listener.Close()
+	commands := make(chan []string, 1)
 	go func() {
-		defer close(done)
-		conn, _ := ln.Accept()
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			commands <- nil
+			return
+		}
 		defer conn.Close()
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 		reader := bufio.NewReader(conn)
 		writer := bufio.NewWriter(conn)
-		// Greeting
 		_, _ = writer.WriteString("220 mock-smtp ready\r\n")
 		_ = writer.Flush()
-		inData := false
+		var received []string
 		for {
-			line, _ := reader.ReadString('\n')
-			up := strings.ToUpper(strings.TrimSpace(line))
-			switch {
-			case strings.HasPrefix(up, "EHLO"), strings.HasPrefix(up, "HELO"):
-				_, _ = writer.WriteString("250-mock-smtp\r\n250 OK\r\n")
-				_ = writer.Flush()
-			case strings.HasPrefix(up, "MAIL FROM:"), strings.HasPrefix(up, "RCPT TO:"):
-				_, _ = writer.WriteString("250 OK\r\n")
-				_ = writer.Flush()
-			case strings.HasPrefix(up, "DATA"):
-				_, _ = writer.WriteString("354 End data with <CR><LF>.<CR><LF>\r\n")
-				_ = writer.Flush()
-				inData = true
-			case inData && strings.TrimSpace(line) == ".":
-				_, _ = writer.WriteString("250 Queued\r\n")
-				_ = writer.Flush()
-				inData = false
-			case inData:
-				receivedData.WriteString(line)
-			case strings.HasPrefix(up, "QUIT"):
-				_, _ = writer.WriteString("221 Bye\r\n")
-				_ = writer.Flush()
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				commands <- received
 				return
-			default:
-				_, _ = writer.WriteString("250 OK\r\n")
+			}
+			command := strings.ToUpper(strings.TrimSpace(line))
+			received = append(received, command)
+			if strings.HasPrefix(command, "EHLO") || strings.HasPrefix(command, "HELO") {
+				_, _ = writer.WriteString("250 mock-smtp\r\n")
 				_ = writer.Flush()
 			}
 		}
 	}()
 
-	host, port, _ := net.SplitHostPort(ln.Addr().String())
-	_ = host
-	var portInt int
-	_, _ = fmt.Sscanf(port, "%d", &portInt)
-
-	tool := NewEmailTool()
-	args := map[string]any{
-		"smtp_host": "127.0.0.1",
-		"smtp_port": portInt,
-		"from_addr": "alice@example.com",
-		"to_addrs":  []string{"bob@example.com"},
-		"subject":   "Test Subject",
-		"body":      "Test body content.",
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
 	}
-	argsJSON, _ := json.Marshal(args)
-	out, _ := tool.InvokableRun(context.Background(), string(argsJSON))
-
-	var env emailEnvelope
-	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
-	}
-	if env.Error != "" {
-		t.Errorf("Error = %q, want empty", env.Error)
-	}
-	if !env.OK {
-		t.Errorf("OK = false, want true")
+	var portNumber int
+	_, _ = fmt.Sscanf(port, "%d", &portNumber)
+	err = sendEmailSTARTTLS(context.Background(), emailParams{
+		SMTPServer: host, SMTPPort: portNumber, Email: "alice@example.com",
+		ToEmail: "bob@example.com",
+	}, []byte("message"))
+	if err == nil || !strings.Contains(err.Error(), "does not advertise STARTTLS") {
+		t.Fatalf("err = %v", err)
 	}
 
-	// Wait for the mock server to finish.
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("mock SMTP server did not close in time")
-	}
-
-	if !strings.Contains(receivedData.String(), "Subject: Test Subject") {
-		t.Errorf("mock server did not receive subject\n--- data ---\n%s\n---",
-			receivedData.String())
-	}
-	if !strings.Contains(receivedData.String(), "bob@example.com") {
-		t.Errorf("mock server did not receive recipient\n--- data ---\n%s\n---",
-			receivedData.String())
-	}
-	if !strings.Contains(receivedData.String(), "Test body content.") {
-		t.Errorf("mock server did not receive body\n--- data ---\n%s\n---",
-			receivedData.String())
+	case received := <-commands:
+		for _, command := range received {
+			if strings.HasPrefix(command, "MAIL FROM") || strings.HasPrefix(command, "RCPT TO") || command == "DATA" {
+				t.Fatalf("message submission started without STARTTLS: %#v", received)
+			}
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("mock SMTP server did not finish")
 	}
 }
 
 func TestEmail_RequiresFields(t *testing.T) {
 	t.Parallel()
 
-	tool := NewEmailTool()
-
 	cases := []struct {
 		name    string
+		tool    *EmailTool
 		args    string
 		wantErr string
 	}{
 		{
-			name:    "missing smtp_host",
-			args:    `{"smtp_port":587,"from_addr":"a@b","to_addrs":["c@d"],"subject":"s","body":"b"}`,
-			wantErr: "smtp_host",
+			name:    "missing smtp_server",
+			tool:    newEmailTool(emailParams{SMTPPort: 587, Email: "a@b"}),
+			args:    `{"to_email":"c@d","subject":"s","content":"b"}`,
+			wantErr: "smtp_server",
 		},
 		{
-			name:    "missing to_addrs",
-			args:    `{"smtp_host":"x","smtp_port":587,"from_addr":"a@b","subject":"s","body":"b"}`,
-			wantErr: "to_addrs",
+			name:    "missing to_email",
+			tool:    newEmailTool(emailParams{SMTPServer: "x", SMTPPort: 587, Email: "a@b"}),
+			args:    `{"subject":"s","content":"b"}`,
+			wantErr: "to_email",
 		},
 		{
 			name:    "bad smtp_port",
-			args:    `{"smtp_host":"x","smtp_port":0,"from_addr":"a@b","to_addrs":["c@d"],"subject":"s","body":"b"}`,
+			tool:    newEmailTool(emailParams{SMTPServer: "x", SMTPPort: -1, Email: "a@b"}),
+			args:    `{"to_email":"c@d","subject":"s","content":"b"}`,
 			wantErr: "smtp_port",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tool.InvokableRun(context.Background(), tc.args)
+			_, err := tc.tool.InvokableRun(context.Background(), tc.args)
 			if err == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -210,5 +233,68 @@ func TestEmail_Info(t *testing.T) {
 	}
 	if !strings.Contains(meta.Description, "SMTP") {
 		t.Errorf("Desc = %q, want to mention SMTP", meta.Description)
+	}
+	raw, err := json.Marshal(meta.Parameters)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	for _, runtimeField := range []string{"to_email", "cc_email", "content", "subject"} {
+		if !strings.Contains(string(raw), `"`+runtimeField+`"`) {
+			t.Errorf("schema missing runtime field %q: %s", runtimeField, raw)
+		}
+	}
+	for _, configField := range []string{"smtp_server", "smtp_port", "email", "password", "sender_name"} {
+		if strings.Contains(string(raw), `"`+configField+`"`) {
+			t.Errorf("schema leaked node config %q: %s", configField, raw)
+		}
+	}
+}
+
+func TestEmail_ComponentContractAndFactory(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("email", map[string]any{
+		"smtp_server": "smtp.example.com",
+		"smtp_port":   "587",
+		"email":       "sender@example.com",
+		"password":    "secret",
+		"sender_name": "Sender",
+		"outputs":     map[string]any{"success": map[string]any{}},
+		"setups":      map[string]any{"to_email": "configured@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(email): %v", err)
+	}
+	emailTool := built.(*EmailTool)
+	if emailTool.defaults.SMTPPort != 587 || emailTool.defaults.SMTPServer != "smtp.example.com" {
+		t.Fatalf("node defaults = %#v", emailTool.defaults)
+	}
+	spec := emailTool.ComponentSpec()
+	if _, ok := spec.Inputs["to_email"]; !ok {
+		t.Fatalf("component inputs = %#v", spec.Inputs)
+	}
+	if _, ok := spec.Outputs["success"]; !ok {
+		t.Fatalf("component outputs = %#v", spec.Outputs)
+	}
+	toEmail, ok := spec.InputForm["to_email"].(map[string]any)
+	if !ok || toEmail["name"] != "To " || toEmail["type"] != "line" {
+		t.Fatalf("to_email input form = %#v", spec.InputForm["to_email"])
+	}
+	if outputs := emailTool.BuildComponentOutputs(map[string]any{"ok": true, "provider": "smtp"}); outputs["success"] != true {
+		t.Fatalf("component outputs = %#v", outputs)
+	}
+}
+
+func TestEmail_BuildByNameRejectsInvalidNodeParams(t *testing.T) {
+	t.Parallel()
+
+	for _, params := range []map[string]any{
+		{"smtp_port": float64(1.5)},
+		{"smtp_port": 70000},
+		{"smtp_server": 1},
+	} {
+		if _, err := BuildByName("email", params); err == nil {
+			t.Fatalf("BuildByName(email, %#v) succeeded, want error", params)
+		}
 	}
 }

@@ -144,21 +144,30 @@ func TestGitHub_ParseResponse(t *testing.T) {
 	}
 }
 
-func TestGitHub_RequiresQuery(t *testing.T) {
+func TestGitHub_EmptyQueryReturnsEmptyResults(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGitHubTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty query): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope githubEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("decode empty result: %v", err)
+	}
+	if len(envelope.Results) != 0 || envelope.Error != "" {
+		t.Fatalf("empty query result = %#v", envelope)
 	}
 }
 
 func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
-	built, err := BuildByName("github", map[string]any{"top_n": float64(17)})
+	built, err := BuildByName("github", map[string]any{
+		"top_n":   float64(17),
+		"query":   "runtime query",
+		"outputs": map[string]any{"json": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
 	if err != nil {
 		t.Fatalf("BuildByName(github): %v", err)
 	}
@@ -184,8 +193,74 @@ func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
 	if _, err := BuildByName("github", map[string]any{"top_n": 101}); err == nil {
 		t.Fatal("BuildByName(github) accepted top_n above GitHub's per_page limit")
 	}
-	if _, err := BuildByName("github", map[string]any{"max_results": 5}); err == nil {
-		t.Fatal("BuildByName(github) accepted removed max_results parameter")
+	ignored, err := BuildByName("github", map[string]any{"max_results": 5})
+	if err != nil {
+		t.Fatalf("BuildByName(github) rejected unrelated Canvas params: %v", err)
+	}
+	if ignored.(*GitHubTool).defaults.TopN != defaultGitHubTopN {
+		t.Fatalf("unrelated params changed top_n: %d", ignored.(*GitHubTool).defaults.TopN)
+	}
+}
+
+func TestGitHub_ComponentContractMatchesPython(t *testing.T) {
+	github := NewGitHubTool()
+	spec := github.ComponentSpec()
+	if _, ok := spec.Outputs["json"]; !ok {
+		t.Fatalf("component outputs missing json: %#v", spec.Outputs)
+	}
+	if _, ok := spec.Outputs["formalized_content"]; !ok {
+		t.Fatalf("component outputs missing formalized_content: %#v", spec.Outputs)
+	}
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["name"] != "Query" || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+}
+
+func TestGitHub_ReferencesAndOutputsPreserveRawResults(t *testing.T) {
+	github := NewGitHubTool()
+	results := []any{map[string]any{
+		"name":        "ragflow",
+		"html_url":    "https://github.com/infiniflow/ragflow",
+		"description": "RAG engine",
+		"watchers":    float64(12000),
+		"private":     false,
+	}}
+	repository := results[0].(map[string]any)
+	if repository["private"] != false {
+		t.Fatalf("raw repository fields were lost: %#v", repository)
+	}
+	envelope := map[string]any{"results": results}
+
+	chunks, docAggs := github.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	if chunks[0]["document_name"] != "ragflow" || chunks[0]["similarity"] != 1 {
+		t.Fatalf("reference metadata = %#v", chunks[0])
+	}
+	outputs := github.BuildComponentOutputs(envelope)
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("component output conversion mutated the tool envelope: %#v", envelope)
+	}
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("component json output = %#v", outputs["json"])
+	}
+	rendered, _ := outputs["formalized_content"].(string)
+	for _, want := range []string{"Title: ragflow", "URL: https://github.com/infiniflow/ragflow", "RAG engine\n stars:12000"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered results missing %q: %q", want, rendered)
+		}
+	}
+}
+
+func TestGitHub_LimitReferencesKeepsBoundaryChunk(t *testing.T) {
+	chunks := []map[string]any{
+		{"content": "first repository description"},
+		{"content": "second repository description"},
+	}
+	limited := limitGitHubReferences(chunks, 1)
+	if len(limited) != 1 {
+		t.Fatalf("limited chunks = %d, want 1", len(limited))
 	}
 }
 

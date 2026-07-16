@@ -18,15 +18,20 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	neturl "net/url"
-	"ragflow/internal/common"
+	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"ragflow/internal/common"
 )
 
-const keenableToolName = "keenable"
+const keenableToolName = "keenable_search"
 
 // keenableToolDescription follows the upstream Python tool's description,
 // trimmed for the chat model. The "no API key required" line is the
@@ -55,27 +60,16 @@ type keenableRequestBody struct {
 	Site  string `json:"site,omitempty"`
 }
 
-// keenableResult mirrors one element of the upstream `results` array.
-// The Python tool's _retrieve_chunks reads `title`, `url`, `description`,
-// so we model those fields and pass everything else through verbatim
-// when serializing to the model.
-type keenableResult struct {
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-}
-
-// keenableResponse is the envelope returned by Keenable. We only model
-// the fields we care about; the upstream API has more, but they are
-// ignored.
+// keenableResponse preserves complete upstream result objects because Python
+// exposes them unchanged through the Canvas json output.
 type keenableResponse struct {
-	Results []keenableResult `json:"results"`
+	Results []map[string]any `json:"results"`
 }
 
 // keenableEnvelope is the shape the model actually sees, identical to
 // the Python tool's output convention.
 type keenableEnvelope struct {
-	Results []keenableResult `json:"results"`
+	Results []map[string]any `json:"results"`
 	Error   string           `json:"_ERROR,omitempty"`
 }
 
@@ -84,8 +78,9 @@ type keenableEnvelope struct {
 // endpoint (with X-API-Key) when an API key is provided. The upstream
 // `results` array is returned as JSON.
 type KeenableTool struct {
-	helper *HTTPHelper
-	apiKey string
+	helper   *HTTPHelper
+	apiKey   string
+	defaults keenableParams
 
 	// envBaseURL resolves the Keenable API base URL from the
 	// KEENABLE_API_URL env var (HTTPS enforced). Exposed as a
@@ -94,40 +89,53 @@ type KeenableTool struct {
 	envBaseURL func() string
 }
 
+var _ ToolComponent = (*KeenableTool)(nil)
+var _ ReferenceBuilder = (*KeenableTool)(nil)
+
 // NewKeenableTool returns a KeenableTool using the default HTTPHelper
 // and the KEENABLE_API_URL env var for base-URL resolution.
 func NewKeenableTool() *KeenableTool {
-	return NewKeenableToolWith(NewHTTPHelper())
+	return newKeenableTool(nil, nil, "", keenableParams{})
 }
 
 // NewKeenableToolWithAPIKey returns a KeenableTool that uses a
 // server-provided API key instead of model-visible runtime args.
 func NewKeenableToolWithAPIKey(h *HTTPHelper, apiKey string) *KeenableTool {
-	t := NewKeenableToolWith(h)
-	t.apiKey = strings.TrimSpace(apiKey)
-	return t
+	return newKeenableTool(h, nil, apiKey, keenableParams{})
 }
 
 // NewKeenableToolWith returns a KeenableTool that uses the provided
 // HTTPHelper. Useful for tests that want to inject a custom transport.
 func NewKeenableToolWith(h *HTTPHelper) *KeenableTool {
-	if h == nil {
-		h = NewHTTPHelper()
-	}
-	return &KeenableTool{helper: h, envBaseURL: defaultKeenableEnvBaseURL}
+	return newKeenableTool(h, nil, "", keenableParams{})
 }
 
 // NewKeenableToolWithEnvBaseURL returns a KeenableTool with a custom
 // base-URL resolver. Useful for tests that want to inject a fake env
 // without mutating process state.
 func NewKeenableToolWithEnvBaseURL(h *HTTPHelper, envBaseURL func() string) *KeenableTool {
+	return newKeenableTool(h, envBaseURL, "", keenableParams{})
+}
+
+func newKeenableTool(h *HTTPHelper, envBaseURL func() string, apiKey string, defaults keenableParams) *KeenableTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
 	if envBaseURL == nil {
 		envBaseURL = defaultKeenableEnvBaseURL
 	}
-	return &KeenableTool{helper: h, envBaseURL: envBaseURL}
+	if strings.TrimSpace(defaults.Mode) == "" {
+		defaults.Mode = "pro"
+	}
+	if defaults.TopN == 0 {
+		defaults.TopN = 10
+	}
+	return &KeenableTool{
+		helper:     h,
+		apiKey:     strings.TrimSpace(apiKey),
+		defaults:   defaults,
+		envBaseURL: envBaseURL,
+	}
 }
 
 // defaultKeenableEnvBaseURL is the production base-URL resolver.
@@ -190,30 +198,20 @@ func (k *KeenableTool) ToolMeta() ToolMeta {
 				Description: "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
 				Required:    false,
 			},
-			"mode": {
-				Type:        ParamTypeString,
-				Description: `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires a server-configured API key).`,
-				Required:    false,
-			},
-			"top_n": {
-				Type:        ParamTypeInteger,
-				Description: "Maximum number of results to return. Defaults to 10.",
-				Required:    false,
-			},
 		},
 	}
 }
 
 // InvokableRun performs the Keenable search.
 func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
-	var p keenableParams
-	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
+	var runtimeParams keenableParams
+	if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
 		return keenableErrJSON(fmt.Errorf("keenable: parse arguments: %w", err)),
 			fmt.Errorf("keenable: parse arguments: %w", err)
 	}
+	p := mergeKeenableParams(k.defaults, runtimeParams)
 	if strings.TrimSpace(p.Query) == "" {
-		return keenableErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("keenable: query is required")
+		return keenableJSON(keenableEnvelope{Results: []map[string]any{}}), nil
 	}
 
 	mode := strings.TrimSpace(p.Mode)
@@ -290,6 +288,131 @@ func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string) (strin
 	}
 
 	return keenableJSON(keenableEnvelope{Results: results}), nil
+}
+
+func mergeKeenableParams(defaults, params keenableParams) keenableParams {
+	if strings.TrimSpace(params.Site) == "" {
+		params.Site = defaults.Site
+	}
+	if strings.TrimSpace(params.Mode) == "" {
+		params.Mode = defaults.Mode
+	}
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	return params
+}
+
+// ComponentSpec returns the Python-compatible KeenableSearch Canvas surface.
+func (k *KeenableTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query": "The search keywords to execute with Keenable.",
+			"site":  "Optional single-domain filter.",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered search results for downstream LLM prompts.",
+			"json":               "Raw Keenable result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{
+				"name": "Query",
+				"type": "line",
+			},
+			"site": map[string]any{
+				"name": "Site",
+				"type": "line",
+			},
+		},
+	}
+}
+
+// BuildReferences builds the same references as Python ToolBase._retrieve_chunks.
+func (k *KeenableTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildKeenableReferences(envelope)
+}
+
+// BuildComponentOutputs converts Keenable's complete tool envelope into its
+// public Canvas outputs.
+func (k *KeenableTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildKeenableReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderKeenableReferences(chunks),
+		"json":               results,
+	}
+}
+
+func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, item := range results {
+		result, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
+		if content == "" || content == "None" {
+			continue
+		}
+		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
+		title := keenableValueString(result["title"])
+		resultURL := keenableValueString(result["url"])
+		displayID := strconv.FormatInt(keenableHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      resultURL,
+		})
+	}
+	return chunks, docAggs
+}
+
+func renderKeenableReferences(chunks []map[string]any) string {
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + keenableValueString(chunk["id"]),
+			"├── Title: " + keenableValueString(chunk["docnm_kwd"]),
+			"├── URL: " + keenableValueString(chunk["url"]),
+			"└── Content:\n" + keenableValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func keenableValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func keenableHashInt(value string, modulus int64) int64 {
+	sum := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(sum[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateKeenableRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 // keenableJSON marshals the envelope to a JSON string for the model.
