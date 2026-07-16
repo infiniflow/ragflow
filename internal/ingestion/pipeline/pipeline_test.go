@@ -427,7 +427,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	// Run 1: terminal B errors (oneShotErrStage n=1), simulating a crash.
 	// Non-terminal A's checkpoint + interrupt persist because the error path
 	// does not call ClearInterruptID or store.Delete.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err == nil {
 		t.Fatal("Run 1: expected error from simulated crash, got nil")
 	}
@@ -441,7 +441,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 
 	// Run 2: resume from after A via tracker.GetInterruptID. A is skipped;
 	// B's oneShotErrStage (n=2) delegates to its embedded mock successfully.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err != nil {
 		t.Fatalf("Run 2: expected recovery success, got error: %v", err)
 	}
