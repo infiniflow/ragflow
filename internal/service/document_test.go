@@ -457,7 +457,9 @@ func makeTestFileHeader(t *testing.T, field, filename string, content []byte) *m
 }
 
 // sptr returns a pointer to the given string.
-func sptr(s string) *string { return &s }
+func ptr[T any](v T) *T { return &v }
+
+func sptr(s string) *string { return ptr(s) }
 
 func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum int64) {
 	t.Helper()
@@ -619,27 +621,18 @@ func TestUpdateDocumentRejectsIngestionStateMutation(t *testing.T) {
 			wantErr: "Can't change `progress_msg`.",
 		},
 		{
-			name: "token_num",
-			req: func() *UpdateDocumentRequest {
-				tokenNum := int64(101)
-				return &UpdateDocumentRequest{TokenNum: &tokenNum}
-			}(),
+			name:    "token_num",
+			req:     &UpdateDocumentRequest{TokenNum: ptr(int64(101))},
 			wantErr: "Can't change `token_num`.",
 		},
 		{
-			name: "chunk_num",
-			req: func() *UpdateDocumentRequest {
-				chunkNum := int64(11)
-				return &UpdateDocumentRequest{ChunkNum: &chunkNum}
-			}(),
+			name:    "chunk_num",
+			req:     &UpdateDocumentRequest{ChunkNum: ptr(int64(11))},
 			wantErr: "Can't change `chunk_num`.",
 		},
 		{
-			name: "progress",
-			req: func() *UpdateDocumentRequest {
-				progress := 0.75
-				return &UpdateDocumentRequest{Progress: &progress}
-			}(),
+			name:    "progress",
+			req:     &UpdateDocumentRequest{Progress: ptr(0.75)},
 			wantErr: "Can't change `progress`.",
 		},
 	}
