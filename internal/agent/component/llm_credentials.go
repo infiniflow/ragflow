@@ -47,6 +47,30 @@ func resolveTenantLLMConfig(ctx context.Context, driver, modelID, apiKey, baseUR
 	return apiKey, baseURL
 }
 
+func resolveChatModelRef(ctx context.Context, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
+	originalModelID := modelID
+	if driver == "" && modelID != "" {
+		if m, prov, ok := agentProviderLastSegmentSplit(modelID); ok {
+			driver = prov
+			modelID = m
+		}
+	}
+	if driver == "" && modelID != "" {
+		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, modelID, apiKey, baseURL)
+		if err != nil {
+			return "", "", "", "", err
+		}
+		if ok {
+			modelID = resolvedModelID
+			driver = resolvedDriver
+			apiKey = resolvedAPIKey
+			baseURL = resolvedBaseURL
+		}
+	}
+	apiKey, baseURL = resolveTenantLLMConfig(ctx, driver, modelID, apiKey, baseURL, originalModelID)
+	return modelID, driver, apiKey, baseURL, nil
+}
+
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
 func resolveTenantLLMCredentials(tid, driver, modelID, baseURL string) (string, string, bool) {
