@@ -821,39 +821,49 @@ func TestRunAgent_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DefaultBranchStreamsSSE covers the
-// scenario the user actually hit: `openai-compatible: false` with no
-// `stream` field on the body. The handler must still invoke the
-// canvas runner and stream the result as SSE — the SSE envelope is
-// the flat Python agent-canvas shape regardless of the stream flag.
-func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
+// TestAgentChatCompletions_DefaultBranchNonStream covers the
+// default (stream=false) branch: the handler must invoke the canvas
+// runner and return a JSON envelope matching the Python API contract.
+func TestAgentChatCompletions_DefaultBranchNonStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","query":"hello"}`))
+		strings.NewReader(`{"agent_id":"a1","query":"hello","session_id":"sess-2"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
 		{Type: "message", MessageID: "msg-2", TaskID: "task-2", SessionID: "sess-2", Data: `{"content":"hello back","reference":[]}`},
-		{Type: "done", Data: ""},
+		{Type: "done", SessionID: "sess-2", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
-		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json (default branch must return JSON)", got)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, `"event":"message"`) ||
-		!strings.Contains(body, `"message_id":"msg-2"`) ||
-		!strings.Contains(body, `"content":"hello back"`) {
-		t.Errorf("body should contain flat agent event with content, got %q", body)
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v, body=%s", err, w.Body.String())
 	}
-	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
-		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	if code, _ := resp["code"].(float64); code != 0 {
+		t.Errorf("code = %v, want 0", resp["code"])
+	}
+	data, _ := resp["data"].(map[string]any)
+	if data == nil {
+		t.Fatalf("data is nil, response=%s", w.Body.String())
+	}
+	if sid, _ := data["session_id"].(string); sid != "sess-2" {
+		t.Errorf("session_id = %q, want sess-2", sid)
+	}
+	innerData, _ := data["data"].(map[string]any)
+	if innerData == nil {
+		t.Fatalf("inner data is nil, response=%s", w.Body.String())
+	}
+	if content, _ := innerData["content"].(string); content != "hello back" {
+		t.Errorf("content = %q, want hello back", content)
 	}
 }
 

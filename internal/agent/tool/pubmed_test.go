@@ -210,8 +210,8 @@ func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
 
 	tool := NewPubMedTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "pubmed" {
-		t.Errorf("Name = %q, want pubmed", meta.Name)
+	if meta.Name != "pubmed_search" {
+		t.Errorf("Name = %q, want pubmed_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "PubMed") {
 		t.Errorf("Desc = %q, want to mention PubMed", meta.Description)

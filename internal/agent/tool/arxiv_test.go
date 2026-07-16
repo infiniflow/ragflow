@@ -128,8 +128,8 @@ func TestArxiv_Info(t *testing.T) {
 
 	tool := NewArxivTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "arxiv" {
-		t.Errorf("Name = %q, want arxiv", meta.Name)
+	if meta.Name != "arxiv_search" {
+		t.Errorf("Name = %q, want arxiv_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "arXiv") {
 		t.Errorf("Desc = %q, want to mention arXiv", meta.Description)

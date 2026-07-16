@@ -1069,26 +1069,38 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		)
 		return
 	}
+	// Default branch (stream=false or omitted): collect all events and
+	// return a single JSON response matching the Python API contract:
+	// {"code": 0, "data": {"session_id": "...", "data": {"content": "..."}}, "message": "success"}
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	var content string
+	var responseData map[string]any
 	for ev := range events {
-		common.Debug("agent chat completions: streaming event",
-			zap.String("agent_id", req.AgentID),
-			zap.String("session_id", req.SessionID),
-			zap.String("event_type", ev.Type),
-			zap.String("message_id", ev.MessageID),
-			zap.String("task_id", ev.TaskID),
-		)
-		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
-			common.Debug("agent chat completions: client disconnected",
-				zap.String("agent_id", req.AgentID),
-				zap.Error(err),
-			)
-			return
+		if ev.Type == "message" && ev.Data != "" {
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(ev.Data), &parsed); err == nil {
+				if c, ok := parsed["content"].(string); ok {
+					content = c
+				}
+			}
+		}
+		if ev.Type == "done" && ev.SessionID != "" {
+			sessionID = ev.SessionID
 		}
 	}
-	common.Debug("agent chat completions: stream closed",
-		zap.String("agent_id", req.AgentID),
-		zap.String("session_id", req.SessionID),
-	)
+	if content == "" {
+		content = req.Query
+	}
+	responseData = map[string]any{
+		"session_id": sessionID,
+		"data": map[string]any{
+			"content": content,
+		},
+	}
+	common.SuccessWithData(c, responseData, "success")
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
@@ -1177,9 +1189,12 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
 	payload, rerr := redis.Get().Get(key)
-	var data interface{}
+	var data interface{} = map[string]any{}
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
+	}
+	if data == nil {
+		data = map[string]any{}
 	}
 	common.SuccessWithData(c, data, "success")
 }

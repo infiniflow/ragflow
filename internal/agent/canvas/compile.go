@@ -21,8 +21,6 @@ import (
 	"ragflow/internal/harness/graph/types"
 )
 
-// CheckPointStore ...
-
 // CheckPointStore is the minimal interface Compile needs at compile time.
 // Matches the harness checkpoint.BaseCheckpointer shape (Get/Put/Delete).
 type CheckPointStore interface {
@@ -93,35 +91,23 @@ type CompileOptions struct {
 	// graph.WithInterrupts / graph.WithInterruptsAfter.
 	InterruptBefore []string
 	InterruptAfter  []string
-	// CheckPointID is the stable eino checkpoint identifier. Unlike
-	// eino's compose.WithCheckPointID (a run-time Option applied at
-	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
-	// call compose.WithCheckPointID (the option type is wrong for a
-	// GraphCompileOption), so it only records the id on the returned
-	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
-	// per-task value (e.g. taskID) so re-running the same task hits the
-	// same Redis checkpoint (agent:cp:{id}). When empty,
-	// CompiledCanvas.CheckPointID stays empty and the caller must supply
-	// its own id (or omit it for a fresh per-run checkpoint).
+	// CheckPointID is the stable checkpoint id recorded on the returned
+	// CompiledCanvas. Thread it to Graph.Invoke with the same id so
+	// re-running the same task loads the same checkpoint (agent:cp:{id}).
 	CheckPointID string
 	// InterruptAfterNonTerminal, when true, makes Compile compute the
 	// non-terminal node ids internally (components with out-degree > 0)
 	// and register compose.WithInterruptAfterNodes on them — the caller
 	// does not enumerate them. UserFillUp nodes are excluded (see §4.2.b)
-	// because they already emit their own compose.Interrupt;
-	// double-registering the same node for two interrupt sources would
-	// break resume. Terminal nodes (no downstream) are excluded so the
-	// graph does not pause on completion and force an extra, needless
-	// ResumeWithData round.
+	// because they already emit their own interrupt; double-registering
+	// the same node for two interrupt sources would break resume.
 	InterruptAfterNonTerminal bool
 	// SetupOverrides is a run-level override map keyed by cpnID. Each
 	// component's `params` is merged only with its own entry
 	// (an arbitrary string-keyed map); the override wins on top-level key
-	// collision (see node_body.go mergeSetups). Components absent from the
-	// map are left untouched. Used by the ingestion pipeline so a single
-	// Pipeline.Run can override the DSL-baked component setups without
-	// mutating the shared *Canvas (see node_body.go applyOverrideParams /
-	// mergeSetups).
+	// collision. Used by the ingestion pipeline so a single Pipeline.Run
+	// can override the DSL-baked component setups without mutating the
+	// shared *Canvas.
 	SetupOverrides map[string]any
 }
 
@@ -172,6 +158,7 @@ func WithSetupOverrides(m map[string]any) CompileOption {
 // foldLegacyComponents mutates c in place, folding LoopItem/IterationItem
 // nodes out of the component topology before BuildWorkflow sees them.
 //
+// For each legacy child node (name == LoopItem or IterationItem, case-insensitive):
 //  1. Find its parent (NodeParents first, then topology scan via downstream edges).
 //  2. Append the child's Downstream to the parent's Downstream (body nodes
 //     remain reachable inside the parent's sub-graph).
@@ -320,19 +307,6 @@ func removeFromStrSlice(s []string, drop string) []string {
 // replaceInStrSlice replaces the first occurrence of oldID with newID in s.
 // If newID is already present in s, oldID is simply removed instead.
 // Returns the original slice if neither oldID nor newID appear.
-// strSliceEqual reports whether a and b have the same elements in the same order.
-func strSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func replaceInStrSlice(s []string, oldID, newID string) []string {
 	hasNew := false
 	for _, x := range s {
@@ -359,15 +333,22 @@ func replaceInStrSlice(s []string, oldID, newID string) []string {
 	return out
 }
 
+// strSliceEqual reports whether a and b have the same elements in the same order.
+func strSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Compile builds the harness StateGraph from the Canvas and returns the
 // compiled graph. State pre/post handlers are wired inside BuildWorkflow
 // (see scheduler.go). Checkpointer is wired here as a compile option.
-//
-// IMPORTANT: harness compile options map as follows:
-//
-//	WithInterrupts (before) → graph.WithInterrupts(nodes...)
-//	WithInterruptsAfter     → graph.WithInterruptsAfter(nodes...)
-//	WithCheckpointer        → graph.WithCheckpointer(adapter)
 func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCanvas, error) {
 	cfg := CompileOptions{}
 	for _, o := range opts {
@@ -392,7 +373,8 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 			}
 		}
 		if n > 0 {
-			common.Info("canvas: Compile received Canvas with legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", zap.Int("n", n))
+			common.Info("canvas: Compile received Canvas with legacy LoopItem/IterationItem nodes; this path bypassed dsl.NormalizeForCanvas",
+				zap.Int("n", n))
 		}
 		foldLegacyComponents(work)
 	}

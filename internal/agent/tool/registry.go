@@ -14,12 +14,12 @@ type Factory func(params map[string]any) (Tool, error)
 var registry = map[string]Factory{
 	"akshare":               buildAkShareTool,
 	"arxiv":                 buildArxivTool,
-	"bgpt":                  noConfig("bgpt", func() Tool { return NewBGPTTool() }),
+	"bgpt":                  buildBGPTTool,
 	"code_exec":             noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
 	"crawler":               noConfig("crawler", func() Tool { return NewCrawlerTool() }),
 	"deepl":                 noConfig("deepl", func() Tool { return NewDeepLTool() }),
-	"duckduckgo":            noConfig("duckduckgo", func() Tool { return NewDuckDuckGoTool() }),
-	"email":                 noConfig("email", func() Tool { return NewEmailTool() }),
+	"duckduckgo":            buildDuckDuckGoTool,
+	"email":                 buildEmailTool,
 	"execute_sql":           buildExeSQLTool,
 	"exesql":                buildExeSQLTool,
 	"github":                buildGitHubTool,
@@ -30,18 +30,18 @@ var registry = map[string]Factory{
 	"keenable":              buildKeenableTool,
 	"pubmed":                buildPubMedTool,
 	"qweather":              noConfig("qweather", func() Tool { return NewQWeatherTool() }),
-	"retrieval":             noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
-	"search_my_dataset":     noConfig("search_my_dataset", func() Tool { return NewRetrievalTool() }),
-	"search_my_dateset":     noConfig("search_my_dateset", func() Tool { return NewRetrievalTool() }),
+	"retrieval":             buildRetrievalTool,
+	"search_my_dataset":     buildRetrievalTool,
+	"search_my_dateset":     buildRetrievalTool,
 	"searxng":               buildSearXNGTool,
-	"tavily":                noConfig("tavily", func() Tool { return NewTavilyTool() }),
-	"tavily_extract":        noConfig("tavily_extract", func() Tool { return NewTavilyExtractTool() }),
+	"tavily":                buildTavilyTool,
+	"tavily_extract":        buildTavilyExtractTool,
 	"tushare":               noConfig("tushare", func() Tool { return NewTushareTool() }),
 	"wencai":                buildWencaiTool,
 	"web_crawler":           noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),
 	"wikipedia":             buildWikipediaTool,
 	"wikipedia_search":      buildWikipediaTool,
-	"yahoo_finance":         noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
+	"yahoo_finance":         buildYahooFinanceTool,
 }
 
 func noConfig(name string, fn func() Tool) Factory {
@@ -163,11 +163,8 @@ func buildGoogleTool(params map[string]any) (Tool, error) {
 func buildGitHubTool(params map[string]any) (Tool, error) {
 	topN := defaultGitHubTopN
 	if raw, exists := params["top_n"]; exists {
-		value, ok := intParam(params, "top_n")
+		value, ok := strictInt(raw)
 		if !ok {
-			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
-		}
-		if decimal, ok := raw.(float64); ok && math.Trunc(decimal) != decimal {
 			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "github")
 		}
 		topN = value
@@ -187,7 +184,7 @@ func buildGoogleScholarTool(params map[string]any) (Tool, error) {
 	}
 	for key := range params {
 		switch key {
-		case "query", "top_n", "sort_by", "year_low", "year_high", "patents":
+		case "query", "top_n", "sort_by", "year_low", "year_high", "patents", "outputs", "inputs":
 		default:
 			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "google_scholar", key)
 		}
@@ -351,6 +348,276 @@ func buildWikipediaTool(params map[string]any) (Tool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q unsupported node-level param language %q", "wikipedia", language)
 	}
 	return NewWikipediaToolWithParams(nil, topN, language), nil
+}
+
+func buildEmailTool(params map[string]any) (Tool, error) {
+	defaults := emailParams{SMTPPort: 465}
+	for key := range params {
+		switch key {
+		case "smtp_server", "smtp_port", "email", "sender_name", "password", "outputs", "inputs", "setups":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "email", key)
+		}
+	}
+	switch v := params["smtp_server"].(type) {
+	case string:
+		defaults.SMTPServer = v
+	case nil:
+		// optional
+	default:
+		return nil, fmt.Errorf("agent tool: tool %q requires string node-level param smtp_server", "email")
+	}
+	if value, exists := params["smtp_port"]; exists {
+		var v int
+		switch x := value.(type) {
+		case int:
+			v = x
+		case float64:
+			if math.Trunc(x) != x {
+				return nil, fmt.Errorf("agent tool: tool %q requires valid integer node-level param smtp_port (1-65535)", "email")
+			}
+			v = int(x)
+		case string:
+			if _, err := fmt.Sscanf(x, "%d", &v); err != nil {
+				return nil, fmt.Errorf("agent tool: tool %q requires valid integer node-level param smtp_port (1-65535)", "email")
+			}
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q requires valid integer node-level param smtp_port (1-65535)", "email")
+		}
+		if v <= 0 || v > 65535 {
+			return nil, fmt.Errorf("agent tool: tool %q requires valid integer node-level param smtp_port (1-65535)", "email")
+		}
+		defaults.SMTPPort = v
+	}
+	if v, ok := stringParam(params, "email"); ok {
+		defaults.Email = v
+	}
+	if v, ok := stringParam(params, "sender_name"); ok {
+		defaults.SenderName = v
+	}
+	if v, ok := stringParam(params, "password"); ok {
+		defaults.Password = v
+	}
+	return newEmailTool(defaults), nil
+}
+
+func buildRetrievalTool(params map[string]any) (Tool, error) {
+	defaults := retrievalArgs{}
+	for key := range params {
+		switch key {
+		case "kb_ids", "dataset_ids", "top_n", "top_k", "keywords_similarity_weight", "similarity_threshold",
+			"rerank_id", "toc_enhance", "meta_data_filter", "empty_response",
+			"retrieval_from", "memory_ids", "kb_vars", "cross_languages",
+			"inputs", "outputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "retrieval", key)
+		}
+	}
+	if v, ok, err := stringSliceParam(params, "kb_ids"); err != nil {
+		return nil, fmt.Errorf("agent tool: tool %q: %w", "retrieval", err)
+	} else if ok {
+		defaults.KBIDs = v
+	}
+	if v, ok := intParam(params, "top_n"); ok {
+		defaults.TopN = v
+	}
+	if v, ok := intParam(params, "top_k"); ok {
+		defaults.TopK = v
+	}
+	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
+		defaults.KeywordsSimilarityWeight = &v
+	}
+	if v, ok := floatParam(params, "similarity_threshold"); ok {
+		defaults.SimilarityThreshold = v
+	}
+	return NewRetrievalToolWithDefaults(defaults), nil
+}
+
+func buildBGPTTool(params map[string]any) (Tool, error) {
+	defaults := bgptParams{}
+	for key := range params {
+		switch key {
+		case "api_key", "top_n", "days_back", "outputs", "inputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "bgpt", key)
+		}
+	}
+	switch v := params["api_key"].(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "bgpt")
+		}
+		defaults.APIKey = v
+	case nil:
+		// optional
+	default:
+		return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "bgpt")
+	}
+	if value, exists := params["top_n"]; exists {
+		var v int
+		switch x := value.(type) {
+		case int:
+			v = x
+		case float64:
+			if math.Trunc(x) != x {
+				return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "bgpt")
+			}
+			v = int(x)
+		case string:
+			if _, err := fmt.Sscanf(x, "%d", &v); err != nil {
+				return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "bgpt")
+			}
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "bgpt")
+		}
+		if v <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "bgpt")
+		}
+		defaults.TopN = v
+	}
+	if value, exists := params["days_back"]; exists {
+		v, ok := strictInt(value)
+		if !ok || v <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param days_back", "bgpt")
+		}
+		defaults.DaysBack = v
+	}
+	return newBGPTTool(nil, defaults), nil
+}
+
+func buildTavilyTool(params map[string]any) (Tool, error) {
+	defaults := tavilyParams{}
+	for key := range params {
+		switch key {
+		case "api_key", "query", "search_depth", "max_results", "days",
+			"include_answer", "include_raw_content", "include_images", "include_image_descriptions",
+			"outputs", "inputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "tavily", key)
+		}
+	}
+	if v, ok := stringParam(params, "api_key"); ok {
+		defaults.APIKey = v
+	} else if _, exists := params["api_key"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "tavily")
+	}
+	if v, ok := stringParam(params, "search_depth"); ok {
+		if v != "basic" && v != "advanced" {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported search_depth %q", "tavily", v)
+		}
+		defaults.SearchDepth = v
+	}
+	if value, exists := params["max_results"]; exists {
+		v, ok := strictInt(value)
+		if !ok || v <= 0 || v > 20 {
+			return nil, fmt.Errorf("agent tool: tool %q requires valid integer node-level param max_results (1-20)", "tavily")
+		}
+		defaults.MaxResults = v
+	}
+	if value, exists := params["days"]; exists {
+		v, ok := strictInt(value)
+		if !ok || v <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param days", "tavily")
+		}
+		defaults.Days = v
+	}
+	if v, ok := boolParam(params, "include_answer"); ok {
+		defaults.IncludeAnswer = v
+	} else if _, exists := params["include_answer"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param include_answer", "tavily")
+	}
+	if v, ok := boolParam(params, "include_raw_content"); ok {
+		defaults.IncludeRawContent = v
+	} else if _, exists := params["include_raw_content"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param include_raw_content", "tavily")
+	}
+	if v, ok := boolParam(params, "include_images"); ok {
+		defaults.IncludeImages = v
+	} else if _, exists := params["include_images"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param include_images", "tavily")
+	}
+	if v, ok := boolParam(params, "include_image_descriptions"); ok {
+		defaults.IncludeImageDescriptions = v
+	} else if _, exists := params["include_image_descriptions"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param include_image_descriptions", "tavily")
+	}
+	return newTavilyTool(nil, nil, defaults), nil
+}
+
+func buildDuckDuckGoTool(params map[string]any) (Tool, error) {
+	defaults := duckduckgoParams{}
+	for key := range params {
+		switch key {
+		case "top_n", "channel", "outputs", "inputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "duckduckgo", key)
+		}
+	}
+	if value, exists := params["top_n"]; exists {
+		v, ok := strictInt(value)
+		if !ok || v <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "duckduckgo")
+		}
+		defaults.TopN = v
+	}
+	if v, ok := stringParam(params, "channel"); ok {
+		if v != duckduckgoChannelGeneral && v != duckduckgoChannelNews {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported channel %q", "duckduckgo", v)
+		}
+		defaults.Channel = v
+	} else if _, exists := params["channel"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires string node-level param channel", "duckduckgo")
+	}
+	return newDuckDuckGoTool(nil, defaults), nil
+}
+
+func buildYahooFinanceTool(params map[string]any) (Tool, error) {
+	defaults := defaultYahooFinanceParams()
+	for key := range params {
+		switch key {
+		case "stock_code", "info", "history", "balance_sheet", "news", "outputs", "inputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "yahoo_finance", key)
+		}
+	}
+	if v, ok := boolParam(params, "info"); ok {
+		defaults.Info = v
+	} else if _, exists := params["info"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param info", "yahoo_finance")
+	}
+	return NewYahooFinanceToolWithDefaults(nil, defaults), nil
+}
+
+func buildTavilyExtractTool(params map[string]any) (Tool, error) {
+	defaults := tavilyExtractParams{}
+	for key := range params {
+		switch key {
+		case "api_key", "urls", "extract_depth", "format", "outputs", "inputs":
+		default:
+			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level param %s", "tavily_extract", key)
+		}
+	}
+	if v, ok := stringParam(params, "api_key"); ok {
+		defaults.APIKey = v
+	} else if _, exists := params["api_key"]; exists {
+		return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "tavily_extract")
+	}
+	if v, ok := stringParam(params, "urls"); ok {
+		defaults.URLs = v
+	}
+	if v, ok := stringParam(params, "extract_depth"); ok {
+		if v != "basic" && v != "advanced" {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported extract_depth %q", "tavily_extract", v)
+		}
+		defaults.ExtractDepth = v
+	}
+	if v, ok := stringParam(params, "format"); ok {
+		if v != "markdown" && v != "text" {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported format %q", "tavily_extract", v)
+		}
+		defaults.Format = v
+	}
+	return newTavilyExtractTool(nil, nil, defaults), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

@@ -98,15 +98,15 @@ const (
 // model-emitted runtime input; the remaining fields are Canvas node
 // configuration and are not exposed from Info.
 type exesqlConnParams struct {
-	SQL        string // model-emitted runtime input
-	DBType     string // mysql | postgres | mariadb | mssql | oceanbase | sqlserver
-	Database   string
-	Username   string
-	Host       string
-	Port       int
-	Password   string
-	MaxRecords int
-	Timeout    time.Duration
+	SQL        string        `json:"sql"`     // model-emitted runtime input
+	DBType     string        `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase | sqlserver
+	Database   string        `json:"database"`
+	Username   string        `json:"username"`
+	Host       string        `json:"host"`
+	Port       int           `json:"port"`
+	Password   string        `json:"password"`
+	MaxRecords int           `json:"max_records"`
+	Timeout    time.Duration `json:"timeout"`
 }
 
 // ExeSQLConnParams is the public alias of exesqlConnParams for

@@ -375,8 +375,8 @@ func TestKeenable_ToolMeta(t *testing.T) {
 
 	tool := NewKeenableTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "keenable" {
-		t.Errorf("Name = %q, want keenable", meta.Name)
+	if meta.Name != "keenable_search" {
+		t.Errorf("Name = %q, want keenable_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Keenable") {
 		t.Errorf("Description = %q, want to mention Keenable", meta.Description)

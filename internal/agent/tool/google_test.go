@@ -144,8 +144,8 @@ func TestGoogle_ToolMetaAndInputForm(t *testing.T) {
 
 	tool := NewGoogleTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "google" {
-		t.Errorf("Name = %q, want google", meta.Name)
+	if meta.Name != "google_search" {
+		t.Errorf("Name = %q, want google_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Google") {
 		t.Errorf("Desc = %q, want to mention Google", meta.Description)

@@ -122,7 +122,7 @@ func TestExeSQLConnParams_JSONTags(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	want := []string{"sql", "db_type", "database", "username", "host", "port", "password", "max_records"}
+	want := []string{"sql", "db_type", "database", "username", "host", "port", "password", "max_records", "timeout"}
 	if len(fields) != len(want) {
 		t.Fatalf("JSON fields = %v", fields)
 	}

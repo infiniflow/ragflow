@@ -246,8 +246,8 @@ func TestGoogleScholar_ToolMeta(t *testing.T) {
 
 	tool := NewGoogleScholarTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "google_scholar" {
-		t.Errorf("Name = %q, want google_scholar", meta.Name)
+	if meta.Name != "google_scholar_search" {
+		t.Errorf("Name = %q, want google_scholar_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Scholar") {
 		t.Errorf("Description = %q, want to mention Scholar", meta.Description)

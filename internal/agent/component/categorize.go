@@ -123,10 +123,11 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	}
 
 	chosen, score := pickCategory(resp.Content, p.Categories, p.DefaultCategory)
+	next := resolveNext(chosen, p.CategoryRoutes, inputs)
 	return map[string]any{
 		"category_name": chosen,
 		"scores":        score,
-		"_next":         []string{},
+		"_next":         next,
 	}, nil
 }
 
@@ -714,4 +715,36 @@ func init() {
 		}
 		return NewCategorizeComponent(p), nil
 	})
+}
+
+// resolveNext determines the routing target for the chosen category.
+// It checks CategoryRoutes first (for simple category→node mapping),
+// then falls back to category_description in the inputs map.
+func resolveNext(chosen string, categoryRoutes map[string]string, inputs map[string]any) []string {
+	// 1. Direct mapping from constructor param.
+	if dst, ok := categoryRoutes[chosen]; ok && dst != "" {
+		return []string{dst}
+	}
+	// 2. Fall back to category_description in runtime inputs.
+	if catDescs, ok := inputs["category_description"].(map[string]any); ok {
+		if desc, ok := catDescs[chosen].(map[string]any); ok {
+			if toRaw, ok := desc["to"]; ok {
+				switch to := toRaw.(type) {
+				case []string:
+					return to
+				case []any:
+					dests := make([]string, 0, len(to))
+					for _, v := range to {
+						if s, ok := v.(string); ok {
+							dests = append(dests, s)
+						}
+					}
+					if len(dests) > 0 {
+						return dests
+					}
+				}
+			}
+		}
+	}
+	return []string{}
 }

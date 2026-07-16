@@ -212,8 +212,8 @@ func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 func TestDuckDuckGo_ToolMeta(t *testing.T) {
 	tool := NewDuckDuckGoTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "duckduckgo" {
-		t.Errorf("Name = %q, want duckduckgo", meta.Name)
+	if meta.Name != "duckduckgo_search" {
+		t.Errorf("Name = %q, want duckduckgo_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "DuckDuckGo") {
 		t.Errorf("Description = %q, want to mention DuckDuckGo", meta.Description)

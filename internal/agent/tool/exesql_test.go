@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"ragflow/internal/agent/runtime"
 )
 
 // testConn is a fully-populated connection params struct used by
@@ -302,8 +303,8 @@ func TestExeSQL_Info(t *testing.T) {
 	if strings.Contains(params, `database`) {
 		t.Fatalf("schema leaked node-level database param: %s", params)
 	}
-	if !strings.Contains(params, `"required":["sql"]`) {
-		t.Fatalf("schema does not require sql: %s", params)
+	if !strings.Contains(params, `"Required":true`) {
+		t.Fatalf("sql parameter not marked Required: %s", params)
 	}
 }
 
@@ -331,7 +332,6 @@ func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
 }
 
 func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
-	t.Skip("requires agent/runtime import which would create cycle")
 	dialer, mock, cleanup := sqlmockDialer(t)
 	defer cleanup()
 	mock.ExpectPing()

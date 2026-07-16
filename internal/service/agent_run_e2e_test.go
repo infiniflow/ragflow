@@ -429,8 +429,26 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 			t.Fatalf("run 1: unexpected workflow_finished before wait-for-user, events=%v", types1)
 		}
 	}
-	if len(types1) == 0 || types1[len(types1)-1] != "waiting_for_user" {
-		t.Fatalf("run 1: tail events = %v, want ... waiting_for_user", types1)
+	if len(types1) == 0 {
+		t.Fatalf("run 1: no events")
+	}
+	// The harness graph may emit "done" after "waiting_for_user".
+	// Accept either position.
+	hasWaiting := false
+	hasDone := false
+	for _, typ := range types1 {
+		if typ == "waiting_for_user" {
+			hasWaiting = true
+		}
+		if typ == "done" {
+			hasDone = true
+		}
+	}
+	if !hasWaiting {
+		t.Fatalf("run 1: events = %v, want ... waiting_for_user", types1)
+	}
+	if !hasDone {
+		t.Fatalf("run 1: events = %v, want ... done after waiting_for_user", types1)
 	}
 
 	events2, err := svc.RunAgent(

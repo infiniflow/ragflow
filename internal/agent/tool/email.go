@@ -91,42 +91,22 @@ func (e *EmailTool) ToolMeta() ToolMeta {
 		Name:        emailToolName,
 		Description: emailToolDescription,
 		Parameters: map[string]ParameterInfo{
-			"smtp_host": {
+			"to_email": {
 				Type:        ParamTypeString,
-				Description: "SMTP server hostname (e.g. smtp.gmail.com).",
+				Description: "Recipient email address list.",
 				Required:    true,
 			},
-			"smtp_port": {
-				Type:        ParamTypeInteger,
-				Description: "SMTP server port (e.g. 587 for STARTTLS, 465 for implicit TLS).",
-				Required:    true,
-			},
-			"username": {
+			"cc_email": {
 				Type:        ParamTypeString,
-				Description: "SMTP authentication username. Empty for unauthenticated relay.",
+				Description: "Optional CC recipient list.",
 				Required:    false,
-			},
-			"password": {
-				Type:        ParamTypeString,
-				Description: "SMTP authentication password (or app password for Gmail/Yahoo).",
-				Required:    false,
-			},
-			"from_addr": {
-				Type:        ParamTypeString,
-				Description: "Sender email address (RFC 5322).",
-				Required:    true,
-			},
-			"to_addrs": {
-				Type:        ParamTypeArray,
-				Description: "Recipient email addresses.",
-				Required:    true,
 			},
 			"subject": {
 				Type:        ParamTypeString,
 				Description: "Email subject line.",
 				Required:    true,
 			},
-			"body": {
+			"content": {
 				Type:        ParamTypeString,
 				Description: "Email body (plain text).",
 				Required:    true,
@@ -193,6 +173,22 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string) (string, 
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),
 			fmt.Errorf("email: parse arguments: %w", err)
+	}
+	// Apply defaults for fields not present in runtime args.
+	if p.SMTPServer == "" {
+		p.SMTPServer = e.defaults.SMTPServer
+	}
+	if p.SMTPPort == 0 {
+		p.SMTPPort = e.defaults.SMTPPort
+	}
+	if p.Email == "" {
+		p.Email = e.defaults.Email
+	}
+	if p.Password == "" {
+		p.Password = e.defaults.Password
+	}
+	if p.SenderName == "" {
+		p.SenderName = e.defaults.SenderName
 	}
 	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	p.ToEmail = runtime.ResolveTemplateForDisplay(p.ToEmail, state)

@@ -166,8 +166,8 @@ func TestTavily_Info(t *testing.T) {
 
 	tool := NewTavilyTool()
 	meta := tool.ToolMeta()
-	if meta.Name != "tavily" {
-		t.Errorf("Name = %q, want tavily", meta.Name)
+	if meta.Name != "tavily_search" {
+		t.Errorf("Name = %q, want tavily_search", meta.Name)
 	}
 	if !strings.Contains(meta.Description, "Tavily") {
 		t.Errorf("Desc = %q, want to mention Tavily", meta.Description)
