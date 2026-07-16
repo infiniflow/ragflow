@@ -129,8 +129,8 @@ def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     if len(kwds) < 3:
         kwds = [k.strip().lower() for k in (keywords or "").split(" ") if k.strip()]
         _kwds = []
-        for i in range(len(kwds)-1):
-            _kwds.append(kwds[i] + " "+ kwds[i+1])
+        for i in range(len(kwds) - 1):
+            _kwds.append(kwds[i] + " " + kwds[i + 1])
         kwds = _kwds
 
     scored = [(ck, _narrow_content(ck.get("content_with_weight") or ck.get("content") or "", kwds)) for ck in chunks]
@@ -245,11 +245,12 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=False,
         highlight=False,
     )
+    kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:
         length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
         _LOG.info(f"[Vector search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
-    return _normalize(kbinfos, tools.tenant_ids)
+    return kbinfos
 
 
 async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "") -> dict:
@@ -268,11 +269,12 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         aggs=False,
         highlight=False,
     )
+    kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:
         length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
         _LOG.info(f"[BM25 search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
-    return _normalize(kbinfos, tools.tenant_ids)
+    return kbinfos
 
 
 async def web_search(tools, query: str, keywords: str = "") -> dict:

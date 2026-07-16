@@ -324,13 +324,15 @@ async def _navigate_compiled(
 
     if not chunks:
         _LOG.info(f"[{label}] No source text behind those entities — falling back to a normal search.")
-        fallback = await hybrid_search(tools, query=topic, keywords=keywords, doc_scope=doc_scope)
-        fallback["answer"] = answer
-        return fallback
+        return await hybrid_search(tools, query=topic, keywords=keywords, doc_scope=doc_scope)
 
     before = len(chunks)
-    chunks = _narrow_by_keywords(chunks, keywords)
-    _LOG.info("[%s] Pulled %d source passage(s) behind those entities, kept %d after keyword filtering.", label, before, len(chunks))
+    narrowed = _narrow_by_keywords(chunks, keywords)
+    if narrowed:
+        chunks = narrowed
+        _LOG.info("[%s] Pulled %d source passage(s) behind those entities, kept %d after keyword filtering.", label, before, len(chunks))
+    else:
+        _LOG.info("[%s] Keyword filtering removed all %d passage(s); restoring unfiltered set.", label, before)
 
     return {"answer": answer, "chunks": chunks, "doc_aggs": _doc_aggs(chunks)}
 
@@ -342,8 +344,13 @@ async def catalog_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
     """
     _LOG.info(f'[Catalog navigation] Looking through the document catalog for "{topic}" (keywords: {keywords})')
     return await _navigate_compiled(
-        tools, topic, keywords, doc_scope,
-        kinds=_CATALOG_KINDS, label="Catalog navigation", noun="document catalog",
+        tools,
+        topic,
+        keywords,
+        doc_scope,
+        kinds=_CATALOG_KINDS,
+        label="Catalog navigation",
+        noun="document catalog",
     )
 
 
@@ -357,8 +364,13 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
     """
     _LOG.info(f'[Mindmap navigation] Following the concept mindmap for "{topic}" (keywords: {keywords})')
     return await _navigate_compiled(
-        tools, topic, keywords, doc_scope,
-        kinds=_MINDMAP_KINDS, label="Mindmap navigation", noun="concept mindmap",
+        tools,
+        topic,
+        keywords,
+        doc_scope,
+        kinds=_MINDMAP_KINDS,
+        label="Mindmap navigation",
+        noun="concept mindmap",
     )
 
 
@@ -369,22 +381,24 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
 # its way to a small subgraph: seed entities by the question, hop out over
 # relations to the 2nd-degree neighbours, then answer from that subgraph.
 
-_KG_SEEDS = 3          # entities matched directly to the question
-_KG_HOPS = 1           # relation hops out from the seeds (1 => "2nd degree")
-_KG_NEIGHBORS = 10     # neighbour entity rows resolved per hop
-_KG_REL_LIMIT = 32     # relations fetched per endpoint filter
+_KG_SEEDS = 3  # entities matched directly to the question
+_KG_HOPS = 1  # relation hops out from the seeds (1 => "2nd degree")
+_KG_NEIGHBORS = 10  # neighbour entity rows resolved per hop
+_KG_REL_LIMIT = 32  # relations fetched per endpoint filter
 
 
-def _kg_scopes(tools, doc_scope: list[str] | None):
+async def _kg_scopes(tools, doc_scope: list[str] | None):
     """Resolve the (kb_id, tenant_id, doc_ids|None) groups to search.
 
     With a ``doc_scope`` the graph is limited to those docs (grouped by their
     KB); otherwise the whole bound KB graph is explored.
     """
+    from common.misc_utils import thread_pool_exec
+
     if doc_scope:
         by_kb: dict[tuple, list[str]] = {}
         for doc_id in doc_scope:
-            resolved = tools._resolve_doc_tenant(doc_id)
+            resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
             if resolved:
                 by_kb.setdefault(resolved, []).append(doc_id)
         return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
@@ -418,8 +432,15 @@ async def _kg_search(tools, kb_id: str, tenant_id: str, doc_ids, kind: str, text
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            fields, [], condition, exprs, OrderByExpr(), 0, top_n,
-            search.index_name(tenant_id), [kb_id],
+            fields,
+            [],
+            condition,
+            exprs,
+            OrderByExpr(),
+            0,
+            top_n,
+            search.index_name(tenant_id),
+            [kb_id],
         )
         rows = settings.docStoreConn.get_fields(res, fields) or {}
     except Exception:
@@ -456,7 +477,7 @@ def _kg_parse_relation(row: dict) -> dict | None:
     typ = "related"
     try:
         payload = json.loads(row.get("content_with_weight") or "{}")
-        typ = (payload.get("type") or payload.get("relation") or "related")
+        typ = payload.get("type") or payload.get("relation") or "related"
     except Exception:
         pass
     return {
@@ -513,7 +534,7 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
 
     _LOG.info(f'[Graph exploration] Exploring the knowledge graph for "{query}" (keywords: {keywords})')
 
-    scopes = _kg_scopes(tools, doc_scope)
+    scopes = await _kg_scopes(tools, doc_scope)
     if not scopes:
         _LOG.info("[Graph exploration] No knowledge base in scope — falling back to a normal search.")
         return await hybrid_search(tools, query=query, keywords=keywords, doc_scope=doc_scope)
@@ -523,10 +544,10 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
     relations: list[dict] = []
     ent_names: set[str] = set()
 
-    def _add_entities(new: list[dict]) -> list[str]:
+    def _add_entities(new: list[dict], scope_key: str = "") -> list[str]:
         added = []
         for e in new:
-            key = e["name"].lower()
+            key = f"{scope_key}:{e['name'].lower()}"
             if key in ent_names:
                 continue
             ent_names.add(key)
@@ -537,7 +558,7 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
     for kb_id, tenant_id, doc_ids in scopes:
         seed_rows = await _kg_search(tools, kb_id, tenant_id, doc_ids, "entity", text=text, top_n=_KG_SEEDS)
         seeds = [e for e in (_kg_parse_entity(r) for r in seed_rows.values()) if e]
-        frontier = _add_entities(seeds)
+        frontier = _add_entities(seeds, kb_id)
         _LOG.info("[Graph exploration] Seeded %d entity(ies): %s", len(frontier), ", ".join(frontier) or "none")
 
         for _hop in range(_KG_HOPS):
@@ -556,7 +577,7 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
             neigh_rows = await _kg_search(tools, kb_id, tenant_id, doc_ids, "entity", text=" ".join(neighbour_names), top_n=_KG_NEIGHBORS)
             wanted = {n.lower() for n in neighbour_names}
             neighbours = [e for e in (_kg_parse_entity(r) for r in neigh_rows.values()) if e and e["name"].lower() in wanted]
-            frontier = _add_entities(neighbours)
+            frontier = _add_entities(neighbours, kb_id)
             _LOG.info("[Graph exploration] Hop %d reached %d neighbour entity(ies).", _hop + 1, len(frontier))
 
     if not entities and not relations:
