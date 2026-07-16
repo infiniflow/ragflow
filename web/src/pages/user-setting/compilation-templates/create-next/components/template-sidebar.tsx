@@ -152,7 +152,7 @@ export function TemplateSidebar({
         <span className="text-sm font-medium text-text-primary">
           {t('setting.templates')}
         </span>
-        {!isAddButtonHidden && (
+        {false && !isAddButtonHidden && (
           <Button
             type="button"
             variant="ghost"

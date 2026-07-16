@@ -1471,6 +1471,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     dialog_service_mod.async_ask = lambda *_args, **_kwargs: None
     dialog_service_mod.async_chat = lambda *_args, **_kwargs: None
     dialog_service_mod.gen_mindmap = lambda *_args, **_kwargs: None
+    dialog_service_mod.rag_agent = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
 
     conversation_service_mod = ModuleType("api.db.services.conversation_service")

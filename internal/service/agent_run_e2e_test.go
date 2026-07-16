@@ -92,6 +92,7 @@ func drainAgentEvents(t *testing.T, events <-chan canvas.RunEvent) (messages []c
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				done = true
 				return
 			}
 			switch ev.Type {
@@ -153,11 +154,13 @@ func collectEventTypes(t *testing.T, events <-chan canvas.RunEvent) (types []str
 func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -235,11 +238,13 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -362,11 +367,13 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -428,8 +435,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 			t.Fatalf("run 1: unexpected workflow_finished before wait-for-user, events=%v", types1)
 		}
 	}
-	if len(types1) == 0 || types1[len(types1)-2] != "waiting_for_user" || types1[len(types1)-1] != "done" {
-		t.Fatalf("run 1: tail events = %v, want ... waiting_for_user, done", types1)
+	if len(types1) == 0 || types1[len(types1)-1] != "waiting_for_user" {
+		t.Fatalf("run 1: tail events = %v, want ... waiting_for_user", types1)
 	}
 
 	events2, err := svc.RunAgent(
@@ -449,8 +456,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 			t.Fatalf("run 2: unexpected workflow_started on resume, events=%v", types2)
 		}
 	}
-	if len(types2) == 0 || types2[len(types2)-2] != "workflow_finished" || types2[len(types2)-1] != "done" {
-		t.Fatalf("run 2: tail events = %v, want ... workflow_finished, done", types2)
+	if len(types2) == 0 || types2[len(types2)-1] != "workflow_finished" {
+		t.Fatalf("run 2: tail events = %v, want ... workflow_finished", types2)
 	}
 }
 
@@ -461,11 +468,13 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -589,11 +598,13 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -693,11 +704,13 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -781,11 +794,13 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -877,11 +892,13 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -937,11 +954,13 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1013,11 +1032,13 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1085,11 +1106,13 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1212,11 +1235,13 @@ func (i *categorizeResumeInvoker) Invoke(_ context.Context, req component.ChatIn
 func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -1314,11 +1339,13 @@ func newRunTrackerForTest(t *testing.T, ttl time.Duration) (*canvas.RunTracker, 
 func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

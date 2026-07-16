@@ -18,13 +18,17 @@ import asyncio
 import logging
 from pathlib import Path
 
+from quart import request
+
 from api.common.check_team_permission import check_file_team_permission, check_kb_team_permission
+from api.db.services import duplicate_name
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
 from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services.document_service import DocumentService
@@ -32,25 +36,34 @@ from api.db.services.document_service import DocumentService
 logger = logging.getLogger(__name__)
 
 
-def _convert_files(file_ids, kb_ids, user_id):
-    """Synchronous worker: add new docs for the given file/kb pairs while preserving existing links.
-
-    Previously this function replaced all existing links with the new ones, which caused
-    multi-select "link to knowledge base" to overwrite previous links. Now it only creates
-    documents for knowledge bases that are not already linked to the file, and leaves
-    existing links untouched.
-    """
+def _convert_files(file_ids, kb_ids, user_id, mode):
+    """Synchronous worker: add missing links or replace existing links."""
+    replace_existing = mode == "replace"
     for id in file_ids:
         e, file = FileService.get_by_id(id)
         if not e:
             continue
 
-        existing_links = {inform.document_id for inform in File2DocumentService.get_by_file_id(id)}
+        existing_links = File2DocumentService.get_by_file_id(id)
         existing_kb_ids = set()
-        for doc_id in existing_links:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if e and doc:
-                existing_kb_ids.add(doc.kb_id)
+        if replace_existing:
+            for inform in existing_links:
+                doc_id = inform.document_id
+                e, doc = DocumentService.get_by_id(doc_id)
+                if e and doc:
+                    tenant_id = DocumentService.get_tenant_id(doc_id)
+                    if not tenant_id:
+                        raise RuntimeError("Tenant not found!")
+                    if not DocumentService.remove_document(doc, tenant_id):
+                        raise RuntimeError("Database error (Document removal)!")
+                File2DocumentService.delete_by_document_id(doc_id)
+            if existing_links:
+                File2DocumentService.delete_by_file_id(id)
+        else:
+            for inform in existing_links:
+                e, doc = DocumentService.get_by_id(inform.document_id)
+                if e and doc:
+                    existing_kb_ids.add(doc.kb_id)
 
         for kb_id in kb_ids:
             if kb_id in existing_kb_ids:
@@ -58,17 +71,18 @@ def _convert_files(file_ids, kb_ids, user_id):
             e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:
                 continue
+            filename = duplicate_name(DocumentService.query, name=file.name, kb_id=kb.id)
             doc = DocumentService.insert(
                 {
                     "id": get_uuid(),
                     "kb_id": kb.id,
-                    "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                    "parser_id": FileService.get_parser(file.type, filename, kb.parser_id),
                     "pipeline_id": kb.pipeline_id,
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": file.type,
-                    "name": file.name,
-                    "suffix": Path(file.name).suffix.lstrip("."),
+                    "name": filename,
+                    "suffix": Path(filename).suffix.lstrip("."),
                     "location": file.location,
                     "size": file.size,
                 }
@@ -89,6 +103,9 @@ async def convert():
     req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
+    mode = (request.args.get("mode", "replace") or "replace").lower()
+    if mode not in {"replace", "add"}:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="mode must be 'add' or 'replace'")
 
     try:
         files = FileService.get_by_ids(file_ids)
@@ -167,7 +184,7 @@ async def convert():
         # For large folders this prevents 504 Gateway Timeout by returning as
         # soon as the background task is scheduled.
         loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(None, _convert_files, all_file_ids, kb_ids, user_id)
+        future = loop.run_in_executor(None, _convert_files, all_file_ids, kb_ids, user_id, mode)
         future.add_done_callback(lambda f: logging.error("_convert_files failed: %s", f.exception()) if f.exception() else None)
         logger.info(
             "user_id=%s resource_type=file_to_dataset_link resource_id=batch action=schedule_convert result=scheduled file_ids=%s kb_ids=%s",

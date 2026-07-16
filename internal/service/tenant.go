@@ -478,9 +478,9 @@ func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.Mo
 	case entity.ModelTypeImage2Text:
 		modelID = tenant.Img2TxtID
 	case entity.ModelTypeTTS:
-		modelID = tenant.TTSID
+		modelID = *tenant.TTSID
 	case entity.ModelTypeOCR:
-		modelID = tenant.OCRID
+		modelID = *tenant.OCRID
 	default:
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}
@@ -489,71 +489,103 @@ func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.Mo
 }
 
 func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
-	// normally the model string is: modelName@instanceName@providerName, sometimes it's just modelName@providerName
-	// for the 1st case, parse defaultChatModel into three parts
-	defaultChatModelParts := strings.Split(defaultModel, "@")
-	var providerName *string
-	var instanceName *string
-	var modelName *string
-	if len(defaultChatModelParts) >= 3 {
-		providerName = &defaultChatModelParts[len(defaultChatModelParts)-1]
-		instanceName = &defaultChatModelParts[len(defaultChatModelParts)-2]
-		joinedModelName := strings.Join(defaultChatModelParts[:len(defaultChatModelParts)-2], "@")
-		modelName = &joinedModelName
-
-	} else if len(defaultChatModelParts) == 2 {
-		providerName = &defaultChatModelParts[1]
-		instanceName = new(string)
-		*instanceName = "default"
-		modelName = &defaultChatModelParts[0]
-	} else {
-		return nil, nil, nil, false, fmt.Errorf("invalid model string: %s", defaultModel)
+	// Mirror Python's _get_model_info: right-anchored rsplit so that model
+	// names containing '@' (e.g. LM Studio IDs like
+	// "text-embedding-nomic-embed-text-v1.5@q8_0") remain intact.
+	// The composite key is: modelName@instanceName@providerName or
+	// modelName@providerName.
+	parts := rsplitN(defaultModel, "@", 2)
+	var modelName, instanceName, providerName string
+	switch len(parts) {
+	case 3:
+		modelName, instanceName, providerName = parts[0], parts[1], parts[2]
+	case 2:
+		modelName, providerName = parts[0], parts[1]
+		instanceName = "default"
+	default:
+		modelName = parts[0]
+		providerName = ""
+		instanceName = "default"
 	}
 
-	if modelType == "ocr" {
-		if *providerName == "infiniflow" && *instanceName == "default" && *modelName == "deepdoc" {
-			return providerName, instanceName, modelName, true, nil
-		}
+	// Special case: OCR with infiniflow@default@deepdoc is always enabled.
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return &providerName, &instanceName, &modelName, true, nil
 	}
 
-	// Check if the provider and instance exists
-	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, *providerName)
+	// Special case: TEI Builtin embedding model.
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if modelType == "embedding" && strings.Contains(composeProfiles, "tei-") && teiModel != "" &&
+		modelName == teiModel && (providerName == "" || providerName == "Builtin") {
+		return &providerName, &instanceName, &modelName, true, nil
+	}
+
+	// Check if the provider exists for the tenant.
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
-	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, *instanceName)
+	// Check if the instance exists.
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, instanceName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
+	// Validate that the factory model supports this model type.
+	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
-
 	factoryModelType := factoryModelTypeName(modelType)
 	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", *modelName, modelType)
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", modelName, modelType)
 	}
 
-	var modelEntity *entity.TenantModel
-	modelEntity, err = s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, *modelName)
+	// Check if the model exists and is active.
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
-		errString := err.Error()
-		if !strings.Contains(errString, "record not found") {
+		if !dao.IsNotFoundErr(err) {
 			return nil, nil, nil, false, err
 		}
 	}
 	if modelEntity == nil {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", *modelName)
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", modelName)
 	}
 	if modelEntity.Status != "active" {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", *modelName)
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", modelName)
 	}
 
-	return providerName, instanceName, modelName, true, nil
+	return &providerName, &instanceName, &modelName, true, nil
+}
 
+// rsplitN splits s by sep from the right, limiting to n+1 parts (mirrors
+// Python's str.rsplit(sep, maxsplit)).
+func rsplitN(s, sep string, n int) []string {
+	if n <= 0 {
+		return []string{s}
+	}
+	result := make([]string, 0, n+1)
+	remaining := s
+	for i := 0; i < n; i++ {
+		idx := strings.LastIndex(remaining, sep)
+		if idx < 0 {
+			result = append(result, remaining)
+			// Reverse the collected parts.
+			for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+				result[left], result[right] = result[right], result[left]
+			}
+			return result
+		}
+		result = append(result, remaining[idx+len(sep):])
+		remaining = remaining[:idx]
+	}
+	result = append(result, remaining)
+	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+		result[left], result[right] = result[right], result[left]
+	}
+	return result
 }
 
 func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, error) {

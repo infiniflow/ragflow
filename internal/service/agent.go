@@ -88,6 +88,169 @@ func (s *AgentService) RunAgentWithWebhook(
 	return s.RunAgent(ctx, userID, canvasID, "", "", "")
 }
 
+func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
+	for _, ev := range buildAgentMessageEvents(answer, thinking, reference) {
+		data, _ := json.Marshal(ev)
+		emit("message", string(data))
+	}
+}
+
+type agentMessageDeltaEmitter struct {
+	emit              func(string, string)
+	thinkState        *ThinkStreamState
+	inThinking        bool
+	explicitReasoning bool
+	emitted           bool
+}
+
+func newAgentMessageDeltaEmitter(emit func(string, string)) *agentMessageDeltaEmitter {
+	return &agentMessageDeltaEmitter{
+		emit:       emit,
+		thinkState: &ThinkStreamState{},
+	}
+}
+
+func (e *agentMessageDeltaEmitter) emitEvent(ev canvas.MessageEvent) {
+	emitAgentMessageEvent(e.emit, ev)
+	e.emitted = true
+}
+
+func (e *agentMessageDeltaEmitter) startThinking() {
+	if e.inThinking {
+		return
+	}
+	e.emitEvent(canvas.MessageEvent{StartToThink: true})
+	e.inThinking = true
+}
+
+func (e *agentMessageDeltaEmitter) endThinking() {
+	if !e.inThinking {
+		return
+	}
+	e.emitEvent(canvas.MessageEvent{EndToThink: true})
+	e.inThinking = false
+}
+
+func (e *agentMessageDeltaEmitter) emitThinkDeltas(deltas []ThinkDelta) {
+	for _, d := range deltas {
+		switch {
+		case d.Kind == ThinkDeltaMarker && d.Value == thinkOpen:
+			e.startThinking()
+		case d.Kind == ThinkDeltaMarker && d.Value == thinkClose:
+			e.endThinking()
+		case d.Kind == ThinkDeltaText && d.Value != "":
+			e.emitEvent(canvas.MessageEvent{Content: d.Value})
+		}
+	}
+}
+
+func (e *agentMessageDeltaEmitter) Emit(contentDelta, thinkingDelta string) {
+	if thinkingDelta != "" {
+		e.startThinking()
+		e.explicitReasoning = true
+		e.emitEvent(canvas.MessageEvent{Content: thinkingDelta})
+	}
+	if contentDelta == "" {
+		return
+	}
+	if e.explicitReasoning {
+		e.endThinking()
+		e.explicitReasoning = false
+	}
+	e.emitThinkDeltas(NextThinkDelta(e.thinkState, contentDelta, 0))
+}
+
+func (e *agentMessageDeltaEmitter) Finalize() bool {
+	before := e.emitted
+	e.emitThinkDeltas(FlushRemaining(e.thinkState))
+	if e.explicitReasoning || e.inThinking {
+		e.endThinking()
+		e.explicitReasoning = false
+	}
+	return e.emitted && !before
+}
+
+func (e *agentMessageDeltaEmitter) Reset() {
+	e.thinkState = &ThinkStreamState{}
+	e.inThinking = false
+	e.explicitReasoning = false
+	e.emitted = false
+}
+
+func makeAgentMessageDeltaEmitter(emit func(string, string)) func(string, string) {
+	return newAgentMessageDeltaEmitter(emit).Emit
+}
+
+func makeAgentMessageDeltaEmitterWithFinalizer(emit func(string, string)) (func(string, string), func() bool, func()) {
+	emitter := newAgentMessageDeltaEmitter(emit)
+	return emitter.Emit, emitter.Finalize, emitter.Reset
+}
+
+func emitAgentMessageEvent(emit func(string, string), ev canvas.MessageEvent) {
+	data, _ := json.Marshal(ev)
+	emit("message", string(data))
+}
+
+func buildAgentMessageEvents(answer, thinking string, reference any) []canvas.MessageEvent {
+	answer, thinking = splitInlineThink(answer, thinking)
+	if thinking == "" {
+		return []canvas.MessageEvent{{
+			Content:   answer,
+			Reference: reference,
+		}}
+	}
+
+	events := []canvas.MessageEvent{{StartToThink: true}}
+	for _, chunk := range splitMessageContent(thinking) {
+		events = append(events, canvas.MessageEvent{Content: chunk})
+	}
+	events = append(events, canvas.MessageEvent{EndToThink: true})
+	for _, chunk := range splitMessageContent(answer) {
+		events = append(events, canvas.MessageEvent{Content: chunk})
+	}
+	return events
+}
+
+func splitInlineThink(answer, thinking string) (string, string) {
+	if thinking != "" {
+		return answer, thinking
+	}
+	const startTag = "<think>"
+	const endTag = "</think>"
+	start := strings.Index(answer, startTag)
+	if start < 0 {
+		return answer, thinking
+	}
+	afterStart := start + len(startTag)
+	endRel := strings.Index(answer[afterStart:], endTag)
+	if endRel < 0 {
+		return answer, thinking
+	}
+	end := afterStart + endRel
+	thinking = answer[afterStart:end]
+	answer = answer[:start] + answer[end+len(endTag):]
+	answer = strings.TrimLeft(answer, "\r\n")
+	return answer, thinking
+}
+
+func splitMessageContent(content string) []string {
+	if content == "" {
+		return nil
+	}
+	const maxRunes = 24
+	runes := []rune(content)
+	chunks := make([]string, 0, (len(runes)+maxRunes-1)/maxRunes)
+	for len(runes) > 0 {
+		n := maxRunes
+		if len(runes) < n {
+			n = len(runes)
+		}
+		chunks = append(chunks, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return chunks
+}
+
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
 // is accessible to the caller but is owned by a different user. It maps
 // to the Python "Only the owner of the agent is authorized for this
@@ -998,6 +1161,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			TaskID:    taskID,
 			SessionID: sessionID,
 		})
+		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
+		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
 
 		// Seed initial env/sys values from the Canvas DSL globals.
 		// Python's self.globals dict stores "sys.*" and "env.*" under
@@ -1016,6 +1181,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
+		state.EnsureSysDate()
 		state.Sys["query"] = userInput
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
@@ -1115,7 +1281,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
 		var answer string
-		var reference []interface{}
+		var thinking string
+		var legacyReference []interface{}
+		var downloads any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
 			if v, ok := bucket["answer"].(string); ok && v != "" {
@@ -1129,10 +1297,19 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if v, ok := bucket["result"].(string); ok && v != "" && answer == "" {
 				answer = v
 			}
+			if v, ok := bucket["thinking"].(string); ok && v != "" && thinking == "" {
+				thinking = v
+			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
-				reference = append(reference, v...)
+				legacyReference = append(legacyReference, v...)
+			}
+			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
+				downloads = v
 			}
 		}
+		referencePayload := agentRunReferencePayload(state, legacyReference)
+		runtime.FinalizeAgentMessage(ctx2)
+		messageEventsEmitted := runtime.AgentMessageEventsEmitted(ctx2)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1145,36 +1322,32 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
-					msgData, _ := json.Marshal(canvas.MessageEvent{
-						Content:   answer,
-						Reference: reference,
-					})
-					emit("message", string(msgData))
+					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+					if !messageEventsEmitted {
+						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+					}
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: reference,
+						Reference: referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
-				msgData, _ := json.Marshal(canvas.MessageEvent{
-					Content:   answer,
-					Reference: reference,
-				})
-				emit("message", string(msgData))
+				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+				if !messageEventsEmitted {
+					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+				}
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
-					Reference: reference,
+					Reference: referencePayload,
 				})
 				emit("message_end", string(meData))
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      answer,
+					"outputs":      workflowOutputs(answer, downloads),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -1192,15 +1365,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, reference)
-		msgData, _ := json.Marshal(canvas.MessageEvent{
-			Content:   answer,
-			Reference: reference,
-		})
-		emit("message", string(msgData))
+		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+		if !messageEventsEmitted {
+			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
+		}
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
-			Reference: reference,
+			Reference: referencePayload,
 		})
 		emit("message_end", string(meData))
 
@@ -1208,7 +1379,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      answer,
+			"outputs":      workflowOutputs(answer, downloads),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -1234,7 +1405,30 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference []interface{}) {
+func workflowOutputs(content string, downloads any) any {
+	if emptyDownloadValue(downloads) {
+		return content
+	}
+	return map[string]any{
+		"content":   content,
+		"downloads": downloads,
+	}
+}
+
+func emptyDownloadValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return v.Len() == 0
+	default:
+		return false
+	}
+}
+
+func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return
 	}
@@ -1256,12 +1450,28 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 		session.Message = raw
 	}
 	references := parseAgentSessionReferences(session.Reference)
-	references = append(references, normalizeAgentReferenceEntry(map[string]interface{}{"chunks": reference}))
+	references = append(references, normalizeAgentReferenceEntry(reference))
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
 	}
 	if err := s.api4ConversationDAO.Update(session); err != nil {
 		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+	}
+}
+
+func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	if state != nil {
+		if reference := state.GetRetrievalReference(); len(reference) > 0 {
+			return reference
+		}
+	}
+	if len(legacyChunks) == 0 {
+		return nil
+	}
+	return map[string]interface{}{
+		"chunks":   legacyChunks,
+		"doc_aggs": []interface{}{},
+		"total":    len(legacyChunks),
 	}
 }
 
