@@ -346,11 +346,6 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		delete(ch, "vector")
 
 		meta := make(map[string]interface{})
-		if doc.MetaFields != nil {
-			for k, v := range *doc.MetaFields {
-				meta[k] = v
-			}
-		}
 		meta["doc_id"] = docID
 		meta["document_id"] = docID
 

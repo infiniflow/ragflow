@@ -3019,9 +3019,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
