@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -124,18 +125,40 @@ def _element_html(el: dict) -> str:
         num_rows = el.get("num_rows") or 0
         num_cols = el.get("num_cols") or 0
         if num_rows > 0 and num_cols > 0:
-            grid: list[list[str]] = [["" for _ in range(num_cols)] for _ in range(num_rows)]
+            grid: list[list[dict]] = [[{} for _ in range(num_cols)] for _ in range(num_rows)]
             for c in cells:
                 if not isinstance(c, dict):
                     continue
                 r = c.get("start_row_offset_idx", 0)
                 col = c.get("start_col_offset_idx", 0)
-                text = c.get("text", "")
-                if r < num_rows and col < num_cols:
-                    grid[r][col] = text
+                row_span = max(1, c.get("row_span", 1) or 1)
+                col_span = max(1, c.get("col_span", 1) or 1)
+                text = html.escape(c.get("text", ""))
+                if 0 <= r < num_rows and 0 <= col < num_cols:
+                    grid[r][col] = {"text": text, "row_span": row_span, "col_span": col_span}
+                    # Mark spanned positions as occupied so they are skipped
+                    for dr in range(row_span):
+                        for dc in range(col_span):
+                            if dr == 0 and dc == 0:
+                                continue
+                            rr, cc = r + dr, col + dc
+                            if 0 <= rr < num_rows and 0 <= cc < num_cols:
+                                grid[rr][cc] = {"_skip": True}
             rows_html = []
             for row in grid:
-                rows_html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
+                cols = []
+                for cell_data in row:
+                    if cell_data.get("_skip"):
+                        continue
+                    if not cell_data:
+                        continue
+                    attrs = ""
+                    if cell_data.get("row_span", 1) > 1:
+                        attrs += f' rowspan="{cell_data["row_span"]}"'
+                    if cell_data.get("col_span", 1) > 1:
+                        attrs += f' colspan="{cell_data["col_span"]}"'
+                    cols.append(f"<td{attrs}>{cell_data['text']}</td>")
+                rows_html.append("<tr>" + "".join(cols) + "</tr>")
             return "<table>" + "".join(rows_html) + "</table>"
     return ""
 
@@ -166,7 +189,7 @@ _DOCLING_PICTURE_LABELS = {"picture", "figure"}
 _DOCLING_FORMULA_LABELS = {"formula"}
 
 
-def _normalize_docling_response(doc: dict) -> list[dict]:
+def _normalize_docling_response(doc: dict, page_heights: dict[int, float] | None = None) -> list[dict]:
     """Convert a DoclingDocument JSON into the intermediate element format
     that _iter_elements / _transfer_from_json / _bbox_from_element expect.
 
@@ -177,7 +200,17 @@ def _normalize_docling_response(doc: dict) -> list[dict]:
       - "bounding_box": [left, bottom, right, top] flat array in PDF points
       - "html": rebuilt HTML for tables (optional)
       - "cells": / "table_cells": for tables (optional)
+
+    Parameters:
+      doc: the DoclingDocument JSON dict.
+      page_heights: optional mapping from page_no (1-based) to page height
+                    in PDF points.  When provided, Y coordinates from
+                    Docling's TOPLEFT origin are flipped to bottom-left
+                    origin.  When absent the raw values are used (may
+                    produce incorrect positions).
     """
+    if page_heights is None:
+        page_heights = {}
     elements: list[dict] = []
 
     # --- texts ---
@@ -189,7 +222,7 @@ def _normalize_docling_response(doc: dict) -> list[dict]:
             continue
         el_type = lbl  # preserve original label (section_header, paragraph, etc.)
         text = item.get("text", "")
-        page_no, bbox_arr = _extract_docling_prov(item)
+        page_no, bbox_arr = _extract_docling_prov(item, page_heights)
         el: dict[str, Any] = {"type": el_type, "text": text}
         if page_no is not None:
             el["page_number"] = page_no
@@ -202,7 +235,7 @@ def _normalize_docling_response(doc: dict) -> list[dict]:
         if not isinstance(item, dict):
             continue
         el_type = "table"
-        page_no, bbox_arr = _extract_docling_prov(item)
+        page_no, bbox_arr = _extract_docling_prov(item, page_heights)
         el: dict[str, Any] = {"type": el_type, "table_cells": item.get("table_cells", []), "num_rows": item.get("num_rows", 0), "num_cols": item.get("num_cols", 0)}
         if page_no is not None:
             el["page_number"] = page_no
@@ -221,7 +254,7 @@ def _normalize_docling_response(doc: dict) -> list[dict]:
         data = item.get("data")
         if isinstance(data, dict):
             caption = data.get("description", "")
-        page_no, bbox_arr = _extract_docling_prov(item)
+        page_no, bbox_arr = _extract_docling_prov(item, page_heights)
         el: dict[str, Any] = {"type": el_type, "content": caption}
         if page_no is not None:
             el["page_number"] = page_no
@@ -232,7 +265,7 @@ def _normalize_docling_response(doc: dict) -> list[dict]:
     return elements
 
 
-def _extract_docling_prov(item: dict) -> tuple[Optional[int], Optional[list[float]]]:
+def _extract_docling_prov(item: dict, page_heights: dict[int, float] | None = None) -> tuple[Optional[int], Optional[list[float]]]:
     """Extract page number and bounding box from a Docling item's prov list.
 
     Docling prov format: [{"page_no": int, "bbox": {"l": float, "t": float,
@@ -240,7 +273,14 @@ def _extract_docling_prov(item: dict) -> tuple[Optional[int], Optional[list[floa
 
     Returns (page_no, [left, bottom, right, top]) in PDF points with
     bottom-left origin (matching OpenDataLoader convention).
+
+    When a page_heights mapping is provided, Docling's TOPLEFT Y coordinates
+    are flipped using the page height.  Without it the raw values are
+    returned as-is (which places the bounding box at the wrong vertical
+    position).
     """
+    if page_heights is None:
+        page_heights = {}
     prov_list = item.get("prov")
     if not isinstance(prov_list, list) or not prov_list:
         return None, None
@@ -253,14 +293,22 @@ def _extract_docling_prov(item: dict) -> tuple[Optional[int], Optional[list[floa
     if not isinstance(bbox, dict):
         return None, None
     left = _as_float(bbox.get("l"))
-    top = _as_float(bbox.get("t"))
+    top_from_top = _as_float(bbox.get("t"))
     right = _as_float(bbox.get("r"))
-    bottom = _as_float(bbox.get("b"))
-    if any(v is None for v in (left, top, right, bottom)):
+    bottom_from_top = _as_float(bbox.get("b"))
+    if any(v is None for v in (left, top_from_top, right, bottom_from_top)):
         return None, None
-    # Docling uses top-left origin (t=top from top), but our code expects
-    # bottom-left origin (y0=bottom, y1=top).  Convert:
-    return int(page_no), [left, bottom, right, top]
+    # Docling uses top-left origin (t = distance from top of page).
+    # Convert to bottom-left origin using page height when available.
+    page_height = page_heights.get(int(page_no))
+    if page_height is not None:
+        bottom_to_bottom = page_height - bottom_from_top
+        top_to_bottom = page_height - top_from_top
+    else:
+        # Fallback: raw values (incorrect positions but better than nothing)
+        bottom_to_bottom = bottom_from_top
+        top_to_bottom = top_from_top
+    return int(page_no), [left, bottom_to_bottom, right, top_to_bottom]
 
 
 class OpenDataLoaderParser(RAGFlowPdfParser):
@@ -496,6 +544,13 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         except Exception as e:
             self.logger.warning(f"[OpenDataLoader] render pages failed: {e}")
 
+        # Build page-height lookup for Docling TOPLEFT → bottom-left
+        # coordinate conversion.  Pages are 1-based in Docling.
+        page_heights: dict[int, float] = {}
+        for i, img in enumerate(self.page_images):
+            if img is not None:
+                page_heights[i + 1] = float(img.size[1])
+
         # Read PDF bytes for the multipart upload
         if binary is not None:
             pdf_bytes = binary if isinstance(binary, (bytes, bytearray)) else binary.getvalue()
@@ -511,7 +566,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         # Docling Fast Server endpoint: POST /v1/convert/file
         # - files: PDF file (multipart/form-data)
         # - page_ranges: optional, e.g. "1-5"
-        form_data: dict[str, str] = {}
+        form_data: dict[str, str] = {"to_formats": '["json", "md"]'}
         if hybrid:
             form_data["hybrid"] = hybrid
         if image_output:
@@ -561,11 +616,11 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
 
             # Use DoclingDocument if found at inner, otherwise fall back
             if isinstance(inner, dict) and ("texts" in inner or "tables" in inner or "pictures" in inner):
-                json_doc = _normalize_docling_response(inner)
+                json_doc = _normalize_docling_response(inner, page_heights)
             elif isinstance(doc, dict) and ("texts" in doc or "tables" in doc or "pictures" in doc):
-                json_doc = _normalize_docling_response(doc)
+                json_doc = _normalize_docling_response(doc, page_heights)
             elif isinstance(result, dict) and ("texts" in result or "tables" in result or "pictures" in result):
-                json_doc = _normalize_docling_response(result)
+                json_doc = _normalize_docling_response(result, page_heights)
             else:
                 # Legacy / flat format
                 json_doc = result.get("json_doc")
