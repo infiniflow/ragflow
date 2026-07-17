@@ -257,7 +257,7 @@ class SyncLogsService(CommonService):
             ConnectorTaskType.SYNC,
             "refresh_freq",
         )
-        return [task for task in tasks if int(task.get("refresh_freq") or 0) > 0]
+        return [task for task in tasks if task.get("reindex") == "1" or int(task.get("refresh_freq") or 0) > 0]
 
     @classmethod
     def list_due_prune_tasks(cls) -> List[dict]:

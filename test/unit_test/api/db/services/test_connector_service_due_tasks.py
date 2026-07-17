@@ -21,12 +21,13 @@ from common.constants import ConnectorTaskType
 
 
 @pytest.mark.p2
-def test_list_due_sync_tasks_excludes_non_positive_refresh_frequencies(monkeypatch):
+def test_list_due_sync_tasks_excludes_non_positive_refresh_frequencies_unless_reindexing(monkeypatch):
     tasks = [
-        {"id": "negative", "refresh_freq": -1},
-        {"id": "zero", "refresh_freq": 0},
-        {"id": "unset", "refresh_freq": None},
-        {"id": "positive", "refresh_freq": 5},
+        {"id": "negative", "refresh_freq": -1, "reindex": "0"},
+        {"id": "zero", "refresh_freq": 0, "reindex": "0"},
+        {"id": "unset", "refresh_freq": None, "reindex": "0"},
+        {"id": "positive", "refresh_freq": 5, "reindex": "0"},
+        {"id": "reindex", "refresh_freq": 0, "reindex": "1"},
     ]
     calls = []
 
@@ -38,5 +39,8 @@ def test_list_due_sync_tasks_excludes_non_positive_refresh_frequencies(monkeypat
 
     due_tasks = SyncLogsService.list_due_sync_tasks()
 
-    assert due_tasks == [{"id": "positive", "refresh_freq": 5}]
+    assert due_tasks == [
+        {"id": "positive", "refresh_freq": 5, "reindex": "0"},
+        {"id": "reindex", "refresh_freq": 0, "reindex": "1"},
+    ]
     assert calls == [(ConnectorTaskType.SYNC, "refresh_freq")]

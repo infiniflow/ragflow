@@ -422,12 +422,13 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
 
 @pytest.mark.p2
-def test_update_connector_rejects_negative_refresh_frequency(monkeypatch):
+@pytest.mark.parametrize("refresh_freq", [-1, -0.5, 0.5, None, "invalid", True])
+def test_update_connector_rejects_invalid_refresh_frequency(monkeypatch, refresh_freq):
     module = _load_connector_app(monkeypatch)
     update_calls = []
 
     monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *args: update_calls.append(args))
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"refresh_freq": -1}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"refresh_freq": refresh_freq}))
 
     res = _run(module.update_connector("conn-1"))
 
@@ -436,7 +437,8 @@ def test_update_connector_rejects_negative_refresh_frequency(monkeypatch):
 
 
 @pytest.mark.p2
-def test_create_connector_rejects_negative_refresh_frequency(monkeypatch):
+@pytest.mark.parametrize("refresh_freq", [-1, -0.5, 0.5, None, "invalid", True])
+def test_create_connector_rejects_invalid_refresh_frequency(monkeypatch, refresh_freq):
     module = _load_connector_app(monkeypatch)
     save_calls = []
 
@@ -444,7 +446,7 @@ def test_create_connector_rejects_negative_refresh_frequency(monkeypatch):
     monkeypatch.setattr(
         module,
         "get_request_json",
-        lambda: _AwaitableValue({"name": "new", "source": "webdav", "config": {}, "refresh_freq": -1}),
+        lambda: _AwaitableValue({"name": "new", "source": "webdav", "config": {}, "refresh_freq": refresh_freq}),
     )
 
     res = _run(module.create_connector())

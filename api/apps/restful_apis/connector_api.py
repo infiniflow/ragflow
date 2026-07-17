@@ -47,9 +47,20 @@ def _connector_auth_error(connector_id: str, user_id: str):
 
 
 def _validate_refresh_freq(req: dict):
-    if "refresh_freq" in req and int(req["refresh_freq"]) < 0:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="refresh_freq must be greater than or equal to 0")
-    return None
+    if "refresh_freq" not in req:
+        return None
+
+    value = req["refresh_freq"]
+    try:
+        refresh_freq = int(value)
+    except (TypeError, ValueError, OverflowError):
+        refresh_freq = -1
+
+    if not isinstance(value, bool) and not (isinstance(value, float) and not value.is_integer()) and refresh_freq >= 0:
+        return None
+
+    LOGGER.warning("invalid refresh_freq: %r", value)
+    return get_json_result(code=RetCode.ARGUMENT_ERROR, message="refresh_freq must be a non-negative integer")
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
