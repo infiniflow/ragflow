@@ -2,10 +2,52 @@ package models
 
 import (
 	"context"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
+	modelName := "chat"
+	driver := &streamSentinelDriver{captureToolDriver: &captureToolDriver{}}
+	var callbacks []string
+	base := NewChatModel(driver, &modelName, &APIConfig{})
+	model := NewEinoChatModel(base, &ChatConfig{
+		StreamCallback: func(content, _ string) {
+			if content != "" {
+				callbacks = append(callbacks, content)
+			}
+		},
+	})
+
+	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var messages []string
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream.Recv: %v", recvErr)
+		}
+		if msg != nil {
+			messages = append(messages, msg.Content)
+		}
+	}
+
+	if len(messages) != 2 || messages[0] != "answer" || messages[1] != "DONE!" {
+		t.Fatalf("stream messages = %#v, want [answer DONE!]", messages)
+	}
+	if len(callbacks) != 2 || callbacks[0] != "answer" || callbacks[1] != "DONE!" {
+		t.Fatalf("stream callbacks = %#v, want [answer DONE!]", callbacks)
+	}
+}
 
 func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 	apiKey := "key"
@@ -146,6 +188,23 @@ func TestToInternalMessagesPreservesToolMessages(t *testing.T) {
 type captureToolDriver struct {
 	resp       *ChatResponse
 	lastConfig *ChatConfig
+}
+
+type streamSentinelDriver struct {
+	*captureToolDriver
+}
+
+func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, sender func(*string, *string) error) error {
+	answer := "answer"
+	if err := sender(&answer, nil); err != nil {
+		return err
+	}
+	visibleDone := "DONE!"
+	if err := sender(&visibleDone, nil); err != nil {
+		return err
+	}
+	done := "[DONE]"
+	return sender(&done, nil)
 }
 
 func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver { return d }

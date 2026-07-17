@@ -409,7 +409,7 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 // =============================================================================
 
 // recordingProgressSink captures progress events for asserting the executor
-// forwards its sink through defaultRunPipeline into the pipeline.
+// forwards its sink through runPipelineWithDSL into the pipeline.
 type recordingProgressSink struct {
 	mu       sync.Mutex
 	total    int
@@ -436,10 +436,10 @@ func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (ma
 	return inputs, nil
 }
 
-// TestPipelineExecutorDefaultRunPipelineForwardsSink verifies the sink set via
-// WithProgressSink is threaded through defaultRunPipeline into the pipeline,
+// TestPipelineExecutorRunPipelineWithDSLForwardsSink verifies the sink set via
+// WithProgressSink is threaded through runPipelineWithDSL into the pipeline,
 // which reports the component total and lifecycle events back to the sink.
-func TestPipelineExecutorDefaultRunPipelineForwardsSink(t *testing.T) {
+func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	const nameA = "task.SinkPassthroughA"
 	runtime.MustRegister(nameA, runtime.CategoryIngestion,
 		func(_ string, _ map[string]any) (runtime.Component, error) { return sinkPassthroughStage{}, nil },
@@ -451,8 +451,8 @@ func TestPipelineExecutorDefaultRunPipelineForwardsSink(t *testing.T) {
 
 	dsl := `{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["a"]},"a":{"obj":{"component_name":"` + nameA + `","params":{}},"upstream":["begin"]}},"path":["begin","a"],"graph":{"nodes":[]}}}`
 
-	if _, _, err := svc.defaultRunPipeline(context.Background(), dsl); err != nil {
-		t.Fatalf("defaultRunPipeline: %v", err)
+	if _, _, err := svc.runPipelineWithDSL(context.Background(), dsl); err != nil {
+		t.Fatalf("runPipelineWithDSL: %v", err)
 	}
 
 	sink.mu.Lock()

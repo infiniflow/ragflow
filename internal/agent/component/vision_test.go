@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // TestToEinoMessages_PreservesUserInputMultiContent guards against the
@@ -220,6 +222,20 @@ func TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage(t *testing.T) {
 	if len(msgs[1].UserInputMultiContent) != 0 {
 		t.Errorf("UserInputMultiContent should be empty for text-only path, got %d parts",
 			len(msgs[1].UserInputMultiContent))
+	}
+}
+
+func TestCollectSysFiles_ReadsSysNamespaceAndStringSlices(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["files"] = []string{"document text", "data:image/png;base64,cG5n"}
+	state.Globals["sys.files"] = []any{"stale global value"}
+
+	texts, images := collectSysFiles(state)
+	if !reflect.DeepEqual(texts, []string{"document text"}) {
+		t.Fatalf("texts = %#v, want sys.files text", texts)
+	}
+	if !reflect.DeepEqual(images, []string{"data:image/png;base64,cG5n"}) {
+		t.Fatalf("images = %#v, want sys.files image", images)
 	}
 }
 

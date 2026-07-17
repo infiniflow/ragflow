@@ -486,3 +486,56 @@ func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 		})
 	}
 }
+
+func PatchDSL(raw string, parserConfig map[string]interface{}) (string, error) {
+	if len(parserConfig) == 0 {
+		return raw, nil
+	}
+
+	var dslMap map[string]any
+	if err := json.Unmarshal([]byte(raw), &dslMap); err != nil {
+		return raw, fmt.Errorf("parse dsl: %w", err)
+	}
+
+	components, _ := dslMap["components"].(map[string]any)
+	if components == nil {
+		if inner, ok := dslMap["dsl"].(map[string]any); ok {
+			components, _ = inner["components"].(map[string]any)
+		}
+		if components == nil {
+			return raw, nil
+		}
+	}
+	for cid, extraVal := range parserConfig {
+		compVal, ok := components[cid]
+		if !ok {
+			continue
+		}
+		extraParams, _ := extraVal.(map[string]any)
+		if extraParams == nil {
+			continue
+		}
+		compMap, _ := compVal.(map[string]any)
+		if compMap == nil {
+			continue
+		}
+		obj, _ := compMap["obj"].(map[string]any)
+		if obj == nil {
+			continue
+		}
+		existing, _ := obj["params"].(map[string]any)
+		if existing == nil {
+			obj["params"] = extraParams
+		} else {
+			for k, v := range extraParams {
+				existing[k] = v
+			}
+		}
+	}
+
+	patched, err := json.Marshal(dslMap)
+	if err != nil {
+		return raw, fmt.Errorf("marshal patched dsl: %w", err)
+	}
+	return string(patched), nil
+}

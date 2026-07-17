@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"ragflow/internal/utility"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +86,7 @@ func (s *AgentService) RunAgentWithWebhook(
 	if payload != nil {
 		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
 	}
-	return s.RunAgent(ctx, userID, canvasID, "", "", "")
+	return s.RunAgent(ctx, userID, canvasID, "", "", "", nil)
 }
 
 func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
@@ -863,11 +864,12 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
 	}
+	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
@@ -958,6 +960,23 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if dsl == nil {
 		dsl = normalisedDSLForRun(versionRow)
 	}
+	if sessionID != "" && s.api4ConversationDAO != nil {
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(sessionID, canvasID)
+		if sessionErr != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
+		}
+		if session != nil && session.UserID != userID {
+			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		}
+		if session != nil && len(session.DSL) > 0 {
+			dsl = dslpkg.NormalizeForRun(session.DSL)
+		}
+	}
+	if newSession && len(dsl) > 0 {
+		if err := s.createAgentRunSession(sessionID, userID, canvasID, dsl, versionRow); err != nil {
+			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
+		}
+	}
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
@@ -969,6 +988,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
+	}
+	if len(files) > 0 {
+		root["files"] = files
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
@@ -1163,6 +1185,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		})
 		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
 		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
+		ctx2 = runtime.WithCanvasMessageEmitter(ctx2, func(content string) {
+			emitAgentMessageEvent(emit, canvas.MessageEvent{Content: content})
+		})
 
 		// Seed initial env/sys values from the Canvas DSL globals.
 		// Python's self.globals dict stores "sys.*" and "env.*" under
@@ -1181,14 +1206,28 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
+		state.SetHistory(c.History)
+		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
+		state.AppendCurrentUser(userInput)
+		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
+		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
+			fileSvc := NewFileService()
+			files, ferr := fileSvc.parseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
+			if ferr != nil {
+				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
+				return nil, fmt.Errorf("parse agent files: %w", ferr)
+			}
+			state.Sys["files"] = files
+		}
+		state.IncrementConversationTurns()
 		ctx2 = runtime.WithState(ctx2, state)
 
 		// Resume path. The user input is the resume payload for the
@@ -1271,7 +1310,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if isResume && resumeID != "" {
 			wfInput = ""
 		}
-		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		err = invokeErr
 
 		if cpID != "" && s.runTracker != nil {
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
@@ -1308,6 +1348,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
 		runtime.FinalizeAgentMessage(ctx2)
 		messageEventsEmitted := runtime.AgentMessageEventsEmitted(ctx2)
 
@@ -1322,7 +1363,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
+				}
+				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
+					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
+				}
+				if answer != "" {
 					if !messageEventsEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 					}
@@ -1335,7 +1381,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+				appendAssistantHistory(state, assistantOutput)
+				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+				}
 				if !messageEventsEmitted {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 				}
@@ -1365,7 +1415,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+		appendAssistantHistory(state, assistantOutput)
+		if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+		}
 		if !messageEventsEmitted {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
@@ -1392,6 +1446,44 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		s.markRunSucceeded(ctx2, runID)
 		return state, nil
 	}
+}
+
+func beginLayoutRecognize(c *canvas.Canvas) string {
+	if c == nil {
+		return ""
+	}
+	for _, comp := range c.Components {
+		if !strings.EqualFold(comp.Obj.ComponentName, "Begin") {
+			continue
+		}
+		layout, _ := comp.Obj.Params["layout_recognize"].(string)
+		return layout
+	}
+	return ""
+}
+
+func (s *AgentService) createAgentRunSession(
+	sessionID, userID, agentID string,
+	runDSL map[string]any,
+	versionRow *entity.UserCanvasVersion,
+) error {
+	if s == nil || s.api4ConversationDAO == nil {
+		return errors.New("agent session storage is not configured")
+	}
+	source := "agent"
+	session := &entity.API4Conversation{
+		ID:        sessionID,
+		DialogID:  agentID,
+		UserID:    userID,
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		Source:    &source,
+		DSL:       entity.JSONMap(runDSL),
+	}
+	if versionRow != nil {
+		session.VersionTitle = versionRow.Title
+	}
+	return s.api4ConversationDAO.Create(session)
 }
 
 // runIDFor builds the per-run CanvasState identifier: canvasID
@@ -1428,24 +1520,34 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
+func (s *AgentService) persistAgentRunSession(
+	agentID, userID, sessionID, messageID string,
+	userInput any,
+	answer string,
+	reference map[string]interface{},
+	runDSL map[string]any,
+	state *canvas.CanvasState,
+	appendAssistantMessage bool,
+) error {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
-		return
+		return nil
 	}
 	session, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
-		return
+		return nil
 	}
-	if session == nil {
-		return
+	if session == nil || session.UserID != userID {
+		return nil
 	}
 	messages := parseAgentSessionMessages(session.Message)
 	now := time.Now().Unix()
 	if text := stringifyAgentUserInput(userInput); text != "" {
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
-	messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	if appendAssistantMessage {
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw
 	}
@@ -1454,9 +1556,54 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
 	}
-	if err := s.api4ConversationDAO.Update(session); err != nil {
-		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
+	if state != nil {
+		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
+	return s.api4ConversationDAO.Update(session)
+}
+
+func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {
+	dsl := make(entity.JSONMap, len(runDSL)+3)
+	for key, value := range runDSL {
+		dsl[key] = value
+	}
+	if state == nil {
+		return dsl
+	}
+
+	globals := make(map[string]any)
+	if existing, ok := dsl["globals"].(map[string]any); ok {
+		for key, value := range existing {
+			globals[key] = value
+		}
+	}
+	sysValues, envValues, globalValues := state.SnapshotNamespaces()
+	for key := range globals {
+		switch {
+		case strings.HasPrefix(key, "sys."):
+			if value, exists := sysValues[strings.TrimPrefix(key, "sys.")]; exists {
+				globals[key] = value
+			}
+		case strings.HasPrefix(key, "env."):
+			if value, exists := envValues[strings.TrimPrefix(key, "env.")]; exists {
+				globals[key] = value
+			}
+		default:
+			if value, exists := globalValues[key]; exists {
+				globals[key] = value
+			}
+		}
+	}
+	for _, key := range []string{"query", "user_id", "conversation_turns", "files", "history", "date"} {
+		if value, exists := sysValues[key]; exists {
+			globals["sys."+key] = value
+		}
+	}
+
+	dsl["globals"] = globals
+	dsl["history"] = canvas.EncodeHistory(state.SnapshotHistory())
+	dsl["memory"] = canvas.EncodeMemory(state.SnapshotMemory())
+	return dsl
 }
 
 func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
@@ -1486,6 +1633,163 @@ func stringifyAgentUserInput(userInput any) string {
 			return string(b)
 		}
 		return fmt.Sprint(v)
+	}
+}
+
+func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
+	if state == nil {
+		return
+	}
+	state.AppendHistory("assistant", payload)
+	state.AppendSysHistory("assistant: " + pythonHistoryRepr(payload))
+}
+
+func partialAssistantOutput(answer string, downloads any) map[string]any {
+	output := map[string]any{"content": answer}
+	if !emptyDownloadValue(downloads) {
+		output["downloads"] = downloads
+	}
+	return output
+}
+
+func terminalCanvasOutput(
+	c *canvas.Canvas,
+	state *canvas.CanvasState,
+	workflowOutput map[string]any,
+	answer string,
+	downloads any,
+) map[string]any {
+	terminalIDs := make([]string, 0)
+	if c != nil {
+		for cpnID, component := range c.Components {
+			if len(component.Downstream) == 0 {
+				terminalIDs = append(terminalIDs, cpnID)
+			}
+		}
+	}
+	sort.Strings(terminalIDs)
+	for _, cpnID := range terminalIDs {
+		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
+			return cloneCanvasOutput(output)
+		}
+	}
+	if state != nil {
+		snapshot := state.Snapshot()
+		for _, cpnID := range terminalIDs {
+			if output := snapshot[cpnID]; len(output) > 0 {
+				return cloneCanvasOutput(output)
+			}
+		}
+	}
+	if len(workflowOutput) > 0 {
+		return cloneCanvasOutput(workflowOutput)
+	}
+	fallback := map[string]any{"content": answer}
+	if !emptyDownloadValue(downloads) {
+		fallback["downloads"] = downloads
+	}
+	return fallback
+}
+
+func cloneCanvasOutput(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		switch key {
+		case "__cpn_id__", "state", "__legacy_noop__":
+			continue
+		}
+		output[key] = value
+	}
+	return output
+}
+
+func renderUserHistoryValue(value any) string {
+	switch value := value.(type) {
+	case string:
+		return value
+	case map[string]any:
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return fmt.Sprint(value)
+		}
+		return strings.TrimSuffix(buf.String(), "\n")
+	default:
+		return pythonHistoryRepr(value)
+	}
+}
+
+func pythonHistoryRepr(value any) string {
+	switch item := value.(type) {
+	case nil:
+		return "None"
+	case string:
+		replacer := strings.NewReplacer(
+			"\\", "\\\\",
+			"'", "\\'",
+			"\n", "\\n",
+			"\r", "\\r",
+			"\t", "\\t",
+		)
+		return "'" + replacer.Replace(item) + "'"
+	case bool:
+		if item {
+			return "True"
+		}
+		return "False"
+	case map[string]any:
+		keys := make([]string, 0, len(item))
+		for key := range item {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			leftPriority := pythonOutputKeyPriority(keys[i])
+			rightPriority := pythonOutputKeyPriority(keys[j])
+			if leftPriority != rightPriority {
+				return leftPriority < rightPriority
+			}
+			return keys[i] < keys[j]
+		})
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, pythonHistoryRepr(key)+": "+pythonHistoryRepr(item[key]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case []any:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(item)
+	}
+}
+
+// pythonOutputKeyPriority reconstructs the order produced by Python's
+// ComponentParamBase output dictionaries: declared business outputs first,
+// followed by the timing fields added by ComponentBase.invoke(). Message
+// declares content then downloads, which is the terminal payload most often
+// persisted in conversation history.
+func pythonOutputKeyPriority(key string) int {
+	switch key {
+	case "content":
+		return 0
+	case "downloads":
+		return 1
+	case "_created_time":
+		return 3
+	case "_elapsed_time":
+		return 4
+	default:
+		return 2
 	}
 }
 
