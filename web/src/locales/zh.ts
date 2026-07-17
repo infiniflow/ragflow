@@ -1190,6 +1190,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
       outlookDescription:
         '连接 Outlook / Microsoft 365 邮箱，通过 Microsoft Graph delta 查询索引邮件。',
+      databricksDescription:
+        '将 Databricks SQL 仓库表行与 Unity Catalog 卷文件导入到知识库。',
       outlookTenantIdTip:
         'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
       outlookClientIdTip:
