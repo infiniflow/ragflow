@@ -14,10 +14,17 @@ register_tool("web_search", _search_schema("web_search", "Internet search"), web
 register_tool("structured_query", _search_schema("structured_query", "SQL search"), structured_query)
 
 # Navigation tools (require compilation)
-from rag.advanced_rag.harness.tools.navigation import toc_navigate, page_index_navigate, mindmap_navigate
+from rag.advanced_rag.harness.tools.navigation import catalog_navigate, mindmap_navigate
 
-register_tool("toc_navigate", _navigate_schema("toc_navigate", "Navigation with table of content"), toc_navigate, requires_compilation=True, compilation_type="toc")
-register_tool("page_index_navigate", _navigate_schema("page_index_navigate", "Navigation with extracted titles"), page_index_navigate, requires_compilation=True, compilation_type="page_index")
+# catalog_navigate covers both the tree/TOC outline and the page index — it reads
+# whichever compiled catalog the doc has, so it is offered when either exists.
+register_tool(
+    "catalog_navigate",
+    _navigate_schema("catalog_navigate", "Answer from the document's compiled catalog (table of contents / page index)"),
+    catalog_navigate,
+    requires_compilation=True,
+    compilation_type=("toc", "page_index"),
+)
 register_tool("mindmap_navigate", _navigate_schema("mindmap_navigate", "Navigate by mindmap"), mindmap_navigate, requires_compilation=True, compilation_type="mindmap")
 
 # Exploration tools (require compilation)

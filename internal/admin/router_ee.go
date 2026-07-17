@@ -16,8 +16,9 @@
 
 package admin
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+)
 
 func SetupEERouter(engine *gin.Engine) {
-
 }
