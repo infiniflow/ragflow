@@ -385,12 +385,14 @@ interface UseModelVerifyArgs {
   providerName: string;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
+  instance?: IProviderInstance;
 }
 
 export function useModelVerify({
   providerName,
   resolveCreds,
   instanceModels,
+  instance,
 }: UseModelVerifyArgs) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const [verify, setVerify] = useState<Record<string, VerifyStatus>>({});
@@ -431,6 +433,7 @@ export function useModelVerify({
             max_tokens: model.max_tokens ?? 0,
           },
         ],
+        ...(instance?.id ? { instance_id: instance.id } : {}),
       });
       setVerify((prev) => ({
         ...prev,
