@@ -811,6 +811,9 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "TagChunker") {
 				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
+			if templateUsesComponent(t, templateBytes, "KnowledgeCompiler") {
+				t.Skip("template uses KnowledgeCompiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
 				t.Fatalf("terminal ids = %v, want exactly 1 terminal", terminalIDs)

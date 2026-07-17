@@ -535,15 +535,27 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	}
 	defer tokenizer.Close()
 
+	// The dataset-level post-processing consumer cluster (§11) is owned and run by
+	// the Ingestor: it is started inside ingestor.Start() and joined inside
+	// ingestor.Stop(), so its lifecycle matches the ingestor. The configured
+	// default LLM/embedding ids are passed so the LLM deduper is used (instead
+	// of the noop fallback that still emits merged products). Best-effort: a
+	// provisioning error is logged by the Ingestor and the pipeline still
+	// writes available_int=0 compiled chunks; they just won't be merged until
+	// the consumer is available.
+	cfg := server.GetConfig()
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestor.SetKnowledgeCompileModelConfig(
+		cfg.UserDefaultLLM.DefaultModels.ChatModel.Name,
+		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name,
+	)
 
-	go func() {
-		err := ingestor.Start()
-		if err != nil {
-			common.Error("Failed to initialize ingestor", err)
-			return
-		}
-	}()
+	// Start returns immediately (it launches the owned consume/compile
+	// goroutines and joins them via Stop); a provisioning failure here is
+	// logged and the server keeps running without the ingestor.
+	if err := ingestor.Start(); err != nil {
+		common.Error("Failed to initialize ingestor", err)
+	}
 
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +

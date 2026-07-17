@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -356,6 +357,14 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+	}
+	// Notify the dataset-level post-processing consumer (§11) that this document's
+	// source + per-doc compiled chunks are gone. The consumer removes the
+	// dataset-scoped merged products and triggers incremental re-dedup. Best-
+	// effort, non-fatal: the synchronous deletion above already removed the
+	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
+	if err := knowledge_compile.PublishDeleted(ctx, tenantID, kbID, docID, 0); err != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
