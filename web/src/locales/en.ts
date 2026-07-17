@@ -1838,11 +1838,6 @@ Example: Virtual Hosted Style`,
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
-      instanceNameSaveTip:
-        'Enter an instance name. Click Save all at the top to persist this instance and any other changes.',
-      instanceNameSavePrompt:
-        'Please save the instance name first before editing other fields.',
-      instanceNameLockedHint: 'Instance name is locked',
       deleteInstance: 'Delete instance',
       modelName: 'Model name',
       modelID: 'Model ID',

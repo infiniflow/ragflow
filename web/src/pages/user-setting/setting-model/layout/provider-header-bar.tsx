@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { APIMapUrl } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ArrowUpRight, Loader2, Save } from 'lucide-react';
+import { getProviderConfig } from '../provider-schema/field-config';
 
 interface ProviderHeaderBarProps {
   providerName: string;
@@ -35,8 +36,9 @@ interface ProviderHeaderBarProps {
 
 /**
  * Sticky top bar for the right pane that displays the selected provider's
- * icon, name, a doc-link arrow, and a batch Save button. Stays visible
- * while the user scrolls the instance list below.
+ * icon, name, an API-link arrow, an optional integration-doc link, and a
+ * batch Save button. Stays visible while the user scrolls the instance
+ * list below.
  */
 export function ProviderHeaderBar({
   providerName,
@@ -45,7 +47,16 @@ export function ProviderHeaderBar({
   canSave = false,
 }: ProviderHeaderBarProps) {
   const { t: tSetting } = useTranslate('setting');
-  const docLink = APIMapUrl[providerName as keyof typeof APIMapUrl];
+  const apiLink = APIMapUrl[providerName as keyof typeof APIMapUrl];
+  const providerConfig = getProviderConfig(providerName);
+  const docLink = providerConfig.docLink;
+  // Resolve doc-link text: explicit `docLinkText` wins, otherwise translate
+  // `docLinkI18nKey` with the provider name as the `{{name}}` interpolation.
+  const docLinkText =
+    providerConfig.docLinkText ??
+    (providerConfig.docLinkI18nKey
+      ? tSetting(providerConfig.docLinkI18nKey, { name: providerName })
+      : null);
 
   return (
     <div
@@ -59,15 +70,26 @@ export function ProviderHeaderBar({
         imgClass="size-6 text-text-primary"
       />
       <span className="font-medium text-text-primary">{providerName}</span>
-      {docLink && (
+      {apiLink && (
         <a
-          href={docLink}
+          href={apiLink}
           target="_blank"
           rel="noopener noreferrer"
           className="text-text-secondary hover:text-text-primary"
           aria-label={tSetting('docLink')}
         >
           <ArrowUpRight className="size-4" />
+        </a>
+      )}
+      <div className="w-5" />
+      {docLink && docLinkText && (
+        <a
+          href={docLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-end self-end gap-1 text-xs text-text-secondary hover:text-text-primary"
+        >
+          <span>{docLinkText}</span>
         </a>
       )}
       <div className="flex-1" />

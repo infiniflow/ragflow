@@ -1528,10 +1528,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
-      instanceNameSaveTip:
-        '请输入实例名称。点击顶部的“全部保存”按钮即可保存该实例及其他所有改动。',
-      instanceNameSavePrompt: '请先保存实例名称，再编辑其他字段。',
-      instanceNameLockedHint: '实例名称已锁定',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
