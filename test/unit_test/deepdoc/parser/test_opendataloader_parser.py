@@ -114,10 +114,22 @@ class TestCheckInstallation:
 
 
 class TestParsePdf:
-    def _mock_response(self, json_doc=None, md_text=None) -> mock.MagicMock:
+    def _mock_response(self, json_doc=None, md_text=None, docling=None) -> mock.MagicMock:
         resp = mock.MagicMock()
         resp.raise_for_status = mock.MagicMock()
-        resp.json.return_value = {"json_doc": json_doc, "md_text": md_text}
+        if docling is not None:
+            # Docling nested format: {"status": ..., "document": {"json_content": {DoclingDocument}}}
+            resp.json.return_value = {
+                "status": "success",
+                "document": {"json_content": docling},
+                "processing_time": 1.0,
+                "errors": [],
+                "failed_pages": [],
+                "timings": {},
+            }
+        else:
+            # Legacy flat format
+            resp.json.return_value = {"json_doc": json_doc, "md_text": md_text}
         return resp
 
     def test_raises_when_api_url_not_set(self, tmp_path):
@@ -128,7 +140,7 @@ class TestParsePdf:
         with pytest.raises(RuntimeError, match="OPENDATALOADER_APISERVER"):
             p.parse_pdf(filepath=str(pdf))
 
-    def test_posts_to_file_parse_endpoint(self, tmp_path):
+    def test_posts_to_v1_convert_file_endpoint(self, tmp_path):
         p = _make_parser()
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF-dummy")
@@ -139,7 +151,7 @@ class TestParsePdf:
 
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args
-        assert "/file_parse" in call_kwargs.kwargs.get("url", call_kwargs.args[0] if call_kwargs.args else "")
+        assert "/v1/convert/file" in call_kwargs.kwargs.get("url", call_kwargs.args[0] if call_kwargs.args else "")
 
     def test_binary_bytes_sent_as_multipart(self, tmp_path):
         p = _make_parser()
@@ -150,8 +162,8 @@ class TestParsePdf:
             p.parse_pdf(filepath="file.pdf", binary=pdf_bytes)
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
-        assert "file" in files_arg
-        _, sent_bytes, mime = files_arg["file"]
+        assert "files" in files_arg
+        _, sent_bytes, mime = files_arg["files"]
         assert sent_bytes == pdf_bytes
         assert mime == "application/pdf"
 
@@ -164,7 +176,7 @@ class TestParsePdf:
             p.parse_pdf(filepath="file.pdf", binary=io.BytesIO(pdf_bytes))
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
-        _, sent_bytes, _ = files_arg["file"]
+        _, sent_bytes, _ = files_arg["files"]
         assert sent_bytes == pdf_bytes
 
     def test_json_doc_response_returns_sections(self, tmp_path):
@@ -181,6 +193,25 @@ class TestParsePdf:
             sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
 
         assert any("Hello from JSON" in s[0] for s in sections)
+
+    def test_docling_nested_response_returns_sections(self, tmp_path):
+        p = _make_parser()
+        docling = {
+            "texts": [
+                {"label": "paragraph", "text": "Hello from Docling", "prov": [{"page_no": 1, "bbox": {"l": 0, "t": 0, "r": 100, "b": 20, "coord_origin": "TOPLEFT"}}]},
+                {"label": "section_header", "text": "A Title", "prov": [{"page_no": 1, "bbox": {"l": 0, "t": 20, "r": 200, "b": 40, "coord_origin": "TOPLEFT"}}]},
+            ],
+            "tables": [],
+            "pictures": [],
+        }
+        resp = self._mock_response(docling=docling)
+
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
+            sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
+
+        assert len(sections) >= 2
+        assert any("Hello from Docling" in s[0] for s in sections)
+        assert any("A Title" in s[0] for s in sections)
 
     def test_md_text_fallback_when_no_json(self, tmp_path):
         p = _make_parser()
