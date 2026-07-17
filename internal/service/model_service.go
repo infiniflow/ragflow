@@ -3087,6 +3087,15 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 		return "", err
 	}
 
+	// Builtin provider is a local service (TEI), not a tenant-enrolled
+	// provider. There is no row in tenant_model_provider for it, so skip
+	// database lookups. Mirrors GetModelConfigFromProviderInstance's
+	// Builtin short-circuit and Python's resolve_model_id which returns
+	// None for Builtin TEI embeddings.
+	if modelType == entity.ModelTypeEmbedding && providerName == "Builtin" {
+		return "", nil
+	}
+
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
 		return "", fmt.Errorf("provider %q lookup failed: %w", providerName, err)

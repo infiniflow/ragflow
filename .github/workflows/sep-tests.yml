@@ -385,7 +385,8 @@ jobs:
                # each container has its own /tmp and its own network namespace, and `ss` cannot
                # see host ports bound by other runners' compose stacks. Use the shared daemon for
                # both primitives:
-               #   - offset mutex = a docker network created atomically on the shared daemon
+               #   - offset mutex = a config-only docker network created atomically on the shared daemon
+               #     without allocating a subnet from the daemon's address pools
                #     (docker network create is NOT idempotent: it fails on name conflict, which
                #      is exactly the cross-runner test-and-set we need);
                #   - port availability = docker ps published ports (sees every container on the
@@ -398,7 +399,7 @@ jobs:
                  local base port used
                  # Enumerate host-published tcp ports across ALL containers on the shared daemon.
                  # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
                    if grep -qx "${port}" <<< "${used}"; then
@@ -436,7 +437,7 @@ jobs:
                    # Atomic cross-runner test-and-set: docker network create fails if the name
                    # already exists on the shared daemon, so even if two runners race here, only
                    # one wins; the loser retries the next candidate.
-                   if sudo docker network create --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                   if sudo docker network create --config-only --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
                      PORT_OFFSET=${candidate}
                      PORT_RESERVATION="${guard}"
                      return 0
@@ -895,7 +896,8 @@ jobs:
                # each container has its own /tmp and its own network namespace, and `ss` cannot
                # see host ports bound by other runners' compose stacks. Use the shared daemon for
                # both primitives:
-               #   - offset mutex = a docker network created atomically on the shared daemon
+               #   - offset mutex = a config-only docker network created atomically on the shared daemon
+               #     without allocating a subnet from the daemon's address pools
                #     (docker network create is NOT idempotent: it fails on name conflict, which
                #      is exactly the cross-runner test-and-set we need);
                #   - port availability = docker ps published ports (sees every container on the
@@ -908,7 +910,7 @@ jobs:
                  local base port used
                  # Enumerate host-published tcp ports across ALL containers on the shared daemon.
                  # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
                    if grep -qx "${port}" <<< "${used}"; then
@@ -946,7 +948,7 @@ jobs:
                    # Atomic cross-runner test-and-set: docker network create fails if the name
                    # already exists on the shared daemon, so even if two runners race here, only
                    # one wins; the loser retries the next candidate.
-                   if sudo docker network create --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                   if sudo docker network create --config-only --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
                      PORT_OFFSET=${candidate}
                      PORT_RESERVATION="${guard}"
                      return 0

@@ -1863,8 +1863,30 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		parserConfig = applyAutoMetadataConfig(parserConfig, req.AutoMetadataConfig)
 	}
 
-	parserConfig = common.GetParserConfig(parserID, parserConfig)
-	parserConfig["llm_id"] = tenant.LLMID
+	// Build parser_config. When pipeline_id is set, seed from pipeline DSL defaults.
+	var parserConfigMap map[string]interface{}
+	if pipelineID != nil {
+		if parserConfig == nil {
+			parserConfig = make(map[string]interface{})
+		}
+		canvas, err := dao.NewUserCanvasDAO().GetByID(*pipelineID)
+		if err != nil || canvas == nil {
+			return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", *pipelineID)
+		}
+		pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
+		if pipelineDefaults != nil {
+			parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfig)
+		} else {
+			parserConfigMap = common.DeepMergeMaps(nil, parserConfig)
+		}
+		common.InjectExtractorLLMID(parserConfigMap, tenant.LLMID)
+	} else {
+		parserConfigMap = common.GetParserConfig(parserID, parserConfig)
+		parserConfigMap["llm_id"] = tenant.LLMID
+	}
+	if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
+		return nil, common.CodeDataError, err
+	}
 
 	embdID := tenant.EmbdID
 	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
@@ -1904,7 +1926,7 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
 		PipelineID:   pipelineID,
-		ParserConfig: parserConfig,
+		ParserConfig: entity.JSONMap(parserConfigMap),
 		Permission:   permission,
 		EmbdID:       embdID,
 		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
@@ -2222,8 +2244,11 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 			return nil, common.CodeDataError, err
 		}
 		if len(req.ParserConfig) > 0 {
-			parserConfig := normalizeDatasetUpdateParserConfig(req.ParserConfig)
-			updates["parser_config"] = entity.JSONMap(common.DeepMergeMaps(kb.ParserConfig, parserConfig))
+			merged := common.DeepMergeMaps(kb.ParserConfig, req.ParserConfig)
+			if err := validateDatasetParserConfigSize(merged); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			updates["parser_config"] = entity.JSONMap(merged)
 		}
 	}
 
@@ -2255,6 +2280,38 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if _, ok := updates["pipeline_id"]; !ok {
 			updates["pipeline_id"] = ""
 		}
+	}
+
+	// Regenerate parser_config from the new pipeline's DSL defaults when
+	// the pipeline changes, so that component-level parameters stay in sync.
+	pipelineChanged := req.PipelineID != nil && (kb.PipelineID == nil || *req.PipelineID != *kb.PipelineID)
+	if pipelineChanged {
+		cfgParserID := kb.ParserID
+		if parserIDProvided {
+			cfgParserID = parserID
+		}
+		parserConfigMap := common.GetParserConfig(cfgParserID, nil)
+		if upPipelineID, ok := updates["pipeline_id"].(string); ok && upPipelineID != "" {
+			canvas, err := dao.NewUserCanvasDAO().GetByID(upPipelineID)
+			if err != nil || canvas == nil {
+				return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", upPipelineID)
+			}
+			pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
+			if pipelineDefaults != nil {
+				parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfigMap)
+			}
+		}
+		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
+			parserConfigMap = common.DeepMergeMaps(parserConfigMap, req.ParserConfig)
+		}
+		tenant, err := d.tenantDAO.GetByID(tenantID)
+		if err == nil && tenant != nil {
+			common.InjectExtractorLLMID(parserConfigMap, tenant.LLMID)
+		}
+		if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		updates["parser_config"] = entity.JSONMap(parserConfigMap)
 	}
 
 	if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(kb.Name) {
@@ -2376,57 +2433,6 @@ func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{
 		}
 	}
 	return updates
-}
-
-func normalizeDatasetUpdateParserConfig(parserConfig map[string]interface{}) map[string]interface{} {
-	normalized := common.DeepMergeMaps(nil, parserConfig)
-	parentChild, _ := normalized["parent_child"].(map[string]interface{})
-	if parentChild == nil {
-		parentChild = map[string]interface{}{}
-	}
-
-	if datasetBoolValue(parentChild["use_parent_child"]) {
-		childrenDelimiter, ok := parentChild["children_delimiter"]
-		if !ok {
-			childrenDelimiter = "\n"
-		}
-		normalized["children_delimiter"] = childrenDelimiter
-		enableChildren, ok := parentChild["use_parent_child"]
-		if !ok {
-			enableChildren = true
-		}
-		normalized["enable_children"] = enableChildren
-	} else {
-		normalized["children_delimiter"] = ""
-		normalized["enable_children"] = false
-		normalized["parent_child"] = map[string]interface{}{}
-	}
-
-	if extFields, ok := normalized["ext"].(map[string]interface{}); ok {
-		delete(normalized, "ext")
-		for key, value := range extFields {
-			normalized[key] = value
-		}
-	}
-
-	return normalized
-}
-
-func datasetBoolValue(value interface{}) bool {
-	switch typedValue := value.(type) {
-	case bool:
-		return typedValue
-	case string:
-		return typedValue == "1" || strings.EqualFold(typedValue, "true")
-	case int:
-		return typedValue != 0
-	case int64:
-		return typedValue != 0
-	case float64:
-		return typedValue != 0
-	default:
-		return false
-	}
 }
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
