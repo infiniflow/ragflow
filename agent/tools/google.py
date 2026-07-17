@@ -498,13 +498,20 @@ class Google(ToolBase, ABC):
                 if self.check_if_canceled("Google processing"):
                     return
 
+                # serpapi reports an invalid key, exhausted quota or an empty result
+                # set through an "error" field and omits "organic_results"; surface that
+                # message instead of raising a cryptic KeyError on the missing key.
+                if "organic_results" not in search:
+                    raise Exception(search.get("error", "SerpApi returned no organic_results."))
+
+                organic_results = search["organic_results"]
                 self._retrieve_chunks(
-                    search["organic_results"],
+                    organic_results,
                     get_title=lambda r: r["title"],
                     get_url=lambda r: r["link"],
                     get_content=lambda r: r.get("about_this_result", {}).get("source", {}).get("description", r["snippet"]),
                 )
-                self.set_output("json", search["organic_results"])
+                self.set_output("json", organic_results)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("Google processing"):
