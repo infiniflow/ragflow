@@ -12,7 +12,6 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
 
 package handler
 
@@ -34,17 +33,24 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// ChatAudioSpeechRequest is the request body for POST /api/v1/chat/audio/speech.
-type ChatAudioSpeechRequest struct {
+const (
+	// chatAudioSpeechMaxBodyBytes caps the JSON body of the TTS endpoint.
+	chatAudioSpeechMaxBodyBytes int64 = 1 << 20 // 1 MiB
+	// chatAudioUploadMaxBytes caps the multipart body of the transcription endpoint.
+	chatAudioUploadMaxBytes int64 = 64 << 20 // 64 MiB
+)
+
+// chatAudioSpeechRequest is the request body for POST /api/v1/chat/audio/speech.
+type chatAudioSpeechRequest struct {
 	Text string `json:"text" binding:"required"`
 }
 
-// ttsSegmentSplitRegex mirrors Python's re.split(r"[，。/《》？；：！\n\r:;]+", text)
-// used by chat_api.py's /chat/audio/speech endpoint.
+// ttsSegmentSplitRegex splits TTS input into synthesis segments on CJK
+// punctuation (，。/《》？；：！), ASCII ':' and ';', and newlines.
 var ttsSegmentSplitRegex = regexp.MustCompile("[，。/《》？；：！\\n\\r:;]+")
 
-// ChatAudioSpeech converts text to speech using the tenant's default TTS model.
-// It returns a streaming audio/mpeg response aligned with the Python endpoint.
+// ChatAudioSpeech converts text to speech using the tenant's default TTS model
+// and streams the concatenated MP3 segments as an audio/mpeg response.
 func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -52,7 +58,9 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	var req ChatAudioSpeechRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioSpeechMaxBodyBytes)
+
+	var req chatAudioSpeechRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
@@ -69,15 +77,9 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	// Match Python's streaming audio response headers.
-	c.Header("Content-Type", "audio/mpeg")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(http.StatusOK)
-
 	segments := ttsSegmentSplitRegex.Split(req.Text, -1)
-	for _, seg := range segments {
+	headerWritten := false
+	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
 			continue
@@ -85,22 +87,36 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		resp, err := driver.AudioSpeech(&modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"})
 		if err != nil {
 			common.Warn("chat TTS synthesis failed",
-				zap.String("segment", truncateString(seg, 64)),
+				zap.Int("segmentIndex", i),
+				zap.Int("segmentLen", len(seg)),
 				zap.Error(err))
 			continue
 		}
 		if resp == nil || len(resp.Audio) == 0 {
 			continue
 		}
+		if !headerWritten {
+			// Commit the audio headers only once the first chunk is available,
+			// so a fully failed synthesis can still return a JSON error status.
+			c.Header("Content-Type", "audio/mpeg")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Header("X-Accel-Buffering", "no")
+			c.Writer.WriteHeader(http.StatusOK)
+			headerWritten = true
+		}
 		if _, werr := c.Writer.Write(resp.Audio); werr != nil {
 			return
 		}
 		c.Writer.Flush()
 	}
+	if !headerWritten {
+		common.ErrorWithCode(c, common.CodeServerError, "TTS synthesis produced no audio")
+	}
 }
 
-// chatAudioAllowedExts is the set of audio extensions supported by the
-// transcription endpoint, matching Python's ALLOWED_EXTS.
+// chatAudioAllowedExts is the set of audio file extensions accepted by the
+// transcription endpoint.
 var chatAudioAllowedExts = map[string]struct{}{
 	".wav":  {},
 	".mp3":  {},
@@ -112,6 +128,17 @@ var chatAudioAllowedExts = map[string]struct{}{
 	".opus": {},
 	".wma":  {},
 }
+
+// chatAudioAllowedExtsList is the sorted, human-readable form of
+// chatAudioAllowedExts, computed once for error messages.
+var chatAudioAllowedExtsList = func() string {
+	exts := make([]string, 0, len(chatAudioAllowedExts))
+	for ext := range chatAudioAllowedExts {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	return strings.Join(exts, ", ")
+}()
 
 // ChatAudioTranscription transcribes an uploaded audio file using the tenant's
 // default ASR model. It supports both a single JSON response and SSE streaming.
@@ -127,6 +154,23 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
+	// Cap the body before any multipart parsing so an oversized upload is
+	// rejected instead of being drained into memory or spooled to disk.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioUploadMaxBytes)
+	if cl := c.Request.ContentLength; cl > chatAudioUploadMaxBytes {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "request body too large.")
+		return
+	}
+	if err := c.Request.ParseMultipartForm(chatAudioUploadMaxBytes); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid multipart form: "+err.Error())
+		return
+	}
+	defer func() {
+		if c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Missing 'file' in multipart form-data")
@@ -136,7 +180,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	suffix := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	if _, ok := chatAudioAllowedExts[suffix]; suffix == "" || !ok {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-			fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, allowedAudioExtsList()))
+			fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, chatAudioAllowedExtsList))
 		return
 	}
 
@@ -167,8 +211,10 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
 		c.Writer.WriteHeader(http.StatusOK)
 
+		doneSent := false
 		sender := func(content, _ *string) error {
 			if content == nil {
 				return nil
@@ -176,6 +222,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			event := map[string]interface{}{"text": *content}
 			if *content == "[DONE]" {
 				event["event"] = "done"
+				doneSent = true
 			} else {
 				event["event"] = "partial"
 			}
@@ -190,6 +237,15 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		if err := driver.TranscribeAudioWithSender(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
+			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
+			c.Writer.Flush()
+			return
+		}
+		if !doneSent {
+			// Drivers are expected to terminate the stream with "[DONE]"; send
+			// it here when they do not, so clients always see a completion event.
+			doneEvent := map[string]interface{}{"event": "done", "text": "[DONE]"}
+			data, _ := json.Marshal(doneEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
 			c.Writer.Flush()
 		}
@@ -207,20 +263,4 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, map[string]string{"text": resp.Text}, "success")
-}
-
-func allowedAudioExtsList() string {
-	exps := make([]string, 0, len(chatAudioAllowedExts))
-	for ext := range chatAudioAllowedExts {
-		exps = append(exps, ext)
-	}
-	sort.Strings(exps)
-	return strings.Join(exps, ", ")
-}
-
-func truncateString(s string, n int) string {
-	if n <= 0 || len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
