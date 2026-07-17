@@ -253,10 +253,11 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def list_due_sync_tasks(cls) -> List[dict]:
-        return cls._list_due_tasks_for_freq(
+        tasks = cls._list_due_tasks_for_freq(
             ConnectorTaskType.SYNC,
             "refresh_freq",
         )
+        return [task for task in tasks if int(task.get("refresh_freq") or 0) > 0]
 
     @classmethod
     def list_due_prune_tasks(cls) -> List[dict]:

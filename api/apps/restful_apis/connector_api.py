@@ -46,6 +46,12 @@ def _connector_auth_error(connector_id: str, user_id: str):
     return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
 
+def _validate_refresh_freq(req: dict):
+    if "refresh_freq" in req and int(req["refresh_freq"]) < 0:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="refresh_freq must be greater than or equal to 0")
+    return None
+
+
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 async def update_connector(connector_id):
@@ -56,6 +62,8 @@ async def update_connector(connector_id):
     req = await get_request_json()
     if isinstance(req, dict) and isinstance(req.get("data"), dict):
         req = req["data"]
+    if error := _validate_refresh_freq(req):
+        return error
 
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
@@ -91,6 +99,8 @@ async def update_connector(connector_id):
 async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
+    if error := _validate_refresh_freq(req):
+        return error
     if req:
         req["id"] = get_uuid()
         conn = {

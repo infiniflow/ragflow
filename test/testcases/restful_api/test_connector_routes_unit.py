@@ -422,6 +422,38 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
 
 @pytest.mark.p2
+def test_update_connector_rejects_negative_refresh_frequency(monkeypatch):
+    module = _load_connector_app(monkeypatch)
+    update_calls = []
+
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *args: update_calls.append(args))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"refresh_freq": -1}))
+
+    res = _run(module.update_connector("conn-1"))
+
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert update_calls == []
+
+
+@pytest.mark.p2
+def test_create_connector_rejects_negative_refresh_frequency(monkeypatch):
+    module = _load_connector_app(monkeypatch)
+    save_calls = []
+
+    monkeypatch.setattr(module.ConnectorService, "save", lambda **payload: save_calls.append(payload))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"name": "new", "source": "webdav", "config": {}, "refresh_freq": -1}),
+    )
+
+    res = _run(module.create_connector())
+
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert save_calls == []
+
+
+@pytest.mark.p2
 def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     """Verify per-id connector routes stop before body parsing or service access."""
     module = _load_connector_app(monkeypatch)
