@@ -33,6 +33,7 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -130,17 +131,18 @@ func init() {
 // place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
 // be marshalled directly without a wrapper).
 type canvasStateJSON struct {
-	Outputs    map[string]map[string]any `json:"outputs"`
-	Sys        map[string]any            `json:"sys,omitempty"`
-	Env        map[string]any            `json:"env,omitempty"`
-	Path       []string                  `json:"path,omitempty"`
-	History    []map[string]any          `json:"history,omitempty"`
-	Memory     []map[string]any          `json:"memory,omitempty"`
-	Retrieval  map[string]any            `json:"retrieval,omitempty"`
-	Globals    map[string]any            `json:"globals,omitempty"`
-	CancelFlag bool                      `json:"cancel_flag"`
-	RunID      string                    `json:"run_id"`
-	TaskID     string                    `json:"task_id"`
+	ActiveHistoryIndex *int                      `json:"active_history_index,omitempty"`
+	Outputs            map[string]map[string]any `json:"outputs"`
+	Sys                map[string]any            `json:"sys,omitempty"`
+	Env                map[string]any            `json:"env,omitempty"`
+	Path               []string                  `json:"path,omitempty"`
+	History            []map[string]any          `json:"history,omitempty"`
+	Memory             []map[string]any          `json:"memory,omitempty"`
+	Retrieval          map[string]any            `json:"retrieval,omitempty"`
+	Globals            map[string]any            `json:"globals,omitempty"`
+	CancelFlag         bool                      `json:"cancel_flag"`
+	RunID              string                    `json:"run_id"`
+	TaskID             string                    `json:"task_id"`
 }
 
 // MarshalJSON serialises the CanvasState for eino's StatePre/Post
@@ -162,18 +164,24 @@ type canvasStateJSON struct {
 func (s *CanvasState) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	var activeHistoryIndex *int
+	if s.activeHistoryIndex >= 0 {
+		index := s.activeHistoryIndex
+		activeHistoryIndex = &index
+	}
 	snap := canvasStateJSON{
-		Outputs:    s.Outputs,
-		Sys:        s.Sys,
-		Env:        s.Env,
-		Path:       s.Path,
-		History:    s.History,
-		Memory:     s.Memory,
-		Retrieval:  s.Retrieval,
-		Globals:    s.Globals,
-		CancelFlag: s.CancelFlag != nil && s.CancelFlag.Load(),
-		RunID:      s.RunID,
-		TaskID:     s.TaskID,
+		ActiveHistoryIndex: activeHistoryIndex,
+		Outputs:            s.Outputs,
+		Sys:                s.Sys,
+		Env:                s.Env,
+		Path:               s.Path,
+		History:            s.History,
+		Memory:             s.Memory,
+		Retrieval:          s.Retrieval,
+		Globals:            s.Globals,
+		CancelFlag:         s.CancelFlag != nil && s.CancelFlag.Load(),
+		RunID:              s.RunID,
+		TaskID:             s.TaskID,
 	}
 	// Use SafeJSONMarshal to handle non-serializable values (funcs,
 	// channels) that may have leaked into state maps. Mirrors the
@@ -205,6 +213,9 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	s.Path = snap.Path
 	s.History = snap.History
 	s.activeHistoryIndex = -1
+	if snap.ActiveHistoryIndex != nil {
+		s.activeHistoryIndex = *snap.ActiveHistoryIndex
+	}
 	s.Memory = snap.Memory
 	if snap.Retrieval != nil {
 		s.Retrieval = snap.Retrieval
@@ -511,47 +522,66 @@ func (s *CanvasState) IncrementConversationTurns() {
 }
 
 func cloneMapSlice(items []map[string]any) []map[string]any {
+	if items == nil {
+		return nil
+	}
 	if len(items) == 0 {
 		return []map[string]any{}
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		copyItem := make(map[string]any, len(item))
-		for key, value := range item {
-			copyItem[key] = cloneJSONValue(value)
-		}
-		out = append(out, copyItem)
+		out = append(out, cloneJSONValue(item).(map[string]any))
 	}
 	return out
 }
 
 func cloneJSONValue(value any) any {
-	switch item := value.(type) {
-	case map[string]any:
-		if item == nil {
+	return cloneJSONReflect(reflect.ValueOf(value))
+}
+
+func cloneJSONReflect(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return nil
+		}
+		return cloneJSONReflect(value.Elem())
+	case reflect.Map:
+		if value.IsNil() {
 			return map[string]any(nil)
 		}
-		copyItem := make(map[string]any, len(item))
-		for key, child := range item {
-			copyItem[key] = cloneJSONValue(child)
+		copyItem := make(map[string]any, value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			copyItem[fmt.Sprint(iter.Key().Interface())] = cloneJSONReflect(iter.Value())
 		}
 		return copyItem
-	case []any:
-		if item == nil {
+	case reflect.Slice:
+		if value.IsNil() {
 			return []any(nil)
 		}
-		copyItem := make([]any, len(item))
-		for index, child := range item {
-			copyItem[index] = cloneJSONValue(child)
+		fallthrough
+	case reflect.Array:
+		copyItem := make([]any, value.Len())
+		for index := range value.Len() {
+			copyItem[index] = cloneJSONReflect(value.Index(index))
 		}
 		return copyItem
-	case []string:
-		if item == nil {
-			return []string(nil)
+	case reflect.Struct:
+		raw, err := json.Marshal(value.Interface())
+		if err != nil {
+			return value.Interface()
 		}
-		return append([]string(nil), item...)
+		var copyItem any
+		if err := json.Unmarshal(raw, &copyItem); err != nil {
+			return value.Interface()
+		}
+		return copyItem
 	default:
-		return value
+		return value.Interface()
 	}
 }
 

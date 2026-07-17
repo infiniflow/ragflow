@@ -66,6 +66,31 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasStateCheckpointPreservesCurrentUserMarker(t *testing.T) {
+	t.Parallel()
+	src := NewCanvasState("run-checkpoint", "task-checkpoint")
+	src.AppendHistory("user", "previous question")
+	src.AppendHistory("assistant", "previous answer")
+	src.AppendCurrentUser("current question")
+
+	raw, err := json.Marshal(src)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var dst CanvasState
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	prior := dst.SnapshotPriorHistory()
+	if len(prior) != 2 {
+		t.Fatalf("prior history length after restore = %d, want 2", len(prior))
+	}
+	if got := prior[1]["content"]; got != "previous answer" {
+		t.Fatalf("prior assistant content after restore = %v, want previous answer", got)
+	}
+}
+
 // TestCanvasState_MarshalJSON_DoesNotLeakMutex pins the wire-shape
 // invariant: the unexported `mu sync.RWMutex` field must not appear
 // in the JSON output. If a future maintainer adds a `json:"mu"` tag

@@ -1362,7 +1362,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if answer != "" {
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
-				s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != "")
+				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
+					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
+				}
 				if answer != "" {
 					if !messageEventsEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -1377,7 +1379,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
-				s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true)
+				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+				}
 				if !messageEventsEmitted {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 				}
@@ -1408,7 +1413,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
-		s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true)
+		if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+		}
 		if !messageEventsEmitted {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
@@ -1517,17 +1525,17 @@ func (s *AgentService) persistAgentRunSession(
 	runDSL map[string]any,
 	state *canvas.CanvasState,
 	appendAssistantMessage bool,
-) {
+) error {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
-		return
+		return nil
 	}
 	session, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
-		return
+		return nil
 	}
 	if session == nil || session.UserID != userID {
-		return
+		return nil
 	}
 	messages := parseAgentSessionMessages(session.Message)
 	now := time.Now().Unix()
@@ -1548,9 +1556,7 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
-	if err := s.api4ConversationDAO.Update(session); err != nil {
-		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
-	}
+	return s.api4ConversationDAO.Update(session)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {
