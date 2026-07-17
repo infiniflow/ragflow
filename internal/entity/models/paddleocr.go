@@ -244,10 +244,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		}
 
 		// Exponential backoff
-		pollInterval = time.Duration(float64(pollInterval) * pollMultiplier)
-		if pollInterval > maxPollInterval {
-			pollInterval = maxPollInterval
-		}
+		pollInterval = min(time.Duration(float64(pollInterval)*pollMultiplier), maxPollInterval)
 
 		select {
 		case <-time.After(pollInterval):

@@ -695,10 +695,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		pageSize = 30
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {

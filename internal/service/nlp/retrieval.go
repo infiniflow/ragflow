@@ -572,10 +572,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	if _, ok := filters["available_int"]; !ok {
 		filters["available_int"] = 1
 	}
-	pg := req.Page - 1
-	if pg < 0 {
-		pg = 0
-	}
+	pg := max(req.Page-1, 0)
 	topk := req.Top
 	if topk <= 0 {
 		topk = 1024

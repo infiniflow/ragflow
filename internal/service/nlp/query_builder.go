@@ -611,10 +611,7 @@ func (qb *QueryBuilder) Paragraph(contentTks string, keywords []string, keywords
 	// Calculate minimum_should_match (could be used for extra_options in future)
 	_ = 3
 	if len(allTerms) > 0 {
-		calc := int(float64(len(allTerms)) / 10.0)
-		if calc < 3 {
-			calc = 3
-		}
+		calc := max(int(float64(len(allTerms))/10.0), 3)
 		_ = calc
 	}
 	return &types.MatchTextExpr{
