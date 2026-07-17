@@ -39,7 +39,7 @@ async def planner_node(state: dict, tools) -> dict:
         _LOG.warning("planner: no route found, using defaults")
         return _default_plan(state.get("question", ""))
 
-    _LOG.info("[Planner] IN | question=%s type=%s", _snip(route.question), route.question_type)
+    _LOG.info("[Planner] Working out how to research this %s question: \"%s\"", route.question_type, _snip(route.question))
     if not route.requires_decomposition:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
@@ -105,7 +105,7 @@ async def planner_node(state: dict, tools) -> dict:
         claims=claims,
         max_iterations=mode.max_orchestrator_cycles,
     )
-    _LOG.info("[Planner] OUT | plan type=%s | claims=%d", plan_type, len(plan.claims))
+    _LOG.info("[Planner] Broke the question into %d research step(s): %s", len(plan.claims), "; ".join(f'"{c.description}"' for c in plan.claims))
 
     return {"plan": plan, "claims": plan.claims}
 

@@ -20,7 +20,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func forceNilConnectorRedis(t *testing.T) {
 	t.Helper()
 	previous := connectorRedisGet
-	connectorRedisGet = func() *redisengine.RedisClient { return nil }
+	connectorRedisGet = func() *redisengine.Client { return nil }
 	t.Cleanup(func() {
 		connectorRedisGet = previous
 	})

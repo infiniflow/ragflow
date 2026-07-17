@@ -2005,7 +2005,7 @@ Example: Virtual Hosted Style`,
         baseUrl: 'Base URL',
         baseUrlMessage: 'Please input the Base URL',
         baseUrlPlaceholder:
-          'For SoMark API, fill in https://somark.tech/api/v1; for self-hosted deployment, fill in your local Base URL',
+          'For SoMark API, use https://somark.cn/api/v1 in mainland China; use https://somark.ai/api/v1 outside mainland China (including Taiwan, China; Hong Kong, China; Macau, China; and overseas). For self-hosted deployment, use your local Base URL',
         apiKey: 'API Key',
         apiKeyPlaceholder:
           'Required for SoMark API; leave blank for self-hosted deployment',
@@ -2024,6 +2024,8 @@ Example: Virtual Hosted Style`,
         enableTextCrossPage: 'Enable Text Cross Page',
         enableTableCrossPage: 'Enable Table Cross Page',
         keepHeaderFooter: 'Keep Header Footer',
+        purchaseUrl:
+          'Purchase API: mainland China — https://somark.cn/workbench/purchase; overseas (including Taiwan, China; Hong Kong, China; Macau, China) — https://somark.ai/studio/purchase',
       },
       modelTypes: {
         chat: 'Chat',
