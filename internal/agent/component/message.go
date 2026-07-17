@@ -216,6 +216,11 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 			Text:   resolved,
 		})
 	}
+	if rendered != "" {
+		if !runtime.EmitCanvasMessage(ctx, rendered) {
+			runtime.EmitAgentMessage(ctx, rendered, "")
+		}
+	}
 
 	// Python's Message output schema always contains downloads, including an
 	// empty list. Keeping the key is also important for the full terminal

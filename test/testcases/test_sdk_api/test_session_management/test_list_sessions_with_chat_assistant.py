@@ -31,7 +31,7 @@ def set_tenant_info():
 
 
 class TestSessionsWithChatAssistantList:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_list_sessions_raises_on_nonzero_response(self, add_sessions_with_chat_assistant, monkeypatch):
         chat_assistant, _ = add_sessions_with_chat_assistant
 
