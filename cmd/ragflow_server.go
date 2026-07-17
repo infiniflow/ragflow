@@ -27,7 +27,6 @@ import (
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
 	agenttool "ragflow/internal/agent/tool"
-	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/handler"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
@@ -364,23 +363,18 @@ func main() {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
-	ctx := context.Background()
-	if err = clickhouse.Init(&config.Clickhouse, ctx); err != nil {
-		common.Error("Failed to initialize ClickHouse", err)
-	}
-	defer clickhouse.Close()
-
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err = server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(); err != nil {
+	ctx := context.Background()
+	if err = server.StartServer(ctx, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
-	defer server.ShutdownServer()
+	defer server.ShutdownServer(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName

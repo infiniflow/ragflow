@@ -92,6 +92,7 @@ func drainAgentEvents(t *testing.T, events <-chan canvas.RunEvent) (messages []c
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				done = true
 				return
 			}
 			switch ev.Type {
@@ -434,8 +435,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 			t.Fatalf("run 1: unexpected workflow_finished before wait-for-user, events=%v", types1)
 		}
 	}
-	if len(types1) == 0 || types1[len(types1)-2] != "waiting_for_user" || types1[len(types1)-1] != "done" {
-		t.Fatalf("run 1: tail events = %v, want ... waiting_for_user, done", types1)
+	if len(types1) == 0 || types1[len(types1)-1] != "waiting_for_user" {
+		t.Fatalf("run 1: tail events = %v, want ... waiting_for_user", types1)
 	}
 
 	events2, err := svc.RunAgent(
@@ -455,8 +456,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 			t.Fatalf("run 2: unexpected workflow_started on resume, events=%v", types2)
 		}
 	}
-	if len(types2) == 0 || types2[len(types2)-2] != "workflow_finished" || types2[len(types2)-1] != "done" {
-		t.Fatalf("run 2: tail events = %v, want ... workflow_finished, done", types2)
+	if len(types2) == 0 || types2[len(types2)-1] != "workflow_finished" {
+		t.Fatalf("run 2: tail events = %v, want ... workflow_finished", types2)
 	}
 }
 

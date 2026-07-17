@@ -338,8 +338,13 @@ def _fmt_tool_list(defs: list[dict]) -> str:
 def _fmt_tool_result(result: ToolResult) -> str:
     if result.error:
         return f"[tool error] {result.error}"
-    chunks = result.chunks[:3]
-    texts = [c.get("content_with_weight", c.get("text", ""))[:300] for c in chunks]
-    if not texts:
+    parts: list[str] = []
+    # Some tools (catalog_navigate, structured_query) answer directly rather than
+    # only returning passages — surface that, or the agent never sees it.
+    answer = (result.metadata or {}).get("answer") if isinstance(result.metadata, dict) else ""
+    if answer:
+        parts.append(f"Answer: {answer}")
+    parts.extend(c.get("content_with_weight", c.get("text", ""))[:300] for c in result.chunks[:3])
+    if not parts:
         return "[no results found]"
-    return "\n\n".join(texts)
+    return "\n\n".join(parts)

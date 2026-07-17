@@ -287,15 +287,23 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
-	sender := func(content *string, _ *string) error {
+	sender := func(content *string, reasoning *string) error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
-		if content == nil {
+		if content == nil && reasoning == nil {
 			return nil
 		}
-		// Copy the string — the underlying buffer may be reused.
-		chunk := *content
-		if closed := sw.Send(&schema.Message{Role: schema.Assistant, Content: chunk}, nil); closed {
+		msg := &schema.Message{Role: schema.Assistant}
+		if content != nil {
+			msg.Content = *content
+		}
+		if reasoning != nil {
+			msg.ReasoningContent = *reasoning
+		}
+		if m.chatCfg != nil && m.chatCfg.StreamCallback != nil {
+			m.chatCfg.StreamCallback(msg.Content, msg.ReasoningContent)
+		}
+		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
 		return nil

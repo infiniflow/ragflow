@@ -102,7 +102,7 @@ func (s *Service) Logout(user interface{}) error {
 	return nil
 }
 
-// ListTasks
+// ListIngestionTasks list all ingestion tasks for admin user
 func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 	return s.ingestionTaskSvc.ListAllForAdmin()
 }
@@ -172,12 +172,12 @@ func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy
 func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
-		return nil, fmt.Errorf("Invalid email address: %s!", username)
+		return nil, fmt.Errorf("invalid email address: %s", username)
 	}
 
 	existUser, _ := s.userDAO.GetByEmail(username)
 	if existUser != nil {
-		return nil, fmt.Errorf("User '%s' already exists", username)
+		return nil, fmt.Errorf("user '%s' already exists", username)
 	}
 
 	decryptedPassword, err := common.DecryptPassword(password)
@@ -235,35 +235,35 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
-	chatMdl := ""
-	embdMdl := ""
-	asrMdl := ""
-	img2txtMdl := ""
-	rerankMdl := ""
+	chatModel := ""
+	embeddingModel := ""
+	asrModel := ""
+	vlmModel := ""
+	rerankModel := ""
 	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
 
 	if cfg != nil {
-		chatMdl = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
-		embdMdl = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
-		asrMdl = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
-		img2txtMdl = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
-		rerankMdl = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+		embeddingModel = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+		asrModel = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+		vlmModel = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+		rerankModel = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
 	}
 
 	tenantStatus := "1"
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatMdl,
-		EmbdID:    embdMdl,
-		ASRID:     asrMdl,
-		Img2TxtID: img2txtMdl,
-		RerankID:  rerankMdl,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err := tx.Create(tenant).Error; err != nil {
+	if err = tx.Create(tenant).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -365,16 +365,16 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 	// Get LLMs for each unique factory
 	for _, factoryConfig := range uniqueFactories {
-		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		models, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
 		if err != nil {
 			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
 		}
 
-		for _, llm := range llms {
+		for _, model := range models {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
-			switch llm.ModelType {
+			switch model.ModelType {
 			case entity.ModelTypeChat.String():
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
@@ -420,12 +420,12 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 			}
 
 			maxTokens := int64(8192)
-			if llm.MaxTokens > 0 {
-				maxTokens = llm.MaxTokens
+			if model.MaxTokens > 0 {
+				maxTokens = model.MaxTokens
 			}
 
-			llmName := llm.LLMName
-			modelType := llm.ModelType
+			llmName := model.LLMName
+			modelType := model.ModelType
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
@@ -474,7 +474,7 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}, nil
 }
 
-// DeleteUserResult
+// DeleteUserResult result of delete user operation
 type DeleteUserResult struct {
 	Username        string   `json:"username"`
 	TenantLLMCount  int      `json:"tenant_llm_count"`
@@ -500,23 +500,23 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	}
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return nil, fmt.Errorf("User '%s' not found", username)
+		return nil, fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return nil, fmt.Errorf("Exist more than 1 user: %s!", username)
+		return nil, fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
 
 	// Check if user is active - cannot delete active users
 	if user.IsActive == "1" {
-		return nil, fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
+		return nil, fmt.Errorf("user '%s' is active and can't be deleted. Please deactivate the user first", username)
 	}
 
 	// Check if user is superuser - cannot delete admin accounts
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		return nil, fmt.Errorf("Cannot delete admin account")
+		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
 	// Get user-tenant relations
@@ -692,11 +692,11 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 func (s *Service) ChangePassword(username, newPassword string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -734,11 +734,11 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -770,11 +770,11 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 func (s *Service) GrantAdmin(username string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -802,11 +802,11 @@ func (s *Service) GrantAdmin(username string) error {
 func (s *Service) RevokeAdmin(username string) error {
 	userList, err := s.userDAO.ListByEmail(username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -818,7 +818,7 @@ func (s *Service) RevokeAdmin(username string) error {
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -1258,11 +1258,11 @@ func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, 
 func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
 	startTime := time.Now()
 
-	// Get minio config from allConfigs
+	// Get MinIO file store config from allConfigs
 	var host string
 	var port int
 	var secure bool
-	var verify bool = true
+	verify := true
 
 	allConfigs := server.GetAllConfigs()
 	for _, config := range allConfigs {

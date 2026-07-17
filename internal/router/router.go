@@ -18,7 +18,6 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
@@ -125,7 +124,6 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
