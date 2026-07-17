@@ -199,8 +199,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ASRID:     asrID,
 		Img2TxtID: img2txtID,
 		RerankID:  rerankID,
-		TTSID:     ttsID,
-		OCRID:     ocrID,
+		TTSID:     &ttsID,
+		OCRID:     &ocrID,
 		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}

@@ -429,7 +429,7 @@ func interfaceSlice(items ...string) []interface{} {
 	return result
 }
 
-func clearGraphPhaseMarkers(redisClient *redisengine.RedisClient, datasetID string) {
+func clearGraphPhaseMarkers(redisClient *redisengine.Client, datasetID string) {
 	if redisClient == nil || datasetID == "" {
 		return
 	}

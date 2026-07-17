@@ -49,6 +49,25 @@ func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[
 func (m *mockCanvasStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
 func (m *mockCanvasStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
 
+// oneShotErrStage errors on the first Invoke (simulating a component crash
+// mid-run), then delegates to the embedded mock on subsequent calls. Used to
+// test that a second pipeline Run on the same taskID resumes past non-terminal
+// checkpoints instead of re-executing completed components.
+type oneShotErrStage struct {
+	mockCanvasStage
+	n int
+}
+
+func (s *oneShotErrStage) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	s.n++
+	if s.n == 1 {
+		return nil, errors.New("simulated crash")
+	}
+	return s.mockCanvasStage.Invoke(ctx, inputs)
+}
+func (s *oneShotErrStage) Inputs() map[string]string  { return s.mockCanvasStage.Inputs() }
+func (s *oneShotErrStage) Outputs() map[string]string { return s.mockCanvasStage.Outputs() }
+
 func TestPipelineRunHappyPath(t *testing.T) {
 	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
 	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
@@ -79,7 +98,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -100,7 +119,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 
 func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	if _, err := p.Run(context.Background(), nil); err == nil {
+	if _, err := p.Run(context.Background(), nil, nil); err == nil {
 		t.Fatal("expected error for nil pipeline")
 	}
 }
@@ -125,7 +144,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}); err == nil {
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}, nil); err == nil {
 		t.Fatal("expected stage error")
 	}
 }
@@ -231,7 +250,7 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 		return &factorySentinelStage{marker: "instance"}, nil
 	})
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -285,7 +304,7 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	results := make(chan result, 2)
 	run := func(pipe *Pipeline) {
 		defer wg.Done()
-		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 		if err != nil {
 			results <- result{err: err}
 			return
@@ -345,7 +364,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -361,8 +380,81 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 	}
 }
 
-// TestPipelineRun_RequireResumeRejectsWithoutStore verifies M4 (plan §6.a
-// 方案 A): with WithRequireResume set and no checkpoint store resolvable (no
+// TestPipelineRunResumableCrossRunResume validates crash-recovery resume
+// across two Run calls: when the terminal component errors mid-run (simulated
+// crash), non-terminal checkpoints + interrupt state persist. The second Run
+// on the same taskID resumes past completed non-terminal components instead of
+// re-executing them. A non-terminal stage (A) runs exactly once across both runs; the
+// terminal stage (B, a oneShotErrStage) errors on run 1 and succeeds on run 2.
+func TestPipelineRunResumableCrossRunResume(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	mockB := &mockCanvasStage{output: map[string]any{"b": 2}}
+	termStage := &oneShotErrStage{mockCanvasStage: *mockB}
+
+	const (
+		nameA = "p.XRunStageA"
+		nameB = "p.XRunStageB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	const taskID = "task-cross-run-resume"
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	// Run 1: terminal B errors (oneShotErrStage n=1), simulating a crash.
+	// Non-terminal A's checkpoint + interrupt persist because the error path
+	// does not call ClearInterruptID or store.Delete.
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	if err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+	// oneShotErrStage did not delegate to its embedded mock on the first call.
+	if termStage.calls != 0 {
+		t.Fatalf("Run 1: expected B (embedded mock) calls=0 (error before delegate), got %d", termStage.calls)
+	}
+
+	// Run 2: resume from after A via tracker.GetInterruptID. A is skipped;
+	// B's oneShotErrStage (n=2) delegates to its embedded mock successfully.
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	if err != nil {
+		t.Fatalf("Run 2: expected recovery success, got error: %v", err)
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 2: expected A to still have calls=1 (was skipped by resume), got %d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B (embedded mock) calls=1 (delegated once), got %d", termStage.calls)
+	}
+}
+
+// TestPipelineRun_RequireResumeRejectsWithoutStore verifies that with
+// WithRequireResume set and no checkpoint store resolvable (no
 // injected store, no global Redis in unit scope), Run must refuse to start
 // and return ErrResumeUnavailable — a clear, distinguishable signal — rather
 // than silently degrading to a non-resumable runPlain. The reject fires
@@ -381,7 +473,7 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if !errors.Is(err, ErrResumeUnavailable) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
@@ -442,7 +534,7 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}); err != nil {
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -534,7 +626,7 @@ func TestRunPlain_WithTracker_Success(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -565,7 +657,7 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
 	}
