@@ -378,7 +378,7 @@ def test_documents_upload_missing_file(rest_client, create_dataset):
     assert payload["message"] == "No file part!", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_upload_contract_matrix(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_upload_contract")
 
@@ -1054,7 +1054,7 @@ def test_documents_metadata_update_path(rest_client, create_document):
     assert payload["data"]["updated"] >= 1, payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty object", lambda ids: {}, 102, "should either provide doc ids or set delete_all(true)", 3),
@@ -1162,7 +1162,7 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
     assert other_list_payload["data"]["total"] == 1, other_list_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=60, timeout=120)
     document_ids = [doc["id"] for doc in uploaded_docs]
@@ -1220,7 +1220,7 @@ def test_documents_parse_requires_auth(create_document):
         assert_auth_error(body, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty ids", lambda ids: {"document_ids": []}, 102, "`document_ids` is required"),
@@ -1256,7 +1256,7 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
                 assert "Task done" in doc["progress_msg"], (scenario_name, doc)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=3)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1303,7 +1303,7 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     _wait_document_runs(rest_client, dataset_id, doc_ids, expected_run="DONE")
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dataset, tmp_path):
     single_dataset_id, single_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=1)
     single_doc_id = single_docs[0]["id"]
@@ -1421,7 +1421,7 @@ def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_p
         assert "Can't stop parsing document that has not started or already completed" in repeated_stop_payload["message"], repeated_stop_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_stop_parse_invalid_dataset_partial_and_scaled_concurrency(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=25)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1562,7 +1562,7 @@ def test_documents_download_filetype_repeat_and_concurrent_contract(rest_client,
         assert compare_by_hash(source_path, downloaded_path), source_path.name
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_table_parser_chat_patterns(rest_client, clear_datasets, tmp_path):
     create_dataset_res = rest_client.post(
         "/datasets",

@@ -193,6 +193,7 @@ func NewDriverHTTPClient() *http.Client {
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
 	t.ResponseHeaderTimeout = 60 * time.Second
+	t.TLSHandshakeTimeout = 30 * time.Second
 	return &http.Client{Transport: t}
 }
 

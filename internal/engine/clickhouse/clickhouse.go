@@ -17,14 +17,8 @@
 package clickhouse
 
 import (
-	//"context"
-	//"crypto/tls"
-	//"fmt"
-	//"log"
-
 	"context"
 	"fmt"
-	"ragflow/internal/server"
 	"sync"
 	"time"
 
@@ -47,18 +41,18 @@ type Driver struct {
 	config *clickhouse.Options
 }
 
-func Init(config *server.ClickhouseConfig, ctx context.Context) error {
+func Init(ctx context.Context, host string, port int, user, password, database string) error {
 	var err error
 	once.Do(func() {
-		address := fmt.Sprintf("%s:%d", config.Host, config.Port)
+		address := fmt.Sprintf("%s:%d", host, port)
 
 		globalDriver = &Driver{}
 		globalDriver.config = &clickhouse.Options{
 			Addr: []string{address},
 			Auth: clickhouse.Auth{
-				Database: config.Database,
-				Username: config.User,
-				Password: config.Password,
+				Database: database,
+				Username: user,
+				Password: password,
 			},
 			DialTimeout:     5 * time.Second,
 			MaxOpenConns:    10,
