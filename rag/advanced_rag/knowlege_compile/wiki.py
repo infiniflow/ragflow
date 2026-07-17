@@ -2842,7 +2842,7 @@ async def _wiki_build_source_context(
 
 _WIKILINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
 _WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
-_ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, str] | None = None) -> tuple[str, list[str]]:
@@ -2886,7 +2886,7 @@ def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, st
         parts = path.strip("/").split("/")
         if parts and parts[0] == "artifact":
             parts = parts[1:]
-        if len(parts) < 3 or parts[0] != kb_id_str:
+        if len(parts) < 2 or parts[0] != kb_id_str:
             return None
         return "/".join(parts[1:])
 
