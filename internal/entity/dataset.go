@@ -100,7 +100,7 @@ type Knowledgebase struct {
 	Avatar                 *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
 	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name                   string     `gorm:"column:name;size:128;not null;index" json:"name"`
-	Language               *string    `gorm:"column:language;size:32;index" json:"language,omitempty"`
+	Language               *string    `gorm:"column:language;size:32;index;default:'English'" json:"language,omitempty"`
 	Description            *string    `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	EmbdID                 string     `gorm:"column:embd_id;size:128;not null;index" json:"embd_id"`
 	TenantEmbdID           *string    `gorm:"column:tenant_embd_id;size:32;index" json:"tenant_embd_id,omitempty"`
@@ -121,7 +121,11 @@ type Knowledgebase struct {
 	RaptorTaskFinishAt     *time.Time `gorm:"column:raptor_task_finish_at" json:"raptor_task_finish_at,omitempty"`
 	MindmapTaskID          *string    `gorm:"column:mindmap_task_id;size:32;index" json:"mindmap_task_id,omitempty"`
 	MindmapTaskFinishAt    *time.Time `gorm:"column:mindmap_task_finish_at" json:"mindmap_task_finish_at,omitempty"`
-	Status                 *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
+	ArtifactTaskID         *string    `gorm:"column:artifact_task_id;size:32;index" json:"artifact_task_id,omitempty"`
+	ArtifactTaskFinishAt   *time.Time `gorm:"column:artifact_task_finish_at" json:"artifact_task_finish_at,omitempty"`
+	SkillTaskID            *string    `gorm:"column:skill_task_id;size:32;index" json:"skill_task_id,omitempty"`
+	SkillTaskFinishAt      *time.Time `gorm:"column:skill_task_finish_at" json:"skill_task_finish_at,omitempty"`
+	Status                 *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
 

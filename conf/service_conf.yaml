@@ -51,6 +51,12 @@ redis:
 nats:
   host: "localhost"
   port: 4222
+clickhouse:
+  host: 'localhost'
+  port: 9900
+  user: ragflow
+  password: infini_rag_flow
+  database: ragflow
 otel:
   host: "localhost"
   port: 4318

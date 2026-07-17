@@ -319,7 +319,7 @@ class FunctionToolSession:
                 f"Tool arguments for {name} must be an object, got {type(arguments).__name__}"
             )
         fn = self.tools_map[name]
-        logging.info(f"[FunctionTool] invoke name={name} args={str(arguments)[:200]}")
+        logging.info(f"[Function tool] Running the {name} tool with: {str(arguments)[:200]}")
         if asyncio.iscoroutinefunction(fn):
             coro = fn(**arguments)
         else:

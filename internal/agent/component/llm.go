@@ -162,10 +162,11 @@ type ChatInvokeRequest struct {
 
 // ChatInvokeResponse mirrors what the LLM component writes to its outputs.
 type ChatInvokeResponse struct {
-	Content string
-	Model   string
-	Stopped bool
-	Tokens  int
+	Content  string
+	Thinking string
+	Model    string
+	Stopped  bool
+	Tokens   int
 }
 
 // defaultChatInvokerMu guards defaultChatInvoker swaps during tests.
@@ -262,10 +263,11 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 		return nil, err
 	}
 	return &ChatInvokeResponse{
-		Content: out.Content,
-		Model:   modelName,
-		Stopped: true,
-		Tokens:  0,
+		Content:  out.Content,
+		Thinking: out.ReasoningContent,
+		Model:    modelName,
+		Stopped:  true,
+		Tokens:   0,
 	}, nil
 }
 
@@ -552,10 +554,11 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	}
 
 	out := map[string]any{
-		"content": cleaned,
-		"model":   resp.Model,
-		"stopped": resp.Stopped,
-		"tokens":  resp.Tokens,
+		"content":  cleaned,
+		"thinking": resp.Thinking,
+		"model":    resp.Model,
+		"stopped":  resp.Stopped,
+		"tokens":   resp.Tokens,
 	}
 	if p.JSONOutput {
 		var parsed map[string]any
@@ -603,6 +606,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
+	out["thinking"] = resp.Thinking
 	return out, nil
 }
 
@@ -651,7 +655,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		// A real streaming integration would loop over a channel
 		// here and emit multiple chunks with partial content.
 		chunk := map[string]any{
-			"thinking": "",
+			"thinking": result["thinking"],
 			"content":  result["content"],
 		}
 		select {
