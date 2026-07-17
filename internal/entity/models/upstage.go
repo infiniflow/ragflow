@@ -51,7 +51,7 @@ func (u *UpstageModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

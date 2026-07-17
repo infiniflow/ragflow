@@ -51,7 +51,7 @@ func (t *TokenPonyModel) Name() string {
 }
 
 // ChatWithMessages sends a non-streaming chat request
-func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

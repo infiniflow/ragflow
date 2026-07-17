@@ -58,7 +58,7 @@ func validateTokenHubChatRequest(modelName string, messages []Message) error {
 	return nil
 }
 
-func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

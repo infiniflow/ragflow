@@ -27,7 +27,7 @@ type ModelDriver interface {
 	Name() string
 
 	// ChatWithMessages sends multiple messages synchronously
-	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
+	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error)
 	// ChatStreamlyWithSender sends multiple messages asynchronously
 	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
 	// Embed a list of texts into embeddings

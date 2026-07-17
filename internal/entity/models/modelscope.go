@@ -140,7 +140,7 @@ func buildModelScopeChatBody(modelName string, messages []Message, stream bool, 
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

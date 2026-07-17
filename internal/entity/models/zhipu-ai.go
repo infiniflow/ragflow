@@ -81,7 +81,7 @@ type ZhipuChatResponse struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -183,6 +183,10 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	var result ZhipuChatResponse
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Choices == nil || len(result.Choices) == 0 {
+		return nil, fmt.Errorf("empty response")
 	}
 
 	content := &result.Choices[0].Message.Content

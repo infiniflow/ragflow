@@ -479,7 +479,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 			modelName = *e.chatModel.ModelName
 		}
 		resp, err := e.chatModel.ModelDriver.ChatWithMessages(
-			modelName, msgs, e.chatModel.APIConfig, cfg,
+			modelName, msgs, e.chatModel.APIConfig, cfg, nil,
 		)
 		if err != nil {
 			return nil, err

@@ -147,7 +147,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg)
+	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}

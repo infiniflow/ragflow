@@ -324,7 +324,7 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 	}
 }
 
-func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

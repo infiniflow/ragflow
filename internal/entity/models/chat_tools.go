@@ -129,7 +129,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		tcChoice := "auto"
 		cfg.ToolChoice = &tcChoice
 
-		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
 		if err != nil {
 			return "", totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -163,7 +163,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
 	})
 	cfg := *chatCfg
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
 	}

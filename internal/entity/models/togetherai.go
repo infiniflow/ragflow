@@ -126,7 +126,7 @@ type togetherAIChatResponse struct {
 	FinishReason string                 `json:"finish_reason"`
 }
 
-func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

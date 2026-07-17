@@ -52,7 +52,7 @@ func (p *PaddleOCRModel) Name() string {
 	return "paddle_ocr.net"
 }
 
-func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 

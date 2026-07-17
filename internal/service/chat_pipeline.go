@@ -1253,7 +1253,7 @@ func (s *ChatPipelineService) AsyncChat(
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
 				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 				)
 				if respErr != nil {
 					err = respErr
@@ -1560,7 +1560,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, nil)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 			)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
@@ -3599,7 +3599,7 @@ func chatForSQL(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, cfg,
+		modelName, msgs, chatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err

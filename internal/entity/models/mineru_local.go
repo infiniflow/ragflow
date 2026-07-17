@@ -49,7 +49,7 @@ func (m *MinerULocalModel) Name() string {
 	return "mineru"
 }
 
-func (m *MinerULocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (m *MinerULocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 

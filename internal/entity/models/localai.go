@@ -80,7 +80,7 @@ func addLocalAIReasoningRequestParams(reqBody map[string]interface{}, cfg *ChatC
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

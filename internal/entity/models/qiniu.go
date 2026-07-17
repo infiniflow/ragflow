@@ -140,7 +140,7 @@ func applyQiniuThinkingConfig(reqBody map[string]interface{}, modelName string, 
 	}
 }
 
-func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

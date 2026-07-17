@@ -52,7 +52,7 @@ func (s *StepFunModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

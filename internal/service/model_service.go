@@ -2323,7 +2323,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		}
 	}
 
-	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig)
+	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

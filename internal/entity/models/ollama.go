@@ -72,7 +72,7 @@ func (o *OllamaModel) Name() string {
 	return "Ollama"
 }
 
-func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("message is nil")
 	}

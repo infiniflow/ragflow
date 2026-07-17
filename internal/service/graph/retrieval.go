@@ -243,7 +243,7 @@ func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
-		response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil)
+		response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
 			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {

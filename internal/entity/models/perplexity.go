@@ -113,7 +113,7 @@ type perplexityChatResponse struct {
 	FinishReason string                 `json:"finish_reason"`
 }
 
-func (p *PerplexityModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (p *PerplexityModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
