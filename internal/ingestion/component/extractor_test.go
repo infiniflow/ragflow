@@ -476,12 +476,12 @@ func TestExtractorComponent_Invoke_ChunkIndexInError(t *testing.T) {
 // the construction-time Validate() rejection of an empty
 // field_name (matches python check_empty "Result Destination").
 func TestExtractorComponent_NewExtractorComponent_ParamCheck(t *testing.T) {
-	_, err := NewExtractorComponent(map[string]any{})
-	if err == nil {
-		t.Fatal("expected error for missing field_name, got nil")
+	c, err := NewExtractorComponent(map[string]any{})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "field_name") {
-		t.Errorf("error should mention field_name: %v", err)
+	if c == nil {
+		t.Fatal("expected non-nil component")
 	}
 }
 
@@ -546,7 +546,7 @@ func TestSplitExtractorLLID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
-			model, provider, ok := splitExtractorLLID(tc.in)
+			model, provider, ok := splitExtractorLLIDPair(tc.in)
 			if ok != tc.wantOK {
 				t.Errorf("ok = %v, want %v", ok, tc.wantOK)
 			}

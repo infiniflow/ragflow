@@ -15,22 +15,48 @@
  */
 
 import { LlmIcon } from '@/components/svg-icon';
+import { Button } from '@/components/ui/button';
 import { APIMapUrl } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Loader2, Save } from 'lucide-react';
+import { getProviderConfig } from '../provider-schema/field-config';
 
 interface ProviderHeaderBarProps {
   providerName: string;
+  /** Called when the user clicks the batch Save button. */
+  onSave?: () => void;
+  /** True while the batch save is in flight - disables the button. */
+  saving?: boolean;
+  /**
+   * True when there is at least one dirty card on the page. When false
+   * the Save button is disabled (nothing to persist).
+   */
+  canSave?: boolean;
 }
 
 /**
  * Sticky top bar for the right pane that displays the selected provider's
- * icon, name and a doc-link arrow. Stays visible while the user scrolls
- * the instance list below.
+ * icon, name, an API-link arrow, an optional integration-doc link, and a
+ * batch Save button. Stays visible while the user scrolls the instance
+ * list below.
  */
-export function ProviderHeaderBar({ providerName }: ProviderHeaderBarProps) {
+export function ProviderHeaderBar({
+  providerName,
+  onSave,
+  saving = false,
+  canSave = false,
+}: ProviderHeaderBarProps) {
   const { t: tSetting } = useTranslate('setting');
-  const docLink = APIMapUrl[providerName as keyof typeof APIMapUrl];
+  const apiLink = APIMapUrl[providerName as keyof typeof APIMapUrl];
+  const providerConfig = getProviderConfig(providerName);
+  const docLink = providerConfig.docLink;
+  // Resolve doc-link text: explicit `docLinkText` wins, otherwise translate
+  // `docLinkI18nKey` with the provider name as the `{{name}}` interpolation.
+  const docLinkText =
+    providerConfig.docLinkText ??
+    (providerConfig.docLinkI18nKey
+      ? tSetting(providerConfig.docLinkI18nKey, { name: providerName })
+      : null);
 
   return (
     <div
@@ -44,9 +70,9 @@ export function ProviderHeaderBar({ providerName }: ProviderHeaderBarProps) {
         imgClass="size-6 text-text-primary"
       />
       <span className="font-medium text-text-primary">{providerName}</span>
-      {docLink && (
+      {apiLink && (
         <a
-          href={docLink}
+          href={apiLink}
           target="_blank"
           rel="noopener noreferrer"
           className="text-text-secondary hover:text-text-primary"
@@ -55,6 +81,33 @@ export function ProviderHeaderBar({ providerName }: ProviderHeaderBarProps) {
           <ArrowUpRight className="size-4" />
         </a>
       )}
+      <div className="w-5" />
+      {docLink && docLinkText && (
+        <a
+          href={docLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-end self-end gap-1 text-xs text-text-secondary hover:text-text-primary"
+        >
+          <span>{docLinkText}</span>
+        </a>
+      )}
+      <div className="flex-1" />
+      <Button
+        type="button"
+        size="sm"
+        onClick={onSave}
+        disabled={saving || !canSave}
+        data-testid="provider-save-all"
+        className="gap-1.5"
+      >
+        {saving ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Save className="size-4" />
+        )}
+        {tSetting('saveAll')}
+      </Button>
     </div>
   );
 }

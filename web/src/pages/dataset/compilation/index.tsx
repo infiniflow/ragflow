@@ -153,6 +153,7 @@ export default function Compilation() {
                   selectedArtifact={selectedArtifact}
                   selectedVersion={selectedVersion}
                   onSelectVersion={selectVersion}
+                  onSelectArtifact={handleSelectArtifact}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>

@@ -103,9 +103,10 @@ func (p *XLSXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	case "", "excelize":
 		// Continue with the local Excelize parser.
 	default:
-		return ParseResult{
-			Err: fmt.Errorf("unsupported XLSX parse method: %q", p.ParseMethod),
-		}
+		// PDF-specific methods like "DeepDOC" / "PaddleOCR" / "MinerU"
+		// are meaningless for XLSX; treat them as the default excelize path,
+		// matching Python's behaviour where parse_method is irrelevant
+		// for spreadsheet processing.
 	}
 
 	f, err := excelize.OpenReader(bytes.NewReader(data))

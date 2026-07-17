@@ -120,20 +120,24 @@ interface UseModelsCatalogArgs {
   providerName: string;
   instanceName: string;
   hideActions: boolean;
-  isDraftInstance: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
-  instanceDetailsLoaded: boolean;
+  /**
+   * Current api_key value (read from the host form / instance). Used to
+   * gate the auto-fetch for providers that require an api_key to list
+   * models (currently only VolcEngine). For other providers the value
+   * is ignored and the catalog is fetched on mount regardless.
+   */
+  apiKeyValue: string;
 }
 
 export function useModelsCatalog({
   providerName,
   instanceName,
   hideActions,
-  isDraftInstance,
   resolveCreds,
   instanceModels,
-  instanceDetailsLoaded,
+  apiKeyValue,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -168,18 +172,21 @@ export function useModelsCatalog({
   };
 
   // Auto-fetch the provider's available-models catalog when this section
-  // mounts (effectively "when the card is expanded"). Skipped for draft
-  // instances and catalog-preview-only hosts.
+  // mounts (effectively "when the card is expanded"). For VolcEngine we
+  // wait until an api_key is available (typed in the draft form or loaded
+  // from instance details); for every other provider we fetch on mount
+  // regardless of draft / saved state - the catalog endpoint does not
+  // require credentials and the user expects to see the model list as
+  // soon as they open the "Add instance" page.
 
   const requiresApiKey = providerName === LLMFactory.VolcEngine;
-  const credsReady = !requiresApiKey || instanceDetailsLoaded;
+  const credsReady = !requiresApiKey || !!apiKeyValue;
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
-    if (isDraftInstance) return;
     if (!credsReady) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
@@ -210,6 +217,20 @@ export function useModelsCatalog({
 interface UseModelsDerivedArgs {
   catalog: IProviderModelItem[];
   instanceModels: IInstanceModel[] | undefined;
+  /**
+   * Locally-added models for a draft (unsaved) instance. The hook uses
+   * this list as the "instance models" source when `isDraftInstance` is
+   * true, so per-model add/remove/batch on a draft updates the derived
+   * list without a backend round-trip. The host's save handler then
+   * flushes the latest snapshot through `model_info` on save.
+   */
+  draftModels: IProviderModelItem[];
+  /**
+   * True when this card represents a draft instance (no backend id yet).
+   * Picks between `instanceModels` (saved) and `draftModels` (draft) as
+   * the source for `instanceItems` / `addedSet`.
+   */
+  isDraftInstance: boolean;
   onInstanceModelsChange: ModelsSectionProps['onInstanceModelsChange'];
   onInstanceModelsEdited?: ModelsSectionProps['onInstanceModelsEdited'];
 }
@@ -217,6 +238,8 @@ interface UseModelsDerivedArgs {
 export function useModelsDerived({
   catalog,
   instanceModels,
+  draftModels,
+  isDraftInstance,
   onInstanceModelsChange,
   onInstanceModelsEdited,
 }: UseModelsDerivedArgs) {
@@ -230,11 +253,20 @@ export function useModelsDerived({
     return map;
   }, [catalog]);
 
+  // For drafts the backend has no per-instance models yet, so the local
+  // `draftModels` array stands in. For saved cards the backend list is
+  // authoritative. The hook signature normalises both into the same
+  // shape (`IProviderModelItem[]`) downstream.
+  const sourceItems = useMemo(
+    () => (isDraftInstance ? draftModels : ((instanceModels ?? []) as any[])),
+    [isDraftInstance, draftModels, instanceModels],
+  );
+
   const instanceItems: IProviderModelItem[] = useMemo(() => {
     // `im` is typed `any` because the backend may return either
     // `model_type` or `model_types`, and `features` is not on the
     // declared IInstanceModel interface.
-    return (instanceModels ?? []).map((im: any) => {
+    return sourceItems.map((im: any) => {
       const model_types = normalizeModelTypes(
         im.model_types ?? im.model_type ?? [],
       );
@@ -250,7 +282,7 @@ export function useModelsDerived({
         features,
       };
     });
-  }, [instanceModels, catalogFeatures]);
+  }, [sourceItems, catalogFeatures]);
 
   // Union of instance models + catalog, keyed by `name`. Catalog entries
   // win on conflict; instance set listed first so already-added models
@@ -262,9 +294,12 @@ export function useModelsDerived({
     return Array.from(byName.values());
   }, [instanceItems, catalog]);
 
+  // Mirror of `instanceItems` names - drives the +/- toggle on each row
+  // and the batch-toggle button. For drafts this is the local "added"
+  // set; for saved cards it tracks what the backend has persisted.
   const addedSet = useMemo(
-    () => new Set((instanceModels ?? []).map((m: IInstanceModel) => m.name)),
-    [instanceModels],
+    () => new Set(sourceItems.map((m: any) => m.name)),
+    [sourceItems],
   );
 
   // Keep the latest callbacks in refs so the effect below only fires
@@ -424,6 +459,15 @@ interface UseModelMutationsArgs {
   filteredModels: IProviderModelItem[];
   addedSet: Set<string>;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
+  /**
+   * Local mutators for the draft instance's model list. Required when
+   * `isDraftInstance` is true so per-model add / remove / batch updates
+   * stay local until the host saves the instance. Ignored for saved
+   * cards (the backend mutations below fire as before).
+   */
+  addDraftModel?: (model: IProviderModelItem) => void;
+  removeDraftModel?: (name: string) => void;
+  setDraftModelsList?: (models: IProviderModelItem[]) => void;
 }
 
 export function useModelMutations({
@@ -437,6 +481,9 @@ export function useModelMutations({
   filteredModels,
   addedSet,
   setCatalog,
+  addDraftModel,
+  removeDraftModel,
+  setDraftModelsList,
 }: UseModelMutationsArgs) {
   const { addInstanceModel } = useAddInstanceModel();
   const { deleteInstanceModels } = useDeleteInstanceModels();
@@ -453,6 +500,12 @@ export function useModelMutations({
   );
 
   const handleAddModel = async (model: IProviderModelItem) => {
+    // Drafts have no backend instance yet — defer the call so the model
+    // rides along with the instance save (model_info in the add body).
+    if (isDraftInstance) {
+      addDraftModel?.(model);
+      return;
+    }
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
@@ -464,6 +517,10 @@ export function useModelMutations({
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
+    if (isDraftInstance) {
+      removeDraftModel?.(model.name);
+      return;
+    }
     await deleteInstanceModels({
       provider_name: providerName,
       instance_name: instanceName,
@@ -479,6 +536,14 @@ export function useModelMutations({
       prev.some((m) => m.name === item.name) ? prev : [...prev, item],
     );
     if (hideActions || isDraftInstance) {
+      // For drafts the catalog entry alone is not enough — we also need
+      // to mark the model as added so it flows into the save payload's
+      // `model_info`. Without this, custom models added on a draft
+      // would render as "available" but not as "added", and would be
+      // dropped on save.
+      if (isDraftInstance) {
+        addDraftModel?.(item);
+      }
       return;
     }
     await addInstanceModel({
@@ -491,12 +556,13 @@ export function useModelMutations({
     });
   };
 
-  // Batch attach/detach the currently visible (filtered) models via the
-  // PUT `/providers/{name}/instances/{name}` endpoint (replaces
-  // `model_info` wholesale).
+  // Batch attach/detach the currently visible (filtered) models.
+  //  - Saved card: PUT `/providers/{name}/instances/{name}` to replace
+  //    `model_info` wholesale.
+  //  - Draft: just rewrite the local draft list. The host save handler
+  //    flushes the latest snapshot through the add-instance payload.
   const handleBatchToggleModels = async () => {
     if (filteredModels.length === 0) return;
-    const { apiKey, baseUrl } = resolveCreds();
 
     const byName = new Map<string, IProviderModelItem>();
     instanceItems.forEach((m) => byName.set(m.name, m));
@@ -510,6 +576,12 @@ export function useModelMutations({
       nextModels = Array.from(byName.values());
     }
 
+    if (isDraftInstance) {
+      setDraftModelsList?.(nextModels);
+      return;
+    }
+
+    const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
       instance_name: instanceName,
