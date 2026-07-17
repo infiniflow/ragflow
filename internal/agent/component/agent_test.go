@@ -212,6 +212,45 @@ func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 	}
 }
 
+func TestAgent_EmptyConfiguredUserPromptDoesNotFallbackToSysQuery(t *testing.T) {
+	var gotSystemPrompt, gotUserPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotSystemPrompt = p.SystemPrompt
+		gotUserPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":   "stub",
+		"api_key":    "test-key",
+		"sys_prompt": "User answer: {UserFillUp:TwelveBadgersRescue@key}",
+		"prompts": []any{
+			map[string]any{"role": "user", "content": ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "1"
+	state.SetVar("UserFillUp:TwelveBadgersRescue", "key", "21")
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotSystemPrompt != "User answer: 21" {
+		t.Fatalf("runner system prompt = %q, want resolved UserFillUp answer", gotSystemPrompt)
+	}
+	if gotUserPrompt == "1" {
+		t.Fatalf("runner user prompt reused sys.query: %q", gotUserPrompt)
+	}
+	if gotUserPrompt != gotSystemPrompt {
+		t.Fatalf("runner user prompt = %q, want system-only fallback %q", gotUserPrompt, gotSystemPrompt)
+	}
+}
+
 func TestAgent_FormatsRuntimePromptLikePython(t *testing.T) {
 	var gotPrompt string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {

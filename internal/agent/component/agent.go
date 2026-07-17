@@ -549,7 +549,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
-	} else if shouldFallbackToSysQuery(p.UserPrompt) && state != nil {
+	} else if shouldFallbackToSysQuery(p.UserPrompt) && strings.TrimSpace(p.SystemPrompt) == "" && state != nil {
 		if query, ok := stringFromState(state, "query"); ok {
 			p.UserPrompt = query
 		}
