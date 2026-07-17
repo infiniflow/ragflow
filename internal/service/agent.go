@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"ragflow/internal/utility"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -705,6 +706,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if err != nil {
 		return nil, err
 	}
+	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
@@ -794,6 +796,23 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if dsl == nil {
 		dsl = normalisedDSLForRun(versionRow)
+	}
+	if sessionID != "" && s.api4ConversationDAO != nil {
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(sessionID, canvasID)
+		if sessionErr != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
+		}
+		if session != nil && session.UserID != userID {
+			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		}
+		if session != nil && len(session.DSL) > 0 {
+			dsl = dslpkg.NormalizeForRun(session.DSL)
+		}
+	}
+	if newSession && len(dsl) > 0 {
+		if err := s.createAgentRunSession(sessionID, userID, canvasID, dsl, versionRow); err != nil {
+			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
+		}
 	}
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
@@ -1019,9 +1038,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
+		state.SetHistory(c.History)
+		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
-		state.Sys["files"] = []string{}
+		state.AppendCurrentUser(userInput)
+		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
@@ -1037,6 +1059,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			state.Sys["files"] = files
 		}
+		state.IncrementConversationTurns()
 		ctx2 = runtime.WithState(ctx2, state)
 
 		// Resume path. The user input is the resume payload for the
@@ -1119,7 +1142,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if isResume && resumeID != "" {
 			wfInput = ""
 		}
-		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		err = invokeErr
 
 		if cpID != "" && s.runTracker != nil {
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
@@ -1152,6 +1176,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1164,7 +1189,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
-					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
+				}
+				s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != "")
+				if answer != "" {
 					msgData, _ := json.Marshal(canvas.MessageEvent{
 						Content:   answer,
 						Reference: referencePayload,
@@ -1179,7 +1207,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+				appendAssistantHistory(state, assistantOutput)
+				s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true)
 				msgData, _ := json.Marshal(canvas.MessageEvent{
 					Content:   answer,
 					Reference: referencePayload,
@@ -1211,7 +1240,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
-		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
+		appendAssistantHistory(state, assistantOutput)
+		s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true)
 		msgData, _ := json.Marshal(canvas.MessageEvent{
 			Content:   answer,
 			Reference: referencePayload,
@@ -1256,6 +1286,30 @@ func beginLayoutRecognize(c *canvas.Canvas) string {
 	return ""
 }
 
+func (s *AgentService) createAgentRunSession(
+	sessionID, userID, agentID string,
+	runDSL map[string]any,
+	versionRow *entity.UserCanvasVersion,
+) error {
+	if s == nil || s.api4ConversationDAO == nil {
+		return errors.New("agent session storage is not configured")
+	}
+	source := "agent"
+	session := &entity.API4Conversation{
+		ID:        sessionID,
+		DialogID:  agentID,
+		UserID:    userID,
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		Source:    &source,
+		DSL:       entity.JSONMap(runDSL),
+	}
+	if versionRow != nil {
+		session.VersionTitle = versionRow.Title
+	}
+	return s.api4ConversationDAO.Create(session)
+}
+
 // runIDFor builds the per-run CanvasState identifier: canvasID
 // alone for first-touch runs, canvasID + sessionID for resumed runs
 // (so two concurrent sessions on the same canvas don't collide in
@@ -1290,7 +1344,15 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
-func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID string, userInput any, answer string, reference map[string]interface{}) {
+func (s *AgentService) persistAgentRunSession(
+	agentID, userID, sessionID, messageID string,
+	userInput any,
+	answer string,
+	reference map[string]interface{},
+	runDSL map[string]any,
+	state *canvas.CanvasState,
+	appendAssistantMessage bool,
+) {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return
 	}
@@ -1299,7 +1361,7 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 		return
 	}
-	if session == nil {
+	if session == nil || session.UserID != userID {
 		return
 	}
 	messages := parseAgentSessionMessages(session.Message)
@@ -1307,7 +1369,9 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	if text := stringifyAgentUserInput(userInput); text != "" {
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
-	messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	if appendAssistantMessage {
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw
 	}
@@ -1316,9 +1380,56 @@ func (s *AgentService) persistAgentRunSession(agentID, sessionID, messageID stri
 	if raw, err := json.Marshal(references); err == nil {
 		session.Reference = raw
 	}
+	if state != nil {
+		session.DSL = buildPersistedAgentDSL(runDSL, state)
+	}
 	if err := s.api4ConversationDAO.Update(session); err != nil {
 		common.Warn("agent run: update session failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 	}
+}
+
+func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {
+	dsl := make(entity.JSONMap, len(runDSL)+3)
+	for key, value := range runDSL {
+		dsl[key] = value
+	}
+	if state == nil {
+		return dsl
+	}
+
+	globals := make(map[string]any)
+	if existing, ok := dsl["globals"].(map[string]any); ok {
+		for key, value := range existing {
+			globals[key] = value
+		}
+	}
+	sysValues, envValues, globalValues := state.SnapshotNamespaces()
+	for key := range globals {
+		switch {
+		case strings.HasPrefix(key, "sys."):
+			if value, exists := sysValues[strings.TrimPrefix(key, "sys.")]; exists {
+				globals[key] = value
+			}
+		case strings.HasPrefix(key, "env."):
+			if value, exists := envValues[strings.TrimPrefix(key, "env.")]; exists {
+				globals[key] = value
+			}
+		default:
+			if value, exists := globalValues[key]; exists {
+				globals[key] = value
+			}
+		}
+	}
+	for _, key := range []string{"query", "user_id", "conversation_turns", "files", "history", "date"} {
+		if value, exists := sysValues[key]; exists {
+			globals["sys."+key] = value
+		}
+	}
+
+	dsl["globals"] = globals
+	dsl["history"] = canvas.EncodeHistory(state.SnapshotHistory())
+	dsl["memory"] = canvas.EncodeMemory(state.SnapshotMemory())
+	return dsl
 }
 
 func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
@@ -1348,6 +1459,163 @@ func stringifyAgentUserInput(userInput any) string {
 			return string(b)
 		}
 		return fmt.Sprint(v)
+	}
+}
+
+func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
+	if state == nil {
+		return
+	}
+	state.AppendHistory("assistant", payload)
+	state.AppendSysHistory("assistant: " + pythonHistoryRepr(payload))
+}
+
+func partialAssistantOutput(answer string, downloads any) map[string]any {
+	output := map[string]any{"content": answer}
+	if !emptyDownloadValue(downloads) {
+		output["downloads"] = downloads
+	}
+	return output
+}
+
+func terminalCanvasOutput(
+	c *canvas.Canvas,
+	state *canvas.CanvasState,
+	workflowOutput map[string]any,
+	answer string,
+	downloads any,
+) map[string]any {
+	terminalIDs := make([]string, 0)
+	if c != nil {
+		for cpnID, component := range c.Components {
+			if len(component.Downstream) == 0 {
+				terminalIDs = append(terminalIDs, cpnID)
+			}
+		}
+	}
+	sort.Strings(terminalIDs)
+	for _, cpnID := range terminalIDs {
+		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
+			return cloneCanvasOutput(output)
+		}
+	}
+	if state != nil {
+		snapshot := state.Snapshot()
+		for _, cpnID := range terminalIDs {
+			if output := snapshot[cpnID]; len(output) > 0 {
+				return cloneCanvasOutput(output)
+			}
+		}
+	}
+	if len(workflowOutput) > 0 {
+		return cloneCanvasOutput(workflowOutput)
+	}
+	fallback := map[string]any{"content": answer}
+	if !emptyDownloadValue(downloads) {
+		fallback["downloads"] = downloads
+	}
+	return fallback
+}
+
+func cloneCanvasOutput(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		switch key {
+		case "__cpn_id__", "state", "__legacy_noop__":
+			continue
+		}
+		output[key] = value
+	}
+	return output
+}
+
+func renderUserHistoryValue(value any) string {
+	switch value := value.(type) {
+	case string:
+		return value
+	case map[string]any:
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return fmt.Sprint(value)
+		}
+		return strings.TrimSuffix(buf.String(), "\n")
+	default:
+		return pythonHistoryRepr(value)
+	}
+}
+
+func pythonHistoryRepr(value any) string {
+	switch item := value.(type) {
+	case nil:
+		return "None"
+	case string:
+		replacer := strings.NewReplacer(
+			"\\", "\\\\",
+			"'", "\\'",
+			"\n", "\\n",
+			"\r", "\\r",
+			"\t", "\\t",
+		)
+		return "'" + replacer.Replace(item) + "'"
+	case bool:
+		if item {
+			return "True"
+		}
+		return "False"
+	case map[string]any:
+		keys := make([]string, 0, len(item))
+		for key := range item {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			leftPriority := pythonOutputKeyPriority(keys[i])
+			rightPriority := pythonOutputKeyPriority(keys[j])
+			if leftPriority != rightPriority {
+				return leftPriority < rightPriority
+			}
+			return keys[i] < keys[j]
+		})
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, pythonHistoryRepr(key)+": "+pythonHistoryRepr(item[key]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case []any:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			parts = append(parts, pythonHistoryRepr(child))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(item)
+	}
+}
+
+// pythonOutputKeyPriority reconstructs the order produced by Python's
+// ComponentParamBase output dictionaries: declared business outputs first,
+// followed by the timing fields added by ComponentBase.invoke(). Message
+// declares content then downloads, which is the terminal payload most often
+// persisted in conversation history.
+func pythonOutputKeyPriority(key string) int {
+	switch key {
+	case "content":
+		return 0
+	case "downloads":
+		return 1
+	case "_created_time":
+		return 3
+	case "_elapsed_time":
+		return 4
+	default:
+		return 2
 	}
 }
 

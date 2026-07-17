@@ -1619,3 +1619,22 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 		t.Fatalf("session was deleted despite IDOR rejection: %+v", verify)
 	}
 }
+
+func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
+	user := renderUserHistoryValue(map[string]any{
+		"content": "你好",
+		"count":   2,
+	})
+	if user != `{"content":"你好","count":2}` {
+		t.Fatalf("rendered user history = %q", user)
+	}
+
+	assistant := pythonHistoryRepr(map[string]any{
+		"content": "it's ready\nnext",
+		"ok":      true,
+	})
+	want := `{'content': 'it\'s ready\nnext', 'ok': True}`
+	if assistant != want {
+		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
+	}
+}

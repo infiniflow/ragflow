@@ -40,6 +40,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -219,6 +220,275 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	}
 }
 
+func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"globals": map[string]any{
+			"sys.conversation_turns": 0,
+			"sys.files":              []any{"existing file"},
+			"sys.history":            []any{},
+			"sys.user_id":            "",
+		},
+		"history": []any{},
+		"memory":  []any{},
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{"history_0"},
+			},
+			"history_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "ListOperations",
+					"params": map[string]any{
+						"query":      "sys.history",
+						"operations": "sort",
+					},
+				},
+				"upstream":   []any{"begin_0"},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params": map[string]any{
+						"text": "{{history_0@result}}",
+					},
+				},
+				"upstream": []any{"history_0"},
+			},
+		},
+		"path": []any{"begin_0", "history_0", "message_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-history",
+		DialogID:  "canvas-history",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewAgentService()
+	run := func(input string) canvas.MessageEvent {
+		t.Helper()
+		events, err := svc.RunAgent(context.Background(), "user-1", "canvas-history", "session-history", "", input, nil)
+		if err != nil {
+			t.Fatalf("RunAgent(%q): %v", input, err)
+		}
+		messages, waiting, errs, done := drainAgentEvents(t, events)
+		if len(errs) != 0 || len(waiting) != 0 || !done {
+			t.Fatalf("RunAgent(%q): messages=%+v waiting=%+v errors=%+v done=%v", input, messages, waiting, errs, done)
+		}
+		if len(messages) != 1 {
+			t.Fatalf("RunAgent(%q): message count = %d, want 1", input, len(messages))
+		}
+		return messages[0]
+	}
+
+	first := run("hi")
+	if first.Content != `["user: hi"]` {
+		t.Fatalf("first content = %q, want JSON-rendered sys.history", first.Content)
+	}
+	var afterFirst entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-history").First(&afterFirst).Error; err != nil {
+		t.Fatalf("reload session after first run: %v", err)
+	}
+	if components, ok := afterFirst.DSL["components"].(map[string]any); !ok || len(components) != 3 {
+		t.Fatalf("persisted DSL lost runtime components: %#v", afterFirst.DSL)
+	}
+	second := run("again")
+	var secondHistory []string
+	if err := json.Unmarshal([]byte(second.Content), &secondHistory); err != nil {
+		t.Fatalf("second content = %q, want a JSON string list: %v", second.Content, err)
+	}
+	if len(secondHistory) != 3 {
+		t.Fatalf("second history = %#v, want assistant plus two user entries", secondHistory)
+	}
+	if !strings.HasPrefix(secondHistory[0], "assistant: ") ||
+		!strings.Contains(secondHistory[0], `'content': '["user: hi"]'`) ||
+		!strings.Contains(secondHistory[0], `'downloads': []`) {
+		t.Fatalf("assistant history entry = %q, want persisted Message content and downloads", secondHistory[0])
+	}
+	if secondHistory[1] != "user: again" || secondHistory[2] != "user: hi" {
+		t.Fatalf("sorted user history = %#v, want [user: again, user: hi]", secondHistory[1:])
+	}
+
+	var session entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-history").First(&session).Error; err != nil {
+		t.Fatalf("reload session: %v", err)
+	}
+	history, ok := session.DSL["history"].([]any)
+	if !ok || len(history) != 4 {
+		t.Fatalf("persisted history = %#v, want four user/assistant entries", session.DSL["history"])
+	}
+	globals, _ := session.DSL["globals"].(map[string]any)
+	sysHistory, ok := globals["sys.history"].([]any)
+	if !ok || len(sysHistory) != 4 {
+		t.Fatalf("persisted sys.history = %#v, want four rendered entries", globals["sys.history"])
+	}
+	if turns := globals["sys.conversation_turns"]; turns != 2 && turns != float64(2) {
+		t.Fatalf("persisted sys.conversation_turns = %#v, want 2", turns)
+	}
+	if globals["sys.user_id"] != "user-1" {
+		t.Fatalf("persisted sys.user_id = %#v, want user-1", globals["sys.user_id"])
+	}
+	files, ok := globals["sys.files"].([]any)
+	if !ok || len(files) != 1 || files[0] != "existing file" {
+		t.Fatalf("persisted sys.files = %#v, want existing file", globals["sys.files"])
+	}
+}
+
+func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.API4Conversation{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"globals": map[string]any{"sys.history": []any{}},
+		"history": []any{},
+		"memory":  []any{},
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"text": "{{sys.history}}"}},
+				"upstream": []any{"begin_0"},
+			},
+		},
+		"path": []any{"begin_0", "message_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
+
+	svc := NewAgentService()
+	events, err := svc.RunAgent(context.Background(), "user-1", "canvas-new-session", "", "", "1", nil)
+	if err != nil {
+		t.Fatalf("first RunAgent: %v", err)
+	}
+	firstMessages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) != 0 || len(waiting) != 0 || !done || len(firstMessages) != 1 {
+		t.Fatalf("first run: messages=%+v waiting=%+v errors=%+v done=%v", firstMessages, waiting, errs, done)
+	}
+	if firstMessages[0].Content != `["user: 1"]` {
+		t.Fatalf("first content = %q", firstMessages[0].Content)
+	}
+
+	var session entity.API4Conversation
+	if err := testDB.Where("dialog_id = ? AND user_id = ?", "canvas-new-session", "user-1").First(&session).Error; err != nil {
+		t.Fatalf("new session was not persisted: %v", err)
+	}
+	if session.ID == "" {
+		t.Fatal("persisted session has an empty ID")
+	}
+
+	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil)
+	if err != nil {
+		t.Fatalf("second RunAgent: %v", err)
+	}
+	secondMessages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) != 0 || len(waiting) != 0 || !done || len(secondMessages) != 1 {
+		t.Fatalf("second run: messages=%+v waiting=%+v errors=%+v done=%v", secondMessages, waiting, errs, done)
+	}
+	var history []string
+	if err := json.Unmarshal([]byte(secondMessages[0].Content), &history); err != nil {
+		t.Fatalf("second content = %q: %v", secondMessages[0].Content, err)
+	}
+	if len(history) != 3 || history[0] != "user: 1" || !strings.HasPrefix(history[1], "assistant: ") || history[2] != "user: 1" {
+		t.Fatalf("second history = %#v, want first user, assistant, current user", history)
+	}
+}
+
+func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.API4Conversation{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"text": "safe"}},
+				"upstream": []any{"begin_0"},
+			},
+		},
+		"path": []any{"begin_0", "message_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-session-owner", "user-1", "tenant-1", "v-session-owner", dsl)
+	foreignMessage := json.RawMessage(`[{"role":"assistant","content":"foreign"}]`)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-foreign",
+		DialogID:  "canvas-session-owner",
+		UserID:    "user-2",
+		Message:   foreignMessage,
+		Reference: json.RawMessage(`[]`),
+		DSL:       entity.JSONMap(dsl),
+	}).Error; err != nil {
+		t.Fatalf("create foreign session: %v", err)
+	}
+
+	events, err := NewAgentService().RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-session-owner",
+		"session-foreign",
+		"",
+		"attempted overwrite",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("RunAgent accepted a session owned by another user")
+	}
+	if events != nil {
+		t.Fatalf("events = %#v, want nil for rejected session", events)
+	}
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Fatalf("error = %v, want not-found authorization sentinel", err)
+	}
+
+	var unchanged entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-foreign").First(&unchanged).Error; err != nil {
+		t.Fatalf("reload foreign session: %v", err)
+	}
+	if string(unchanged.Message) != string(foreignMessage) {
+		t.Fatalf("foreign session message was overwritten: %s", unchanged.Message)
+	}
+}
+
 // TestRunAgent_RealCanvas_WaitForUserResume pins the resume path.
 // It publishes a 3-component DSL (Begin → Message → UserFillUp),
 // invokes RunAgent twice on the same (canvas, session), and asserts:
@@ -253,6 +523,8 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	dsl := map[string]any{
+		"globals": map[string]any{"sys.history": []any{}},
+		"history": []any{},
 		"components": map[string]any{
 			"begin_0": map[string]any{
 				"obj": map[string]any{
@@ -279,6 +551,16 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"path": []any{"begin_0", "user_fill_up_0", "message_0"},
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-fillup",
+		DialogID:  "canvas-fillup",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		DSL:       entity.JSONMap(dsl),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 
 	// v3.6.1 Gap #1 fix: a real checkpoint store + serializer is
 	// REQUIRED for the second Invoke to actually resume from
@@ -325,6 +607,14 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	if waiting1[0].CpnID == "" {
 		t.Error("run 1: waiting_for_user event has empty cpn_id")
 	}
+	var interrupted entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-fillup").First(&interrupted).Error; err != nil {
+		t.Fatalf("run 1: reload session: %v", err)
+	}
+	interruptedHistory, _ := interrupted.DSL["history"].([]any)
+	if len(interruptedHistory) != 1 {
+		t.Fatalf("run 1: persisted history = %#v, want only the user turn", interrupted.DSL["history"])
+	}
 
 	// Run 2: with the checkpoint store wired, eino loads the
 	// saved state from run 1, the engine targets the UserFillUp
@@ -359,6 +649,97 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	if !strings.Contains(messages2[0].Content, "got: my follow-up") {
 		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "got: my follow-up")
+	}
+	var completed entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-fillup").First(&completed).Error; err != nil {
+		t.Fatalf("run 2: reload session: %v", err)
+	}
+	completedHistory, _ := completed.DSL["history"].([]any)
+	if len(completedHistory) != 3 {
+		t.Fatalf("run 2: persisted history = %#v, want two user turns and one assistant turn", completed.DSL["history"])
+	}
+}
+
+func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.API4Conversation{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"globals": map[string]any{"sys.history": []any{}},
+		"history": []any{},
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+				"downstream": []any{"prompt_0"},
+			},
+			"prompt_0": map[string]any{
+				"obj":        map[string]any{"component_name": "Message", "params": map[string]any{"text": "partial answer"}},
+				"upstream":   []any{"begin_0"},
+				"downstream": []any{"user_fill_up_0"},
+			},
+			"user_fill_up_0": map[string]any{
+				"obj":      map[string]any{"component_name": "UserFillUp", "params": map[string]any{"enable_tips": true}},
+				"upstream": []any{"prompt_0"},
+			},
+		},
+		"path": []any{"begin_0", "prompt_0", "user_fill_up_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-partial", "user-1", "tenant-1", "v-partial", dsl)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-partial",
+		DialogID:  "canvas-partial",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+		DSL:       entity.JSONMap(dsl),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	events, err := NewAgentService().RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-partial",
+		"session-partial",
+		"",
+		"question",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	messages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) != 0 || len(waiting) != 1 || !done {
+		t.Fatalf("messages=%+v waiting=%+v errors=%+v done=%v", messages, waiting, errs, done)
+	}
+	if len(messages) != 1 || messages[0].Content != "partial answer" {
+		t.Fatalf("partial messages = %+v", messages)
+	}
+
+	var session entity.API4Conversation
+	if err := testDB.Where("id = ?", "session-partial").First(&session).Error; err != nil {
+		t.Fatalf("reload session: %v", err)
+	}
+	history, ok := session.DSL["history"].([]any)
+	if !ok || len(history) != 2 {
+		t.Fatalf("persisted history = %#v, want user and partial assistant", session.DSL["history"])
+	}
+	assistant, ok := history[1].([]any)
+	if !ok || len(assistant) != 2 || assistant[0] != "assistant" {
+		t.Fatalf("assistant history = %#v", history[1])
+	}
+	payload, ok := assistant[1].(map[string]any)
+	if !ok || payload["content"] != "partial answer" {
+		t.Fatalf("assistant payload = %#v, want partial answer", assistant[1])
 	}
 }
 
@@ -868,12 +1249,9 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		t.Fatalf("run 2: expected 1 message event, got %d", len(messages2))
 	}
 	content := messages2[0].Content
-	// Go renders []any{"a","b","c","d","e"} via fmt.Sprintf("%v", ...)
-	// as "[a b c d e]" (space-separated, no commas, no quotes). The
-	// DSL template "输入数组: {StringTransform:SplitCSV@result}"
-	// therefore produces "输入数组: [a b c d e]" with the leading
-	// space the author put in the DSL between ':' and '{'.
-	want := "迭代结束。\n输入数组: [a b c d e]\n格式化输出(lines):[0: a 1: b 2: c 3: d 4: e]"
+	// Python Message._stringify_message_value renders non-string template
+	// values as JSON, so list references keep commas and quotes.
+	want := "迭代结束。\n输入数组: [\"a\",\"b\",\"c\",\"d\",\"e\"]\n格式化输出(lines):[\"0: a\",\"1: b\",\"2: c\",\"3: d\",\"4: e\"]"
 	if content != want {
 		t.Fatalf("run 2: Content = %q, want %q", content, want)
 	}
@@ -1002,10 +1380,10 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	// not the legacy hashableKey first-field). desc + score picks
 	// Alpha(0.91), Beta(0.88), Gamma(0.76) regardless of input order.
 	// Head(2) then takes Alpha, Beta.
-	if !strings.Contains(messages[0].Content, "first=map[id:1 score:0.91 tag:demo title:Alpha]") {
+	if !strings.Contains(messages[0].Content, `first={"id":1,"score":0.91,"tag":"demo","title":"Alpha"}`) {
 		t.Errorf("Content = %q, want first=Alpha (sort_by=score desc top-1)", messages[0].Content)
 	}
-	if !strings.Contains(messages[0].Content, "last=map[id:2 score:0.88 tag:demo title:Beta]") {
+	if !strings.Contains(messages[0].Content, `last={"id":2,"score":0.88,"tag":"demo","title":"Beta"}`) {
 		t.Errorf("Content = %q, want last=Beta (sort_by=score desc top-2)", messages[0].Content)
 	}
 }
