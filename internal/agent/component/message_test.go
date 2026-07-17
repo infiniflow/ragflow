@@ -46,6 +46,27 @@ func TestMessage_ResolveTemplate(t *testing.T) {
 	if _, ok := out["streamed_chunks"]; ok {
 		t.Errorf("streamed_chunks must not be present, got %v", out["streamed_chunks"])
 	}
+	if downloads, ok := out["downloads"].([]DownloadInfo); !ok || len(downloads) != 0 {
+		t.Errorf("downloads = %#v, want an empty []DownloadInfo", out["downloads"])
+	}
+}
+
+func TestMessage_ResolveListReferenceAsJSON(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-list", "task-list")
+	state.SetVar("list_0", "result", []any{"user: 1"})
+	ctx := withStateForTest(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{
+		"text":   "{{list_0@result}}",
+		"stream": false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != `["user: 1"]` {
+		t.Fatalf("content = %q, want JSON list", got)
+	}
 }
 
 // TestMessage_Stream confirms the Stream() contract: the returned

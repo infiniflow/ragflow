@@ -3087,12 +3087,14 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 		return "", err
 	}
 
-	// Builtin provider is a local service (TEI), not a tenant-enrolled
-	// provider. There is no row in tenant_model_provider for it, so skip
-	// database lookups. Mirrors GetModelConfigFromProviderInstance's
-	// Builtin short-circuit and Python's resolve_model_id which returns
-	// None for Builtin TEI embeddings.
-	if modelType == entity.ModelTypeEmbedding && providerName == "Builtin" {
+	// Builtin provider: Builtin models (e.g. local TEI embeddings) have no
+	// tenant_model_instance records, so there is no tenant-scoped model ID to
+	// resolve.  Downstream resolution (ResolveModelConfig / getModelConfig)
+	// falls through to parseModelName → Builtin routing, which already works.
+	if providerName == "Builtin" && modelType == entity.ModelTypeEmbedding {
+		if builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName); builtinDriver == nil {
+			return "", fmt.Errorf("builtin embedding model %q not found", pureModelName)
+		}
 		return "", nil
 	}
 
