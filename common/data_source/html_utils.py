@@ -76,12 +76,18 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
     text = ""
     list_element_start = False
     verbatim_output = 0
-    in_table = False
     last_added_newline = False
-    link_href: str | None = None
 
     for e in document.descendants:
         verbatim_output -= 1
+        # ``descendants`` yields opening tags only, so table and link scope is read
+        # from each element's ancestors: a flag set on <table>/<a> would never clear.
+        in_table = e.find_parent("table") is not None
+        anchor = e.find_parent("a")
+        href_value = anchor.get("href", None) if anchor is not None else None
+        # mostly for typing, having multiple hrefs is not valid HTML
+        link_href = href_value[0] if isinstance(href_value, list) else href_value
+
         if isinstance(e, bs4.element.NavigableString):
             if isinstance(e, (bs4.element.Comment, bs4.element.Doctype)):
                 continue
@@ -109,26 +115,15 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
 
                 list_element_start = False
         elif isinstance(e, bs4.element.Tag):
-            # table is standard HTML element
-            if e.name == "table":
-                in_table = True
             # TR is for rows
-            elif e.name == "tr" and in_table:
+            if e.name == "tr" and in_table:
                 text += "\n"
             # td for data cell, th for header
             elif e.name in ["td", "th"] and in_table:
                 text += table_cell_separator
-            elif e.name == "/table":
-                in_table = False
             elif in_table:
                 # don't handle other cases while in table
                 pass
-            elif e.name == "a":
-                href_value = e.get("href", None)
-                # mostly for typing, having multiple hrefs is not valid HTML
-                link_href = href_value[0] if isinstance(href_value, list) else href_value
-            elif e.name == "/a":
-                link_href = None
             elif e.name in ["p", "div"]:
                 if not list_element_start:
                     text += "\n"
