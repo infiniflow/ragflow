@@ -203,6 +203,16 @@ type APIConfig struct {
 	ApiKey  *string
 	Region  *string
 	BaseURL *string
+
+	// AccessKeyID and AccessKeySecret are the Aliyun Cloud account
+	// AccessKey pair used to sign control-plane Open API requests with
+	// ACS3-HMAC-SHA256. They are only required for endpoints that are
+	// NOT served by DashScope/Bailian (which authenticates with ApiKey),
+	// such as the BSS QueryAccountBalance call backing AliyunModel.Balance.
+	// Drivers that do not need them MUST leave them nil; they MUST NOT
+	// be reused as a fallback for ApiKey.
+	AccessKeyID     *string
+	AccessKeySecret *string
 }
 
 type EmbeddingConfig struct {
