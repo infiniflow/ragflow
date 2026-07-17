@@ -435,7 +435,9 @@ class MistralParser(RAGFlowPdfParser):
         finally:
             if file_id:
                 try:
-                    requests.delete(f"{self.base_url}/files/{file_id}", headers=self._headers(), timeout=self.timeout)
+                    resp = requests.delete(f"{self.base_url}/files/{file_id}", headers=self._headers(), timeout=self.timeout)
+                    if not 200 <= resp.status_code < 300:
+                        self.logger.warning("failed to delete uploaded file %s: %s %s", file_id, resp.status_code, resp.text[:200])
                 except Exception:
                     self.logger.warning("failed to delete uploaded file %s", file_id)
 
@@ -466,8 +468,12 @@ class MistralParser(RAGFlowPdfParser):
         # pages is a selector: include only when the caller restricted the range.
         pages: Optional[list[int]] = None
         if from_page > 0 or to_page < MAXIMUM_PAGE_NUMBER:
-            total = len(self.page_images) if getattr(self, "page_images", None) else to_page
-            end = min(to_page, total)
+            # Bound the selector by the real page count, never by the sentinel
+            # to_page (MAXIMUM_PAGE_NUMBER) — otherwise a failed render would
+            # build a ~100k-element list. Fall back to the PDF page count.
+            rendered = len(self.page_images) if getattr(self, "page_images", None) else 0
+            total = rendered or self.total_page_number(Path(filepath).name, pdf_bytes)
+            end = min(to_page, total) if total else from_page
             pages = list(range(from_page, end))
             if not pages:
                 return [], []

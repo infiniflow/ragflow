@@ -343,7 +343,10 @@ class MistralOcrModel(Base, MistralParser):
             except Exception:
                 raw_config = {}
 
-        config = raw_config.get("api_key", raw_config)
+        # Only unwrap a nested {"api_key": {...}} config object; a flat config
+        # whose "api_key" is a string must be preserved so the key is not lost.
+        nested_config = raw_config.get("api_key") if isinstance(raw_config, dict) else None
+        config = nested_config if isinstance(nested_config, dict) else raw_config
         if not isinstance(config, dict):
             config = {}
 

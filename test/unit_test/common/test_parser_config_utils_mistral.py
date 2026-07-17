@@ -12,6 +12,7 @@ def test_mistral_ocr_suffix_case_insensitive():
     raw = "mistral-ocr-latest@inst@MISTRAL OCR"
     layout, model_name = normalize_layout_recognizer(raw)
     assert layout == "Mistral OCR"
+    assert model_name == raw
 
 
 def test_plain_mistral_not_captured():

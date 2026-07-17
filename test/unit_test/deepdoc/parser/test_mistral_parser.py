@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _load_mistral_parser(monkeypatch):
     """Load mistral_parser.py directly, bypassing deepdoc/__init__.py's
@@ -264,11 +266,8 @@ def test_call_ocr_raises_on_http_error(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-bad")
     monkeypatch.setattr(m.requests, "post", lambda *a, **k: _Resp(401, text="Unauthorized"))
-    try:
+    with pytest.raises(RuntimeError, match="401"):
         p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "401" in str(e)
 
 
 def test_call_ocr_uploads_when_over_inline_limit(monkeypatch):
@@ -298,11 +297,8 @@ def test_call_ocr_upload_files_error_no_delete(monkeypatch):
     calls = {"delete": []}
     monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(500, text="boom"))
     monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
-    try:
+    with pytest.raises(RuntimeError, match="500"):
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "500" in str(e)
     assert calls["delete"] == []  # file_id never set -> nothing to clean up
 
 
@@ -313,11 +309,8 @@ def test_call_ocr_signed_url_error_triggers_cleanup(monkeypatch):
     monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(200, {"id": "file-1"}))
     monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(403, text="nope"))
     monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
-    try:
+    with pytest.raises(RuntimeError, match="403"):
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "403" in str(e)
     assert any("file-1" in u for u in calls["delete"])  # cleanup ran
 
 
@@ -334,11 +327,8 @@ def test_call_ocr_post_upload_ocr_error_triggers_cleanup(monkeypatch):
     monkeypatch.setattr(m.requests, "post", fake_post)
     monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
     monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
-    try:
+    with pytest.raises(RuntimeError, match="422"):
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "422" in str(e)
     assert any("file-9" in u for u in calls["delete"])  # finally cleanup ran despite OCR failure
 
 
@@ -357,11 +347,9 @@ def test_call_ocr_delete_failure_does_not_mask_error(monkeypatch):
     monkeypatch.setattr(m.requests, "post", fake_post)
     monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {"url": "https://signed"}))
     monkeypatch.setattr(m.requests, "delete", boom_delete)
-    try:
+    # the real OCR error, not the swallowed delete error
+    with pytest.raises(RuntimeError, match="422"):
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
-        assert False, "expected RuntimeError"
-    except RuntimeError as e:
-        assert "422" in str(e)  # the real OCR error, not the swallowed delete error
 
 
 def _patch_render(m, p, n_pages):
