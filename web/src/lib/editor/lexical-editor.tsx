@@ -40,6 +40,7 @@ interface Props {
   placeholder?: string;
   onToggleSource?: () => void;
   showSource?: boolean;
+  onWikiLinkClick?: (pageType: 'concept' | 'entity', slug: string) => void;
 }
 
 function InitialContentPlugin({
@@ -133,6 +134,7 @@ function ChangeListener({
 import FloatingSelectionToolbar from './plugins/floating-selection-toolbar';
 import TableActionsPlugin from './plugins/table-actions-plugin';
 import ToolbarPlugin from './plugins/toolbar-plugin';
+import { WikiLinkClickPlugin } from './plugins/wiki-link-click-plugin';
 
 export default function LexicalEditor({
   content,
@@ -141,6 +143,7 @@ export default function LexicalEditor({
   placeholder = 'Start writing...',
   onToggleSource,
   showSource = false,
+  onWikiLinkClick,
 }: Props): JSX.Element {
   const transformers = useMemo(() => CORE_TRANSFORMERS, []);
 
@@ -187,6 +190,7 @@ export default function LexicalEditor({
             <MarkdownShortcutPlugin transformers={transformers} />
             <ListPlugin />
             <LinkPlugin />
+            <WikiLinkClickPlugin onWikiLinkClick={onWikiLinkClick} />
             <HashtagPlugin />
             <TablePlugin />
             <TableActionsPlugin />
