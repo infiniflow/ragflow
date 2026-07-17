@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -78,8 +79,8 @@ func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan §6.a
-// M4 方案 A: a deployment that cannot persist checkpoints must not silently
+// resolved (no injected store AND no global Redis client). This is plan A: a
+// deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
 // Production ingestion wiring sets this; unit tests leave it off to exercise
@@ -211,22 +212,12 @@ var defaultCheckpointTTL = 24 * time.Hour
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_params map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
 	if p.canvas == nil {
 		return nil, fmt.Errorf("pipeline: canvas is nil")
-	}
-	// runSetups, when non-nil, overrides components' DSL-baked
-	// `params["setups"]` at compile time. It is keyed by cpnID; each
-	// component is merged only with its own entry, and within that entry a
-	// top-level key fully replaces the base entry for that key (see
-	// canvas.mergeSetups). It is variadic so existing callers that pass
-	// only (ctx, inputs) keep working.
-	var runSetups map[string]any
-	if len(setups) > 0 {
-		runSetups = setups[0]
 	}
 	if runtime.DefaultFactory() == nil {
 		runtime.InstallDefaultRegistryFactory()
@@ -268,8 +259,10 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 		)
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
-	// setups at compile time (higher priority; see canvas.WithSetupOverrides).
-	compileOpts = append(compileOpts, canvas.WithSetupOverrides(runSetups))
+	// setups at compile time (higher priority; see canvas.WithOverrideParams).
+	if override_params != nil {
+		compileOpts = append(compileOpts, canvas.WithOverrideParams(override_params))
+	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
@@ -348,17 +341,17 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				_ = tracker.MarkCancelled(runCtx, p.taskID)
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			_ = tracker.MarkFailed(runCtx, p.taskID, err.Error())
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		_ = tracker.MarkSucceeded(runCtx, p.taskID)
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -395,8 +388,11 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
-				_ = tracker.ClearInterruptID(ctx, cpID)
-				_ = tracker.MarkSucceeded(ctx, cpID)
+				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+			}
+			if store != nil {
+				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
@@ -405,14 +401,14 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			p.cleanupCheckpoint(ctx, store, tracker, cpID)
 			if tracker != nil {
-				_ = tracker.MarkCancelled(ctx, cpID)
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
 			if tracker != nil {
-				_ = tracker.MarkFailed(ctx, cpID, invokeErr.Error())
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}
@@ -489,4 +485,57 @@ func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 			Phase:      int(ev.Phase),
 		})
 	}
+}
+
+func PatchDSL(raw string, parserConfig map[string]interface{}) (string, error) {
+	if len(parserConfig) == 0 {
+		return raw, nil
+	}
+
+	var dslMap map[string]any
+	if err := json.Unmarshal([]byte(raw), &dslMap); err != nil {
+		return raw, fmt.Errorf("parse dsl: %w", err)
+	}
+
+	components, _ := dslMap["components"].(map[string]any)
+	if components == nil {
+		if inner, ok := dslMap["dsl"].(map[string]any); ok {
+			components, _ = inner["components"].(map[string]any)
+		}
+		if components == nil {
+			return raw, nil
+		}
+	}
+	for cid, extraVal := range parserConfig {
+		compVal, ok := components[cid]
+		if !ok {
+			continue
+		}
+		extraParams, _ := extraVal.(map[string]any)
+		if extraParams == nil {
+			continue
+		}
+		compMap, _ := compVal.(map[string]any)
+		if compMap == nil {
+			continue
+		}
+		obj, _ := compMap["obj"].(map[string]any)
+		if obj == nil {
+			continue
+		}
+		existing, _ := obj["params"].(map[string]any)
+		if existing == nil {
+			obj["params"] = extraParams
+		} else {
+			for k, v := range extraParams {
+				existing[k] = v
+			}
+		}
+	}
+
+	patched, err := json.Marshal(dslMap)
+	if err != nil {
+		return raw, fmt.Errorf("marshal patched dsl: %w", err)
+	}
+	return string(patched), nil
 }

@@ -593,7 +593,7 @@ class Base(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
                         model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
@@ -653,7 +653,7 @@ class Base(ABC):
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -673,14 +673,28 @@ class Base(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: stream a terminal tool's
+                    # result (already the final answer) and stop the loop.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
@@ -1925,7 +1939,7 @@ class LiteLLMBase(ABC):
             history = deepcopy(hist)
             try:
                 for _ in range(self.max_rounds + 1):
-                    logging.info(f"{self.tools=}")
+                    logging.info(f"HAS TOOL:{len(self.tools)}\n{history=}")
 
                     completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(
@@ -2029,7 +2043,7 @@ class LiteLLMBase(ABC):
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
                     reasoning_content = ""
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     # Request authoritative usage on the final streaming chunk.
@@ -2096,7 +2110,7 @@ class LiteLLMBase(ABC):
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -2116,14 +2130,29 @@ class LiteLLMBase(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: a terminal tool already
+                    # produces the final answer, so stream its result and stop
+                    # instead of feeding it back for another LLM round.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(
                         history,
                         results,

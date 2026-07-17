@@ -320,12 +320,11 @@ func TestPrepareTexts_NoPanicOnListText(t *testing.T) {
 	}
 }
 
-func TestMustGetChunkTextString_NoPanicOnStringSlice(t *testing.T) {
+func TestGetChunkTextString_ReturnsErrorOnNonString(t *testing.T) {
 	chunk := map[string]any{"text": []string{"bad-shape"}}
-	if _, err := MustGetChunkTextString(chunk); err == nil {
-		t.Errorf("expect error when chunk[text] is not string")
+	if _, err := GetChunkTextString(chunk); err == nil {
+		t.Fatal("expected error when chunk[text] is not a string")
 	}
-
 }
 func TestGetEmbeddingTokenConsumption_Int(t *testing.T) {
 	input := map[string]any{EmbeddingTokenConsumptionKey: 42}

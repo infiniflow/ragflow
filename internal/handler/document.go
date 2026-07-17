@@ -1417,7 +1417,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 }
 
 type StartParseDocumentsRequest struct {
-	DatasetID string   `json:"dataset_id" binding:"required"`
+	DatasetID string   `json:"dataset_id"`
 	Documents []string `json:"documents" binding:"required"`
 }
 

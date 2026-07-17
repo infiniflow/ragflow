@@ -30,7 +30,7 @@ func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOpt
 		reorderPDFMultiColumn(result, opts.pageWidth, opts.zoom)
 	}
 	if opts.removeTOC {
-		removePDFTOCByOutlines(result, result.Outlines)
+		applyRemoveTOC(result)
 	}
 	normalizePDFLayoutTypes(result)
 	if opts.removeHeaderFooter {
@@ -83,6 +83,86 @@ func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
 	}
 }
 
+// applyRemoveTOC mirrors Python parser.py:663-681 three-way dispatch:
+//   - No outlines → pattern-based remove_toc on all sections
+//   - First outline on page 1 → outline-based remove_toc_pdf
+//   - First outline after page 1 → pattern-based on pages before the first outline
+func applyRemoveTOC(result *deepdoctype.ParseResult) {
+	if result == nil {
+		return
+	}
+	outlines := result.Outlines
+	if len(outlines) == 0 {
+		removePDFTOC(result)
+		return
+	}
+	firstOutlinePage := outlines[0].PageNumber
+	if firstOutlinePage <= 1 {
+		removePDFTOCByOutlines(result, outlines)
+		return
+	}
+	splitAt := len(result.Sections)
+	for i, s := range result.Sections {
+		if firstSectionPage(s) >= firstOutlinePage {
+			splitAt = i
+			break
+		}
+	}
+	beforeSplit := &deepdoctype.ParseResult{Sections: result.Sections[:splitAt]}
+	removePDFTOC(beforeSplit)
+	result.Sections = append(beforeSplit.Sections, result.Sections[splitAt:]...)
+}
+
+func removePDFTOC(result *deepdoctype.ParseResult) {
+	sections := result.Sections
+	i := 0
+	for i < len(sections) {
+		text := sectionText(sections[i])
+		if !pdfTOCTitlePattern.MatchString(strings.ToLower(strings.TrimSpace(text))) {
+			i++
+			continue
+		}
+		sections = append(sections[:i], sections[i+1:]...)
+		if i >= len(sections) {
+			break
+		}
+		prefix := sectionTextPrefix(sections[i], 3)
+		for prefix == "" {
+			sections = append(sections[:i], sections[i+1:]...)
+			if i >= len(sections) {
+				break
+			}
+			prefix = sectionTextPrefix(sections[i], 3)
+		}
+		if i >= len(sections) || prefix == "" {
+			break
+		}
+		sections = append(sections[:i], sections[i+1:]...)
+		if i >= len(sections) || prefix == "" {
+			break
+		}
+		for j := i; j < len(sections) && j < i+128; j++ {
+			if !strings.HasPrefix(sectionText(sections[j]), prefix) {
+				continue
+			}
+			sections = append(sections[:i], sections[j:]...)
+			break
+		}
+	}
+	result.Sections = sections
+}
+
+func sectionText(s deepdoctype.Section) string {
+	return strings.TrimSpace(s.Text)
+}
+
+func sectionTextPrefix(s deepdoctype.Section, n int) string {
+	text := sectionText(s)
+	if len(text) < n {
+		return text
+	}
+	return text[:n]
+}
 func removePDFTOCByOutlines(result *deepdoctype.ParseResult, outlines []deepdoctype.Outline) {
 	if result == nil || len(outlines) == 0 {
 		return

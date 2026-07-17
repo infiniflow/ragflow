@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
 	"github.com/gin-gonic/gin"
@@ -82,8 +83,9 @@ func (m *mockModelService) GetChatModel(tenantID, llmID string) (*modelModule.Ch
 
 type mockMetadataService struct {
 	MetadataServiceIface
-	getFlattedMetaFn func(kbIDs []string) (common.MetaData, error)
-	labelQuestionFn  func(question string, kbs []*entity.Knowledgebase) map[string]float64
+	getFlattedMetaFn    func(kbIDs []string) (common.MetaData, error)
+	searchMetadataByKBs func(kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	labelQuestionFn     func(question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
 func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
@@ -91,6 +93,17 @@ func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaDa
 		return m.getFlattedMetaFn(kbIDs)
 	}
 	return common.MetaData{}, nil
+}
+
+func (m *mockMetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+	if m.searchMetadataByKBs != nil {
+		return m.searchMetadataByKBs(kbIDs, size)
+	}
+	return &service.SearchMetadataResponse{
+		MetadataRecords: []map[string]interface{}{
+			{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+		},
+	}, nil
 }
 
 func (m *mockMetadataService) LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64 {
@@ -126,7 +139,7 @@ func (m *mockDocDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
 		return m.getByIDsFn(ids)
 	}
 	return []*entity.Document{
-		{ID: "doc1", Name: strPtr("Test Doc"), MetaFields: &entity.JSONMap{"author": "Zhang San"}},
+		{ID: "doc1", Name: strPtr("Test Doc")},
 	}, nil
 }
 

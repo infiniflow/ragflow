@@ -515,7 +515,7 @@ async def load_chunks_with_vec(
     index_nm = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index_nm, kb_id):
         return []
-    select_fields = ["id", "doc_id", "content_with_weight", vctr_nm]
+    select_fields = ["id", "doc_id", "content_with_weight", "compile_kwd", vctr_nm]
     order_by = OrderByExpr()
     order_by.asc("page_num_int")
     order_by.asc("top_int")
@@ -529,7 +529,11 @@ async def load_chunks_with_vec(
                 settings.docStoreConn.search,
                 select_fields,
                 [],
-                {"doc_id": [doc_id], "available_int": 1},
+                {
+                    "doc_id": [doc_id],
+                    "available_int": 1,
+                    "must_not": {"exists": "compile_kwd"},
+                },
                 [],
                 order_by,
                 offset,

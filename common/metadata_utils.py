@@ -63,7 +63,13 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
     def filter_out(v2docs, operator, value):
         ids = []
+        original_value = value
         for input, docids in v2docs.items():
+            # Reset to the pristine filter value each iteration -- the comparison branch
+            # below reassigns `value` in place (date normalization, literal_eval coercion),
+            # and reusing that mutated value on the next dict entry compares it against
+            # the wrong (already-coerced) type/content instead of the original filter value.
+            value = original_value
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 # Check if input is in YYYY-MM-DD date format
                 input_str = str(input).strip()
@@ -88,8 +94,14 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                     try:
                         if isinstance(input, list):
                             input = input[0]
-                        input = ast.literal_eval(input)
-                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+                    # Commit both literal_eval results together, or neither -- assigning
+                    # just one side (e.g. "None" parses but "none" doesn't) would compare
+                    # mismatched types after lowercasing and silently break the
+                    # case-insensitive match below.
+                    try:
+                        input, value = ast.literal_eval(input), ast.literal_eval(value)
                     except Exception:
                         pass
 

@@ -181,6 +181,61 @@ func (s *StringTransformComponent) Inputs() map[string]string {
 	return out
 }
 
+func (s *StringTransformComponent) GetInputForm() map[string]any {
+	if s.param.Method == "split" {
+		return map[string]any{
+			"line": map[string]any{
+				"name": "String",
+				"type": "line",
+			},
+		}
+	}
+	out := make(map[string]any)
+	for k, o := range getInputElementsFromText(s.param.Script) {
+		name, _ := o["name"].(string)
+		if name == "" {
+			name = k
+		}
+		out[k] = map[string]any{
+			"name": name,
+			"type": "line",
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func getInputElementsFromText(txt string) map[string]map[string]any {
+	res := make(map[string]map[string]any)
+	for _, match := range runtime.VarRefPattern.FindAllStringSubmatch(txt, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		exp := match[1]
+		if _, ok := res[exp]; ok {
+			continue
+		}
+		cpnID, varName := "", exp
+		if at := strings.Index(exp, "@"); at > 0 {
+			cpnID = exp[:at]
+			varName = exp[at+1:]
+		}
+		name := exp
+		if cpnID != "" {
+			name = cpnID + "@" + varName
+		}
+		res[exp] = map[string]any{
+			"name":       name,
+			"value":      nil,
+			"_retrieval": nil,
+			"_cpn_id":    cpnID,
+		}
+	}
+	return res
+}
+
 // Outputs returns the transformed payload.
 func (s *StringTransformComponent) Outputs() map[string]string {
 	return map[string]string{

@@ -208,3 +208,31 @@ def test_normalised_ge_filters_dates_in_memory():
     metas = {"date": {"2026-04-01": ["a"], "2026-04-15": ["b"], "2026-03-01": ["c"]}}
     conds = normalize_condition_operators([{"key": "date", "op": ">=", "value": "2026-04-01"}])
     assert set(meta_filter(metas, conds, "and")) == {"a", "b"}
+
+
+def test_equal_is_case_insensitive_for_python_keyword_literals():
+    # "None" is a metadata cell that happens to be a Python literal keyword; the
+    # query value "none" (lowercase) is not a valid literal on its own. Coercing
+    # one side (input -> None) while leaving the other as the string "none" would
+    # compare mismatched types and silently fail the case-insensitive match.
+    metas = {"status": {"None": ["doc1"], "Active": ["doc2"]}}
+    filters = [{"key": "status", "op": "=", "value": "none"}]
+
+    assert meta_filter(metas, filters) == ["doc1"]
+
+
+def test_not_equal_is_case_insensitive_for_python_keyword_literals():
+    metas = {"status": {"None": ["doc1"], "Active": ["doc2"]}}
+    filters = [{"key": "status", "op": "≠", "value": "none"}]
+
+    assert meta_filter(metas, filters) == ["doc2"]
+
+
+def test_greater_than_unaffected_by_prior_dict_entry_coercing_the_query_value():
+    # The query value must be re-read fresh for every metadata entry -- if an
+    # earlier entry coerces it in place (e.g. "5" -> 5), a later entry must not
+    # compare against that already-coerced leftover instead of the original "5".
+    metas = {"score": {"5": ["doc1"], "10": ["doc2"]}}
+    filters = [{"key": "score", "op": ">", "value": "5"}]
+
+    assert meta_filter(metas, filters) == ["doc2"]
