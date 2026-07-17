@@ -395,6 +395,10 @@ class MinerUParser(RAGFlowPdfParser):
                 if source_width > 0 and source_height > 0:
                     x0, x1 = x0 / source_width * page_width, x1 / source_width * page_width
                     top, bott = top / source_height * page_height, bott / source_height * page_height
+                else:
+                    self.logger.warning("[MinerU] Invalid middle-json page_size=%s for page_idx=%s; using raw bbox=%s", page_size, page_idx, bbox)
+            else:
+                self.logger.warning("[MinerU] Missing middle-json page_size for page_idx=%s; using raw bbox=%s", page_idx, bbox)
         return x0, top, x1, bott
 
     @staticmethod
@@ -628,7 +632,7 @@ class MinerUParser(RAGFlowPdfParser):
     def _middle_positions_for_output(self, output: dict[str, Any], middle_blocks: list[dict[str, Any]]):
         if output.get("type") != MinerUContentType.TABLE:
             return []
-        if not isinstance(output.get("bbox"), (list, tuple)) or output.get("page_idx") is None:
+        if not isinstance(output.get("bbox"), (list, tuple)) or len(output["bbox"]) < 4 or output.get("page_idx") is None:
             return []
 
         target_text = self._table_match_text(output)
@@ -677,12 +681,16 @@ class MinerUParser(RAGFlowPdfParser):
 
         middle_blocks = list(self._iter_middle_blocks(middle_data))
         if not middle_blocks:
+            self.logger.info("[MinerU] No middle-json blocks found in %s; skipping cross-page position enrichment.", middle_json)
             return
 
+        enriched_count = 0
         for output in outputs:
             positions = self._middle_positions_for_output(output, middle_blocks)
             if len(positions) > 1:
                 output["_mineru_positions"] = positions
+                enriched_count += 1
+        self.logger.info("[MinerU] Enriched %s outputs with cross-page table positions from %s.", enriched_count, middle_json)
 
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         json_file = None
@@ -810,7 +818,10 @@ class MinerUParser(RAGFlowPdfParser):
 
         middle_json = self._find_middle_json(output_dir, subdir, file_stem, safe_stem)
         if middle_json:
+            self.logger.info(f"[MinerU] Found middle json: {middle_json}")
             self._enrich_outputs_with_middle_positions(data, middle_json)
+        else:
+            self.logger.info("[MinerU] No middle json found; skipping cross-page position enrichment.")
 
         for item in data:
             for key in ("img_path", "table_img_path", "equation_img_path"):
