@@ -134,15 +134,17 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
             changed_files=$(mktemp)
             trap 'rm -f "$changed_files"' EXIT
-            git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-              | while read -r file; do
+            git diff --name-only -z ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+              | while IFS= read -r -d '' file; do
                   if [[ -f "$file" ]]; then
                     printf '%s\0' "$file"
                   fi
                 done > "$changed_files"
             echo "Changed files to run lefthook on:"
             if [[ -s "$changed_files" ]]; then
-              tr '\0' '\n' < "$changed_files" | sed 's/^/  /'
+              while IFS= read -r -d '' file; do
+                printf '  %q\n' "$file"
+              done < "$changed_files"
             else
               echo "  (none — lefthook will be a no-op)"
             fi
