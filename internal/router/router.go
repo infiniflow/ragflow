@@ -17,9 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
