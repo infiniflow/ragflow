@@ -126,15 +126,15 @@ func extractMessageText(params map[string]any) string {
 		case string:
 			return x
 		case []string:
-			if len(x) > 0 {
-				return x[0]
-			}
+			return strings.Join(x, "")
 		case []any:
-			if len(x) > 0 {
-				if s, ok := x[0].(string); ok {
-					return s
+			var b strings.Builder
+			for _, item := range x {
+				if s, ok := item.(string); ok {
+					b.WriteString(s)
 				}
 			}
+			return b.String()
 		}
 	}
 	return ""
@@ -184,6 +184,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	if err != nil {
 		return nil, fmt.Errorf("Message: %w", err)
 	}
+	resolved = stripThinking(resolved)
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.

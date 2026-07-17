@@ -365,13 +365,6 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 	return stripThinking(resolved), nil
 }
 
-func stripThinking(content string) string {
-	if idx := strings.LastIndex(content, "</think>"); idx >= 0 {
-		return strings.TrimSpace(content[idx+len("</think>"):])
-	}
-	return content
-}
-
 func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bool, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {

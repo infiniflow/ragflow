@@ -81,6 +81,22 @@ func TestRender_Markdown(t *testing.T) {
 	}
 }
 
+func TestRender_MarkdownAliasMD(t *testing.T) {
+	got := Render(RenderRequest{
+		Format: OutputFormatMD,
+		Text:   "## heading",
+		Downloads: []DownloadInfo{
+			{URL: "/x", Filename: "x.txt"},
+		},
+	})
+	if !strings.Contains(got, "## heading") {
+		t.Errorf("markdown body not preserved: %q", got)
+	}
+	if !strings.Contains(got, "- [x.txt](/x)") {
+		t.Errorf("missing markdown link: %q", got)
+	}
+}
+
 // TestRender_PlainNoDownloads: plain format with no downloads
 // returns the body verbatim (no wrapper, no extra newlines).
 func TestRender_PlainNoDownloads(t *testing.T) {

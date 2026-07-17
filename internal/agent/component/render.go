@@ -54,6 +54,7 @@ type OutputFormat string
 const (
 	OutputFormatHTML     OutputFormat = "html"
 	OutputFormatMarkdown OutputFormat = "markdown"
+	OutputFormatMD       OutputFormat = "md"
 	OutputFormatPlain    OutputFormat = "plain"
 	// OutputFormatEmpty means "no renderer" — content passes through
 	// as-is. Python's default. The string value differs from "" only
@@ -101,7 +102,7 @@ func Render(req RenderRequest) string {
 	switch format {
 	case OutputFormatHTML:
 		return wrapHTML(body, dlBlock)
-	case OutputFormatMarkdown:
+	case OutputFormatMarkdown, OutputFormatMD:
 		return joinMarkdown(body, dlBlock)
 	default:
 		return joinPlain(body, dlBlock)
@@ -126,7 +127,7 @@ func renderDownloads(format OutputFormat, dls []DownloadInfo) string {
 		}
 		b.WriteString("</ul>")
 		return b.String()
-	case OutputFormatMarkdown:
+	case OutputFormatMarkdown, OutputFormatMD:
 		var b strings.Builder
 		for _, d := range dls {
 			b.WriteString("- [")

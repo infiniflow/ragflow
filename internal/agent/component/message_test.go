@@ -109,6 +109,22 @@ func TestMessage_RuntimeContentInput(t *testing.T) {
 	}
 }
 
+func TestMessage_ContentArrayKeepsAnswerAfterThinking(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{
+		"content": []any{"<think>reasoning only</think>", "visible answer"},
+	})
+	state := canvas.NewCanvasState("run-4b", "task-4b")
+	ctx := withStateForTest(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{"stream": false})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "visible answer" {
+		t.Errorf("content: got %q, want %q", got, "visible answer")
+	}
+}
+
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")

@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -76,14 +77,19 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -117,6 +123,14 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 					"type": "disabled",
 				}
 			}
+		}
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			toolChoice := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				toolChoice = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
 		}
 	}
 
@@ -192,9 +206,19 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 		reasonContent = reasonContent[1:]
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -225,14 +249,19 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if modelConfig != nil {
@@ -267,6 +296,15 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 				}
 			}
 		}
+
+		if modelConfig.Tools != nil {
+			reqBody["tools"] = modelConfig.Tools
+			toolChoice := "auto"
+			if modelConfig.ToolChoice != nil {
+				toolChoice = *modelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -297,6 +335,10 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	// SSE parsing: read line by line
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+	}
+	accumulatedToolCalls := make(map[int]map[string]interface{})
 	if _, err := ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -311,6 +353,36 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			return nil
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if hasExisting {
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if args, ok := fn["arguments"].(string); ok {
+							if ef, ok := existing["function"].(map[string]interface{}); ok {
+								if ea, ok := ef["arguments"].(string); ok {
+									ef["arguments"] = ea + args
+								} else {
+									ef["arguments"] = args
+								}
+							}
+						}
+					}
+				} else {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+				}
+			}
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -330,6 +402,19 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+
+	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		modelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility

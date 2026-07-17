@@ -95,12 +95,25 @@ func emitAgentMessageEvents(emit func(string, string), answer, thinking string, 
 	}
 }
 
+func emitAgentFinalAnswerIfNeeded(emit func(string, string), answer, thinking string, reference any, messageEventsEmitted, visibleContentEmitted bool) {
+	if strings.TrimSpace(answer) == "" {
+		return
+	}
+	switch {
+	case !messageEventsEmitted:
+		emitAgentMessageEvents(emit, answer, thinking, reference)
+	case !visibleContentEmitted:
+		emitAgentMessageEvents(emit, answer, "", reference)
+	}
+}
+
 type agentMessageDeltaEmitter struct {
 	emit              func(string, string)
 	thinkState        *ThinkStreamState
 	inThinking        bool
 	explicitReasoning bool
 	emitted           bool
+	visibleEmitted    bool
 }
 
 func newAgentMessageDeltaEmitter(emit func(string, string)) *agentMessageDeltaEmitter {
@@ -139,6 +152,9 @@ func (e *agentMessageDeltaEmitter) emitThinkDeltas(deltas []ThinkDelta) {
 		case d.Kind == ThinkDeltaMarker && d.Value == thinkClose:
 			e.endThinking()
 		case d.Kind == ThinkDeltaText && d.Value != "":
+			if !e.inThinking {
+				e.visibleEmitted = true
+			}
 			e.emitEvent(canvas.MessageEvent{Content: d.Value})
 		}
 	}
@@ -175,15 +191,20 @@ func (e *agentMessageDeltaEmitter) Reset() {
 	e.inThinking = false
 	e.explicitReasoning = false
 	e.emitted = false
+	e.visibleEmitted = false
+}
+
+func (e *agentMessageDeltaEmitter) VisibleContentEmitted() bool {
+	return e.visibleEmitted
 }
 
 func makeAgentMessageDeltaEmitter(emit func(string, string)) func(string, string) {
 	return newAgentMessageDeltaEmitter(emit).Emit
 }
 
-func makeAgentMessageDeltaEmitterWithFinalizer(emit func(string, string)) (func(string, string), func() bool, func()) {
+func makeAgentMessageDeltaEmitterWithFinalizer(emit func(string, string)) (func(string, string), func() bool, func(), func() bool) {
 	emitter := newAgentMessageDeltaEmitter(emit)
-	return emitter.Emit, emitter.Finalize, emitter.Reset
+	return emitter.Emit, emitter.Finalize, emitter.Reset, emitter.VisibleContentEmitted
 }
 
 func emitAgentMessageEvent(emit func(string, string), ev canvas.MessageEvent) {
@@ -1161,7 +1182,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			TaskID:    taskID,
 			SessionID: sessionID,
 		})
-		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
+		agentMessageEmit, agentMessageFinalize, agentMessageReset, agentMessageVisibleContentEmitted := makeAgentMessageDeltaEmitterWithFinalizer(emit)
 		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
 
 		// Seed initial env/sys values from the Canvas DSL globals.
@@ -1310,6 +1331,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		referencePayload := agentRunReferencePayload(state, legacyReference)
 		runtime.FinalizeAgentMessage(ctx2)
 		messageEventsEmitted := runtime.AgentMessageEventsEmitted(ctx2)
+		visibleContentEmitted := agentMessageVisibleContentEmitted()
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1323,9 +1345,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
 					s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-					if !messageEventsEmitted {
-						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-					}
+					emitAgentFinalAnswerIfNeeded(emit, answer, thinking, referencePayload, messageEventsEmitted, visibleContentEmitted)
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
 						Reference: referencePayload,
@@ -1336,9 +1356,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-				if !messageEventsEmitted {
-					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-				}
+				emitAgentFinalAnswerIfNeeded(emit, answer, thinking, referencePayload, messageEventsEmitted, visibleContentEmitted)
 
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
 					Reference: referencePayload,
@@ -1366,9 +1384,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		s.persistAgentRunSession(canvasID, sessionID, messageID, userInput, answer, referencePayload)
-		if !messageEventsEmitted {
-			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-		}
+		emitAgentFinalAnswerIfNeeded(emit, answer, thinking, referencePayload, messageEventsEmitted, visibleContentEmitted)
 
 		meData, _ := json.Marshal(canvas.MessageEndEvent{
 			Reference: referencePayload,

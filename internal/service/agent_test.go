@@ -186,7 +186,7 @@ func TestAgentMessageDeltaEmitterStreamsReasoningBeforeAnswer(t *testing.T) {
 
 func TestAgentMessageDeltaEmitterProcessesThinkingAndContentTogether(t *testing.T) {
 	var events []canvas.MessageEvent
-	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+	emit, finalize, _, visibleContentEmitted := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
 		if event != "message" {
 			t.Fatalf("event = %q, want message", event)
 		}
@@ -215,11 +215,14 @@ func TestAgentMessageDeltaEmitterProcessesThinkingAndContentTogether(t *testing.
 	if events[3].Content != "answer" {
 		t.Fatalf("answer content = %q, want answer", events[3].Content)
 	}
+	if !visibleContentEmitted() {
+		t.Fatal("visible content was not recorded")
+	}
 }
 
 func TestAgentMessageDeltaEmitterFinalizeClosesReasoning(t *testing.T) {
 	var events []canvas.MessageEvent
-	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+	emit, finalize, _, visibleContentEmitted := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
 		if event != "message" {
 			t.Fatalf("event = %q, want message", event)
 		}
@@ -244,6 +247,35 @@ func TestAgentMessageDeltaEmitterFinalizeClosesReasoning(t *testing.T) {
 	}
 	if !events[2].EndToThink {
 		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if visibleContentEmitted() {
+		t.Fatal("thinking-only stream must not count as visible content")
+	}
+}
+
+func TestEmitAgentFinalAnswerIfNeededAfterThinkingOnly(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit := func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	}
+
+	emitAgentFinalAnswerIfNeeded(emit, "final answer", "old thinking", nil, true, false)
+
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1: %+v", len(events), events)
+	}
+	if events[0].Content != "final answer" {
+		t.Fatalf("content = %q, want final answer", events[0].Content)
+	}
+	if events[0].StartToThink || events[0].EndToThink {
+		t.Fatalf("final answer should not reopen thinking: %+v", events[0])
 	}
 }
 
