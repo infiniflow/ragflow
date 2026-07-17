@@ -1455,6 +1455,8 @@ Example: Virtual Hosted Style`,
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       postgresqlDescription:
         'Connect to PostgreSQL database to sync data from tables using SQL queries.',
+      alfrescoDescription:
+        'Crawl document libraries in a Hyland Alfresco repository and sync files into your knowledge base.',
       postgresqlQueryTip:
         "SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = 'active').",
       postgresqlContentColumnsTip:
