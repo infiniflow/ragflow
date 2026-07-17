@@ -159,9 +159,9 @@ type loopOptions struct {
 // 1 is legal and yields the single-iteration do-while case.
 func WithLoopMaxIterations(n int) LoopOption {
 	return func(o *loopOptions) {
-		if n >= 0 {
+		if n > 0 {
 			o.maxIterations = n
-			o.maxIterationsSet = n > 0
+			o.maxIterationsSet = true
 		}
 	}
 }
