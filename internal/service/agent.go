@@ -1163,6 +1163,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		})
 		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
 		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
+		ctx2 = runtime.WithCanvasMessageEmitter(ctx2, func(content string) {
+			emitAgentMessageEvent(emit, canvas.MessageEvent{Content: content})
+		})
 
 		// Seed initial env/sys values from the Canvas DSL globals.
 		// Python's self.globals dict stores "sys.*" and "env.*" under

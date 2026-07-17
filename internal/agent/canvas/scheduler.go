@@ -413,6 +413,18 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				return nil, err
 			}
 			var opts []workflowx.LoopOption
+			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
+			opts = append(opts, workflowx.WithLoopLifecycleHooks(
+				func(ctx context.Context, input any) {
+					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					in, _ := input.(map[string]any)
+					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
+				},
+				func(ctx context.Context, loopErr error) {
+					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, loopErr)
+				},
+			))
 			if exp.MaxIters > 0 {
 				opts = append(opts, workflowx.WithLoopMaxIterations(exp.MaxIters))
 			}

@@ -213,6 +213,11 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 			Text:   resolved,
 		})
 	}
+	if rendered != "" {
+		if !runtime.EmitCanvasMessage(ctx, rendered) {
+			runtime.EmitAgentMessage(ctx, rendered, "")
+		}
+	}
 
 	out := map[string]any{"content": rendered}
 	if len(downloads) > 0 {

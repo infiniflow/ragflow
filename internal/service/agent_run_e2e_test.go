@@ -219,6 +219,113 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	}
 }
 
+func TestRunAgent_RealCanvas_LoopMessageEmitsEveryIteration(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj":        map[string]any{"component_name": "Begin", "params": map[string]any{}},
+				"downstream": []any{"loop_0"},
+			},
+			"loop_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Loop",
+					"params": map[string]any{
+						"loop_variables": []any{
+							map[string]any{
+								"variable":   "counter",
+								"input_mode": "constant",
+								"value":      0,
+								"type":       "number",
+							},
+						},
+						"loop_termination_condition": []any{
+							map[string]any{
+								"variable":   "counter",
+								"operator":   "≥",
+								"value":      3,
+								"input_mode": "constant",
+							},
+						},
+						"logical_operator":   "and",
+						"maximum_loop_count": 10,
+					},
+				},
+				"upstream":   []any{"begin_0"},
+				"downstream": []any{"bump_0"},
+			},
+			"bump_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "VariableAssigner",
+					"params": map[string]any{
+						"variables": []any{
+							map[string]any{
+								"variable":  "loop_0@counter",
+								"operator":  "+=",
+								"parameter": 1,
+							},
+						},
+					},
+				},
+				"upstream":   []any{"loop_0"},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"text": "tick"}},
+				"upstream": []any{"bump_0"},
+			},
+		},
+		"path": []any{"begin_0", "loop_0"},
+	}
+	makeCanvasWithDSL(t, "canvas-loop-message", "user-1", "tenant-1", "v-loop-message", dsl)
+
+	svc := NewAgentService()
+	events, err := svc.RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-loop-message",
+		"session-loop-message",
+		"",
+		"go",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent: %v", err)
+	}
+	messages, waiting, errs, done := drainAgentEvents(t, events)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected error events: %+v", errs)
+	}
+	if len(waiting) > 0 {
+		t.Fatalf("unexpected waiting_for_user events: %+v", waiting)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("message events: got %d (%+v), want 3", len(messages), messages)
+	}
+	for i, msg := range messages {
+		if msg.Content != "tick" {
+			t.Fatalf("message[%d].Content = %q, want tick; all=%+v", i, msg.Content, messages)
+		}
+	}
+	if !done {
+		t.Error("missing terminator done event")
+	}
+}
+
 // TestRunAgent_RealCanvas_WaitForUserResume pins the resume path.
 // It publishes a 3-component DSL (Begin → Message → UserFillUp),
 // invokes RunAgent twice on the same (canvas, session), and asserts:
