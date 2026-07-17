@@ -1286,6 +1286,14 @@ Example: Virtual Hosted Style`,
         'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
+      xwikiDescription:
+        'Connect XWiki to sync wiki pages and documentation into your knowledge base.',
+      xwikiBaseUrlTip:
+        'The base URL of your XWiki instance, e.g. https://xwiki.example.com.',
+      xwikiSpaceTip:
+        'Optional XWiki space to sync. Use dot notation for nested spaces, e.g. Main.Docs.',
+      xwikiPageIdsTip:
+        'Optional comma-separated page IDs or full names. Leave empty to sync the configured space.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
       google_cloud_storageDescription:

@@ -80,6 +80,7 @@ from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.xwiki_connector import XWikiConnector
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -2136,6 +2137,41 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class XWiki(SyncBase):
+    SOURCE_NAME: str = FileSource.XWIKI
+
+    async def _generate(self, task: dict):
+        self.connector = XWikiConnector(
+            base_url=self.conf.get("base_url", ""),
+            wiki=self.conf.get("wiki", "xwiki"),
+            space=self.conf.get("space", "Main"),
+            page_ids=self.conf.get("page_ids", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials") or {})
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+
+        self.log_connection("XWiki", self.conf.get("base_url", ""), task)
+
+        def wrapper():
+            try:
+                for document_batch in document_generator:
+                    yield document_batch
+            finally:
+                self.connector.close()
+
+        return wrapper()
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2172,6 +2208,7 @@ func_factory = {
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.XWIKI: XWiki,
 }
 
 

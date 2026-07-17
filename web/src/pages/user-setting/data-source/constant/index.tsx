@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { BookOpen, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -51,6 +51,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  XWIKI = 'xwiki',
 }
 
 type DataSourceFeatureVisibility = {
@@ -155,6 +156,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.XWIKI]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MYSQL]: {
     syncDeletedFiles: true,
   },
@@ -220,6 +224,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Confluence',
       description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
       icon: <SvgIcon name={'data-source/confluence'} width={38} />,
+    },
+    [DataSourceKey.XWIKI]: {
+      name: 'XWiki',
+      description: t(`setting.${DataSourceKey.XWIKI}Description`),
+      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_DRIVE]: {
       name: 'Google Drive',
@@ -1932,6 +1941,57 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.XWIKI]: [
+    {
+      label: 'Base URL',
+      name: 'config.base_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://xwiki.example.com',
+      tooltip: t('setting.xwikiBaseUrlTip'),
+    },
+    {
+      label: 'Wiki',
+      name: 'config.wiki',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'xwiki',
+    },
+    {
+      label: 'Space',
+      name: 'config.space',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Main',
+      tooltip: t('setting.xwikiSpaceTip'),
+    },
+    {
+      label: 'Page IDs',
+      name: 'config.page_ids',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Main.WebHome,Docs.Installation',
+      tooltip: t('setting.xwikiPageIdsTip'),
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.xwiki_username',
+      type: FormFieldType.Text,
+      required: false,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.xwiki_password',
+      type: FormFieldType.Password,
+      required: false,
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.xwiki_api_token',
+      type: FormFieldType.Password,
+      required: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -2007,6 +2067,22 @@ export const DataSourceFormDefaultValues = {
         confluence_access_token: '',
       },
       index_mode: 'everything',
+    },
+  },
+  [DataSourceKey.XWIKI]: {
+    name: '',
+    source: DataSourceKey.XWIKI,
+    config: {
+      base_url: '',
+      wiki: 'xwiki',
+      space: 'Main',
+      page_ids: '',
+      batch_size: 2,
+      credentials: {
+        xwiki_username: '',
+        xwiki_password: '',
+        xwiki_api_token: '',
+      },
     },
   },
   [DataSourceKey.GOOGLE_DRIVE]: {
