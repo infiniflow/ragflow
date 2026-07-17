@@ -591,15 +591,17 @@ export const useFetchArtifactTopicList = (
   };
 };
 
-export function useFetchArtifactPage(artifact: IArtifact | null) {
+export function useFetchArtifactPage(
+  artifact: IArtifact | null,
+  enabled = true,
+) {
   const knowledgeBaseId = useKnowledgeBaseId();
   const pageType = artifact?.page_type ?? '';
   const slug = artifact?.slug ?? '';
 
   const { data, isFetching: loading } = useQuery<IArtifactPage | null>({
     queryKey: ArtifactKeys.detail(knowledgeBaseId, pageType, slug),
-    enabled: !!knowledgeBaseId && !!artifact && !!pageType && !!slug,
-    gcTime: 0,
+    enabled: !!knowledgeBaseId && !!artifact && !!pageType && !!slug && enabled,
     queryFn: async () => {
       const { data } = await getArtifactPage(knowledgeBaseId, pageType, slug);
       return data?.data ?? null;
