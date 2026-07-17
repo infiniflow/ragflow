@@ -2,13 +2,14 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Building2, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { axeroConstant } from './axero-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
@@ -51,6 +52,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  AXERO = 'axero',
 }
 
 type DataSourceFeatureVisibility = {
@@ -351,6 +353,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.AXERO]: {
+      name: 'Axero',
+      description: t(`setting.${DataSourceKey.AXERO}Description`),
+      icon: <Building2 className="text-text-primary" size={22} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -1932,6 +1939,7 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.AXERO]: axeroConstant(),
 };
 
 export const DataSourceFormDefaultValues = {
@@ -2426,6 +2434,19 @@ export const DataSourceFormDefaultValues = {
         token: '',
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.AXERO]: {
+    name: '',
+    source: DataSourceKey.AXERO,
+    config: {
+      base_url: '',
+      space_ids: '',
+      content_types: ['article', 'wiki', 'blog', 'forum'],
+      include_attachments: false,
+      credentials: {
+        api_key: '',
       },
     },
   },
