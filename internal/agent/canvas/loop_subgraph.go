@@ -246,7 +246,7 @@ func buildSubWorkflow(
 			return nil, err
 		}
 		nodes[cpnID] = sub.AddLambdaNode(cpnID,
-			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(body)),
+			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(cpnID, name, body)),
 			compose.WithNodeName(cpnID),
 		)
 	}
