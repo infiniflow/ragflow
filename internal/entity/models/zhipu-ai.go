@@ -55,6 +55,31 @@ func (z *ZhipuAIModel) Name() string {
 	return "zhipu"
 }
 
+type ZhipuChatResponse struct {
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
+			Role             string `json:"role"`
+		} `json:"message"`
+	} `json:"choices"`
+	Created   int    `json:"created"`
+	Id        string `json:"id"`
+	Model     string `json:"model"`
+	Object    string `json:"object"`
+	RequestId string `json:"request_id"`
+	Usage     struct {
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -155,46 +180,28 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	// Parse response
-	var result map[string]interface{}
+	var result ZhipuChatResponse
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+	content := &result.Choices[0].Message.Content
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
+	var reasonContent *string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		// if first char of reasonContent is \n remove the '\n'
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
+		reasonContent = &result.Choices[0].Message.ReasoningContent
+	}
+
+	usage := &ChatUsage{
+		PromptTokens:     result.Usage.PromptTokens,
+		CompletionTokens: result.Usage.CompletionTokens,
+		TotalTokens:      result.Usage.TotalTokens,
 	}
 
 	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
+		Answer:        content,
+		ReasonContent: reasonContent,
+		Usage:         usage,
 	}
 
 	return chatResponse, nil
