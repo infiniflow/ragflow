@@ -199,10 +199,9 @@ def get_default_value(column_name: str) -> Any:
 
 def _get_entity_value(column_name: str, value: Any) -> Any:
     if value is None:
-        default_value = get_default_value(column_name)
-        if default_value is None:
+        if column_name not in {"_order_id", "chunk_order_int"}:
             return None
-        value = default_value
+        value = get_default_value(column_name)
     return get_column_value(column_name, value)
 
 

@@ -25,3 +25,11 @@ class TestChunkOrderIntSchema:
 
     def test_null_chunk_order_int_uses_default_entity_value(self):
         assert _get_entity_value("chunk_order_int", None) == 0
+
+    def test_null_order_id_uses_default_entity_value(self):
+        assert _get_entity_value("_order_id", None) == 0
+
+    def test_null_non_order_columns_remain_none_on_read(self):
+        assert _get_entity_value("available_int", None) is None
+        assert _get_entity_value("removed_kwd", None) is None
+        assert _get_entity_value("group_id", None) is None
