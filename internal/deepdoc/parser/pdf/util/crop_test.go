@@ -262,7 +262,7 @@ func TestMapRotatedRectToOriginal_NormalizesBounds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gotX0, gotY0, gotX1, gotY1 := MapRotatedRectToOriginal(10, 20, 60, 80, tt.angle, 200, 100)
 			if gotX0 != tt.wantX0 || gotY0 != tt.wantY0 || gotX1 != tt.wantX1 || gotY1 != tt.wantY1 {
-				t.Fatalf("got (%.0f,%.0f,%.0f,%.0f), want (%.0f,%.0f,%.0f,%.0f)",
+				t.Errorf("got (%.0f,%.0f,%.0f,%.0f), want (%.0f,%.0f,%.0f,%.0f)",
 					gotX0, gotY0, gotX1, gotY1, tt.wantX0, tt.wantY0, tt.wantX1, tt.wantY1)
 			}
 			if gotX0 > gotX1 || gotY0 > gotY1 {

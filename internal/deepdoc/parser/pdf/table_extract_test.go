@@ -88,7 +88,7 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 
 	got := item.Cells[0]
 	if got.X0 != 20 || got.Y0 != 45 || got.X1 != 80 || got.Y1 != 95 {
-		t.Fatalf("cell bounds = (%.0f,%.0f,%.0f,%.0f), want (20,45,80,95)",
+		t.Errorf("cell bounds = (%.0f,%.0f,%.0f,%.0f), want (20,45,80,95)",
 			got.X0, got.Y0, got.X1, got.Y1)
 	}
 	if got.X0 > got.X1 || got.Y0 > got.Y1 {
