@@ -108,6 +108,7 @@ export const useFetchDatasetSettingOnMount = (
         'pipeline_id',
         'pipeline_name',
         'pipeline_avatar',
+        'parser_id',
       ]),
       embedding_model: knowledgeDetails.embedding_model,
       connectors: sourceData,
@@ -125,8 +126,12 @@ export const useFetchDatasetSettingOnMount = (
 export const usePipelineOperatorNodes = (
   pipelineId?: string,
   pipelineParserConfig?: Record<string, any>,
+  isBuiltin = false,
 ) => {
-  const { dsl, loading } = useFetchPipelineDslByPipelineId(pipelineId);
+  const { dsl, loading } = useFetchPipelineDslByPipelineId(
+    pipelineId,
+    isBuiltin,
+  );
 
   const operatorNodes = useMemo(() => {
     return buildPipelineOperatorNodes(dsl, pipelineParserConfig);
@@ -143,7 +148,7 @@ export const useSaveDatasetSetting = () => {
       const payload = { ...values };
 
       // Apply forward transforms to parser_config if in pipeline mode
-      if (payload.parse_type === ParseType.Pipeline && payload.parser_config) {
+      if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
@@ -160,7 +165,7 @@ export const useSaveDatasetSetting = () => {
       if (payload.parse_type === ParseType.BuiltIn) {
         payload.pipeline_id = undefined;
       } else {
-        payload.chunk_method = undefined;
+        payload.parser_id = undefined;
       }
       return saveKnowledgeConfiguration(payload);
     },

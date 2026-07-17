@@ -12,7 +12,7 @@ export const formSchema = z
       message: 'Username must be at least 2 characters.',
     }),
     description: z.string().optional(),
-    chunk_method: z.string().optional(),
+    parser_id: z.string().optional(),
     avatar: z.any().nullish(),
     permission: z.string().optional(),
     embedding_model: z.string(),

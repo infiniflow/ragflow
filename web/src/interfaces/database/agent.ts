@@ -302,6 +302,18 @@ export interface IPipeLineListRequest {
   ext?: string;
 }
 
+export interface IBuiltinPipeline {
+  id: string;
+  title: string;
+  description?: string;
+  filename?: string;
+}
+
+export interface IBuiltinPipelineListResponse {
+  canvas: IBuiltinPipeline[];
+  total: number;
+}
+
 export interface GlobalVariableType {
   name: string;
   value: any;

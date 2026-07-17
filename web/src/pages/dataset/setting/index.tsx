@@ -11,7 +11,10 @@ import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
-import { ParseTypeItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import {
+  BuiltinPipelineItem,
+  ParseTypeItem,
+} from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -42,6 +45,7 @@ export default function DatasetSetting() {
       pipeline_id: '',
       pipeline_name: '',
       pipeline_avatar: '',
+      parser_id: '',
       parser_config: {},
       name: '',
       description: '',
@@ -78,13 +82,20 @@ export default function DatasetSetting() {
     defaultValue: '',
   });
 
+  const builtinPipelineId = useWatch({
+    control: form.control,
+    name: 'parser_id',
+    defaultValue: '',
+  });
+
   const pipelineParserConfig = knowledgeDetails?.parser_config as
     | Record<string, any>
     | undefined;
 
   const { operatorNodes } = usePipelineOperatorNodes(
-    parseType === ParseType.Pipeline ? pipelineId : undefined,
+    parseType === ParseType.Pipeline ? pipelineId : builtinPipelineId,
     pipelineParserConfig,
+    parseType === ParseType.BuiltIn,
   );
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
@@ -120,6 +131,11 @@ export default function DatasetSetting() {
 
   const pipelineDataList = usePipelineDataList(sourceDataState);
 
+  const showOperatorTabs =
+    operatorNodes.length > 0 &&
+    ((parseType === ParseType.Pipeline && !!pipelineId) ||
+      (parseType === ParseType.BuiltIn && !!builtinPipelineId));
+
   return (
     <div className="pr-5 pb-5">
       <Card className="p-0 h-full flex flex-col bg-transparent shadow-none">
@@ -152,6 +168,9 @@ export default function DatasetSetting() {
                     {t('knowledgeConfiguration.dataPipeline')}
                   </div>
                   <ParseTypeItem line={1} name="parse_type" />
+                  {parseType === ParseType.BuiltIn && (
+                    <BuiltinPipelineItem line={1} name="parser_id" />
+                  )}
                   {parseType === ParseType.Pipeline && (
                     <DataFlowSelect
                       isMult={false}
@@ -160,16 +179,14 @@ export default function DatasetSetting() {
                       layout={FormLayout.Horizontal}
                     />
                   )}
-                  {parseType === ParseType.Pipeline &&
-                    pipelineId &&
-                    operatorNodes.length > 0 && (
-                      <PipelineOperatorTabs
-                        nodes={operatorNodes}
-                        value={activeTab}
-                        onValueChange={setActiveTab}
-                        onOperatorValuesChange={handleOperatorValuesChange}
-                      />
-                    )}
+                  {showOperatorTabs && (
+                    <PipelineOperatorTabs
+                      nodes={operatorNodes}
+                      value={activeTab}
+                      onValueChange={setActiveTab}
+                      onOperatorValuesChange={handleOperatorValuesChange}
+                    />
+                  )}
 
                   <Divider />
                   <LinkDataSource
