@@ -2410,7 +2410,7 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     assert "chunks" in payload["data"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 @pytest.mark.parametrize(
     "payload",
     [
