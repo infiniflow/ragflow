@@ -368,14 +368,30 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 				idx := int(idxF)
 				existing, hasExisting := accumulatedToolCalls[idx]
 				if hasExisting {
+					if id, ok := tcMap["id"].(string); ok && id != "" {
+						existing["id"] = id
+					}
+					if typ, ok := tcMap["type"].(string); ok && typ != "" {
+						existing["type"] = typ
+					}
 					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						ef, ok := existing["function"].(map[string]interface{})
+						if !ok {
+							ef = make(map[string]interface{})
+							existing["function"] = ef
+						}
+						if name, ok := fn["name"].(string); ok && name != "" {
+							if en, ok := ef["name"].(string); ok {
+								ef["name"] = en + name
+							} else {
+								ef["name"] = name
+							}
+						}
 						if args, ok := fn["arguments"].(string); ok {
-							if ef, ok := existing["function"].(map[string]interface{}); ok {
-								if ea, ok := ef["arguments"].(string); ok {
-									ef["arguments"] = ea + args
-								} else {
-									ef["arguments"] = args
-								}
+							if ea, ok := ef["arguments"].(string); ok {
+								ef["arguments"] = ea + args
+							} else {
+								ef["arguments"] = args
 							}
 						}
 					}
@@ -384,7 +400,6 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 				}
 			}
 		}
-
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
