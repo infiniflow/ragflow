@@ -17,11 +17,14 @@
 """Surface selected internal INFO logs to the client as ``<think>`` content.
 
 During an agentic ``rag_agent`` turn we attach a context-scoped logging sink so
-the pipeline's bracket-tagged progress logs — ``[agentic-rag]``,
-``[formalize_question]``, ``[pre_search]``, ``[Planner]``, ``[orchestrator]``,
-``[agentic]``, ``[Hybrid search]``, ``[BM25 search]``, ``[Web search]``,
-``[ToolLoop]``, ``[FunctionTool]`` … — can be streamed to the front end as
-reasoning without instrumenting every call site.
+the pipeline's bracket-tagged progress logs — ``[Agentic RAG]``,
+``[Formalizing the question]``, ``[Preliminary search]``, ``[Planner]``,
+``[Orchestrator]``, ``[Agentic research]``, ``[Hybrid search]``,
+``[BM25 search]``, ``[Web search]``, ``[Composing the answer]``,
+``[Tool loop]``, ``[Function tool]`` … — can be streamed to the front end as
+reasoning without instrumenting every call site. The tags double as
+human-readable stage labels, so the same message serves the backend log and
+the user-facing thinking stream.
 
 The sink is stored in a :class:`contextvars.ContextVar`, so only the async task
 tree of the current request (which inherits the context) forwards its logs —

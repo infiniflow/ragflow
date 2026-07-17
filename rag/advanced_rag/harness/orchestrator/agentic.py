@@ -43,7 +43,7 @@ async def agentic_research(state: dict, tools) -> dict:
 
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
-        _LOG.info("[agentic] cycle %d/%d, claims: %d unverified", cycle + 1, mode.max_orchestrator_cycles, sum(1 for c in ctx.claims if not c.is_verified))
+        _LOG.info("[Agentic research] Research round %d of %d — %d step(s) still unanswered.", cycle + 1, mode.max_orchestrator_cycles, sum(1 for c in ctx.claims if not c.is_verified))
 
         # ── Step A: Research unverified claims (parallel if mode allows) ──
         unverified = [c for c in ctx.claims if not c.is_verified]
@@ -54,18 +54,16 @@ async def agentic_research(state: dict, tools) -> dict:
             for i in range(0, len(unverified), batch_size):
                 batch = unverified[i : i + batch_size]
                 _LOG.info(
-                    "[agentic] batch start cycle=%d offset=%d size=%d claim_ids=%s",
+                    "[Agentic research] Round %d: researching %d step(s) in parallel: %s",
                     cycle + 1,
-                    i,
                     len(batch),
-                    [c.claim_id for c in batch],
+                    "; ".join(f'"{c.description}"' for c in batch),
                 )
                 tasks = [_run_claim_research(c, tools, pipeline, ctx, mode, compilation_map) for c in batch]
                 agent_results = await asyncio.gather(*tasks)
                 _LOG.info(
-                    "[agentic] batch done cycle=%d offset=%d size=%d",
+                    "[Agentic research] Round %d: finished researching %d step(s).",
                     cycle + 1,
-                    i,
                     len(agent_results),
                 )
 
@@ -93,7 +91,7 @@ async def agentic_research(state: dict, tools) -> dict:
                                         description=dc,
                                     )
                                 )
-                                _LOG.info("[agentic] discovered new claim: %s", dc)
+                                _LOG.info("[Agentic research] Found a new angle worth researching: \"%s\"", dc)
 
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
@@ -110,7 +108,7 @@ async def agentic_research(state: dict, tools) -> dict:
             mode.max_orchestrator_cycles,
         )
 
-        _LOG.info("[agentic] cycle=%d verdict=%s score=%.2f action=%s", cycle, verdict.status, verdict.score, action)
+        _LOG.info("[Agentic research] Round %d: evidence looks %s (confidence %.0f%%) — next: %s", cycle + 1, verdict.status, verdict.score * 100, action)
 
         if action == "ANSWER":
             return _finalize(ctx, tools, partial=False)
@@ -142,7 +140,7 @@ async def _run_claim_research(
     mode,
     compilation_map: dict,
 ) -> dict:
-    _LOG.info("[agentic] claim start id=%s desc=%s", claim.claim_id, _snip(claim.description))
+    _LOG.info("[Agentic research] Researching: \"%s\"", _snip(claim.description))
     try:
         result = await asyncio.wait_for(
             research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
@@ -152,10 +150,9 @@ async def _run_claim_research(
         raise
     except asyncio.TimeoutError:
         _LOG.warning(
-            "[agentic] claim timeout id=%s timeout=%ss desc=%s",
-            claim.claim_id,
-            CLAIM_RESEARCH_TIMEOUT_SECONDS,
+            "[Agentic research] Gave up on \"%s\" — it took longer than %ss.",
             _snip(claim.description),
+            CLAIM_RESEARCH_TIMEOUT_SECONDS,
         )
         return {
             "report": "",
@@ -166,7 +163,7 @@ async def _run_claim_research(
             "discovered_claims": [],
         }
     except Exception:
-        _LOG.exception("[agentic] claim failed id=%s desc=%s", claim.claim_id, _snip(claim.description))
+        _LOG.exception("[Agentic research] Hit an error while researching \"%s\".", _snip(claim.description))
         return {
             "report": "",
             "is_verified": False,
@@ -177,12 +174,12 @@ async def _run_claim_research(
         }
 
     _LOG.info(
-        "[agentic] claim done id=%s verified=%s confidence=%.2f evidence=%d gaps=%d",
-        claim.claim_id,
-        result.get("is_verified", False),
-        float(result.get("confidence") or 0.0),
+        "[Agentic research] Finished \"%s\" — %s, backed by %d passage(s) (confidence %.0f%%)%s.",
+        _snip(claim.description),
+        "answered" if result.get("is_verified") else "still unanswered",
         len(result.get("evidence_ids") or []),
-        len(result.get("gaps") or []),
+        float(result.get("confidence") or 0.0) * 100,
+        f", {len(result.get('gaps') or [])} gap(s) remain" if result.get("gaps") else "",
     )
     return result
 
