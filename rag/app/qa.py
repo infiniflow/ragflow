@@ -284,6 +284,14 @@ def mdQuestionLevel(s):
     return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
 
 
+def _qa_delimiter(lines):
+    counts = {
+        delimiter: sum(1 for row in csv.reader(lines, delimiter=delimiter) if len(row) == 2)
+        for delimiter in (",", "\t")
+    }
+    return "\t" if counts["\t"] >= counts[","] else ","
+
+
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Excel and csv(txt) format files are supported.
@@ -307,57 +315,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res.append(beAdoc(deepcopy(doc), q, a, eng, ii))
         return res
 
-    elif re.search(r"\.(txt)$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
-        txt = get_text(filename, binary)
-        lines = txt.split("\n")
-        comma, tab = 0, 0
-        for line in lines:
-            if len(line.split(",")) == 2:
-                comma += 1
-            if len(line.split("\t")) == 2:
-                tab += 1
-        delimiter = "\t" if tab >= comma else ","
-
-        fails = []
-        question, answer = "", ""
-        i = 0
-        while i < len(lines):
-            arr = lines[i].split(delimiter)
-            if len(arr) != 2:
-                if question:
-                    answer += "\n" + lines[i]
-                else:
-                    fails.append(str(i + 1))
-            elif len(arr) == 2:
-                if question and answer:
-                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
-                question, answer = arr
-            i += 1
-            if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-
-        if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
-
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-
-        return res
-
-    elif re.search(r"\.(csv)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(csv|txt)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
         line_count = max(len(lines), 1)
-        delimiter = "\t" if any("\t" in line for line in lines) else ","
+        delimiter = _qa_delimiter(lines)
 
         fails = []
         question, answer = "", ""
         row_num = -1
-        res = []
         reader = csv.reader(StringIO(txt), delimiter=delimiter)
 
-        for row in reader:
+        for row_index, row in enumerate(reader):
             current_line = reader.line_num
             if len(row) != 2:
                 if question:
@@ -370,8 +340,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, row_num))
                 question, answer = row
                 row_num = current_line
-            if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / line_count, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+            if (row_index + 1) % 999 == 0:
+                progress = min(current_line * 0.6 / line_count, 0.6)
+                callback(progress, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, row_num))
