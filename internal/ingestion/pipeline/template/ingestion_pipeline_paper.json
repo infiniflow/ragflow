@@ -49,20 +49,18 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "pdf": {
-                                "enable_multi_column": true,
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            }
+                        "pdf": {
+                            "enable_multi_column": true,
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
                         }
                     }
                 },
@@ -72,7 +70,7 @@
             },
             "TitleChunker:SparklySchoolsTravel": {
                 "downstream": [
-                    "Tokenizer:GreatCarsWash"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "TitleChunker",
@@ -136,8 +134,31 @@
                     }
                 },
                 "upstream": [
-                    "TitleChunker:SparklySchoolsTravel"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TitleChunker:SparklySchoolsTravel"
+                ],
+                "downstream": [
+                    "Tokenizer:GreatCarsWash"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -163,11 +184,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TitleChunker:SparklySchoolsTravelstart-Tokenizer:GreatCarsWashend",
+                    "id": "xy-edge__TitleChunker:SparklySchoolsTravelstart-Extractor:AutoExtractDefaultend",
                     "source": "TitleChunker:SparklySchoolsTravel",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:GreatCarsWashend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:GreatCarsWash",
                     "targetHandle": "end"
@@ -393,6 +418,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

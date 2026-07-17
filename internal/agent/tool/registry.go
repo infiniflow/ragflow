@@ -582,12 +582,26 @@ func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
 
 func buildYahooFinanceTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := defaultYahooFinanceParams()
-	if value, exists := params["info"]; exists {
+	boolFields := map[string]*bool{
+		"info":                &defaults.Info,
+		"history":             &defaults.History,
+		"count":               &defaults.Count,
+		"financials":          &defaults.Financials,
+		"income_stmt":         &defaults.IncomeStmt,
+		"balance_sheet":       &defaults.BalanceSheet,
+		"cash_flow_statement": &defaults.CashFlowStatement,
+		"news":                &defaults.News,
+	}
+	for key, target := range boolFields {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
 		flag, valid := value.(bool)
 		if !valid {
-			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param info", "yahoo_finance")
+			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param %s", "yahoo_finance", key)
 		}
-		defaults.Info = flag
+		*target = flag
 	}
 	return NewYahooFinanceToolWithDefaults(nil, defaults), nil
 }

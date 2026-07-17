@@ -357,10 +357,9 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 }
 
 // processPageBoxes vertically merges the boxes of a single page. Boxes are
-// bucketed by column (ColID) first so the merge never crosses columns; within
-// a column the merge runs top→bottom, and columns are emitted in ascending
-// ColID order (leftmost first). This preserves the column-major reading order
-// established by FinalReadingOrderMerge (page → ColID → top → x0).
+// bucketed by column first so merges never cross columns. Titles that precede
+// all non-title content and occupy their own column are moved ahead of the
+// column groups.
 func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
@@ -384,7 +383,7 @@ func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf
 		})
 		out = append(out, mergeColumnBoxes(bxs, mh, mw, isEnglish)...)
 	}
-	return out
+	return moveLeadingTitlesFirst(out)
 }
 
 // groupBoxesByCol groups boxes by column id and returns the groups plus the
@@ -442,6 +441,35 @@ func mergeColumnBoxes(sortedBoxes []pdf.TextBox, mh, mw float64, isEnglish bool)
 	}
 
 	return out
+}
+
+func moveLeadingTitlesFirst(boxes []pdf.TextBox) []pdf.TextBox {
+	firstNonTitleTop := math.Inf(1)
+	colsWithNonTitle := make(map[int]struct{})
+	for _, box := range boxes {
+		if box.LayoutType != pdf.LayoutTypeTitle {
+			firstNonTitleTop = math.Min(firstNonTitleTop, box.Top)
+			colsWithNonTitle[box.ColID] = struct{}{}
+		}
+	}
+
+	titles := make([]pdf.TextBox, 0)
+	rest := make([]pdf.TextBox, 0, len(boxes))
+	for _, box := range boxes {
+		_, sharesColumnWithContent := colsWithNonTitle[box.ColID]
+		if box.LayoutType == pdf.LayoutTypeTitle && !sharesColumnWithContent && box.Bottom <= firstNonTitleTop {
+			titles = append(titles, box)
+			continue
+		}
+		rest = append(rest, box)
+	}
+	sort.SliceStable(titles, func(i, j int) bool {
+		if titles[i].Top != titles[j].Top {
+			return titles[i].Top < titles[j].Top
+		}
+		return titles[i].X0 < titles[j].X0
+	})
+	return append(titles, rest...)
 }
 
 // ---- rune-based text helpers (CJK-safe) ----

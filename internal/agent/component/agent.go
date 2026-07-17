@@ -575,7 +575,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// what the Agent runner actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.History); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
@@ -584,15 +584,12 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
-	// the canvas state's History so downstream turns (history
-	// window) see the prior tool usage as prior assistant turns.
+	// the canvas state's Memory. Conversation History is reserved for
+	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
-				state.History = append(state.History, map[string]any{
-					"role":    "assistant",
-					"content": summary,
-				})
+				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
 	}

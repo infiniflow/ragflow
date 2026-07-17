@@ -37,11 +37,13 @@ import (
 // distinctly and break ctx.Value lookups).
 type stateCtxKey struct{}
 type agentMessageEmitterCtxKey struct{}
+type canvasMessageEmitterCtxKey struct{}
 
 // AgentMessageEmitter emits visible assistant deltas for an Agent component.
 // The service layer owns the actual SSE envelope; runtime keeps the callback
 // shape free of canvas/service imports.
 type AgentMessageEmitter func(contentDelta, thinkingDelta string)
+type CanvasMessageEmitter func(content string)
 
 type agentMessageEmitterState struct {
 	emit     AgentMessageEmitter
@@ -84,6 +86,16 @@ func WithAgentMessageEmitterControl(ctx context.Context, emit AgentMessageEmitte
 	})
 }
 
+// WithCanvasMessageEmitter attaches the direct Message-component output
+// callback. Unlike AgentMessageEmitter, this path does not parse <think> tags
+// or buffer chunks; Message nodes are already resolved visible content.
+func WithCanvasMessageEmitter(ctx context.Context, emit CanvasMessageEmitter) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, canvasMessageEmitterCtxKey{}, emit)
+}
+
 // HasAgentMessageEmitter reports whether the service layer installed an
 // Agent message stream callback on ctx.
 func HasAgentMessageEmitter(ctx context.Context) bool {
@@ -101,6 +113,23 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 	state.emit(contentDelta, thinkingDelta)
 	if contentDelta != "" || thinkingDelta != "" {
 		state.emitted = true
+	}
+	return true
+}
+
+// EmitCanvasMessage emits already-rendered Message-component content directly.
+// It also marks the shared message stream as emitted so the service layer does
+// not re-emit the final state content after workflow completion.
+func EmitCanvasMessage(ctx context.Context, content string) bool {
+	emit, ok := ctx.Value(canvasMessageEmitterCtxKey{}).(CanvasMessageEmitter)
+	if !ok || emit == nil {
+		return false
+	}
+	emit(content)
+	if content != "" {
+		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil {
+			state.emitted = true
+		}
 	}
 	return true
 }

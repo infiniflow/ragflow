@@ -31,6 +31,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1")
 
 	name := "  Renamed Dataset  "
 	description := "updated description"
@@ -101,17 +102,11 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	if persisted.PipelineID == nil || *persisted.PipelineID != strings.ToLower(pipelineID) {
 		t.Fatalf("expected normalized pipeline id persisted, got %#v", persisted.PipelineID)
 	}
-	if persisted.ParserConfig["chunk_token_num"] != float64(128) {
-		t.Fatalf("expected existing parser_config value preserved, got %#v", persisted.ParserConfig)
+	if pc, ok := persisted.ParserConfig["parent_child"].(map[string]interface{}); !ok || pc["use_parent_child"] != true {
+		t.Fatalf("expected parent_child preserved as nested, got %#v", persisted.ParserConfig)
 	}
-	if persisted.ParserConfig["enable_children"] != true {
-		t.Fatalf("expected enable_children normalized, got %#v", persisted.ParserConfig)
-	}
-	if persisted.ParserConfig["children_delimiter"] != "\n" {
-		t.Fatalf("expected default children delimiter, got %#v", persisted.ParserConfig["children_delimiter"])
-	}
-	if persisted.ParserConfig["delimiter"] != "\n\n" {
-		t.Fatalf("expected ext parser config fields flattened, got %#v", persisted.ParserConfig)
+	if pc, ok := persisted.ParserConfig["ext"].(map[string]interface{}); !ok || pc["delimiter"] != "\n\n" {
+		t.Fatalf("expected ext preserved as nested, got %#v", persisted.ParserConfig)
 	}
 }
 
@@ -361,6 +356,7 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
@@ -393,6 +389,18 @@ func insertDatasetUpdateKB(t *testing.T, id, tenantID, name string) {
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
+	}
+}
+
+func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
+	t.Helper()
+	canvas := &entity.UserCanvas{
+		ID:     id,
+		UserID: userID,
+		DSL:    entity.JSONMap{},
+	}
+	if err := dao.DB.Create(canvas).Error; err != nil {
+		t.Fatalf("insert test canvas: %v", err)
 	}
 }
 
