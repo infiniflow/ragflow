@@ -1467,6 +1467,10 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	dsl := map[string]any{
+		"globals": map[string]any{
+			"sys.files":   []any{},
+			"sys.user_id": "",
+		},
 		"components": map[string]any{
 			"begin_0": map[string]any{
 				"obj": map[string]any{

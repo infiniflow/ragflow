@@ -366,9 +366,15 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		return nil, fmt.Errorf("canvas: no components")
 	}
 
-	// GenLocalState seeds each run with a fresh *CanvasState. eino calls
-	// this once per run and threads the result through StatePre/Post
-	// handlers via context.
+	// GenLocalState uses the request-initialized *CanvasState when the
+	// caller attached one to the context. The service layer populates that
+	// state with per-run sys values (query, files, user_id) before Invoke;
+	// replacing it here with DSL globals would make the first statePre copy
+	// stale defaults such as sys.files=[] back over the request values.
+	//
+	// Callers that do not attach a state still get a fresh DSL-seeded state.
+	// eino calls this once per run and threads the result through
+	// StatePre/Post handlers.
 	//
 	// The initial env/sys values come from c.Globals (the DSL-level
 	// "globals" map) so that env.* references like "env.counter" resolve
@@ -378,7 +384,10 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// seeding here mirrors the Python canvas.__init__ →
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
-	genState := func(_ context.Context) *CanvasState {
+	genState := func(ctx context.Context) *CanvasState {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			return state
+		}
 		st := NewCanvasState("", "")
 		if globals != nil {
 			for k, v := range globals {
