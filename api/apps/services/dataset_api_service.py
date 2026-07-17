@@ -33,6 +33,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common.misc_utils import thread_pool_exec
+from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
 _VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
 
@@ -1466,8 +1467,6 @@ async def search_datasets(tenant_id: str, req: dict):
 #   source_chunk_ids, source_doc_ids
 # ---------------------------------------------------------------------------
 
-_WIKI_COMPILE_KWD = "artifact_page"
-_WIKI_TOPIC_COMPILE_KWD = "artifact_page_topic"
 _SKILL_COMPILE_KWD = "skill"
 _SKILL_ALL_COMPILE_KWD = "skill_all"
 
@@ -1513,7 +1512,7 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
         res = settings.docStoreConn.search(
             select_fields=["id"],
             highlight_fields=[],
-            condition={"compile_kwd": [_WIKI_COMPILE_KWD]},
+            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
             match_expressions=[],
             order_by=OrderByExpr(),
             offset=0,
@@ -1560,7 +1559,7 @@ async def list_wiki_pages(
     page_type = page_type.strip() if isinstance(page_type, str) else page_type
     topic = topic.strip() if isinstance(topic, str) else topic
 
-    condition: dict = {"compile_kwd": [_WIKI_COMPILE_KWD]}
+    condition: dict = {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}
     if page_type:
         condition["page_type_kwd"] = [page_type]
     if topic:
@@ -1643,50 +1642,68 @@ async def list_wiki_topics(
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
 
-    order_by = OrderByExpr()
     try:
-        order_by.asc("title_kwd")
-    except Exception:
-        order_by = OrderByExpr()
-
-    select_fields = [
-        "id",
-        "topic_kwd",
-        "title_kwd",
-        "slug_kwd",
-    ]
-    try:
-        res = settings.docStoreConn.search(
-            select_fields=select_fields,
+        agg_res = settings.docStoreConn.search(
+            select_fields=["id"],
             highlight_fields=[],
-            condition={"compile_kwd": [_WIKI_TOPIC_COMPILE_KWD]},
+            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["concept", "entity"]},
             match_expressions=[],
-            order_by=order_by,
-            offset=offset,
-            limit=page_size,
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=0,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+            agg_fields=["topic_kwd"],
+        )
+        buckets = settings.docStoreConn.get_aggregation(agg_res, "topic_kwd")
+    except Exception:
+        logging.exception("list_wiki_topics: docStore aggregation failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    counts = {t: int(c) for t, c in (buckets or []) if isinstance(t, str) and t and int(c or 0) > 0}
+    if not counts:
+        return True, {"total": 0, "items": []}
+
+    # Resolve display metadata (title/slug) from the topic landing pages; fall
+    # back to the raw topic name when a topic has no ``page_type="topic"`` row.
+    meta: dict[str, dict] = {}
+    try:
+        meta_fields = ["topic_kwd", "title_kwd", "slug_kwd"]
+        meta_res = settings.docStoreConn.search(
+            select_fields=meta_fields,
+            highlight_fields=[],
+            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["topic"]},
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1000,
             index_names=index_nm,
             knowledgebase_ids=[dataset_id],
         )
-        field_map = settings.docStoreConn.get_fields(res, select_fields)
+        for row in (settings.docStoreConn.get_fields(meta_res, meta_fields) or {}).values():
+            t = row.get("topic_kwd")
+            if isinstance(t, str) and t:
+                meta[t] = {"title": row.get("title_kwd") or t, "slug": row.get("slug_kwd") or t}
     except Exception:
-        logging.exception("list_wiki_topics: docStore search failed for kb=%s", dataset_id)
-        return True, {"total": 0, "items": []}
+        logging.exception("list_wiki_topics: topic metadata lookup failed for kb=%s", dataset_id)
 
-    total = settings.docStoreConn.get_total(res)
-    items = []
-    for row in (field_map or {}).values():
-        topic = row.get("topic_kwd")
-        if not isinstance(topic, str) or not topic:
-            continue
-        items.append(
+    # Rank topics by page count (descending), then title for a stable order.
+    ranked = sorted(
+        (
             {
-                "topic": topic,
-                "title": row.get("title_kwd") or topic,
-                "slug": row.get("slug_kwd") or topic,
+                "topic": t,
+                "title": (meta.get(t) or {}).get("title") or t,
+                "slug": (meta.get(t) or {}).get("slug") or t,
+                "page_count": c,
             }
-        )
+            for t, c in counts.items()
+        ),
+        key=lambda x: (-x["page_count"], x["title"].lower()),
+    )
 
-    return True, {"total": int(total or 0), "items": items}
+    total = len(ranked)
+    items = ranked[offset : offset + page_size]
+    return True, {"total": total, "items": items}
 
 
 async def get_wiki_page(
@@ -1735,7 +1752,7 @@ async def get_wiki_page(
             select_fields=select_fields,
             highlight_fields=[],
             condition={
-                "compile_kwd": [_WIKI_COMPILE_KWD],
+                "compile_kwd": [WIKI_PAGE_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -1986,7 +2003,7 @@ async def update_wiki_page(
             select_fields=["id", "content_with_weight"],
             highlight_fields=[],
             condition={
-                "compile_kwd": [_WIKI_COMPILE_KWD],
+                "compile_kwd": [WIKI_PAGE_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -2086,7 +2103,7 @@ _WIKI_COMPILE_KWDS = (
     "artifact_compilation_plan",
     "artifact_page_draft",
     "artifact_page",
-    _WIKI_TOPIC_COMPILE_KWD,
+    "artifact_page_topic",
     "artifact_entity",
     "artifact_relation",
 )
