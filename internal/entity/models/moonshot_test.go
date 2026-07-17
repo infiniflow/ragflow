@@ -129,6 +129,57 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 	}
 }
 
+func TestMoonshotChatSupportsTools(t *testing.T) {
+	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		tools, ok := body["tools"].([]interface{})
+		if !ok || len(tools) != 1 {
+			t.Errorf("tools=%#v, want one tool", body["tools"])
+		}
+		if body["tool_choice"] != "auto" {
+			t.Errorf("tool_choice=%v, want auto", body["tool_choice"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content": nil,
+					"tool_calls": []map[string]interface{}{{
+						"id":   "call_weather",
+						"type": "function",
+						"function": map[string]string{
+							"name":      "get_weather",
+							"arguments": `{"city":"北京"}`,
+						},
+					}},
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	tools := []map[string]interface{}{{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name": "get_weather",
+		},
+	}}
+	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		"kimi-k2.6",
+		[]Message{{Role: "user", Content: "北京今天天气怎么样？"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Tools: tools},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "" {
+		t.Errorf("Answer=%v, want empty", resp.Answer)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0]["id"] != "call_weather" {
+		t.Errorf("ToolCalls=%#v, want call_weather", resp.ToolCalls)
+	}
+}
+
 func TestMoonshotStreamForcesStreaming(t *testing.T) {
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
