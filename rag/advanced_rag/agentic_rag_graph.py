@@ -302,7 +302,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
-    _LOG.info("[Agentic RAG] Starting research to answer your question...")
+    _LOG.info(f"[Agentic RAG] Starting research to answer your question: {messages[-1]['content']}")
 
     token_queue: asyncio.Queue = asyncio.Queue()
     graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf)
