@@ -66,6 +66,31 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasStateCheckpointPreservesCurrentUserMarker(t *testing.T) {
+	t.Parallel()
+	src := NewCanvasState("run-checkpoint", "task-checkpoint")
+	src.AppendHistory("user", "previous question")
+	src.AppendHistory("assistant", "previous answer")
+	src.AppendCurrentUser("current question")
+
+	raw, err := json.Marshal(src)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var dst CanvasState
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	prior := dst.SnapshotPriorHistory()
+	if len(prior) != 2 {
+		t.Fatalf("prior history length after restore = %d, want 2", len(prior))
+	}
+	if got := prior[1]["content"]; got != "previous answer" {
+		t.Fatalf("prior assistant content after restore = %v, want previous answer", got)
+	}
+}
+
 // TestCanvasState_MarshalJSON_DoesNotLeakMutex pins the wire-shape
 // invariant: the unexported `mu sync.RWMutex` field must not appear
 // in the JSON output. If a future maintainer adds a `json:"mu"` tag
@@ -82,6 +107,118 @@ func TestCanvasState_MarshalJSON_DoesNotLeakMutex(t *testing.T) {
 	}
 	if got := string(raw); contains(got, `"mu"`) || contains(got, `"Mu"`) {
 		t.Errorf("serialised state leaks the unexported mutex field: %s", got)
+	}
+}
+
+func TestCanvasStateConversationHistory(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-history", "task-history")
+	state.AppendHistory("user", "previous question")
+	state.AppendHistory("assistant", map[string]any{"content": "previous answer"})
+	state.AppendCurrentUser("current question")
+	state.AppendSysHistory("user: previous question")
+	state.AppendSysHistory("assistant: {'content': 'previous answer'}")
+	state.AppendSysHistory("user: current question")
+
+	prior := state.SnapshotPriorHistory()
+	if len(prior) != 2 {
+		t.Fatalf("prior history length = %d, want 2", len(prior))
+	}
+	if got := prior[1]["content"]; got != "previous answer" {
+		t.Fatalf("prior assistant content = %v, want previous answer", got)
+	}
+	if got := state.SnapshotSysHistory(); len(got) != 3 || got[2] != "user: current question" {
+		t.Fatalf("sys.history = %#v", got)
+	}
+}
+
+func TestCanvasStatePriorHistoryPreservesPersistedUser(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-history", "task-history")
+	state.AppendHistory("user", "persisted unanswered question")
+
+	prior := state.SnapshotPriorHistory()
+	if len(prior) != 1 || prior[0]["content"] != "persisted unanswered question" {
+		t.Fatalf("prior history = %#v, want persisted user turn", prior)
+	}
+
+	state.AppendCurrentUser("current question")
+	prior = state.SnapshotPriorHistory()
+	if len(prior) != 1 || prior[0]["content"] != "persisted unanswered question" {
+		t.Fatalf("prior history = %#v, want only current user excluded", prior)
+	}
+}
+
+func TestCanvasStateIncrementConversationTurns(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-turns", "task-turns")
+
+	state.IncrementConversationTurns()
+	if got := state.Sys["conversation_turns"]; got != 1 {
+		t.Fatalf("conversation_turns = %#v, want 1", got)
+	}
+	state.IncrementConversationTurns()
+	if got := state.Sys["conversation_turns"]; got != 2 {
+		t.Fatalf("conversation_turns = %#v, want 2", got)
+	}
+
+	state.Sys["conversation_turns"] = float64(4)
+	state.IncrementConversationTurns()
+	if got := state.Sys["conversation_turns"]; got != float64(5) {
+		t.Fatalf("JSON conversation_turns = %#v, want float64(5)", got)
+	}
+}
+
+func TestCanvasStateHistorySnapshotsDeepCopyPayload(t *testing.T) {
+	t.Parallel()
+	payload := map[string]any{
+		"content":  "answer",
+		"nil":      nil,
+		"nil_map":  map[string]any(nil),
+		"nil_list": []any(nil),
+		"metadata": map[string]any{
+			"tags": []any{"one", map[string]any{"name": "nested"}},
+		},
+	}
+	state := NewCanvasState("run-copy", "task-copy")
+	state.AppendHistory("assistant", payload)
+
+	snapshot := state.SnapshotHistory()
+	snapshotPayload := snapshot[0]["payload"].(map[string]any)
+	metadata := snapshotPayload["metadata"].(map[string]any)
+	tags := metadata["tags"].([]any)
+	metadata["new"] = true
+	tags[0] = "changed"
+	tags[1].(map[string]any)["name"] = "changed"
+
+	unchanged := state.SnapshotHistory()[0]["payload"].(map[string]any)
+	unchangedMetadata := unchanged["metadata"].(map[string]any)
+	unchangedTags := unchangedMetadata["tags"].([]any)
+	if unchanged["nil"] != nil || unchanged["nil_map"].(map[string]any) != nil || unchanged["nil_list"].([]any) != nil {
+		t.Fatalf("nil values were not preserved: %#v", unchanged)
+	}
+	if _, exists := unchangedMetadata["new"]; exists || unchangedTags[0] != "one" || unchangedTags[1].(map[string]any)["name"] != "nested" {
+		t.Fatalf("snapshot mutation leaked into state: %#v", unchanged)
+	}
+
+	payload["metadata"].(map[string]any)["source"] = "caller mutation"
+	unchanged = state.SnapshotHistory()[0]["payload"].(map[string]any)
+	if _, exists := unchanged["metadata"].(map[string]any)["source"]; exists {
+		t.Fatalf("caller mutation leaked into state: %#v", unchanged)
+	}
+}
+
+func TestCanvasStateMemoryIsSeparateFromHistory(t *testing.T) {
+	t.Parallel()
+	state := NewCanvasState("run-memory", "task-memory")
+	state.AppendMemory("question", "answer", "used search")
+
+	if len(state.SnapshotHistory()) != 0 {
+		t.Fatalf("memory polluted history: %#v", state.SnapshotHistory())
+	}
+	memory := state.SnapshotMemory()
+	if len(memory) != 1 || memory[0]["summary"] != "used search" {
+		t.Fatalf("memory = %#v", memory)
 	}
 }
 

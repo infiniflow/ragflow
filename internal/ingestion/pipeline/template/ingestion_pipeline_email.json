@@ -49,27 +49,24 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "email": {
-                                "fields": [
-                                    "from",
-                                    "to",
-                                    "cc",
-                                    "bcc",
-                                    "date",
-                                    "subject",
-                                    "body",
-                                    "attachments"
-                                ],
-                                "output_format": "text",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "eml",
-                                    "msg"
-                                ]
-                            }
+                        "email": {
+                            "fields": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "date",
+                                "subject",
+                                "body",
+                                "attachments"
+                            ],
+                            "output_format": "text",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "eml"
+                            ]
                         }
                     }
                 },
@@ -79,7 +76,7 @@
             },
             "TokenChunker:WarmBreadSmells": {
                 "downstream": [
-                    "Tokenizer:NiceWordsSpoken"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "TokenChunker",
@@ -97,12 +94,6 @@
                             "？"
                         ],
                         "image_context_size": 0,
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
                         "overlapped_percent": 0,
                         "table_context_size": 0
                     }
@@ -126,8 +117,31 @@
                     }
                 },
                 "upstream": [
-                    "TokenChunker:WarmBreadSmells"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TokenChunker:WarmBreadSmells"
+                ],
+                "downstream": [
+                    "Tokenizer:NiceWordsSpoken"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -150,11 +164,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TokenChunker:WarmBreadSmellsstart-Tokenizer:NiceWordsSpokenend",
+                    "id": "xy-edge__TokenChunker:WarmBreadSmellsstart-Extractor:AutoExtractDefaultend",
                     "source": "TokenChunker:WarmBreadSmells",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:NiceWordsSpokenend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:NiceWordsSpoken",
                     "targetHandle": "end"
@@ -268,12 +286,6 @@
                                 }
                             ],
                             "image_table_context_window": 0,
-                            "outputs": {
-                                "chunks": {
-                                    "type": "Array<Object>",
-                                    "value": []
-                                }
-                            },
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
@@ -319,6 +331,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

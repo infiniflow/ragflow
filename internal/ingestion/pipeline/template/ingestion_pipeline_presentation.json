@@ -49,30 +49,28 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "pdf": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            },
-                            "slides": {
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pptx",
-                                    "ppt"
-                                ]
-                            }
+                        "pdf": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
+                        },
+                        "slides": {
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pptx",
+                                "ppt"
+                            ]
                         }
                     }
                 },
@@ -95,12 +93,12 @@
                     }
                 },
                 "upstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "Extractor:AutoExtractDefault"
                 ]
             },
             "PresentationChunker:HappyHillsGlow": {
                 "downstream": [
-                    "Tokenizer:TallTreesDance"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "PresentationChunker",
@@ -116,6 +114,29 @@
                 "upstream": [
                     "Parser:HipSignsRhyme"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "PresentationChunker:HappyHillsGlow"
+                ],
+                "downstream": [
+                    "Tokenizer:TallTreesDance"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -138,11 +159,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__PresentationChunker:HappyHillsGlowstart-Tokenizer:TallTreesDanceend",
+                    "id": "xy-edge__PresentationChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
                     "source": "PresentationChunker:HappyHillsGlow",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:TallTreesDanceend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:TallTreesDance",
                     "targetHandle": "end"
@@ -280,6 +305,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

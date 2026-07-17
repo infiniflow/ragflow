@@ -293,6 +293,12 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		if content == nil && reasoning == nil {
 			return nil
 		}
+		// Provider drivers use the OpenAI-compatible [DONE] sentinel to
+		// signal the end of their transport stream. It is not assistant
+		// content and must not reach Eino's message stream or callback.
+		if content != nil && *content == "[DONE]" {
+			return nil
+		}
 		msg := &schema.Message{Role: schema.Assistant}
 		if content != nil {
 			msg.Content = *content

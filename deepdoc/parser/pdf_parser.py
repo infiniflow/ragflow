@@ -196,6 +196,60 @@ class RAGFlowPdfParser:
     # CID pattern regex for unmapped font characters from pdfminer
     _CID_PATTERN = re.compile(r"\(cid\s*:\s*\d+\s*\)")
 
+    _OCR_ALPHABET = None
+
+    @classmethod
+    def _ocr_can_represent(cls, text, min_coverage=0.8):
+        """True if the OCR recogniser's alphabet covers this text well enough to be worth OCRing."""
+        if not text:
+            return True
+        if cls._OCR_ALPHABET is None:
+            res = os.path.join(get_project_base_directory(), "rag/res/deepdoc/ocr.res")
+            try:
+                with open(res, encoding="utf-8") as f:
+                    cls._OCR_ALPHABET = set(f.read())
+            except (OSError, UnicodeDecodeError) as e:
+                logging.warning("Could not load OCR alphabet from %s: %s; treating all text as representable.", res, e)
+                cls._OCR_ALPHABET = set()
+        if not cls._OCR_ALPHABET:
+            return True                      # unknown alphabet: preserve existing behaviour
+        letters = [c for c in text if c.strip()]
+        if not letters:
+            return True
+        covered = sum(1 for c in letters if c in cls._OCR_ALPHABET)
+        return covered / len(letters) >= min_coverage
+
+    # CJK scripts (Han, Hiragana, Katakana, Hangul) do not separate words with
+    # spaces, so a geometric gap between their glyphs must not become one.
+    _CJK_PATTERN = re.compile(r"[ᄀ-ᇿ぀-ヿ㄰-㆏㐀-䶿一-鿿가-힯豈-﫿]|[\U00020000-\U0002fa1f]")
+
+    @classmethod
+    def _insert_word_spaces(cls, chars, gap_ratio=0.25):
+        """Recover missing spaces from character geometry.
+
+        Many PDFs encode no space glyphs and separate words by positioning alone.
+        Append a space to a char when the gap to the next exceeds ``gap_ratio`` of
+        the mean char width; intra-word kerns fall well below that. CJK is skipped:
+        it does not write inter-word spaces, so a gap between CJK glyphs is ordinary
+        tracking, not a boundary. ``chars`` is a list of pdfplumber-style dicts and
+        is mutated in place.
+        """
+        widths = [c["width"] for c in chars if c["text"] and c["text"].strip()]
+        mean_w = sum(widths) / len(widths) if widths else 0
+        if mean_w <= 0:
+            return
+        for cur, nxt in zip(chars, chars[1:]):
+            if (
+                cur["text"]
+                and nxt["text"]
+                and cur["text"].strip()
+                and nxt["text"].strip()
+                and not cls._CJK_PATTERN.search(cur["text"])
+                and not cls._CJK_PATTERN.search(nxt["text"])
+                and nxt["x0"] - cur["x1"] > mean_w * gap_ratio
+            ):
+                cur["text"] += " "
+
     @staticmethod
     def _is_garbled_char(ch):
         """Check if a single character is garbled (unmappable from PDF font encoding).
@@ -747,9 +801,9 @@ class RAGFlowPdfParser:
                             if self._is_garbled_char(ch):
                                 garbled_count += 1
             del b["chars"]
-            # If the majority of characters from pdfplumber are garbled,
-            # clear the text so OCR recognition will be used as fallback.
-            # Strategy 1: PUA / unmapped CID characters
+
+            # Strategy 1: PUA / unmapped CID characters. These are genuine garbage,
+            # so re-OCR regardless of script.
             if total_count > 0 and garbled_count / total_count >= 0.5:
                 logging.info(
                     "Page %d: detected garbled pdfplumber text (garbled=%d/%d), falling back to OCR for box at (%.1f, %.1f)",
@@ -761,6 +815,12 @@ class RAGFlowPdfParser:
                 )
                 b["text"] = ""
                 continue
+
+            # Keep a clean text layer the recogniser cannot spell: ocr.res is
+            # CJK+Latin, so re-OCRing e.g. a Cyrillic page only produces garbage.
+            if total_count > 0 and not self._ocr_can_represent(b["text"]):
+                continue
+
             # Strategy 2: font-encoding garbling — all chars are ASCII
             # punctuation from subset fonts (no CJK output)
             if total_count > 0 and self._is_garbled_by_font_encoding(box_chars, min_chars=5):
@@ -1592,16 +1652,7 @@ class RAGFlowPdfParser:
             self.is_english = False
 
         async def __img_ocr(i, id, img, chars, limiter):
-            j = 0
-            while j + 1 < len(chars):
-                if (
-                    chars[j]["text"]
-                    and chars[j + 1]["text"]
-                    and re.match(r"[0-9a-zA-Z,.:;!%]+", chars[j]["text"] + chars[j + 1]["text"])
-                    and chars[j + 1]["x0"] - chars[j]["x1"] >= min(chars[j + 1]["width"], chars[j]["width"]) / 2
-                ):
-                    chars[j]["text"] += " "
-                j += 1
+            self._insert_word_spaces(chars)
 
             if limiter:
                 async with limiter:

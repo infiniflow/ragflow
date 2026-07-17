@@ -86,8 +86,8 @@ func (h *Handler) Ping(c *gin.Context) {
 // @Summary Admin Login
 // @Description Admin login verification using email, only superuser can log in
 // @Tags admin
-// @Accept json
-// @Produce json
+// @Accept JSON
+// @Produce JSON
 // @Param request body service.EmailLoginRequest true "login info with email"
 // @Success 200 {object} map[string]interface{}
 // @Router /admin/login [post]
@@ -258,16 +258,24 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	common.SuccessWithData(c, userInfo, "User created successfully")
 }
 
-// GetUser handle get user
-func (h *Handler) GetUser(c *gin.Context) {
+func getUserName(c *gin.Context) (string, error) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
+		return "", err
 	}
 	if username == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
+		return "", err
+	}
+	return username, nil
+}
+
+// GetUser handle get user
+func (h *Handler) GetUser(c *gin.Context) {
+	username, err := getUserName(c)
+	if err != nil {
 		return
 	}
 
@@ -286,14 +294,8 @@ func (h *Handler) GetUser(c *gin.Context) {
 
 // DeleteUser handle delete user
 func (h *Handler) DeleteUser(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -318,14 +320,8 @@ type ChangePasswordHTTPRequest struct {
 
 // ChangePassword handle change password
 func (h *Handler) ChangePassword(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -350,14 +346,8 @@ type UpdateActivateStatusHTTPRequest struct {
 
 // UpdateUserActivateStatus handle update user activate status
 func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -383,14 +373,8 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 
 // GrantAdmin handle grant admin role
 func (h *Handler) GrantAdmin(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -411,14 +395,8 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 
 // RevokeAdmin handle revoke admin role
 func (h *Handler) RevokeAdmin(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -439,14 +417,8 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 
 // ListUserAPITokens handle get user API keys
 func (h *Handler) ListUserAPITokens(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -461,14 +433,8 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 
 // GenerateUserAPIToken handle generate user API key
 func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -647,11 +613,6 @@ func (h *Handler) ListVariables(c *gin.Context) {
 
 	variable, err := h.service.GetVariable(req.VarName)
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			common.ErrorWithCode(c, common.CodeBadRequest, adminErr.Message)
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -707,11 +668,6 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	}
 
 	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			common.ErrorWithCode(c, common.CodeBadRequest, adminErr.Message)
-			return
-		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1141,7 +1097,7 @@ type ListIngestionTasksRequest struct {
 	Status *string `json:"status"`
 }
 
-// ListIngestionTasks
+// ListIngestionTasks handle list ingestion tasks
 func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	var tasks []map[string]interface{}
