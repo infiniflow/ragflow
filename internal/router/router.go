@@ -352,6 +352,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
 				chat.POST("/mindmap", r.chatHandler.MindMap)
 				chat.POST("/recommendation", r.chatHandler.Recommendation)
+				chat.POST("/audio/speech", r.chatHandler.ChatAudioSpeech)
+				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 
