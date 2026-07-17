@@ -187,9 +187,7 @@ def test_normalize_condition_operators_edge_cases():
     assert normalize_condition_operators(None) == []
     assert normalize_condition_operators([]) == []
     # non-dict items are skipped; dict items are still normalised
-    assert normalize_condition_operators(
-        ["not-a-dict", None, {"key": "d", "op": ">=", "value": "x"}]
-    ) == [{"key": "d", "op": "≥", "value": "x"}]
+    assert normalize_condition_operators(["not-a-dict", None, {"key": "d", "op": ">=", "value": "x"}]) == [{"key": "d", "op": "≥", "value": "x"}]
 
 
 def test_normalize_preserves_unicode_operators_and_fields():

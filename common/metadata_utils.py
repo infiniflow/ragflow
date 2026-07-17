@@ -44,11 +44,7 @@ _OP_ALIASES = {**_COMPARISON_OP_ALIASES, "==": "=", "=>": "≥", "=<": "≤"}
 
 def normalize_condition_operators(conditions: list[dict]) -> list[dict]:
     """Return ``conditions`` with ASCII comparison operators normalised to Unicode."""
-    return [
-        {**c, "op": _OP_ALIASES.get(str(c.get("op", "")), c.get("op"))}
-        for c in (conditions or [])
-        if isinstance(c, dict)
-    ]
+    return [{**c, "op": _OP_ALIASES.get(str(c.get("op", "")), c.get("op"))} for c in (conditions or []) if isinstance(c, dict)]
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
