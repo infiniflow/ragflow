@@ -303,17 +303,18 @@ func (p yahooFinanceParams) anySectionEnabled() bool {
 func (y *YahooFinanceTool) fetchYahooFinanceReport(ctx context.Context, p yahooFinanceParams) (string, error) {
 	var sections []string
 	var search *yahooFinanceSearchResponse
-	if p.Info || p.News {
+	if p.Info || p.News || p.History || len(yahooFinanceSummaryModules(p)) > 0 {
 		raw, err := y.fetchYahooFinanceSearch(ctx, p.StockCode)
 		if err != nil {
 			return "", err
 		}
 		search = raw
 	}
+	symbol := yahooFinanceResolvedSymbol(search, p.StockCode)
 
 	var chart *yahooFinanceChartResponse
 	if p.Info || p.History {
-		raw, err := y.fetchYahooFinanceChart(ctx, p.StockCode)
+		raw, err := y.fetchYahooFinanceChart(ctx, symbol)
 		if err != nil {
 			return "", err
 		}
@@ -335,7 +336,7 @@ func (y *YahooFinanceTool) fetchYahooFinanceReport(ctx context.Context, p yahooF
 
 	modules := yahooFinanceSummaryModules(p)
 	if len(modules) > 0 {
-		summary, err := y.fetchYahooFinanceSummary(ctx, p.StockCode, modules)
+		summary, err := y.fetchYahooFinanceSummary(ctx, symbol, modules)
 		if err != nil {
 			return "", err
 		}
@@ -366,6 +367,19 @@ func (y *YahooFinanceTool) fetchYahooFinanceReport(ctx context.Context, p yahooF
 	}
 
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func yahooFinanceResolvedSymbol(search *yahooFinanceSearchResponse, fallback string) string {
+	fallback = strings.TrimSpace(fallback)
+	if search == nil || len(search.Quotes) == 0 {
+		return fallback
+	}
+	symbol, _ := search.Quotes[0]["symbol"].(string)
+	symbol = strings.TrimSpace(symbol)
+	if symbol == "" {
+		return fallback
+	}
+	return symbol
 }
 
 func (y *YahooFinanceTool) fetchYahooFinanceSearch(ctx context.Context, stockCode string) (*yahooFinanceSearchResponse, error) {

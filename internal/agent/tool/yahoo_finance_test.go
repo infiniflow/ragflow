@@ -175,6 +175,89 @@ func TestYahooFinanceInvokableRunAcceptsQueryAlias(t *testing.T) {
 	}
 }
 
+func TestYahooFinanceUsesSearchResolvedSymbolForDownstreamRequests(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	var gotSearchQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		paths = append(paths, request.URL.Path)
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/finance/search":
+			gotSearchQuery = request.URL.Query().Get("q")
+			_, _ = writer.Write([]byte(`{"quotes":[{"symbol":"AAPL","longname":"Apple Inc."}],"news":[]}`))
+		case "/v8/finance/chart/AAPL":
+			_, _ = writer.Write([]byte(`{
+				"chart": {
+					"result": [{
+						"meta": {"regularMarketPrice": 189.5},
+						"timestamp": [],
+						"indicators": {"quote": [{}]}
+					}],
+					"error": null
+				}
+			}`))
+		case "/":
+			http.SetCookie(writer, &http.Cookie{Name: "A1", Value: "cookie-value"})
+			writer.WriteHeader(http.StatusNotFound)
+		case "/v1/test/getcrumb":
+			if cookie := request.Header.Get("Cookie"); cookie != "A1=cookie-value" {
+				t.Fatalf("crumb Cookie = %q", cookie)
+			}
+			writer.Header().Set("Content-Type", "text/plain")
+			_, _ = writer.Write([]byte("crumb-value"))
+		case "/v10/finance/quoteSummary/AAPL":
+			if cookie := request.Header.Get("Cookie"); cookie != "A1=cookie-value" {
+				t.Fatalf("summary Cookie = %q", cookie)
+			}
+			if crumb := request.URL.Query().Get("crumb"); crumb != "crumb-value" {
+				t.Fatalf("crumb = %q", crumb)
+			}
+			_, _ = writer.Write([]byte(`{
+				"quoteSummary": {
+					"result": [{
+						"defaultKeyStatistics": {
+							"sharesOutstanding": {"raw": 14687356000, "fmt": "14.69B"}
+						}
+					}],
+					"error": null
+				}
+			}`))
+		default:
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
+	yahoo := NewYahooFinanceToolWithDefaults(helper, yahooFinanceParams{Info: true, Count: true})
+	raw, err := yahoo.InvokableRun(context.Background(), `{"stock_code":"Apple"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotSearchQuery != "Apple" {
+		t.Fatalf("search q = %q", gotSearchQuery)
+	}
+	gotPaths := strings.Join(paths, ",")
+	if strings.Contains(gotPaths, "/Apple") {
+		t.Fatalf("downstream paths used unresolved company name: %v", paths)
+	}
+	for _, expected := range []string{"/v1/finance/search", "/v8/finance/chart/AAPL", "/v10/finance/quoteSummary/AAPL"} {
+		if !strings.Contains(gotPaths, expected) {
+			t.Fatalf("paths missing %s: %v", expected, paths)
+		}
+	}
+	var envelope yahooFinanceEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("unmarshal output %q: %v", raw, err)
+	}
+	if !strings.Contains(envelope.Report, "| longname | Apple Inc. |") ||
+		!strings.Contains(envelope.Report, "| sharesOutstanding | 14.69B |") {
+		t.Fatalf("report = %s", envelope.Report)
+	}
+}
+
 func TestYahooFinanceEmptyStockCodeSkipsRequest(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +317,8 @@ func TestYahooFinanceSummaryUsesCrumbAndCookie(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
+		case "/v1/finance/search":
+			_, _ = writer.Write([]byte(`{"quotes":[{"symbol":"AAPL"}],"news":[]}`))
 		case "/":
 			http.SetCookie(writer, &http.Cookie{Name: "A1", Value: "cookie-value"})
 			writer.WriteHeader(http.StatusNotFound)
