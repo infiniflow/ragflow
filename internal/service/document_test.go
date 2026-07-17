@@ -789,8 +789,8 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["location"] != "nested/path/deck(1).pptx" {
 		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
 	}
-	if doc["parser_id"] != "presentation" {
-		t.Fatalf("parser_id=%v, want presentation", doc["parser_id"])
+	if doc["parser_id"] != "" {
+		t.Fatalf("parser_id=%v, want empty (canvas pipeline mode)", doc["parser_id"])
 	}
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
@@ -837,7 +837,7 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("code=%v, want success", code)
 	}
-	if got["type"] != "virtual" || got["parser_id"] != "manual" || got["size"] != int64(0) {
+	if got["type"] != "virtual" || got["parser_id"] != "" || got["size"] != int64(0) {
 		t.Fatalf("unexpected doc map: %v", got)
 	}
 

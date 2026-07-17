@@ -118,3 +118,90 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 		t.Errorf("parser_config does not contain any TokenChunker: %v", parserConfig)
 	}
 }
+
+func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	// Seed a canvas so it exists, but parse_type=1 should ignore it.
+	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
+		datasetUpdateCanvasDSL("Parser:HipSignsRhyme", "chunk_token_num"))
+
+	chunkMethod := "naive"
+	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
+	parseType := 1
+
+	result, code, err := testDatasetCreateService(t).CreateDataset(&CreateDatasetRequest{
+		Name:       "ds-builtin-clears-pipeline",
+		ParserID:   &chunkMethod,
+		PipelineID: &pipelineID,
+		ParseType:  &parseType,
+	}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	// parse_type=1 clears pipeline_id → only parser_id should be persisted.
+	if result["parser_id"] != chunkMethod {
+		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	}
+	if pid, ok := result["pipeline_id"]; ok && pid != nil && pid != "" {
+		t.Fatalf("expected pipeline_id to be cleared for BuiltIn mode, got %#v", pid)
+	}
+}
+
+func TestCreateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
+		datasetUpdateCanvasDSL("Parser:CustomP", "chunk_token_num"))
+
+	chunkMethod := "book"
+	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
+	parseType := 2
+
+	result, code, err := testDatasetCreateService(t).CreateDataset(&CreateDatasetRequest{
+		Name:       "ds-pipeline-ignores-parser",
+		ParserID:   &chunkMethod,
+		PipelineID: &pipelineID,
+		ParseType:  &parseType,
+	}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	// parse_type=2 ignores parser_id → pipeline_id should be persisted;
+	// parser_id should fall back to the default ("naive") since it wasn't set.
+	if result["pipeline_id"] != strings.ToLower(pipelineID) {
+		t.Fatalf("expected pipeline_id %q, got %#v", strings.ToLower(pipelineID), result["pipeline_id"])
+	}
+}
+
+func TestCreateDataset_RejectsBothWithoutParseType(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	chunkMethod := "naive"
+	pipelineID := "abcdef0123456789abcdef0123456789"
+	_, code, err := testDatasetCreateService(t).CreateDataset(&CreateDatasetRequest{
+		Name:       "ds-both-no-parse-type",
+		ParserID:   &chunkMethod,
+		PipelineID: &pipelineID,
+		// ParseType deliberately nil
+	}, "tenant-1")
+	if err == nil {
+		t.Fatal("expected mutual-exclusivity error when both set without parse_type")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected error to mention 'mutually exclusive', got: %v", err)
+	}
+}

@@ -1569,6 +1569,9 @@ type CreateDatasetRequest struct {
 	Permission     *string `json:"permission,omitempty"`
 	ParserID       *string `json:"parser_id,omitempty"`
 	PipelineID     *string `json:"pipeline_id,omitempty"`
+	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
+	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	ParseType *int `json:"parse_type,omitempty"`
 }
 
 // ListDatasets lists datasets with pagination and filtering.
@@ -1672,9 +1675,21 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
 
-	// parser_id (built-in template) and pipeline_id (custom canvas) select
-	// mutually exclusive ingestion pipelines; supplying both is ambiguous.
-	if req.ParserID != nil && req.PipelineID != nil {
+	// parse_type explicitly signals the pipeline mode (1 = BuiltIn, 2 = Pipeline).
+	// When absent (nil), infer intent from which field is present for backward compat.
+	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
+	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
+
+	if isBuiltinMode && req.PipelineID != nil {
+		// BuiltIn mode: discard pipeline_id so only parser_id matters.
+		req.PipelineID = nil
+	}
+	if isPipelineMode && req.ParserID != nil {
+		// Pipeline mode: ignore parser_id.
+		req.ParserID = nil
+	}
+
+	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
 		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
 	}
 
@@ -1713,8 +1728,8 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	// Reject references to a custom canvas the caller does not own or share.
 	// The handler passes the caller's user id in tenantID for CreateDataset.
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
-		if ok, aerr := canvasAccessibleForUser(tenantID, strings.TrimSpace(*pipelineID)); aerr != nil {
-			return nil, common.CodeServerError, aerr
+		if ok, err := canvasAccessibleForUser(tenantID, strings.TrimSpace(*pipelineID)); err != nil {
+			return nil, common.CodeServerError, err
 		} else if !ok {
 			return nil, common.CodeDataError, errors.New("canvas is not accessible")
 		}
@@ -1726,14 +1741,6 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	if cpErr != nil {
 		common.Warn("failed to resolve component params defaults for dataset",
 			zap.String("parserID", parserID), zap.Error(cpErr))
-		parserConfig = entity.JSONMap{}
-	}
-
-	if parserID == "" {
-		parserID = "naive"
-	}
-
-	if parserConfig == nil {
 		parserConfig = entity.JSONMap{}
 	}
 
@@ -1759,7 +1766,6 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	}
 
 	kbID := utility.GenerateToken()
-
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -1933,6 +1939,9 @@ type UpdateDatasetRequest struct {
 	Pagerank       *int64                     `json:"pagerank,omitempty"`
 	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
 	PipelineID     *string                    `json:"pipeline_id,omitempty"`
+	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
+	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	ParseType *int `json:"parse_type,omitempty"`
 }
 
 // UpdateDataset Update a dataset
@@ -1996,6 +2005,19 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 		updates["permission"] = permission
 	}
+
+	// parse_type explicitly signals the pipeline mode (1 = BuiltIn, 2 = Pipeline).
+	// When absent (nil), existing mutual-exclusivity behavior is preserved.
+	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
+	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
+
+	if isBuiltinMode && req.PipelineID != nil {
+		req.PipelineID = nil
+	}
+	if isPipelineMode && req.ParserID != nil {
+		req.ParserID = nil
+	}
+
 	if req.PipelineID != nil {
 		pipelineID, err := normalizeDatasetPipelineID(*req.PipelineID)
 		if err != nil {
@@ -2012,6 +2034,11 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	}
 	if parserIDProvided {
 		updates["parser_id"] = parserID
+	}
+
+	// When parse_type is absent, parser_id and pipeline_id are mutually exclusive.
+	if req.ParseType == nil && parserIDProvided && req.PipelineID != nil {
+		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
 	}
 
 	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
@@ -2044,27 +2071,32 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 			return nil, common.CodeDataError, err
 		}
 		if len(req.ParserConfig) > 0 {
-			parserConfig := req.ParserConfig
-
-			// Validate component_params against the effective pipeline's DSL
-			// before persisting.
+			// Resolve the effective pipeline and load its DSL schema.
 			effectiveParserID := kb.ParserID
 			if parserIDProvided {
 				effectiveParserID = parserID
 			}
 			effectivePipelineID := kb.PipelineID
 			if req.PipelineID != nil {
-				if normalized, perr := normalizeDatasetPipelineID(*req.PipelineID); perr == nil {
+				if normalized, err := normalizeDatasetPipelineID(*req.PipelineID); err == nil {
 					effectivePipelineID = normalized
 				}
 			} else if parserIDProvided && kb.PipelineID != nil {
 				effectivePipelineID = nil
 			}
-			if err := validateDatasetComponentParams(effectiveParserID, effectivePipelineID, map[string]interface{}(req.ParserConfig), tenantID); err != nil {
-				return nil, common.CodeDataError, err
-			}
 
-			updates["parser_config"] = entity.JSONMap(common.DeepMergeMaps(kb.ParserConfig, parserConfig))
+			isCanvas := effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != ""
+			dslJSON, dslErr := loadPipelineDSL(isCanvas, effectiveParserID, effectivePipelineID)
+			if dslErr != nil {
+				common.Warn("failed to load pipeline DSL for building parser_config",
+					zap.String("parserID", effectiveParserID), zap.Error(dslErr))
+			}
+			if dslJSON != nil {
+				// Start from DSL defaults, overlay the cleaned incoming overrides.
+				// Unknown cpnIDs, unknown params, and legacy flat fields are
+				// dropped. Full replace — no merge with the stored config.
+				updates["parser_config"] = buildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+			}
 		}
 	}
 
@@ -2099,7 +2131,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	}
 	if kb.PipelineID != nil && parserIDProvided {
 		if _, ok := updates["pipeline_id"]; !ok {
-			updates["pipeline_id"] = ""
+			updates["pipeline_id"] = nil // clear to NULL, not empty string
 		}
 	}
 
@@ -3150,48 +3182,9 @@ func resolveComponentParamsDefaults(parserID string, pipelineID *string) (entity
 	return out, nil
 }
 
-// validateDatasetComponentParams validates the component_params overrides
-// carried on a knowledgebase's parser_config. It mirrors the document-level
-// validation: builtin templates and custom canvas pipelines are checked
-// identically, and only future-added params (those that live under the
-// component_params hierarchy) are validated — existing top-level
-// parser_config keys are out of scope.
-//
-// parserID and pipelineID follow the same mutual-exclusion rule as the rest
-// of the parser-config resolution: at most one is meaningful, decided by
-// whether pipelineID is non-empty. When pipelineID is set the KB uses a
-// custom canvas pipeline; otherwise parserID selects the builtin template.
 // canvasAccessibleForUser reports whether the given canvas is owned by or
-// team-shared with the caller. It blocks a dataset owner from referencing
-// another user's custom canvas pipeline through the component_params API.
-// A tenant lookup failure degrades to owner-only matching rather than failing
-// closed on team-shared canvases; owner access is always enforced.
+// team-shared with the caller.
 func canvasAccessibleForUser(userID, canvasID string) (bool, error) {
 	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
 	return dao.NewUserCanvasDAO().Accessible(canvasID, userID, tenantIDs), nil
-}
-
-func validateDatasetComponentParams(parserID string, pipelineID *string, componentParamsRaw any, userID string) error {
-	if componentParamsRaw == nil {
-		return nil
-	}
-	componentParams, err := normalizeComponentParams(componentParamsRaw)
-	if err != nil {
-		return err
-	}
-	if len(componentParams) == 0 {
-		return nil
-	}
-	isCanvas := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
-	ref := parserID
-	if isCanvas {
-		ref = strings.TrimSpace(*pipelineID)
-		// Reject references to a custom canvas the caller does not own or share.
-		if ok, aerr := canvasAccessibleForUser(userID, ref); aerr != nil {
-			return fmt.Errorf("check canvas %s access: %w", ref, aerr)
-		} else if !ok {
-			return fmt.Errorf("canvas %s is not accessible", ref)
-		}
-	}
-	return validateComponentParamsAgainstPipeline(isCanvas, ref, componentParams)
 }

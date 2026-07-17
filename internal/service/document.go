@@ -2163,8 +2163,40 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
-		if err := s.updateDocumentParserConfig(doc.ID, req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
+		// Resolve effective pipeline to load the DSL for cleaning.
+		isCanvas := kb.PipelineID != nil && strings.TrimSpace(*kb.PipelineID) != ""
+		if req.PipelineID != nil {
+			isCanvas = strings.TrimSpace(*req.PipelineID) != ""
+		}
+		if req.ParserID != nil {
+			isCanvas = false
+		}
+		effParserID := kb.ParserID
+		if req.ParserID != nil {
+			effParserID = strings.TrimSpace(*req.ParserID)
+		}
+		effPipelineID := kb.PipelineID
+		if req.PipelineID != nil {
+			effPipelineID = req.PipelineID
+		}
+		if req.ParserID != nil && req.PipelineID == nil && kb.PipelineID != nil {
+			effPipelineID = nil
+		}
+
+		dslJSON, err := loadPipelineDSL(isCanvas, effParserID, effPipelineID)
+		if err != nil {
+			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
+				zap.Error(err))
+			if err := s.updateDocumentParserConfig(doc.ID, req.ParserConfig); err != nil {
+				return nil, common.CodeDataError, err
+			}
+		} else {
+			cleaned := buildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+			if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{
+				"parser_config": cleaned,
+			}); err != nil {
+				return nil, common.CodeDataError, err
+			}
 		}
 	}
 
@@ -2246,12 +2278,6 @@ func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, u
 		if err := validateMetaFields(req.MetaFields); err != nil {
 			return common.CodeDataError, err
 		}
-	}
-
-	// Validate component_params against the effective pipeline's DSL before any
-	// parser_config write happens downstream.
-	if err := s.validateComponentParamsForUpdate(datasetID, documentID, userID, req, present); err != nil {
-		return common.CodeDataError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -2390,144 +2416,6 @@ func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID,
 	)
 }
 
-// ValidateComponentParams checks that every cpnID and param key in the
-// provided component_params map exists in the given DSL JSON. It uses
-// pipeline.ExtractAllComponentParams to derive the schema for each component.
-func ValidateComponentParams(dslJSON []byte, componentParams map[string]map[string]any) error {
-	if len(componentParams) == 0 {
-		return nil
-	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams(dslJSON)
-	if err != nil {
-		return err
-	}
-	// Build lookup: cpnID -> set of valid param keys.
-	validCPNs := make(map[string]map[string]struct{}, len(schemas))
-	for _, s := range schemas {
-		keys := make(map[string]struct{}, len(s.ParamsDefaults))
-		for k := range s.ParamsDefaults {
-			keys[k] = struct{}{}
-		}
-		validCPNs[s.CpnID] = keys
-	}
-	for cpnID, params := range componentParams {
-		validKeys, ok := validCPNs[cpnID]
-		if !ok {
-			return fmt.Errorf("component_params: unknown cpnID %q", cpnID)
-		}
-		for paramName := range params {
-			if _, ok := validKeys[paramName]; !ok {
-				return fmt.Errorf("component_params: unknown param %q for component %q", paramName, cpnID)
-			}
-		}
-	}
-	return nil
-}
-
-// validateComponentParamsForUpdate validates the component_params submitted in
-// an update request against the DSL of the pipeline the update targets. Both
-// built-in templates and custom canvas pipelines are DSLs and go through the
-// same check: every cpnID and param key must exist in the pipeline's schema.
-//
-// The target pipeline is resolved by resolveEffectivePipeline, which mirrors
-// how the ingestion worker picks the DSL at run time (see
-// internal/ingestion/service.ingestion_service.go): a custom canvas id wins,
-// then the document's stored pipeline id, and only when neither is set do we
-// fall back to the built-in parser_id.
-func (s *DocumentService) validateComponentParamsForUpdate(datasetID, documentID, userID string, req *UpdateDatasetDocumentRequest, present map[string]bool) error {
-	if !present["parser_config"] || req.ParserConfig == nil || len(req.ParserConfig) == 0 {
-		return nil
-	}
-	componentParams, err := normalizeComponentParams(map[string]any(req.ParserConfig))
-	if err != nil {
-		return err
-	}
-	if len(componentParams) == 0 {
-		return nil
-	}
-
-	isCanvas, ref, err := s.resolveEffectivePipeline(datasetID, documentID, req, present)
-	if err != nil {
-		return err
-	}
-
-	// Reject references to a custom canvas the caller does not own or share.
-	if isCanvas {
-		if ok, aerr := canvasAccessibleForUser(userID, ref); aerr != nil {
-			return fmt.Errorf("check canvas %s access: %w", ref, aerr)
-		} else if !ok {
-			return fmt.Errorf("canvas %s is not accessible", ref)
-		}
-	}
-
-	return validateComponentParamsAgainstPipeline(isCanvas, ref, componentParams)
-}
-
-// validateComponentParamsAgainstPipeline loads the DSL for the target pipeline
-// and validates the supplied component_params against it. A custom canvas
-// pipeline (isCanvas true) loads its DSL from the canvas row; a built-in
-// template (isCanvas false) loads it from the embedded registry. Both share
-// the same component-graph schema, so the same ValidateComponentParams check
-// applies. This is the single validation primitive reused by both document
-// and knowledge-base updates.
-func validateComponentParamsAgainstPipeline(isCanvas bool, ref string, componentParams map[string]map[string]any) error {
-	var dslJSON []byte
-	var err error
-	if isCanvas {
-		dslJSON, err = loadCanvasDSLJSON(ref)
-		if err != nil {
-			return err
-		}
-	} else {
-		registry, regErr := pipelinepkg.DefaultRegistry()
-		if regErr != nil {
-			return fmt.Errorf("builtin pipeline registry: %w", regErr)
-		}
-		if !registry.IsValid(ref) {
-			return fmt.Errorf("unknown builtin parser_id: %s", ref)
-		}
-		dslStr, dslErr := pipelinepkg.LoadBuiltinDSL(ref)
-		if dslErr != nil {
-			return fmt.Errorf("load builtin DSL for %q: %w", ref, dslErr)
-		}
-		dslJSON = []byte(dslStr)
-	}
-
-	return ValidateComponentParams(dslJSON, componentParams)
-}
-
-// resolveEffectivePipeline picks the pipeline definition an update applies to.
-// It prefers the canvas id / parser id carried in the request and falls back to
-// the document's stored values, matching how the ingestion worker selects the
-// DSL at run time. It returns whether the target is a custom canvas pipeline
-// and its identifier (a canvas id when isCanvas is true, otherwise a built-in
-// parser id).
-func (s *DocumentService) resolveEffectivePipeline(datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (bool, string, error) {
-	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
-	if err != nil {
-		return false, "", err
-	}
-
-	// Custom canvas: the request value wins, else the document's stored pipeline id.
-	if present["pipeline_id"] {
-		if req.PipelineID != nil && strings.TrimSpace(*req.PipelineID) != "" {
-			return true, strings.TrimSpace(*req.PipelineID), nil
-		}
-		// pipeline_id was supplied but is empty: the caller explicitly cleared
-		// the custom canvas, so fall through to built-in template resolution
-		// instead of re-selecting the stored canvas.
-	} else if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
-		return true, strings.TrimSpace(*doc.PipelineID), nil
-	}
-
-	// Built-in template: the request parser_id wins, else the stored parser id.
-	parserID := doc.ParserID
-	if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
-		parserID = strings.TrimSpace(*req.ParserID)
-	}
-	return false, parserID, nil
-}
-
 // loadCanvasDSLJSON returns the DSL JSON for a custom canvas pipeline. The
 // canvas's dsl column holds the same component-graph structure that built-in
 // templates use, so it can be validated by the same schema extractor. It is a
@@ -2553,27 +2441,111 @@ func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
 	return raw, nil
 }
 
-// normalizeComponentParams coerces a JSON-decoded component_params value into
-// the typed form expected by ValidateComponentParams. It rejects structurally
-// invalid input (e.g. a scalar or array at the top level, or a non-object per
-// component) so a malformed payload fails fast with a clear message.
-func normalizeComponentParams(raw any) (map[string]map[string]any, error) {
-	if raw == nil {
-		return nil, nil
+// loadPipelineDSL loads the DSL JSON for a pipeline identified by parserID
+// (built-in) or pipelineID (custom canvas). When both are provided, isCanvas
+// selects which one to use.
+func loadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte, error) {
+	if isCanvas {
+		return loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
 	}
-	outer, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("component_params must be a JSON object mapping component id to a param object")
+	registry, err := pipelinepkg.DefaultRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("builtin pipeline registry: %w", err)
 	}
-	out := make(map[string]map[string]any, len(outer))
-	for cpnID, paramsRaw := range outer {
-		params, ok := paramsRaw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("component_params[%q] must be a JSON object mapping param name to value", cpnID)
+	if !registry.IsValid(parserID) {
+		return nil, fmt.Errorf("unknown builtin parser_id: %s", parserID)
+	}
+	dslStr, err := pipelinepkg.LoadBuiltinDSL(parserID)
+	if err != nil {
+		return nil, fmt.Errorf("load builtin DSL for %q: %w", parserID, err)
+	}
+	return []byte(dslStr), nil
+}
+
+// cleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
+// Keys containing ':' are treated as component IDs; they are kept only when both
+// the cpnID AND the param name exist in the DSL schema. Keys without ':' (legacy
+// flat fields such as chunk_token_num, image_context_size) are dropped with a
+// warning — they do not belong in the new component-params world.
+func cleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
+	schemas, err := pipelinepkg.ExtractAllComponentParams(dslJSON)
+	if err != nil {
+		common.Warn("cleanComponentParams: failed to extract DSL schema, returning input as-is",
+			zap.Error(err))
+		return rawConfig
+	}
+
+	validCPNs := make(map[string]map[string]struct{}, len(schemas))
+	for _, s := range schemas {
+		keys := make(map[string]struct{}, len(s.ParamsDefaults))
+		for k := range s.ParamsDefaults {
+			keys[k] = struct{}{}
 		}
-		out[cpnID] = params
+		validCPNs[s.CpnID] = keys
 	}
-	return out, nil
+
+	result := make(map[string]interface{}, len(rawConfig))
+	for key, val := range rawConfig {
+		if !strings.Contains(key, ":") {
+			common.Warn("cleanComponentParams: dropping legacy flat field",
+				zap.String("key", key))
+			continue
+		}
+		validKeys, ok := validCPNs[key]
+		if !ok {
+			common.Warn("cleanComponentParams: dropping unknown cpnID",
+				zap.String("cpnID", key))
+			continue
+		}
+		params, ok := val.(map[string]any)
+		if !ok {
+			continue
+		}
+		cleaned := make(map[string]any, len(params))
+		for pk, pv := range params {
+			if _, ok := validKeys[pk]; ok {
+				cleaned[pk] = pv
+			} else {
+				common.Warn("cleanComponentParams: dropping unknown param",
+					zap.String("cpnID", key), zap.String("param", pk))
+			}
+		}
+		if len(cleaned) > 0 {
+			result[key] = cleaned
+		}
+	}
+	return result
+}
+
+// buildParserConfig builds the final parser_config by starting from the DSL
+// defaults for every component, then overlaying the cleaned incoming overrides.
+// This ensures all components from the current pipeline are present while
+// stripping stale params from other pipelines.
+func buildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.JSONMap {
+	cleaned := cleanComponentParams(dslJSON, rawConfig)
+	defaults, err := pipelinepkg.ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		common.Warn("buildParserConfig: failed to extract DSL defaults, using cleaned only",
+			zap.Error(err))
+		return entity.JSONMap(cleaned)
+	}
+	result := make(entity.JSONMap, len(defaults))
+	for cpnID, params := range defaults {
+		base := make(map[string]interface{}, len(params))
+		for k, v := range params {
+			base[k] = v
+		}
+		if over, ok := cleaned[cpnID]; ok {
+			if om, ok := over.(map[string]any); ok {
+				result[cpnID] = common.DeepMergeMaps(base, map[string]interface{}(om))
+			} else {
+				result[cpnID] = base
+			}
+		} else {
+			result[cpnID] = base
+		}
+	}
+	return result
 }
 
 func (s *DocumentService) updateDocumentParserConfig(documentID string, config map[string]any) error {
@@ -3106,6 +3078,9 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		suffix = filename[i+1:]
 	}
 	parserID := selectUploadParser(utility.FileType(filetype), filename, kb.ParserID)
+	if kb.PipelineID != nil {
+		parserID = "" // canvas pipeline mode — parser_id not applicable
+	}
 	loc := location
 	doc := &entity.Document{
 		ID:           docID,
