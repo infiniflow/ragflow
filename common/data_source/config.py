@@ -75,6 +75,7 @@ class DocumentSource(str, Enum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    LUMAPPS = "lumapps"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
 
