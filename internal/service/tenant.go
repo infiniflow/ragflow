@@ -812,19 +812,25 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 			return err
 		}
 		if modelID == "" {
-			modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
-			if err != nil {
-				return err
+			// Builtin provider doesn't use tenant_model rows; leave tenantModelID nil
+			// (mirrors Python resolve_model_id returning None for Builtin).
+			if modelProvider == "Builtin" {
+				tenantModelID = nil
+			} else {
+				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
+				if err != nil {
+					return err
+				}
+				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
+				if err != nil {
+					return err
+				}
+				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				if err != nil {
+					return err
+				}
+				tenantModelID = modelEntity.ID
 			}
-			modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
-			if err != nil {
-				return err
-			}
-			modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
-			if err != nil {
-				return err
-			}
-			tenantModelID = modelEntity.ID
 		}
 		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
 	} else {
