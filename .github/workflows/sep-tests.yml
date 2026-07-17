@@ -396,7 +396,7 @@ jobs:
                  local base port used
                  # Enumerate host-published tcp ports across ALL containers on the shared daemon.
                  # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
                    if grep -qx "${port}" <<< "${used}"; then
@@ -906,7 +906,7 @@ jobs:
                  local base port used
                  # Enumerate host-published tcp ports across ALL containers on the shared daemon.
                  # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | tr -d '->' | sort -u)
+                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
                  for base in "${PORT_BASES[@]}"; do
                    port=$((base + offset))
                    if grep -qx "${port}" <<< "${used}"; then
