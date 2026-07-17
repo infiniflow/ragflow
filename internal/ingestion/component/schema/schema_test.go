@@ -135,15 +135,6 @@ func TestParserParamDefaults(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatalf("default ParserParam failed Validate: %v", err)
 	}
-	// Spot-check a few entries that the Python class initializes.
-	for _, key := range []string{"pdf", "docx", "image", "audio", "video", "email", "epub"} {
-		if _, ok := p.Setups[key]; !ok {
-			t.Errorf("default Setups missing key %q", key)
-		}
-	}
-	if got := p.Setups["pdf"]["parse_method"]; got != "deepdoc" {
-		t.Errorf("default pdf parse_method = %v, want deepdoc", got)
-	}
 	if got := p.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
 		t.Errorf("default pdf allowed_output_format = %v, want [json markdown]", got)
 	}
@@ -155,15 +146,15 @@ func TestParserParamJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(data), `"setups"`) {
-		t.Errorf("expected setups in JSON, got %s", data)
+	if !strings.Contains(string(data), `"allowed_output_format"`) {
+		t.Errorf("expected allowed_output_format in JSON, got %s", data)
 	}
 	var decoded ParserParam
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.Setups["pdf"]["parse_method"] != "deepdoc" {
-		t.Errorf("round-trip lost default pdf parse_method: got %v", decoded.Setups["pdf"]["parse_method"])
+	if got := decoded.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
+		t.Errorf("round-trip lost pdf allowed_output_format: got %v", got)
 	}
 }
 

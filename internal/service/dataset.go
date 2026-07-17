@@ -1884,6 +1884,9 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		parserConfigMap = common.GetParserConfig(parserID, parserConfig)
 		parserConfigMap["llm_id"] = tenant.LLMID
 	}
+	if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
+		return nil, common.CodeDataError, err
+	}
 
 	embdID := tenant.EmbdID
 	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
@@ -2241,7 +2244,11 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 			return nil, common.CodeDataError, err
 		}
 		if len(req.ParserConfig) > 0 {
-			updates["parser_config"] = entity.JSONMap(common.DeepMergeMaps(kb.ParserConfig, req.ParserConfig))
+			merged := common.DeepMergeMaps(kb.ParserConfig, req.ParserConfig)
+			if err := validateDatasetParserConfigSize(merged); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			updates["parser_config"] = entity.JSONMap(merged)
 		}
 	}
 
@@ -2279,24 +2286,32 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	// the pipeline changes, so that component-level parameters stay in sync.
 	pipelineChanged := req.PipelineID != nil && (kb.PipelineID == nil || *req.PipelineID != *kb.PipelineID)
 	if pipelineChanged {
-		if _, ok := updates["parser_config"]; !ok {
-			cfgParserID := kb.ParserID
-			if parserIDProvided {
-				cfgParserID = parserID
-			}
-			parserConfigMap := common.GetParserConfig(cfgParserID, nil)
-			if upPipelineID, ok := updates["pipeline_id"].(string); ok && upPipelineID != "" {
-				canvas, err := dao.NewUserCanvasDAO().GetByID(upPipelineID)
-				if err != nil || canvas == nil {
-					return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", upPipelineID)
-				}
-				pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
-				if pipelineDefaults != nil {
-					parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfigMap)
-				}
-			}
-			updates["parser_config"] = entity.JSONMap(parserConfigMap)
+		cfgParserID := kb.ParserID
+		if parserIDProvided {
+			cfgParserID = parserID
 		}
+		parserConfigMap := common.GetParserConfig(cfgParserID, nil)
+		if upPipelineID, ok := updates["pipeline_id"].(string); ok && upPipelineID != "" {
+			canvas, err := dao.NewUserCanvasDAO().GetByID(upPipelineID)
+			if err != nil || canvas == nil {
+				return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", upPipelineID)
+			}
+			pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
+			if pipelineDefaults != nil {
+				parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfigMap)
+			}
+		}
+		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
+			parserConfigMap = common.DeepMergeMaps(parserConfigMap, req.ParserConfig)
+		}
+		tenant, err := d.tenantDAO.GetByID(tenantID)
+		if err == nil && tenant != nil {
+			common.InjectExtractorLLMID(parserConfigMap, tenant.LLMID)
+		}
+		if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		updates["parser_config"] = entity.JSONMap(parserConfigMap)
 	}
 
 	if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(kb.Name) {

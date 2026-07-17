@@ -134,6 +134,9 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 			}
 			prefix = sectionTextPrefix(sections[i], 3)
 		}
+		if i >= len(sections) || prefix == "" {
+			break
+		}
 		sections = append(sections[:i], sections[i+1:]...)
 		if i >= len(sections) || prefix == "" {
 			break

@@ -211,7 +211,7 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewParserComponent returned %T", c)
 	}
-	setup, ok := pc.Param.Setups["text&code"]
+	setup, ok := pc.Setups["text&code"]
 	if !ok {
 		t.Fatalf("Setups[text&code] missing after override")
 	}
@@ -219,7 +219,7 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 		t.Errorf("Setups[text&code][chunk_token_size] = %v, want 256", setup["chunk_token_size"])
 	}
 	// Defaults must still be present for other file types.
-	if _, ok := pc.Param.Setups["pdf"]; !ok {
+	if _, ok := pc.Setups["pdf"]; !ok {
 		t.Errorf("Setups[pdf] missing; override should not erase defaults")
 	}
 }
