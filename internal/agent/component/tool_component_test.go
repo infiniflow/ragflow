@@ -472,11 +472,27 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 	serverCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		serverCalls++
-		if symbols := request.URL.Query().Get("symbols"); symbols != "AAPL" {
-			t.Errorf("symbols = %q", symbols)
-		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"quoteResponse":{"result":[{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD"}],"error":null}}`))
+		switch request.URL.Path {
+		case "/v1/finance/search":
+			if q := request.URL.Query().Get("q"); q != "AAPL" {
+				t.Errorf("q = %q", q)
+			}
+			_, _ = writer.Write([]byte(`{"quotes":[{"symbol":"AAPL","currency":"USD"}],"news":[]}`))
+		case "/v8/finance/chart/AAPL":
+			_, _ = writer.Write([]byte(`{
+				"chart": {
+					"result": [{
+						"meta": {"regularMarketPrice": 189.5},
+						"timestamp": [],
+						"indicators": {"quote": [{}]}
+					}],
+					"error": null
+				}
+			}`))
+		default:
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
 	}))
 	defer server.Close()
 	target, err := url.Parse(server.URL)
@@ -508,7 +524,7 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 	if !ok || !strings.Contains(report, "# Information:") || !strings.Contains(report, "| symbol | AAPL |") {
 		t.Fatalf("report = %#v", out["report"])
 	}
-	if serverCalls != 1 {
-		t.Fatalf("server calls = %d, want 1", serverCalls)
+	if serverCalls != 2 {
+		t.Fatalf("server calls = %d, want 2", serverCalls)
 	}
 }

@@ -153,6 +153,38 @@ func TestLLM_Invoke_HistoryWindow_PrependsFromState(t *testing.T) {
 	}
 }
 
+func TestLLM_Invoke_HistoryWindow_DoesNotDuplicateCurrentUser(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
+	withStubInvoker(t, stub)
+
+	state := runtime.NewCanvasState("rid", "tid")
+	state.AppendHistory("user", "earlier")
+	state.AppendHistory("assistant", map[string]any{"content": "earlier reply"})
+	state.AppendCurrentUser("now")
+	c := NewLLMComponent(LLMParam{
+		ModelID:                  "echo",
+		UserPrompt:               "now",
+		MessageHistoryWindowSize: 5,
+	})
+	ctx := runtime.WithState(context.Background(), state)
+	if _, err := c.Invoke(ctx, map[string]any{}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if len(stub.captured.Messages) != 3 {
+		t.Fatalf("messages = %#v, want two prior turns plus one current user", stub.captured.Messages)
+	}
+	currentCount := 0
+	for _, message := range stub.captured.Messages {
+		if message.Content == "now" {
+			currentCount++
+		}
+	}
+	if currentCount != 1 {
+		t.Fatalf("current user occurrence count = %d, want 1", currentCount)
+	}
+}
+
 // TestLLM_Invoke_HistoryWindow_ZeroIsNoop: when window is 0, history is
 // not prepended even if present in state.
 func TestLLM_Invoke_HistoryWindow_ZeroIsNoop(t *testing.T) {
