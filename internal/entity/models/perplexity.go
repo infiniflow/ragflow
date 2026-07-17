@@ -280,7 +280,7 @@ type perplexityModelInfo struct {
 }
 
 type perplexityModelListResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -325,7 +325,7 @@ func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return ParseListModel(ModelList{Models: wrapped.Data}), nil
 	}
 
-	var bare []DSModel
+	var bare []ModelListItem
 	if err = json.Unmarshal(body, &bare); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}

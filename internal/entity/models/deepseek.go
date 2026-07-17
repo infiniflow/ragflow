@@ -492,12 +492,6 @@ func (d *DeepSeekModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-type DSModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
-}
-
 func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err

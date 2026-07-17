@@ -519,7 +519,7 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 		if name == "" {
 			continue
 		}
-		modelList.Models = append(modelList.Models, DSModel{ID: name})
+		modelList.Models = append(modelList.Models, ModelListItem{ID: name})
 	}
 
 	return ParseListModel(modelList), nil

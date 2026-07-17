@@ -645,7 +645,7 @@ func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 	}
 
 	var parsed struct {
-		Data []DSModel `json:"data"`
+		Data []ModelListItem `json:"data"`
 	}
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)

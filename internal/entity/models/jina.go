@@ -358,10 +358,10 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]DSModel, 0, len(result["data"].([]interface{})))
+	models := make([]ModelListItem, 0, len(result["data"].([]interface{})))
 	for _, model := range result["data"].([]interface{}) {
 		modelName := model.(map[string]interface{})["name"].(string)
-		models = append(models, DSModel{
+		models = append(models, ModelListItem{
 			ID:      modelName,
 			OwnedBy: "",
 		})

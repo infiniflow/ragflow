@@ -558,7 +558,7 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		if modelName == "" {
 			continue
 		}
-		modelList.Models = append(modelList.Models, DSModel{
+		modelList.Models = append(modelList.Models, ModelListItem{
 			ID: modelName,
 		})
 	}

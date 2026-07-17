@@ -287,8 +287,8 @@ type groqModelInfo struct {
 }
 
 type groqListModelsResponse struct {
-	Data  []DSModel   `json:"data"`
-	Error interface{} `json:"error"`
+	Data  []ModelListItem `json:"data"`
+	Error interface{}     `json:"error"`
 }
 
 func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {

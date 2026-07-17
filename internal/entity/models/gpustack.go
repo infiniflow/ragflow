@@ -300,7 +300,7 @@ type gpustackModelInfo struct {
 }
 
 type gpustackModelsResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 func (g *GPUStackModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {

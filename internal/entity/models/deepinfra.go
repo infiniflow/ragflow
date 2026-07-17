@@ -862,10 +862,10 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]DSModel, 0, len(result))
+	models := make([]ModelListItem, 0, len(result))
 	for _, model := range result {
 		if model.ModelName != "" {
-			models = append(models, DSModel{
+			models = append(models, ModelListItem{
 				ID:      model.ModelName,
 				OwnedBy: d.Name(),
 			})

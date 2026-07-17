@@ -52,7 +52,7 @@ type xinferenceChatResponse struct {
 }
 
 type xinferenceModelListResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 // NewXinferenceModel creates a new Xinference model instance.

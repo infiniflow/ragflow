@@ -472,7 +472,7 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	if !ok {
 		return nil, fmt.Errorf("invalid models list format")
 	}
-	modelList := ModelList{Models: make([]DSModel, 0, len(rawItems))}
+	modelList := ModelList{Models: make([]ModelListItem, 0, len(rawItems))}
 	for _, raw := range rawItems {
 		item, ok := raw.(map[string]interface{})
 		if !ok {
@@ -483,7 +483,7 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 			continue
 		}
 		ownedBy, _ := item["owned_by"].(string)
-		modelList.Models = append(modelList.Models, DSModel{ID: id, OwnedBy: ownedBy})
+		modelList.Models = append(modelList.Models, ModelListItem{ID: id, OwnedBy: ownedBy})
 	}
 
 	return ParseListModel(modelList), nil

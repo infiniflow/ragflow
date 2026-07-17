@@ -390,7 +390,7 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		if name == "" {
 			continue
 		}
-		modelList.Models = append(modelList.Models, DSModel{ID: name})
+		modelList.Models = append(modelList.Models, ModelListItem{ID: name})
 	}
 
 	return ParseListModel(modelList), nil
