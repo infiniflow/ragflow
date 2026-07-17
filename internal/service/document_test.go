@@ -456,10 +456,10 @@ func makeTestFileHeader(t *testing.T, field, filename string, content []byte) *m
 	return fhs[0]
 }
 
-// sptr returns a pointer to the given string.
-func ptr[T any](v T) *T { return &v }
+func toPtr[T any](v T) *T { return &v }
 
-func sptr(s string) *string { return ptr(s) }
+// sptr returns a pointer to the given string.
+func sptr(s string) *string { return toPtr(s) }
 
 func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum int64) {
 	t.Helper()
@@ -622,17 +622,17 @@ func TestUpdateDocumentRejectsIngestionStateMutation(t *testing.T) {
 		},
 		{
 			name:    "token_num",
-			req:     &UpdateDocumentRequest{TokenNum: ptr(int64(101))},
+			req:     &UpdateDocumentRequest{TokenNum: toPtr(int64(101))},
 			wantErr: "Can't change `token_num`.",
 		},
 		{
 			name:    "chunk_num",
-			req:     &UpdateDocumentRequest{ChunkNum: ptr(int64(11))},
+			req:     &UpdateDocumentRequest{ChunkNum: toPtr(int64(11))},
 			wantErr: "Can't change `chunk_num`.",
 		},
 		{
 			name:    "progress",
-			req:     &UpdateDocumentRequest{Progress: ptr(0.75)},
+			req:     &UpdateDocumentRequest{Progress: toPtr(0.75)},
 			wantErr: "Can't change `progress`.",
 		},
 	}
