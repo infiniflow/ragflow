@@ -6,7 +6,9 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank"
   },
   "class": "ppio",
   "models": [
@@ -155,6 +157,34 @@
       "max_tokens": 32768,
       "model_types": [
         "chat"
+      ]
+    },
+    {
+      "name": "baai/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-8b",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-reranker-8b",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
       ]
     }
   ]
