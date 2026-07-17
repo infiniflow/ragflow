@@ -209,7 +209,7 @@ func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *
 
 func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver { return d }
 func (d *captureToolDriver) Name() string                                      { return "capture" }
-func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig) (*ChatResponse, error) {
+func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
 	d.lastConfig = cfg
 	return d.resp, nil
 }
