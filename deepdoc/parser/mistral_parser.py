@@ -48,9 +48,6 @@ MISTRAL_TYPE_TO_RAGFLOW = {
     "code": "code",
 }
 
-# Always discarded regardless of flags.
-ALWAYS_DISCARDED: set[str] = set()
-
 
 class MistralParser(RAGFlowPdfParser):
     """Parse a PDF through Mistral OCR into (sections, tables)."""
@@ -101,14 +98,12 @@ class MistralParser(RAGFlowPdfParser):
     # ------------------------------------------------------------------
     # Block classification
     # ------------------------------------------------------------------
-    def _resolve_internal_type(self, block_type: str) -> Optional[str]:
+    def _resolve_internal_type(self, block_type: Optional[str]) -> Optional[str]:
         """Return the RAGFlow internal layout type, or None to discard.
 
         header/footer obey keep_header_footer; unknown types fall back to text
         to avoid silent loss.
         """
-        if block_type in ALWAYS_DISCARDED:
-            return None
         if block_type in ("header", "footer"):
             return "text" if self.keep_header_footer else None
         return MISTRAL_TYPE_TO_RAGFLOW.get(block_type, "text")
@@ -148,12 +143,11 @@ class MistralParser(RAGFlowPdfParser):
                         "type": b.get("type"),
                         "content": b.get("content"),
                         "bbox": bbox,
-                        "table_id": b.get("table_id"),
                     }
                 )
             out.append(
                 {
-                    "page_num": page.get("index", 0),
+                    "page_num": page.get("index") or 0,
                     "page_size": page_size,
                     "blocks": blocks,
                 }
@@ -184,10 +178,10 @@ class MistralParser(RAGFlowPdfParser):
 
         if getattr(self, "page_images", None) and len(self.page_images) > page_idx:
             page_width, page_height = self.page_images[page_idx].size
-            x0 = (x0 / src_w) * page_width
-            x1 = (x1 / src_w) * page_width
-            top = (top / src_h) * page_height
-            bott = (bott / src_h) * page_height
+            x0 = max(0.0, (x0 / src_w) * page_width)
+            x1 = max(0.0, (x1 / src_w) * page_width)
+            top = max(0.0, (top / src_h) * page_height)
+            bott = max(0.0, (bott / src_h) * page_height)
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join(str(x) for x in pn), x0, x1, top, bott)
 

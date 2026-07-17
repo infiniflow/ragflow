@@ -77,6 +77,15 @@ def test_resolve_internal_type_unknown_falls_back_to_text(monkeypatch):
     assert p._resolve_internal_type("brand_new_type") == "text"
 
 
+def test_resolve_internal_type_none_falls_back_to_text(monkeypatch):
+    # Regression: a block with missing/null "type" yields None here; the
+    # annotation must accept it (beartype runs in production) and fall back
+    # to text instead of aborting the whole parse.
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    assert p._resolve_internal_type(None) == "text"
+
+
 def test_block_text_image_returns_empty(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     assert m.MistralParser._block_text({"content": "x"}, "image") == ""
@@ -143,6 +152,28 @@ def test_normalize_pages_bbox_none_when_no_coords(monkeypatch):
     assert p._transfer_to_sections(pages) == []
 
 
+def test_normalize_pages_null_index_coerced_to_zero(monkeypatch):
+    # Regression: a present-but-null "index" must coerce to 0, not None
+    # (dict.get's default only applies when the key is absent), so the
+    # downstream page_idx + 1 in _line_tag does not raise TypeError.
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+    resp = {
+        "pages": [
+            {
+                "index": None,
+                "dimensions": {"width": 100, "height": 100},
+                "blocks": [{"type": "text", "content": "hi", "top_left_x": 1, "top_left_y": 2, "bottom_right_x": 3, "bottom_right_y": 4}],
+            }
+        ]
+    }
+    pages = p._normalize_pages(resp)
+    assert pages[0]["page_num"] == 0
+    secs = p._transfer_to_sections(pages)  # must not raise
+    # naive path: text block -> (text, line_tag); tag stamped page 1 (1-based)
+    assert any(s[0] == "hi" and s[1].startswith("@@1\t") for s in secs)
+
+
 def test_transfer_naive_path_returns_2_tuples_without_header(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m)
@@ -192,6 +223,26 @@ def test_line_tag_rescales_per_page_dimensions(monkeypatch):
 
     tag1 = p._line_tag({"page_idx": 1, "bbox": [5, 10, 25, 40], "page_size": {"w": 50, "h": 100}})
     assert tag1 == "@@2\t20.0\t100.0\t60.0\t240.0##"
+
+
+def test_line_tag_clamps_negative_coords_and_roundtrips(monkeypatch):
+    # Regression: a bbox bleeding past the page origin rescales to negative
+    # coords; extract_positions' regex excludes '-', so an unclamped tag is
+    # silently dropped (crop returns None). Clamp to >= 0 so the tag survives.
+    m = _load_mistral_parser(monkeypatch)
+    p = _make_parser(m)
+
+    class _Img:
+        def __init__(self, size):
+            self.size = size
+
+    p.page_images = [_Img((300, 800))]
+    tag = p._line_tag({"page_idx": 0, "bbox": [-10, -20, 40, 60], "page_size": {"w": 100, "h": 200}})
+    assert tag == "@@1\t0.0\t120.0\t0.0\t240.0##"  # negatives clamped to 0.0
+    poss = m.MistralParser.extract_positions(tag)
+    assert len(poss) == 1  # the regex matches; block is not dropped
+    _pn, left, _right, top, _bottom = poss[0]
+    assert left == 0.0 and top == 0.0
 
 
 def test_transfer_to_tables_is_empty(monkeypatch):
