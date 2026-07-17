@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -503,7 +505,7 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // the joined assistant answer. ReasonContent is always non-nil per the
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
-func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -145,7 +146,7 @@ type futurmixChatResponse struct {
 }
 
 // ChatWithMessages sends a non-streaming chat completion
-func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

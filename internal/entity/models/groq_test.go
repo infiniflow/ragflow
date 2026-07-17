@@ -130,6 +130,7 @@ func TestGroqChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -144,7 +145,7 @@ func TestGroqChatHappyPath(t *testing.T) {
 
 func TestGroqChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newGroqForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGroqForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -152,7 +153,7 @@ func TestGroqChatRequiresModelName(t *testing.T) {
 
 func TestGroqChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newGroqForTest("http://unused").ChatWithMessages("llama-3.3-70b-versatile", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGroqForTest("http://unused").ChatWithMessages("llama-3.3-70b-versatile", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -170,6 +171,7 @@ func TestGroqChatRejectsHTTPError(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
@@ -333,6 +335,7 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -362,6 +365,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &region},
+		nil,
 		nil,
 	)
 	if err != nil {

@@ -94,6 +94,7 @@ func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -282,7 +283,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -290,7 +291,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",

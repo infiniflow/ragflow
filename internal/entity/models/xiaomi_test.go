@@ -115,7 +115,7 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking},
+		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -145,7 +145,7 @@ func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
 		map[string]string{"default": "http://unused"},
 		URLSuffix{Chat: "override/chat"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil)
+	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -207,13 +207,13 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 func TestXiaomiChatRequiresInputs(t *testing.T) {
 	apiKey := "test-key"
 	m := newXiaomiForTest("http://unused")
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("api key guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("model guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
+	if _, err := m.ChatWithMessages("mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("messages guard: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestXiaomiChatRejectsHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}

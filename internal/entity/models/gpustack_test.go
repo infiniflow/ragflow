@@ -115,7 +115,7 @@ func TestGPUStackChatHappyPath(t *testing.T) {
 	resp, err := newGPUStackForTest(srv.URL).ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -146,7 +146,7 @@ func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
 	resp, err := newGPUStackForTest(srv.URL).ChatWithMessages(
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -184,6 +184,7 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -194,7 +195,7 @@ func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 	)
 	if err == nil || strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("self-hosted model should not require api key, got %v", err)
@@ -206,7 +207,7 @@ func TestGPUStackChatRequiresModelName(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
 		"",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
@@ -216,7 +217,7 @@ func TestGPUStackChatRequiresModelName(t *testing.T) {
 func TestGPUStackChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
-		"qwen3-8b", nil, &APIConfig{ApiKey: &apiKey}, nil,
+		"qwen3-8b", nil, &APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
@@ -234,7 +235,7 @@ func TestGPUStackChatRejectsHTTPError(t *testing.T) {
 	_, err := newGPUStackForTest(srv.URL).ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
@@ -247,7 +248,7 @@ func TestGPUStackChatRequiresBaseURL(t *testing.T) {
 	_, err := model.ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base-URL error, got %v", err)

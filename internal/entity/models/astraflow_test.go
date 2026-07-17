@@ -124,6 +124,7 @@ func TestAstraflowChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -150,7 +151,7 @@ func TestAstraflowChatNoReasoning(t *testing.T) {
 	resp, err := newAstraflowForTest(srv.URL).ChatWithMessages(
 		"gpt-4o-mini",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestAstraflowChatRequiresAPIKey(t *testing.T) {
 	_, err := newAstraflowForTest("http://unused").ChatWithMessages(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -175,7 +176,7 @@ func TestAstraflowChatRequiresAPIKey(t *testing.T) {
 func TestAstraflowChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newAstraflowForTest("http://unused").ChatWithMessages(
-		"claude-opus-4-7", nil, &APIConfig{ApiKey: &apiKey}, nil)
+		"claude-opus-4-7", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -192,7 +193,7 @@ func TestAstraflowChatPropagatesHTTPError(t *testing.T) {
 	_, err := newAstraflowForTest(srv.URL).ChatWithMessages(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}

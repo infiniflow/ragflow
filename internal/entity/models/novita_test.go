@@ -268,7 +268,7 @@ func TestNovitaChatPureText(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"meta-llama/llama-3.3-70b-instruct",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestNovitaChatExtractsThinkTags(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"qwen/qwen3-30b-a3b-fp8",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestNovitaChatExtractsReasoningContentField(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"deepseek/deepseek-v3.1",
 		[]Message{{Role: "user", Content: "2+2?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestNovitaChatPropagatesEnableThinking(t *testing.T) {
 				"qwen/qwen3-30b-a3b-fp8",
 				[]Message{{Role: "user", Content: "x"}},
 				&APIConfig{ApiKey: &apiKey},
-				&ChatConfig{Thinking: &thinking})
+				&ChatConfig{Thinking: &thinking}, nil)
 			if err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
@@ -452,7 +452,7 @@ func TestNovitaChatOmitsEnableThinkingWhenUnset(t *testing.T) {
 	_, err := newNovitaForTest(srv.URL).ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{}) // no Thinking
+		&ChatConfig{}, nil) // no Thinking
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
 
 func TestNovitaChatRequiresAPIKey(t *testing.T) {
 	_, err := newNovitaForTest("http://unused").ChatWithMessages("m",
-		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("got %v", err)
 	}
@@ -501,7 +501,7 @@ func TestNovitaChatRequiresAPIKey(t *testing.T) {
 func TestNovitaChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newNovitaForTest("http://unused").ChatWithMessages("m", nil,
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("got %v", err)
 	}
@@ -517,7 +517,7 @@ func TestNovitaChatRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newNovitaForTest(srv.URL).ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("got %v", err)
 	}
@@ -854,7 +854,7 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 			invoke: func(n *NovitaModel, apiKey string) error {
 				_, err := n.ChatWithMessages("m",
 					[]Message{{Role: "user", Content: "x"}},
-					&APIConfig{ApiKey: &apiKey}, nil)
+					&APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			respBody: `{"choices":[{"message":{"content":"ok"}}]}`,

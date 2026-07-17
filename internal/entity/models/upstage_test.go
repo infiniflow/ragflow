@@ -41,7 +41,7 @@ func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
 	_, err := u.ChatWithMessages("solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{Effort: &effort})
+		&ChatConfig{Effort: &effort}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -68,6 +68,7 @@ func TestUpstageChatOmitsReasoningEffortWhenUnset(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{}, // no Effort
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -124,7 +125,7 @@ func TestUpstageChatExtractsReasoningField(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := u.ChatWithMessages("solar-pro3",
 		[]Message{{Role: "user", Content: "What is 15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestUpstageChatHandlesAbsentReasoning(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := u.ChatWithMessages("solar-mini",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	_, err := u.ChatWithMessages("solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort})
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}

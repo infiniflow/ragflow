@@ -127,6 +127,7 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		[]Message{{Role: "system", Content: "be helpful"}, {Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -165,7 +166,7 @@ func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
 		version,
 		[]Message{{Role: "user", Content: "hello"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -205,7 +206,7 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "user", Content: "hello"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}

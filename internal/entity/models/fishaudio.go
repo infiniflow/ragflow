@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -53,7 +54,7 @@ func (f *FishAudioModel) Name() string {
 	return "Fish Audio"
 }
 
-func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 

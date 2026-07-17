@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -126,7 +127,7 @@ func ragconChatPayload(modelName string, messages []Message, stream bool, chatMo
 	return reqBody
 }
 
-func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

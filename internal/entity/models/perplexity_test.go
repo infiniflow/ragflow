@@ -95,6 +95,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -132,6 +133,7 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -143,14 +145,14 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 
 func TestPerplexityChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPerplexityForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestPerplexityChatRequiresApiKey(t *testing.T) {
-	_, err := newPerplexityForTest("http://unused").ChatWithMessages("sonar", []Message{{Role: "user", Content: "x"}}, nil, nil)
+	_, err := newPerplexityForTest("http://unused").ChatWithMessages("sonar", []Message{{Role: "user", Content: "x"}}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}

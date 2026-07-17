@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -72,7 +73,7 @@ func (o *OllamaModel) Name() string {
 	return "Ollama"
 }
 
-func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("message is nil")
 	}

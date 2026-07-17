@@ -119,7 +119,7 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	return strings.TrimSpace(baseURL)
 }
 
-func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

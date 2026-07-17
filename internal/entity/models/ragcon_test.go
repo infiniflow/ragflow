@@ -113,7 +113,7 @@ func TestRAGconChatHappyPath(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -134,7 +134,7 @@ func TestRAGconChatRequiresAPIKey(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key-required error, got %v", err)
@@ -147,7 +147,7 @@ func TestRAGconChatRequiresMessages(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
@@ -166,7 +166,7 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 status error, got %v", err)

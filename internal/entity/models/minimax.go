@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 )
@@ -60,7 +61,7 @@ func validateMinimaxModelName(modelName string) (string, error) {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -60,7 +61,7 @@ func (a *AnthropicModel) region(apiConfig *APIConfig) string {
 	return "default"
 }
 
-func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

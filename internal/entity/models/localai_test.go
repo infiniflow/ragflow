@@ -163,7 +163,8 @@ func TestLocalAIChatMissingBaseURLFailsClearly(t *testing.T) {
 	l := NewLocalAIModel(map[string]string{}, URLSuffix{Chat: "chat/completions"})
 	_, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
@@ -183,7 +184,8 @@ func TestLocalAIChatOmitsAuthHeaderWhenKeyEmpty(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -207,7 +209,8 @@ func TestLocalAIChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 	key := "secret"
 	_, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -369,7 +372,8 @@ func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("kimi-k2.6",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -396,7 +400,8 @@ func TestLocalAIChatExtractsThinking(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("qwen3-32b",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -419,7 +424,8 @@ func TestLocalAIChatHandlesAbsentReasoning(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("llama-3-8b-instruct",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -537,7 +543,7 @@ func TestLocalAIChatPropagatesReasoningEffort(t *testing.T) {
 	effort := "high"
 	_, err := l.ChatWithMessages("kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, &ChatConfig{Effort: &effort})
+		&APIConfig{}, &ChatConfig{Effort: &effort}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -571,7 +577,7 @@ func TestLocalAIChatPropagatesEnableThinking(t *testing.T) {
 	think := true
 	_, err := l.ChatWithMessages("qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, &ChatConfig{Thinking: &think})
+		&APIConfig{}, &ChatConfig{Thinking: &think}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}

@@ -49,7 +49,7 @@ func (h *HuggingFaceModel) Name() string {
 	return "huggingface"
 }
 
-func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

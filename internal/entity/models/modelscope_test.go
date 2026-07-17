@@ -123,7 +123,7 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	resp, err := m.ChatWithMessages("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp})
+		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 	key := "ms-test"
 	_, err := m.ChatWithMessages("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
 	m := newModelScopeForTest(srv.URL)
 	resp, err := m.ChatWithMessages("Qwen/Qwen3-8B",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 	m := NewModelScopeModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := m.ChatWithMessages("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}

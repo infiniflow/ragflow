@@ -16,6 +16,10 @@
 
 package clickhouse
 
-func (d *Driver) Submit() error {
+import (
+	"ragflow/internal/common"
+)
+
+func (d *Driver) CollectChatModelUsage(chatModelUsage *common.ChatModelUsage) error {
 	return nil
 }

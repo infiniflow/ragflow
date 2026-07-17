@@ -132,7 +132,7 @@ func TestNonStreamHonorsShortDeadline(t *testing.T) {
 			"llama-3.3-70b-versatile",
 			[]Message{{Role: "user", Content: "hi"}},
 			&APIConfig{ApiKey: &apiKey},
-			nil,
+			nil, nil,
 		)
 		done <- err
 	}()

@@ -119,7 +119,7 @@ func TestLongCatChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("LongCat-Flash-Thinking",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -211,7 +211,9 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		// Deliberately pass Stop/Effort to prove they are filtered out.
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort})
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -221,7 +223,8 @@ func TestLongCatChatRequiresAPIKey(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -230,7 +233,7 @@ func TestLongCatChatRequiresAPIKey(t *testing.T) {
 func TestLongCatChatRequiresMessages(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -247,7 +250,7 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}

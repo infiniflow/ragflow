@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -52,7 +53,7 @@ func (c *CoHereModel) Name() string {
 	return "Cohere"
 }
 
-func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

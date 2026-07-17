@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -111,7 +112,7 @@ type ppioChatResponse struct {
 	FinishReason string           `json:"finish_reason"`
 }
 
-func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

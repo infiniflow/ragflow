@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -67,7 +68,7 @@ func (a *AstraflowModel) Name() string {
 }
 
 // ChatWithMessages sends a non-streaming chat request
-func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

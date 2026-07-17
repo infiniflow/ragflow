@@ -1081,7 +1081,7 @@ type stubEmbeddingDriver struct {
 
 func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
 func (d *stubEmbeddingDriver) Name() string                                     { return "stub" }
-func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig) (*models.ChatResponse, error) {
+func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ChatModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, func(*string, *string) error) error {

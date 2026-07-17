@@ -89,7 +89,7 @@ func TestMistralChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("mistral-large-latest", []Message{
 		{Role: "user", Content: "ping"},
-	}, &APIConfig{ApiKey: &apiKey}, nil)
+	}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -131,6 +131,7 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -139,12 +140,12 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 
 func TestMistralChatRequiresAPIKey(t *testing.T) {
 	m := newMistralForTest("http://unused")
-	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 	emptyKey := ""
-	_, err = m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+	_, err = m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty key: expected api-key error, got %v", err)
 	}
@@ -153,7 +154,7 @@ func TestMistralChatRequiresAPIKey(t *testing.T) {
 func TestMistralChatRequiresMessages(t *testing.T) {
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("mistral-large-latest", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -168,7 +169,7 @@ func TestMistralChatRejectsHTTPError(t *testing.T) {
 
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -189,7 +190,8 @@ func TestMistralChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	emptyRegion := ""
 	_, err := m.ChatWithMessages("mistral-large-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil,
+	)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
@@ -225,7 +227,8 @@ func TestMistralChatRejectsUnknownRegion(t *testing.T) {
 	apiKey := "test-key"
 	region := "eu"
 	_, err := m.ChatWithMessages("mistral-large-latest", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
 	}
@@ -635,7 +638,7 @@ func TestMistralChatHandlesStringContent(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("ministral-3b-latest",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -679,7 +682,7 @@ func TestMistralChatExtractsReasoningFromStructuredContent(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("magistral-medium-latest",
 		[]Message{{Role: "user", Content: "When do they meet?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -712,7 +715,7 @@ func TestMistralChatHandlesStructuredContentWithoutThinking(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("magistral-small-latest",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -746,7 +749,7 @@ func TestMistralChatIgnoresUnknownContentPartTypes(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("magistral-small-latest",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}

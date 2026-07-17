@@ -93,7 +93,7 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	resp, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp})
+		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestXinferenceChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 	key := "sk-test"
 	_, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestXinferenceChatExtractsReasoningFields(t *testing.T) {
 	x := newXinferenceForTest(srv.URL)
 	resp, err := x.ChatWithMessages("qwen3",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
 	x := NewXinferenceModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}

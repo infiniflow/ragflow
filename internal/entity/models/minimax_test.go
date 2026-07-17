@@ -117,6 +117,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -140,6 +141,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no choices in response") {
@@ -302,7 +304,7 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newMinimaxForTest("http://unused").ChatWithMessages("MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages("MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -310,7 +312,7 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newMinimaxForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",

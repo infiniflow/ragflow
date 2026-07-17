@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
@@ -62,7 +63,7 @@ func (x *XAIModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
-func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

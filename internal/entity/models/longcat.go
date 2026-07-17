@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -51,7 +52,7 @@ func (l *LongCatModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

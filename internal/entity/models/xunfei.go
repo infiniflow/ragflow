@@ -48,7 +48,7 @@ func (x *XunFeiModel) Name() string {
 	return "XunFei Spark"
 }
 
-func (x *XunFeiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (x *XunFeiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

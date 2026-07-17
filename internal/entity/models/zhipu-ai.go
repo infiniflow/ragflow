@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/clickhouse"
 	"strings"
 )
 
@@ -81,7 +82,7 @@ type ZhipuChatResponse struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -201,6 +202,13 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		CompletionTokens: result.Usage.CompletionTokens,
 		TotalTokens:      result.Usage.TotalTokens,
 	}
+
+	chatModelUsage.InputTokens = result.Usage.PromptTokens
+	chatModelUsage.OutputTokens = result.Usage.CompletionTokens
+	chatModelUsage.TotalTokens = result.Usage.TotalTokens
+
+	clickhouseDriver := clickhouse.GetDriver()
+	clickhouseDriver.CollectChatModelUsage(chatModelUsage)
 
 	chatResponse := &ChatResponse{
 		Answer:        content,

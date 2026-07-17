@@ -134,6 +134,7 @@ func TestPPIOChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -165,6 +166,7 @@ func TestPPIOChatUsesReasoningFallback(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -176,7 +178,7 @@ func TestPPIOChatUsesReasoningFallback(t *testing.T) {
 
 func TestPPIOChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPPIOForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPPIOForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -184,7 +186,7 @@ func TestPPIOChatRequiresModelName(t *testing.T) {
 
 func TestPPIOChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPPIOForTest("http://unused").ChatWithMessages("deepseek/deepseek-r1", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPPIOForTest("http://unused").ChatWithMessages("deepseek/deepseek-r1", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages error, got %v", err)
 	}
@@ -197,7 +199,7 @@ func TestPPIOChatSurfacesHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected HTTP status error, got %v", err)
 	}
@@ -212,7 +214,7 @@ func TestPPIOChatRejectsProviderError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "upstream error") {
 		t.Errorf("expected upstream error, got %v", err)
 	}

@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -324,7 +325,7 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 	}
 }
 
-func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

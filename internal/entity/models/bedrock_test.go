@@ -352,7 +352,7 @@ func TestBedrockChatHappyPath(t *testing.T) {
 	key := validBedrockKey()
 	resp, err := m.ChatWithMessages("anthropic.claude-3-haiku-20240307-v1:0",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestBedrockChatHappyPath(t *testing.T) {
 
 func TestBedrockChatRequiresAPIKey(t *testing.T) {
 	m := newBedrockForTest("http://unused")
-	_, err := m.ChatWithMessages("m", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := m.ChatWithMessages("m", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("want api-key error, got %v", err)
 	}
@@ -379,7 +379,7 @@ func TestBedrockChatRequiresModelID(t *testing.T) {
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
 	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model id is required") {
 		t.Errorf("want model-required error, got %v", err)
 	}
@@ -398,7 +398,7 @@ func TestBedrockChatPropagatesHTTPError(t *testing.T) {
 	key := validBedrockKey()
 	_, err := m.ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("want 401 propagated, got %v", err)
 	}

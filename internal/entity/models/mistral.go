@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -54,7 +55,7 @@ func (m *MistralModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

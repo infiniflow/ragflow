@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 )
@@ -58,7 +59,7 @@ func validateMoonshotModelName(modelName string) (string, error) {
 	return strings.TrimSpace(modelName), nil
 }
 
-func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

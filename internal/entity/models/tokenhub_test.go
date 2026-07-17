@@ -120,6 +120,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -133,7 +134,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 }
 
 func TestTokenHubChatRequiresAPIKey(t *testing.T) {
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages("gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages("gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
@@ -141,7 +142,7 @@ func TestTokenHubChatRequiresAPIKey(t *testing.T) {
 
 func TestTokenHubChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Fatalf("expected model-name error, got %v", err)
 	}

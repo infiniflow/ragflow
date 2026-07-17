@@ -24,6 +24,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"ragflow/internal/common"
 )
 
 type MinerULocalModel struct {
@@ -49,7 +50,7 @@ func (m *MinerULocalModel) Name() string {
 	return "mineru"
 }
 
-func (m *MinerULocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (m *MinerULocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 

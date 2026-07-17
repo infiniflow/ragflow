@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -261,7 +262,7 @@ func (v *VoyageModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 // ChatWithMessages is not exposed by the Voyage AI API.
-func (v *VoyageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (v *VoyageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 

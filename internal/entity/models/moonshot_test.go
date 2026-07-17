@@ -116,7 +116,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 		" kimi-k2.6 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		&ChatConfig{Stream: &stream, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -167,7 +167,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "北京今天天气怎么样？"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{Tools: tools},
+		&ChatConfig{Tools: tools}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -397,7 +397,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -405,7 +405,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",

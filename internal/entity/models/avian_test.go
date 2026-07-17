@@ -122,6 +122,7 @@ func TestAvianChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -153,6 +154,7 @@ func TestAvianChatFallsBackToReasoningField(t *testing.T) {
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -168,6 +170,7 @@ func TestAvianChatRequiresAPIKey(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key-required error, got %v", err)
@@ -180,6 +183,7 @@ func TestAvianChatRequiresMessages(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
@@ -199,6 +203,7 @@ func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
@@ -318,6 +323,7 @@ func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL") {

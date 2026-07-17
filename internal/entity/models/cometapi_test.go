@@ -101,7 +101,7 @@ func TestCometAPIChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("gpt-5", []Message{
 		{Role: "user", Content: "ping"},
-	}, &APIConfig{ApiKey: &apiKey}, nil)
+	}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
-	)
+		nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestCometAPIChatReturnsReasoningContent(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -172,12 +172,12 @@ func TestCometAPIChatReturnsReasoningContent(t *testing.T) {
 
 func TestCometAPIChatRequiresAPIKey(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 	emptyKey := ""
-	_, err = m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+	_, err = m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty key: expected api-key error, got %v", err)
 	}
@@ -186,7 +186,7 @@ func TestCometAPIChatRequiresAPIKey(t *testing.T) {
 func TestCometAPIChatRequiresModelName(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -199,7 +199,7 @@ func TestCometAPIChatRequiresModelName(t *testing.T) {
 func TestCometAPIChatRequiresMessages(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("gpt-5", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("gpt-5", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -214,7 +214,7 @@ func TestCometAPIChatRejectsHTTPError(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -235,7 +235,7 @@ func TestCometAPIChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	emptyRegion := ""
 	_, err := m.ChatWithMessages("gpt-5",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
@@ -271,7 +271,7 @@ func TestCometAPIChatRejectsUnknownRegion(t *testing.T) {
 	apiKey := "test-key"
 	region := "eu"
 	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
 	}
@@ -287,7 +287,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			name: "Chat",
 			path: "/v1/chat/completions",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
-				_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil)
+				_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, nil)
 				return err
 			},
 		},

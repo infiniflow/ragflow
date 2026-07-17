@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -57,7 +58,7 @@ func (o *OpenAIModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
-func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

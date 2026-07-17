@@ -128,6 +128,7 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -154,7 +155,8 @@ func TestHunyuanChatNoReasoning(t *testing.T) {
 	resp, err := newHunyuanForTest(srv.URL).ChatWithMessages(
 		"hunyuan-lite",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -170,7 +172,8 @@ func TestHunyuanChatRequiresAPIKey(t *testing.T) {
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -179,7 +182,8 @@ func TestHunyuanChatRequiresAPIKey(t *testing.T) {
 func TestHunyuanChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
-		"hunyuan-pro", nil, &APIConfig{ApiKey: &apiKey}, nil)
+		"hunyuan-pro", nil, &APIConfig{ApiKey: &apiKey}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -196,7 +200,8 @@ func TestHunyuanChatPropagatesHTTPError(t *testing.T) {
 	_, err := newHunyuanForTest(srv.URL).ChatWithMessages(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}

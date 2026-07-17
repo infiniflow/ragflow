@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -50,7 +51,7 @@ func (h *HunyuanModel) Name() string {
 	return "Tencent Hunyuan"
 }
 
-func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

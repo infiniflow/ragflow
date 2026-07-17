@@ -226,7 +226,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 	apiKey := "test-api-key"
 	messages := []Message{{Role: "user", Content: "hello"}}
 
-	response, err := model.ChatWithMessages("", messages, &APIConfig{ApiKey: &apiKey}, nil)
+	response, err := model.ChatWithMessages("", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil {
 		t.Fatal("expected a model name error")
 	}

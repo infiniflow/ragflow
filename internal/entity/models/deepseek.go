@@ -53,7 +53,7 @@ func (d *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
-func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, appConfig *ChatAppConfig) (*ChatResponse, error) {
+func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
