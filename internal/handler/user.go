@@ -610,13 +610,6 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	// GetUserProfile includes the password hash and the live access_token,
-	// which must never appear in the reset response body (the token is
-	// already in the Authorization header). Mirror the Python contract
-	// `user.to_safe_dict(for_self=True)` by stripping those fields before
-	// writing. PR #15290 review.
 	profile := h.userService.GetUserProfile(user)
-	delete(profile, "password")
-	delete(profile, "access_token")
 	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }

@@ -656,12 +656,6 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		lastLoginTime = user.LastLoginTime.Format("2006-01-02T15:04:05")
 	}
 
-	// Get access token
-	var accessToken string
-	if user.AccessToken != nil {
-		accessToken = *user.AccessToken
-	}
-
 	// Get avatar
 	var avatar interface{}
 	if user.Avatar != nil {
@@ -694,12 +688,6 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		loginChannel = *user.LoginChannel
 	}
 
-	// Get password
-	var password string
-	if user.Password != nil {
-		password = *user.Password
-	}
-
 	// Get status
 	status := "1"
 	if user.Status != nil {
@@ -712,8 +700,10 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		isSuperuser = *user.IsSuperuser
 	}
 
+	// NOTE: access_token and password (hash) are intentionally omitted. This map
+	// is serialized into user-facing API responses (login/register/oauth/profile);
+	// the auth token is delivered via the Authorization header + cookie, not here.
 	return map[string]interface{}{
-		"access_token":     accessToken,
 		"avatar":           avatar,
 		"color_schema":     colorSchema,
 		"create_date":      createDate,
@@ -728,7 +718,6 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 		"last_login_time":  lastLoginTime,
 		"login_channel":    loginChannel,
 		"nickname":         user.Nickname,
-		"password":         password,
 		"status":           status,
 		"timezone":         timezone,
 		"update_date":      updateDate,
