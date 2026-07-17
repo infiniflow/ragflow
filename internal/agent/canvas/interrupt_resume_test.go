@@ -334,74 +334,18 @@ func TestBuildUserFillUpResumeOutput_ValueFieldMirrorsResumeData(t *testing.T) {
 	}
 }
 
-func TestInitialUserFillUpData_UsesSysQueryWhenSchemaPresent(t *testing.T) {
+func TestUserFillUpNodeBody_DoesNotConsumeSysQuery(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "loop"
 	ctx := WithState(context.Background(), state)
 
-	got, ok := initialUserFillUpData(ctx, map[string]any{
+	body := UserFillUpNodeBody("ufu_1", map[string]any{
 		"inputs": map[string]any{
 			"demo": map[string]any{"type": "options"},
 		},
 	})
-	if !ok {
-		t.Fatal("expected initialUserFillUpData to consume sys.query")
-	}
-	if got != "loop" {
-		t.Fatalf("got %v, want loop", got)
-	}
-}
-
-func TestInitialUserFillUpData_UsesStructuredSysQueryWhenSchemaPresent(t *testing.T) {
-	state := NewCanvasState("run-1", "task-1")
-	state.Sys["query"] = map[string]any{"kb": "da1", "query": "合同"}
-	ctx := WithState(context.Background(), state)
-
-	got, ok := initialUserFillUpData(ctx, map[string]any{
-		"inputs": map[string]any{
-			"kb":    map[string]any{"type": "line"},
-			"query": map[string]any{"type": "line"},
-		},
-	})
-	if !ok {
-		t.Fatal("expected initialUserFillUpData to consume structured sys.query")
-	}
-	values, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("got type %T, want map[string]any", got)
-	}
-	if values["kb"] != "da1" || values["query"] != "合同" {
-		t.Fatalf("got %#v, want kb=da1 query=合同", values)
-	}
-}
-
-func TestInitialUserFillUpData_SkipsWhenNoSchema(t *testing.T) {
-	state := NewCanvasState("run-1", "task-1")
-	state.Sys["query"] = "loop"
-	ctx := WithState(context.Background(), state)
-
-	if got, ok := initialUserFillUpData(ctx, map[string]any{}); ok || got != nil {
-		t.Fatalf("expected no auto-consume without schema, got (%v, %v)", got, ok)
-	}
-}
-
-func TestInitialUserFillUpData_ConsumesOnlyOnce(t *testing.T) {
-	state := NewCanvasState("run-1", "task-1")
-	state.Sys["query"] = "loop"
-	ctx := WithState(context.Background(), state)
-	spec := map[string]any{
-		"inputs": map[string]any{
-			"demo": map[string]any{"type": "options"},
-		},
-	}
-
-	got, ok := initialUserFillUpData(ctx, spec)
-	if !ok || got != "loop" {
-		t.Fatalf("first auto-consume = (%v, %v), want (loop, true)", got, ok)
-	}
-	got2, ok2 := initialUserFillUpData(ctx, spec)
-	if ok2 || got2 != nil {
-		t.Fatalf("second auto-consume = (%v, %v), want (nil, false)", got2, ok2)
+	if _, err := body(ctx, nil); err == nil {
+		t.Fatal("UserFillUp should interrupt instead of consuming sys.query")
 	}
 }
 

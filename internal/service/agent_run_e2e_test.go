@@ -189,7 +189,11 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-hello", "user-1", "tenant-1", "v-hello", dsl)
 
-	svc := NewAgentService()
+	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
+	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = cpClient.Close() })
+	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		context.Background(),
 		"user-1",
@@ -590,10 +594,11 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 // TestRunAgent_AllFixture_LoopInterruptResume drives the real all.json
 // fixture through the production RunAgent interrupt/resume path:
 //
-//  1. First input "loop" is consumed directly by UserFillUp:Menu,
-//     routes through Switch:Route into Loop:InputUntil1, and pauses at
-//     UserFillUp:LoopInput.
-//  2. Second input "1" resumes LoopInput, satisfies Switch:LoopCheck's
+//  1. The first input reaches UserFillUp:Menu and pauses for the menu
+//     selection.
+//  2. The second input "loop" resumes the menu, routes through
+//     Switch:Route into Loop:InputUntil1, and pauses at UserFillUp:LoopInput.
+//  3. The third input "1" resumes LoopInput, satisfies Switch:LoopCheck's
 //     exit condition, and the workflow finishes at Message:LoopDone.
 func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -652,8 +657,8 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if waiting1[0].CpnID == "" {
 		t.Fatal("run 1: waiting cpn_id is empty")
 	}
-	if waiting1[0].Tips != "请输入任意内容，输入 `1` 则退出循环：" {
-		t.Fatalf("run 1: waiting tips = %q, want %q", waiting1[0].Tips, "请输入任意内容，输入 `1` 则退出循环：")
+	if waiting1[0].Tips != "请选择要演示的模块：" {
+		t.Fatalf("run 1: waiting tips = %q, want menu prompt", waiting1[0].Tips)
 	}
 	if len(waiting1[0].Inputs) == 0 {
 		t.Fatal("run 1: waiting inputs is empty")
@@ -675,7 +680,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		"canvas-all",
 		"session-all-loop",
 		"",
-		"1",
+		"loop",
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
@@ -684,14 +689,31 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if len(errs2) > 0 {
 		t.Fatalf("run 2: unexpected error events: %+v", errs2)
 	}
-	if len(waiting2) > 0 {
-		t.Fatalf("run 2: did not expect another waiting_for_user event, got %+v", waiting2)
+	if len(waiting2) != 1 {
+		t.Fatalf("run 2: expected loop input prompt, got %+v", waiting2)
+	}
+	if waiting2[0].Tips != "请输入任意内容，输入 `1` 则退出循环：" {
+		t.Fatalf("run 2: waiting tips = %q, want loop prompt", waiting2[0].Tips)
 	}
 	if !done2 {
-		t.Error("run 2: missing done event")
+		t.Error("run 2: expected done terminator after waiting_for_user")
+	}
+	if len(messages2) != 0 {
+		t.Fatalf("run 2: expected no message before loop input, got %d", len(messages2))
+	}
+
+	events3, err := svc.RunAgent(
+		context.Background(), "user-1", "canvas-all", "session-all-loop", "", "1",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent run 3: %v", err)
+	}
+	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	if len(errs3) > 0 || len(waiting3) > 0 || !done3 {
+		t.Fatalf("run 3: errs=%+v waiting=%+v done=%v", errs3, waiting3, done3)
 	}
 	if len(messages2) != 1 {
-		t.Fatalf("run 2: expected 1 message event after resume, got %d", len(messages2))
+		t.Fatalf("run 3: expected 1 message event after resume, got %d", len(messages2))
 	}
 	if !strings.Contains(messages2[0].Content, "循环结束") {
 		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "循环结束")
@@ -735,7 +757,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	sessionID := "session-all-loop-multi"
-	inputs := []string{"loop", "aaa", "bbb", "1"}
+	inputs := []string{"loop", "loop", "aaa", "bbb", "1"}
 	var allMessages []canvas.MessageEvent
 
 	for i, input := range inputs {
@@ -756,8 +778,15 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 		}
 		allMessages = append(allMessages, messages...)
 
-		switch input {
-		case "loop", "aaa", "bbb":
+		switch i {
+		case 0:
+			if len(waiting) != 1 || waiting[0].Tips != "请选择要演示的模块：" {
+				t.Fatalf("run %d (%q): expected menu prompt, got %+v", i+1, input, waiting)
+			}
+			if !done {
+				t.Errorf("run %d (%q): missing done terminator after waiting_for_user", i+1, input)
+			}
+		case 1, 2, 3:
 			if len(waiting) != 1 {
 				t.Fatalf("run %d (%q): expected 1 waiting_for_user event, got %+v", i+1, input, waiting)
 			}
@@ -767,7 +796,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 			if !done {
 				t.Errorf("run %d (%q): missing done terminator after waiting_for_user", i+1, input)
 			}
-		case "1":
+		case 4:
 			if len(waiting) != 0 {
 				t.Fatalf("run %d (%q): did not expect another waiting_for_user event, got %+v", i+1, input, waiting)
 			}
@@ -847,6 +876,9 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	if len(waiting1) != 1 {
 		t.Fatalf("run 1: expected 1 waiting_for_user event, got %+v", waiting1)
 	}
+	if waiting1[0].Tips != "请选择要演示的模块：" {
+		t.Fatalf("run 1: waiting tips = %q, want menu prompt", waiting1[0].Tips)
+	}
 	// SSE channel always closes with the `done` terminator,
 	// even when the run paused for user input.
 	if !done1 {
@@ -859,7 +891,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		"canvas-all-iteration",
 		sessionID,
 		"",
-		"a,b,c,d,e",
+		"iteration",
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
@@ -868,14 +900,31 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	if len(errs2) > 0 {
 		t.Fatalf("run 2: unexpected error events: %+v", errs2)
 	}
-	if len(waiting2) != 0 {
-		t.Fatalf("run 2: did not expect another waiting_for_user event, got %+v", waiting2)
+	if len(waiting2) != 1 {
+		t.Fatalf("run 2: expected iteration input prompt, got %+v", waiting2)
+	}
+	if waiting2[0].Tips == "请选择要演示的模块：" {
+		t.Fatalf("run 2: menu was not resumed: %+v", waiting2)
 	}
 	if !done2 {
-		t.Fatal("run 2: missing done event")
+		t.Fatal("run 2: expected done terminator after waiting_for_user")
 	}
-	if len(messages2) != 1 {
-		t.Fatalf("run 2: expected 1 message event, got %d", len(messages2))
+	if len(messages2) != 0 {
+		t.Fatalf("run 2: expected no message before iteration input, got %d", len(messages2))
+	}
+
+	events3, err := svc.RunAgent(
+		context.Background(), "user-1", "canvas-all-iteration", sessionID, "", "a,b,c,d,e",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent run 3: %v", err)
+	}
+	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	if len(errs3) > 0 {
+		t.Fatalf("run 3: unexpected error events: %+v", errs3)
+	}
+	if len(waiting3) != 0 || !done3 {
+		t.Fatalf("run 3: waiting=%+v done=%v", waiting3, done3)
 	}
 	content := messages2[0].Content
 	// Go renders []any{"a","b","c","d","e"} via fmt.Sprintf("%v", ...)
@@ -916,7 +965,11 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-all-var-assigner", "user-1", "tenant-1", "v-all-var-assigner", dsl)
 
-	svc := NewAgentService()
+	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
+	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = cpClient.Close() })
+	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		context.Background(),
 		"user-1",
@@ -932,14 +985,32 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
-	if len(waiting) > 0 {
-		t.Fatalf("did not expect waiting_for_user events: %+v", waiting)
+	if len(waiting) != 1 || waiting[0].Tips != "请选择要演示的模块：" {
+		t.Fatalf("expected menu waiting_for_user event: %+v", waiting)
 	}
 	if !done {
-		t.Fatal("missing done event")
+		t.Fatal("missing done event after menu prompt")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no message before menu resume, got %d", len(messages))
+	}
+	events, err = svc.RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-all-var-assigner",
+		"session-all-var-assigner",
+		"",
+		"var_assigner",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent resume: %v", err)
+	}
+	messages, waiting, errs, done = drainAgentEvents(t, events)
+	if len(errs) > 0 || len(waiting) > 0 || !done {
+		t.Fatalf("resume: messages=%+v waiting=%+v errs=%+v done=%v", messages, waiting, errs, done)
 	}
 	if len(messages) != 1 {
-		t.Fatalf("expected 1 message event, got %d", len(messages))
+		t.Fatalf("expected 1 message event after menu resume, got %d", len(messages))
 	}
 	if messages[0].Content != "env.counter=1" {
 		t.Fatalf("Content = %q, want %q", messages[0].Content, "env.counter=1")
@@ -978,7 +1049,11 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-all-data-ops", "user-1", "tenant-1", "v-all-data-ops", dsl)
 
-	svc := NewAgentService()
+	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
+	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = cpClient.Close() })
+	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		context.Background(),
 		"user-1",
@@ -994,14 +1069,32 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
-	if len(waiting) > 0 {
-		t.Fatalf("did not expect waiting_for_user events: %+v", waiting)
+	if len(waiting) != 1 || waiting[0].Tips != "请选择要演示的模块：" {
+		t.Fatalf("expected menu waiting_for_user event: %+v", waiting)
 	}
 	if !done {
-		t.Fatal("missing done event")
+		t.Fatal("missing done event after menu prompt")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no message before menu resume, got %d", len(messages))
+	}
+	events, err = svc.RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-all-data-ops",
+		"session-all-data-ops",
+		"",
+		"data_ops",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent resume: %v", err)
+	}
+	messages, waiting, errs, done = drainAgentEvents(t, events)
+	if len(errs) > 0 || len(waiting) > 0 || !done {
+		t.Fatalf("resume: messages=%+v waiting=%+v errs=%+v done=%v", messages, waiting, errs, done)
 	}
 	if len(messages) != 1 {
-		t.Fatalf("expected 1 message event, got %d (%v)", len(messages), messages)
+		t.Fatalf("expected 1 message event after menu resume, got %d (%v)", len(messages), messages)
 	}
 	t.Logf("data_ops message content:\n%s", messages[0].Content)
 	if !strings.Contains(messages[0].Content, "ListOperations Sort desc") {
@@ -1095,10 +1188,11 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 // TestRunAgent_AllFixture_CategorizeResume drives the categorize branch
 // of all.json through the real checkpoint-backed interrupt/resume path:
 //
-//  1. First input "categorize" is consumed by UserFillUp:Menu, which routes
-//     through Switch:Route into UserFillUp:CateInput and pauses there.
-//  2. Second input "hello" must resume CateInput itself, not be re-consumed
-//     by the menu as a fresh branch selection.
+//  1. First input "categorize" pauses at UserFillUp:Menu.
+//  2. Second input "categorize" resumes the menu, routes through Switch:Route
+//     into UserFillUp:CateInput, and pauses there.
+//  3. Third input "hello" must resume CateInput itself, not be re-consumed by
+//     the menu as a fresh branch selection.
 //
 // This specifically covers the buildRunFunc fix that clears sys.query /
 // Invoke(query) on resume. Without that fix, the resumed payload can be
@@ -1161,8 +1255,8 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	if len(waiting1) != 1 {
 		t.Fatalf("run 1: expected 1 waiting_for_user, got %d (errs=%+v)", len(waiting1), errs1)
 	}
-	if !strings.Contains(waiting1[0].Tips, "分类") {
-		t.Fatalf("run 1: waiting tips = %q, want categorize prompt", waiting1[0].Tips)
+	if waiting1[0].Tips != "请选择要演示的模块：" {
+		t.Fatalf("run 1: waiting tips = %q, want menu prompt", waiting1[0].Tips)
 	}
 	if !done1 {
 		t.Error("run 1: expected done terminator after waiting_for_user")
@@ -1174,7 +1268,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
-		"hello",
+		"categorize",
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
@@ -1187,17 +1281,39 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	for i, m := range messages2 {
 		t.Logf("  run2 msg[%d]: %q", i, m.Content)
 	}
-	if len(waiting2) != 0 {
-		t.Fatalf("run 2: did not expect another waiting_for_user event, got %+v", waiting2)
+	if len(waiting2) != 1 {
+		t.Fatalf("run 2: expected categorize prompt, got %+v", waiting2)
+	}
+	if !strings.Contains(waiting2[0].Tips, "分类") {
+		t.Fatalf("run 2: waiting tips = %q, want categorize prompt", waiting2[0].Tips)
 	}
 	if len(errs2) != 0 {
 		t.Fatalf("run 2: expected no downstream errors, got %+v", errs2)
 	}
 	if !done2 {
-		t.Fatal("run 2: expected done event after successful categorize branch completion")
+		t.Fatal("run 2: expected done terminator after waiting_for_user")
+	}
+	if len(messages2) != 0 {
+		t.Fatalf("run 2: expected no message before CateInput resume, got %d", len(messages2))
+	}
+
+	events3, err := svc.RunAgent(
+		context.Background(),
+		"user-1",
+		"canvas-all-categorize",
+		"session-all-categorize",
+		"",
+		"hello",
+	)
+	if err != nil {
+		t.Fatalf("RunAgent run 3: %v", err)
+	}
+	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	if len(errs3) != 0 || len(waiting3) != 0 || !done3 {
+		t.Fatalf("run 3: messages=%+v waiting=%+v errs=%+v done=%v", messages2, waiting3, errs3, done3)
 	}
 	if len(messages2) != 1 {
-		t.Fatalf("run 2: expected 1 message event, got %d", len(messages2))
+		t.Fatalf("run 3: expected 1 message event, got %d", len(messages2))
 	}
 	if !strings.Contains(messages2[0].Content, "分类结果=Retrieval -> Retrieval") {
 		t.Fatalf("run 2: message = %q, want categorize retrieval branch output", messages2[0].Content)
