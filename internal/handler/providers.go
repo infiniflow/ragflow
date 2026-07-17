@@ -820,6 +820,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		"code":              0,
 		"reasoning_content": response.ReasonContent,
 		"answer":            response.Answer,
+		"usage":             response.Usage,
 	})
 }
 

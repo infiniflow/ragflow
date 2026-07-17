@@ -102,8 +102,8 @@ func NewPipelineExecutor(
 		),
 		logCreateFunc: dao.NewPipelineOperationLogDAO().Create,
 	}
-	svc.loadDSLFunc = svc.defaultLoadDSL
-	svc.runPipelineFunc = svc.defaultRunPipeline
+	svc.loadDSLFunc = svc.loadDSLFromCanvas
+	svc.runPipelineFunc = svc.runPipelineWithDSL
 	return svc, nil
 }
 
@@ -206,6 +206,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
+	tableMeta := AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	if tableMeta != nil {
+		if metadata == nil {
+			metadata = make(map[string]any)
+		}
+		for k, v := range tableMeta {
+			if _, exists := metadata[k]; !exists {
+				metadata[k] = v
+			}
+		}
+	}
+
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
@@ -242,4 +254,72 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 	if err := s.logCreateFunc(log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
+}
+
+func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID string) (string, string, error) {
+	if s == nil || s.taskCtx == nil {
+		return "", "", fmt.Errorf("pipeline executor: nil task context")
+	}
+	if canvasID == "" {
+		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
+	}
+	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	if err != nil {
+		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
+	}
+
+	canvasTitle := ""
+	if canvas.Title != nil {
+		canvasTitle = *canvas.Title
+	}
+	common.Info(fmt.Sprintf("load canvas %s, name %s", canvasID, canvasTitle))
+
+	raw, err := json.Marshal(canvas.DSL)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", canvasID, err)
+	}
+	return string(raw), canvasID, nil
+}
+
+func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
+	if s == nil || s.taskCtx == nil {
+		return nil, dsl, fmt.Errorf("pipeline executor: nil task context")
+	}
+
+	parserConfig := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
+	patchedDSL, err := pipelinepkg.PatchDSL(dsl, parserConfig)
+	if err != nil {
+		return nil, dsl, fmt.Errorf("patch dsl with parser_config: %w", err)
+	}
+
+	pipelineID := "pipeline_" + s.taskCtx.Doc.ID
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		pipelineID = s.taskCtx.IngestionTask.ID
+	}
+	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(patchedDSL), pipelineID,
+		pipelinepkg.WithProgressSink(s.progressSink),
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
+	if err != nil {
+		return nil, patchedDSL, fmt.Errorf("compile pipeline dsl: %w", err)
+	}
+	inputs := map[string]any{}
+	if s.taskCtx.Doc.ID != "" {
+		inputs["doc_id"] = s.taskCtx.Doc.ID
+	}
+	if s.taskCtx.File != nil {
+		inputs["file"] = s.taskCtx.File
+	}
+	inputs["tenant_id"] = s.taskCtx.Tenant.ID
+	inputs["kb_id"] = s.taskCtx.KB.ID
+
+	output, err := pipe.Run(ctx, inputs, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	if err != nil {
+		return nil, patchedDSL, err
+	}
+	payload, err := pipelinepkg.ExtractPayload(patchedDSL, output)
+	if err != nil {
+		return nil, patchedDSL, err
+	}
+	return payload, patchedDSL, nil
 }

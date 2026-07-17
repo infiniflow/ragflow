@@ -39,6 +39,29 @@ from common import settings
 logger = logging.getLogger(__name__)
 
 
+def _deduplicate_column_names(columns):
+    reserved = {str(col) for col in columns}
+    used = set()
+    counts = Counter()
+    unique_columns = []
+    for col in columns:
+        name = str(col)
+        counts[name] += 1
+        if name not in used:
+            unique_columns.append(name)
+            used.add(name)
+            continue
+        suffix = counts[name]
+        new_name = f"{name}_{suffix}"
+        while new_name in used or new_name in reserved:
+            suffix += 1
+            new_name = f"{name}_{suffix}"
+        counts[name] = suffix
+        unique_columns.append(new_name)
+        used.add(new_name)
+    return unique_columns
+
+
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, callback=None, **kwargs):
         if not binary:
@@ -95,6 +118,7 @@ class Excel(ExcelParser):
             if len(data) == 0:
                 continue
             df = pd.DataFrame(data, columns=headers)
+            df.columns = _deduplicate_column_names(df.columns)
             for img in pending_cell_images:
                 excel_row = img["row_from"] - 1
                 excel_col = img["col_from"] - 1
@@ -402,7 +426,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
 
         callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        dfs = [pd.DataFrame(np.array(rows), columns=headers)]
+        dfs = [pd.DataFrame(np.array(rows), columns=_deduplicate_column_names(headers))]
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -425,7 +449,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
 
         callback(0.3, (f"Extract records: {from_page}~{from_page + len(rows)}" + (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else "")))
 
-        dfs = [pd.DataFrame(rows, columns=headers)]
+        dfs = [pd.DataFrame(rows, columns=_deduplicate_column_names(headers))]
     else:
         raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 
@@ -450,10 +474,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 del df[n]
         clmns = df.columns.values
         if len(clmns) != len(set(clmns)):
-            col_counts = Counter(clmns)
-            duplicates = [col for col, count in col_counts.items() if count > 1]
-            if duplicates:
-                raise ValueError(f"Duplicate column names detected: {duplicates}\nFrom: {clmns}")
+            df.columns = _deduplicate_column_names(clmns)
+            clmns = df.columns.values
 
         txts = list(copy.deepcopy(clmns))
         py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0] for n in clmns]
