@@ -92,21 +92,23 @@ pre-commit:
               fi
           - name: web-prettier
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            root: "web/"
             stage_fixed: true
             run: |
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
+                npx prettier --check --ignore-unknown {staged_files}
               else
-                cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
+                npx prettier --write --ignore-unknown {staged_files}
               fi
           - name: web-eslint
             glob: "web/**/*.{js,jsx,ts,tsx}"
+            root: "web/"
             stage_fixed: true
             run: |
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
+                npx eslint {staged_files}
               else
-                cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
+                npx eslint --fix {staged_files}
               fi
     - name: check-yaml
       run: python3 tools/hooks/check_files.py yaml
