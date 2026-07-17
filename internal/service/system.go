@@ -117,6 +117,38 @@ func (s *SystemService) GetStatus() (*StatusResponse, error) {
 	}, nil
 }
 
+// GetOceanbaseStatus mirrors Python get_oceanbase_status(): report OceanBase
+// health + performance metrics over the MySQL wire protocol.
+//
+// Gating note: unlike Python (which keys off DOC_ENGINE=='oceanbase'), this
+// keys off the `oceanbase` config section being present. The Go port can't yet
+// run OceanBase as the doc engine, so this lets operators observe OceanBase
+// health while still running ES/Infinity for RAG. No config section -> the
+// Python-parity "OceanBase is not in use." error (handler returns code 500).
+func (s *SystemService) GetOceanbaseStatus() (ComponentStatus, error) {
+	conn, ok := oceanbaseConfigFromViper()
+	if !ok {
+		return nil, fmt.Errorf("OceanBase is not in use.")
+	}
+	health, performance, err := probeOceanbase(conn)
+	if err != nil {
+		// Python parity: a connection failure is caught inside
+		// get_oceanbase_status and returned as a timeout envelope (code 0),
+		// not raised.
+		return ComponentStatus{
+			"status":  "timeout",
+			"message": fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+	return ComponentStatus{
+		"status": "alive",
+		"message": map[string]interface{}{
+			"health":      health,
+			"performance": performance,
+		},
+	}, nil
+}
+
 func (s *SystemService) getDocEngineStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	docEngineType := ""

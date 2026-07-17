@@ -643,6 +643,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
+				system.GET("/oceanbase/status", r.systemHandler.OceanbaseStatus)
 				system.GET("/stats", r.systemHandler.GetStats)
 
 				config := system.Group("/config")
