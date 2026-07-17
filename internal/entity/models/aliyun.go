@@ -19,11 +19,15 @@ package models
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 )
 
@@ -609,8 +613,207 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	return ParseListModel(modelList), nil
 }
 
+// bssEndpointForRegion picks the Aliyun BSS Open API host for a given
+// DashScope-side region label. BSS endpoints are NOT per-Aliyun-region — there
+// are only two public hosts (mainland and international), and an account is
+// served by exactly one of them based on where it was created. Callers using
+// the "singapore" region for the DashScope chat path are international
+// accounts and must hit the international host.
+func bssEndpointForRegion(region string) string {
+	switch region {
+	case "singapore", "intl", "international", "ap-southeast-1", "ap-southeast-5":
+		return "https://business.ap-southeast-1.aliyuncs.com"
+	default:
+		return "https://business.aliyuncs.com"
+	}
+}
+
+// bssRegionIDForRegion is the query-param "RegionId" value passed in the BSS
+// QueryAccountBalance call. Aliyun accepts any region this account is allowed
+// to touch and uses it only for routing/locale; the balance itself is account-
+// wide. Defaulting to "cn-hangzhou" on the mainland host and "ap-southeast-1"
+// on the international host matches what aliyun-cli does.
+func bssRegionIDForRegion(region string) string {
+	switch region {
+	case "singapore", "intl", "international", "ap-southeast-1":
+		return "ap-southeast-1"
+	case "ap-southeast-5":
+		return "ap-southeast-5"
+	default:
+		return "cn-hangzhou"
+	}
+}
+
+// aliyunBSSBalanceData is the inner block returned by Aliyun's
+// BSS QueryAccountBalance (version 2017-12-14). Reference:
+// https://www.alibabacloud.com/help/en/bss-openapi/latest/api-bssopenapi-2017-12-14-queryaccountbalance
+//
+// Every numeric field is emitted as a JSON STRING by BSS (not a JSON number),
+// which is why these are typed as string + parsed via strconv at extraction
+// time. Currency is "CNY" for mainland accounts and "USD" for international
+// accounts.
+type aliyunBSSBalanceData struct {
+	AvailableAmount     string `json:"AvailableAmount"`
+	AvailableCashAmount string `json:"AvailableCashAmount"`
+	Credit              string `json:"CreditAmount"`
+	MybankCreditAmount  string `json:"MybankCreditAmount"`
+	Currency            string `json:"Currency"`
+}
+
+// aliyunBSSBalanceResponse is the BSS envelope around the balance payload.
+// On error, Data is empty/zero and Code carries an Aliyun error code such as
+// "InvalidAccessKeyId.NotFound" / "NoPermission" / "BusinessAvailable.Forbidden"
+// with a human-readable Message.
+type aliyunBSSBalanceResponse struct {
+	Code      string               `json:"Code"`
+	Message   string               `json:"Message"`
+	RequestID string               `json:"RequestId"`
+	Success   bool                 `json:"Success"`
+	Data      aliyunBSSBalanceData `json:"Data"`
+}
+
+// aliyunRandomNonce generates an 8-byte (16-char hex) value for the
+// X-Acs-Signature-Nonce header. Aliyun only requires uniqueness over a 15-min
+// window per AccessKey; 64 bits of entropy is comfortably enough.
+func aliyunRandomNonce() (string, error) {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("aliyun: nonce generation failed: %w", err)
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+// Balance queries the Aliyun account balance via the BSS Open API:
+//
+//	GET business{,-ap-southeast-1}.aliyuncs.com/?Action=QueryAccountBalance&Version=2017-12-14&RegionId=...
+//
+// Authentication is Aliyun SigV3 (ACS3-HMAC-SHA256) signed with the tenant's
+// AccessKey ID + AccessKey Secret, NOT the DashScope/Bailian "sk-..." key used
+// for the chat / embedding paths. The two credential systems coexist on every
+// Aliyun account but are not interchangeable; DashScope itself does not expose
+// any per-key balance endpoint. Callers must therefore supply
+// APIConfig.AccessKeyID + APIConfig.AccessKeySecret separately from
+// APIConfig.ApiKey.
+//
+// On success the method returns {balance: float64, currency: string}, where
+// balance is parsed from BSS's AvailableAmount (string-encoded decimal) and
+// currency is what BSS reports ("CNY" or "USD"). The shape matches what the
+// sibling SiliconFlow / Moonshot / DeepSeek Balance methods already emit so
+// the UI's balance panel renders identically.
 func (a *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	if apiConfig == nil {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if apiConfig.AccessKeyID == nil || *apiConfig.AccessKeyID == "" ||
+		apiConfig.AccessKeySecret == nil || *apiConfig.AccessKeySecret == "" {
+		return nil, fmt.Errorf("aliyun balance requires AccessKeyID and AccessKeySecret " +
+			"(the BSS QueryAccountBalance endpoint cannot be authenticated with a DashScope sk- key)")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	endpoint := bssEndpointForRegion(region)
+
+	q := url.Values{}
+	q.Set("Action", "QueryAccountBalance")
+	q.Set("Version", "2017-12-14")
+	q.Set("RegionId", bssRegionIDForRegion(region))
+
+	rawURL := fmt.Sprintf("%s/?%s", endpoint, q.Encode())
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("aliyun: failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	nonce, err := aliyunRandomNonce()
+	if err != nil {
+		return nil, err
+	}
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	if err := signAliyunV3(req,
+		*apiConfig.AccessKeyID,
+		*apiConfig.AccessKeySecret,
+		"QueryAccountBalance",
+		"2017-12-14",
+		nonce, timestamp,
+		nil, // GET request, empty body
+	); err != nil {
+		return nil, err
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("aliyun: failed to send BSS request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("aliyun: failed to read BSS response: %w", err)
+	}
+
+	return parseAliyunBSSBalanceResponse(resp.StatusCode, body)
+}
+
+// parseAliyunBSSBalanceResponse decodes the BSS QueryAccountBalance reply and
+// extracts {balance, currency} from it, surfacing every BSS-side error
+// (HTTP, JSON, API code) as a Go error with the original RequestId attached
+// so the maintainer can grep for it in BSS audit logs.
+func parseAliyunBSSBalanceResponse(statusCode int, body []byte) (map[string]interface{}, error) {
+	// BSS returns its error envelope with HTTP 4xx in some failure modes and
+	// HTTP 200 with Success=false in others; treat anything non-2xx as an
+	// error but still try to parse the envelope so we can surface Code/Msg.
+	var parsed aliyunBSSBalanceResponse
+	if jsonErr := json.Unmarshal(body, &parsed); jsonErr != nil {
+		if statusCode != http.StatusOK {
+			return nil, fmt.Errorf("Aliyun BSS API error: status %d, body: %s", statusCode, string(body))
+		}
+		return nil, fmt.Errorf("aliyun: failed to parse BSS response: %w (body: %s)", jsonErr, string(body))
+	}
+
+	if statusCode != http.StatusOK || (!parsed.Success && parsed.Code != "" && parsed.Code != "Success") {
+		msg := parsed.Message
+		if msg == "" {
+			msg = "unknown BSS API error"
+		}
+		code := parsed.Code
+		if code == "" {
+			code = fmt.Sprintf("HTTP_%d", statusCode)
+		}
+		if parsed.RequestID != "" {
+			return nil, fmt.Errorf("Aliyun BSS API error (code %s, requestId %s): %s", code, parsed.RequestID, msg)
+		}
+		return nil, fmt.Errorf("Aliyun BSS API error (code %s): %s", code, msg)
+	}
+
+	raw := parsed.Data.AvailableAmount
+	if raw == "" {
+		raw = parsed.Data.AvailableCashAmount
+	}
+	if raw == "" {
+		return nil, fmt.Errorf("aliyun: no balance amount in BSS response (requestId=%s)", parsed.RequestID)
+	}
+	amount, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("aliyun: invalid BSS balance amount %q: %w", raw, err)
+	}
+
+	currency := parsed.Data.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+	return map[string]interface{}{
+		"balance":  amount,
+		"currency": currency,
+	}, nil
 }
 
 func (a *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
