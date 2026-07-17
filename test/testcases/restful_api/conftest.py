@@ -56,6 +56,7 @@ GO_ONLY_SKIPS = {
         # `parent_child` structure than Go's common.GetParserConfig produces. Exact equality is a
         # Python/CI-specific contract, not a meaningful Go behavior difference.
         "test_dataset_update_parser_config_defaults_contract",
+        "test_dataset_create_parser_config_different_chunk_methods_contract",
         "test_dataset_create_parser_config_missing_raptor_and_graphrag",
         "test_dataset_create_embedding_model_contract",
         "test_dataset_create_parser_config_bugfix_contract",

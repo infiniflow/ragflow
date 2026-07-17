@@ -30,7 +30,6 @@ import { Segmented } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import {
-  useAddProviderInstance,
   useDeleteProviderInstance,
   useFetchProviderInstance,
   useVerifyProviderConnection,
@@ -39,13 +38,25 @@ import { IProviderInstance } from '@/interfaces/database/llm';
 import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
 import { VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
+import {
+  ProviderInstanceCardProps,
+  ProviderInstanceCardRef,
+} from './interface';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
@@ -62,61 +73,38 @@ type BedrockFormValues = {
   model_type: ('chat' | 'embedding')[];
 };
 
-// Field names whose value commits via click (Segmented, Select,
-// MultiSelect) rather than blur. Their popovers render in Radix
-// portals outside the card's blur container, so blur-driven saves
-// don't catch them — a form.watch watcher is used instead.
-const BEDROCK_WATCHED_FIELDS = new Set([
-  'auth_mode',
-  'bedrock_region',
-  'model_type',
-]);
-
 interface BedrockInstanceCardProps {
   providerName: string;
   instance: IProviderInstance;
   isDraft?: boolean;
-  onSaved?: (values: Record<string, any>) => void | Promise<void>;
-  onNameSaved?: (instanceName: string) => void;
   onDelete?: () => void;
-  /**
-   * When true, this card starts expanded and fetches its instance
-   * details on mount. Default `false` so non-first cards stay
-   * collapsed until the user opens them.
-   */
   defaultOpen?: boolean;
 }
 
 /**
- * Inline instance card for AWS Bedrock. Mirrors the two-stage UX of
- * `ProviderInstanceCard` (save name first, then edit fields) but renders
- * Bedrock-specific fields (auth_mode segmented, ak/sk/arn, region, model
- * name, max tokens, model_type) directly instead of going through the
- * generic DynamicForm path.
+ * Inline instance card for AWS Bedrock. Renders Bedrock-specific fields
+ * (auth_mode segmented, ak/sk/arn, region, model name, max tokens,
+ * model_type) directly instead of going through the generic DynamicForm
+ * path. All fields are editable from the start (no name-first lock);
+ * the parent page's top Save button drives persistence through the
+ * imperative ref API.
  */
-export function BedrockInstanceCard({
-  providerName,
-  instance,
-  isDraft = false,
-  onSaved,
-  onNameSaved,
-  onDelete,
-  defaultOpen = false,
-}: BedrockInstanceCardProps) {
+export const BedrockInstanceCard = forwardRef<
+  ProviderInstanceCardRef,
+  BedrockInstanceCardProps
+>(function BedrockInstanceCard(
+  { providerName, instance, isDraft = false, onDelete, defaultOpen = false },
+  ref,
+) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
-  const [nameSaved, setNameSaved] = useState(!isDraft);
-  const savingRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
       setDraftName('');
-      setNameSaved(false);
-    } else {
-      setNameSaved(true);
     }
   }, [providerName, isDraft]);
 
@@ -183,9 +171,8 @@ export function BedrockInstanceCard({
     );
 
   // Lazily fetch full instance details only when the card is open.
-  // Mirrors the generic ProviderInstanceCard: collapsed cards never
-  // hit /providers/<name>/instances/<instance_name>; expanding one
-  // triggers a fresh refetch.
+  // Collapsed cards never hit /providers/<name>/instances/<instance_name>;
+  // expanding one triggers a fresh refetch.
   useEffect(() => {
     if (!isDraft && open && providerName && instance.instance_name) {
       refetchInstanceDetails();
@@ -314,168 +301,6 @@ export function BedrockInstanceCard({
     ],
   );
 
-  const { addProviderInstance } = useAddProviderInstance();
-
-  const handleSaveName = useCallback(async () => {
-    const trimmed = draftName.trim();
-    if (!trimmed) return;
-    const ret = await addProviderInstance({
-      llm_factory: providerName,
-      instance_name: trimmed,
-    } as any);
-    if (ret?.code === 0) {
-      onNameSaved?.(trimmed);
-    }
-  }, [draftName, addProviderInstance, providerName, onNameSaved]);
-
-  // Auto-save in draft mode after the name is locked. Debounced on form
-  // value changes; refuses to fire until validation passes.
-  useEffect(() => {
-    if (!isDraft) return;
-    if (!nameSaved) return;
-    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-    const sub = form.watch(() => {
-      if (saveTimeout) clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(async () => {
-        if (cancelled || savingRef.current) return;
-        const isValid = await form.trigger();
-        if (cancelled || savingRef.current) return;
-        if (!isValid) return;
-        const trimmed = draftName.trim();
-        if (!trimmed) return;
-        savingRef.current = true;
-        try {
-          const values = form.getValues();
-          const payload = buildPayload(values, trimmed);
-          await onSaved?.(payload as unknown as Record<string, any>);
-        } finally {
-          savingRef.current = false;
-        }
-      }, 200);
-    });
-    return () => {
-      cancelled = true;
-      if (saveTimeout) clearTimeout(saveTimeout);
-      try {
-        sub?.unsubscribe?.();
-      } catch {
-        // ignore
-      }
-    };
-  }, [isDraft, nameSaved, form, draftName, buildPayload, onSaved]);
-
-  // Saved-mode auto-save. Both blur-driven (text inputs) and
-  // change-driven (Segmented / Select / MultiSelect) edits are
-  // coalesced through a shared debounced `scheduleSave`. Selects render
-  // in Radix portals outside the card's blur container, so blur-driven
-  // saves don't catch them — a form.watch watcher is used instead.
-  const blurSavingRef = useRef(false);
-  // Flipped to true while a child (e.g. ModelsSection's
-  // AddCustomModelDialog) opens a Portal-based dialog. Suppresses the
-  // spurious blur-save fired when focus moves into the Portal.
-  const blurSuppressRef = useRef(false);
-  const lastSavedSigRef = useRef('');
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const AUTO_SAVE_DEBOUNCE_MS = 500;
-
-  const performSave = useCallback(async () => {
-    if (isDraft) return;
-    if (blurSavingRef.current) return;
-    if (blurSuppressRef.current) return;
-    const isValid = await form.trigger();
-    if (!isValid) return;
-    const values = form.getValues();
-    const payload = buildPayload(values, instance.instance_name);
-    const finalPayload = {
-      ...payload,
-      id: instanceDetails?.id || instance.id,
-    };
-    const sig = JSON.stringify(finalPayload);
-    if (sig === lastSavedSigRef.current) return;
-    blurSavingRef.current = true;
-    try {
-      const ret = await addProviderInstance(finalPayload as any);
-      if (ret?.code === 0) {
-        lastSavedSigRef.current = sig;
-      }
-    } finally {
-      blurSavingRef.current = false;
-    }
-  }, [
-    isDraft,
-    form,
-    buildPayload,
-    instance.instance_name,
-    instance.id,
-    instanceDetails?.id,
-    addProviderInstance,
-  ]);
-
-  const scheduleSave = useCallback(() => {
-    if (isDraft) return;
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveTimeoutRef.current = null;
-      void performSave();
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, [isDraft, performSave]);
-
-  const handleFieldsBlur = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      if (isDraft) return;
-      if (
-        e.currentTarget.contains(e.relatedTarget as Node | null) &&
-        e.relatedTarget !== null
-      ) {
-        return;
-      }
-      scheduleSave();
-    },
-    [isDraft, scheduleSave],
-  );
-
-  // Segmented / Select / MultiSelect change-driven save (saved mode
-  // only). These commit via click and their popovers render in portals,
-  // so blur-driven saves don't catch them. Watch the form directly.
-  // Only react to user-driven changes (type === 'change'); ignore
-  // programmatic resets (form.reset when instanceDetails loads).
-  useEffect(() => {
-    if (isDraft) return;
-    if (!instanceDetails) return;
-    let cancelled = false;
-    const subscription = form.watch(
-      (_values: any, meta: { name?: string; type?: string }) => {
-        if (cancelled) return;
-        if (meta?.type !== 'change') return;
-        if (!meta?.name || !BEDROCK_WATCHED_FIELDS.has(meta.name)) return;
-        scheduleSave();
-      },
-    );
-    return () => {
-      cancelled = true;
-      try {
-        subscription?.unsubscribe?.();
-      } catch {
-        // ignore
-      }
-    };
-  }, [isDraft, instanceDetails, form, scheduleSave]);
-
-  // Clear pending save on unmount.
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-        autoSaveTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
   const { deleteProviderInstance } = useDeleteProviderInstance();
   const handleDelete = useCallback(async () => {
     if (isDraft) {
@@ -493,6 +318,98 @@ export function BedrockInstanceCard({
     deleteProviderInstance,
     onDelete,
   ]);
+
+  // ── Dirty tracking (no auto-save) ────────────────────────────────
+  // Baseline signature mirrors the persisted state so `getSavePayload`
+  // can skip redundant saves. For drafts the baseline stays empty
+  // (drafts are always dirty once a name is typed).
+  const baselinePayloadRef = useRef<string>('');
+  const draftNameRef = useRef(draftName);
+  useEffect(() => {
+    draftNameRef.current = draftName;
+  });
+
+  useEffect(() => {
+    if (isDraft) {
+      baselinePayloadRef.current = '';
+      return;
+    }
+    if (!instanceDetails && !instance.id) return;
+    const baselineValues = initialValues;
+    const baseline = buildPayload(baselineValues, instance.instance_name);
+    const finalBaseline = {
+      ...baseline,
+      id: instanceDetails?.id || instance.id,
+    };
+    baselinePayloadRef.current = JSON.stringify(finalBaseline);
+  }, [
+    isDraft,
+    initialValues,
+    buildPayload,
+    instance.instance_name,
+    instance.id,
+    instanceDetails,
+  ]);
+
+  const getSavePayload = useCallback(() => {
+    const trimmed = draftNameRef.current.trim();
+    if (isDraft) {
+      if (!trimmed) return null;
+      const values = form.getValues();
+      const payload = buildPayload(values, trimmed);
+      return {
+        payload,
+        instanceName: trimmed,
+        isDraft: true,
+        // Bedrock drafts use the add endpoint (no id).
+        apiKind: 'add' as const,
+      };
+    }
+    const values = form.getValues();
+    const payload = buildPayload(values, instance.instance_name);
+    const finalPayload = {
+      ...payload,
+      id: instanceDetails?.id || instance.id,
+    };
+    const sig = JSON.stringify(finalPayload);
+    if (sig === baselinePayloadRef.current) return null;
+    return {
+      payload: finalPayload,
+      instanceName: instance.instance_name,
+      isDraft: false,
+      // Bedrock saved cards update via `addProviderInstance` with an `id`
+      // (matches the legacy auto-save behaviour).
+      apiKind: 'add' as const,
+    };
+  }, [
+    isDraft,
+    form,
+    buildPayload,
+    instance.instance_name,
+    instance.id,
+    instanceDetails,
+  ]);
+
+  const markSaved = useCallback(() => {
+    const result = getSavePayload();
+    if (result) {
+      baselinePayloadRef.current = JSON.stringify(result.payload);
+    }
+  }, [getSavePayload]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      validate: async () => {
+        if (isDraft && !draftNameRef.current.trim()) return false;
+        const isValid = await form.trigger();
+        return !!isValid;
+      },
+      getSavePayload,
+      markSaved,
+    }),
+    [isDraft, form, getSavePayload, markSaved],
+  );
 
   // ──────────────── Field group rendered in both modes ────────────────
   const renderFields = () => (
@@ -631,7 +548,56 @@ export function BedrockInstanceCard({
       className="border-b border-border-button mb-5 pb-5"
       data-testid={`instance-card-${instance.instance_name || 'draft'}`}
     >
-      {nameSaved ? (
+      {isDraft ? (
+        <div className="px-2 py-3 flex flex-col gap-4">
+          <div
+            className="flex flex-col gap-1.5"
+            data-testid="instance-name-section"
+          >
+            <label
+              htmlFor="instance-name-input"
+              className="text-sm font-medium text-text-primary"
+            >
+              <span className="text-destructive mr-0.5">*</span>
+              {tSetting('instanceName')}
+            </label>
+            <div className="flex items-center">
+              <Input
+                id="instance-name-input"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder={tSetting('instanceNamePlaceholder')}
+                className="flex-1"
+                data-testid="instance-name-input"
+              />
+              <ConfirmDeleteDialog onOk={handleDelete}>
+                <Button
+                  variant="delete"
+                  size="icon-sm"
+                  className="ml-2 shrink-0"
+                  aria-label={tSetting('deleteInstance')}
+                  data-testid="draft-delete"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </ConfirmDeleteDialog>
+            </div>
+          </div>
+
+          {renderFields()}
+
+          <div className="pt-3">
+            <ModelsSection
+              providerName={providerName}
+              instanceName={instance.instance_name || '__draft__'}
+              instance={instance}
+              hideActions={false}
+              hideIfEmpty={false}
+              getFormValues={() => form.getValues()}
+            />
+          </div>
+        </div>
+      ) : (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
             <div className="flex items-center gap-1 w-full mb-5">
@@ -677,10 +643,7 @@ export function BedrockInstanceCard({
             forceMount
             className="data-[state=closed]:hidden overflow-hidden"
           >
-            <div
-              className="px-2 pb-4 flex flex-col gap-4"
-              onBlurCapture={handleFieldsBlur}
-            >
+            <div className="px-2 pb-4 flex flex-col gap-4">
               {renderFields()}
 
               <div className="pt-3">
@@ -691,93 +654,19 @@ export function BedrockInstanceCard({
                   hideActions={false}
                   hideIfEmpty={false}
                   getFormValues={() => form.getValues()}
-                  onBlurSuppressChange={(s) => {
-                    blurSuppressRef.current = s;
-                  }}
                 />
               </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
-      ) : (
-        <div className="px-2 py-3 flex flex-col gap-4">
-          <div
-            className="flex flex-col gap-1.5"
-            data-testid="instance-name-section"
-          >
-            <label
-              htmlFor="instance-name-input"
-              className="text-sm font-medium text-text-primary"
-            >
-              <span className="text-destructive mr-0.5">*</span>
-              {tSetting('instanceName')}
-            </label>
-            <div className="flex items-center">
-              <Input
-                id="instance-name-input"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                placeholder={tSetting('instanceNamePlaceholder')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSaveName();
-                  }
-                }}
-                className="flex-1 rounded-r-none"
-                data-testid="instance-name-input"
-              />
-              <Button
-                onClick={handleSaveName}
-                disabled={!draftName.trim()}
-                data-testid="instance-name-save"
-                variant="outline"
-                className="rounded-l-none bg-bg-input shrink-0"
-              >
-                {tSetting('save')}
-              </Button>
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  className="ml-2 shrink-0"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="draft-delete"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-            </div>
-            <p
-              className="text-xs text-text-secondary"
-              data-testid="instance-name-helper"
-            >
-              {tSetting('instanceNameSaveTip')}
-            </p>
-          </div>
-
-          <fieldset
-            disabled={!nameSaved}
-            className="contents disabled:[&_*]:pointer-events-none disabled:opacity-60"
-            data-testid="instance-locked-fields"
-          >
-            {renderFields()}
-
-            <div className="pt-3">
-              <ModelsSection
-                providerName={providerName}
-                instanceName={instance.instance_name || '__draft__'}
-                instance={instance}
-                hideActions={false}
-                hideIfEmpty={false}
-                getFormValues={() => form.getValues()}
-              />
-            </div>
-          </fieldset>
-        </div>
       )}
     </div>
   );
-}
+});
 
 export default BedrockInstanceCard;
+
+// Ensure the component is usable with the same props shape as the
+// generic card (keeps the dispatch in provider-instance-card.tsx happy
+// when forwarding props + ref).
+export type { ProviderInstanceCardProps };

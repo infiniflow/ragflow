@@ -3087,6 +3087,17 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 		return "", err
 	}
 
+	// Builtin provider: Builtin models (e.g. local TEI embeddings) have no
+	// tenant_model_instance records, so there is no tenant-scoped model ID to
+	// resolve.  Downstream resolution (ResolveModelConfig / getModelConfig)
+	// falls through to parseModelName → Builtin routing, which already works.
+	if providerName == "Builtin" && modelType == entity.ModelTypeEmbedding {
+		if builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName); builtinDriver == nil {
+			return "", fmt.Errorf("builtin embedding model %q not found", pureModelName)
+		}
+		return "", nil
+	}
+
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
 		return "", fmt.Errorf("provider %q lookup failed: %w", providerName, err)

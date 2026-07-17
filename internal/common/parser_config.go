@@ -1,5 +1,29 @@
 package common
 
+import "strings"
+
+// InjectExtractorLLMID finds all Extractor component entries (keys prefixed
+// with "extractor:" or "extractor_") in parserConfig and sets their llm_id
+// to the given value. Returns whether any entry was updated.
+func InjectExtractorLLMID(parserConfig map[string]interface{}, llmID string) bool {
+	if parserConfig == nil || llmID == "" {
+		return false
+	}
+	updated := false
+	for cid, raw := range parserConfig {
+		compMap, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cidLower := strings.ToLower(cid)
+		if strings.HasPrefix(cidLower, "extractor:") || strings.HasPrefix(cidLower, "extractor_") {
+			compMap["llm_id"] = llmID
+			updated = true
+		}
+	}
+	return updated
+}
+
 // deepCopyMap duplicates a JSON-like map so later merges do not mutate shared defaults.
 func deepCopyMap(source map[string]interface{}) map[string]interface{} {
 	if source == nil {
@@ -68,47 +92,58 @@ func GetParserConfig(parserID string, parserConfig map[string]interface{}) map[s
 			"auto_questions":   0,
 			"html4excel":       false,
 			"topn_tags":        3,
-			"raptor": map[string]interface{}{
-				"use_raptor":  true,
-				"prompt":      "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-				"max_token":   256,
-				"threshold":   0.1,
-				"max_cluster": 64,
-				"random_seed": 0,
-			},
-			"graphrag": map[string]interface{}{
-				"use_graphrag": true,
-				"entity_types": []interface{}{"organization", "person", "geo", "event", "category"},
-				"method":       "light",
-			},
 		},
-		"qa": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
-		"resume": nil,
-		"manual": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
-		"paper": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
-		"book": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
-		"laws": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
-		"presentation": {
-			"raptor":   map[string]interface{}{"use_raptor": false},
-			"graphrag": map[string]interface{}{"use_graphrag": false},
-		},
+		"qa":           nil,
+		"resume":       nil,
+		"manual":       nil,
+		"paper":        nil,
+		"book":         nil,
+		"laws":         nil,
+		"presentation": nil,
 	}
 
 	merged := DeepMergeMaps(baseDefaults, defaultConfigs[parserID])
 	return DeepMergeMaps(merged, parserConfig)
+}
+
+func ExtractPipelineDefaults(dsl map[string]interface{}) map[string]interface{} {
+	if dsl == nil {
+		return nil
+	}
+	if inner, ok := dsl["dsl"].(map[string]interface{}); ok {
+		dsl = inner
+	}
+	components, _ := dsl["components"].(map[string]interface{})
+	if components == nil {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+	hasAny := false
+	for cid, compVal := range components {
+		compMap, ok := compVal.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		obj, _ := compMap["obj"].(map[string]interface{})
+		if obj == nil {
+			continue
+		}
+		name, _ := obj["component_name"].(string)
+		if name == "" || name == "File" {
+			continue
+		}
+		params, _ := obj["params"].(map[string]interface{})
+		if params == nil {
+			continue
+		}
+		copy_ := deepCopyMap(params)
+		delete(copy_, "outputs")
+		result[cid] = copy_
+		hasAny = true
+	}
+	if !hasAny {
+		return nil
+	}
+	return result
 }
