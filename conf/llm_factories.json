@@ -7495,7 +7495,12 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": []
+            "llm": [{
+                "llm_name": "MinerU-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "PaddleOCR",
@@ -7503,14 +7508,24 @@
             "tags": "OCR",
             "status": "1",
             "url": "https://paddleocr.aistudio-app.com",
-            "llm": []
+            "llm": [{
+                "llm_name": "PaddleOCR-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "OpenDataLoader",
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": []
+            "llm": [{
+                "llm_name": "OpenDataLoader-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "SoMark",
@@ -7518,7 +7533,12 @@
             "tags": "OCR",
             "status": "1",
             "rank": "930",
-            "llm": []
+            "llm": [{
+                "llm_name": "SoMark-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "n1n",
