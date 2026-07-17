@@ -145,24 +145,21 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input from req.UserInput (the
-	// `inputs` dict body field) plus the top-level `question` and
-	// `files` fields. The python canvas_service.completion at
-	// api/db/services/canvas_service.py:313 reads all three; the
-	// previous code dropped question/files, so a body like
+	// Compose the canvas user input from req.UserInput (the `inputs`
+	// dict body field) plus the top-level `question`. Files remain a
+	// separate RunAgent argument so they can populate sys.files. The
+	// Python canvas_service.completion reads the same three fields
+	// separately; the previous code dropped question/files, so a body like
 	// `{"question":"hi"}` reached the canvas with empty inputs.
-	userInput := make(map[string]any, len(req.UserInput)+2)
+	userInput := make(map[string]any, len(req.UserInput)+1)
 	for k, v := range req.UserInput {
 		userInput[k] = v
 	}
 	if req.Question != "" {
 		userInput["question"] = req.Question
 	}
-	if len(req.Files) > 0 {
-		userInput["files"] = req.Files
-	}
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
-		req.SessionID, "", userInput)
+		req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -178,12 +175,10 @@ type AgentbotCompletionRequest struct {
 	SessionID string `json:"session_id"`
 	UserID    string `json:"user_id"`
 	Stream    bool   `json:"stream"`
-	// UserInput is the dict-shaped root input the canvas run expects
-	// (mirrors the python "question"/"files"/"inputs" trio collapsed
-	// into one map).
-	UserInput map[string]any `json:"inputs"`
-	Question  string         `json:"question"`
-	Files     []string       `json:"files"`
+	// UserInput is the dict-shaped root input the canvas run expects.
+	UserInput map[string]any           `json:"inputs"`
+	Question  string                   `json:"question"`
+	Files     []map[string]interface{} `json:"files"`
 }
 
 // ChatbotCompletionRequest is the request body for

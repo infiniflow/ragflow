@@ -359,7 +359,7 @@ func main() {
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+	if err = engine.InitMessageQueueEngine(config.Ingestor.MQType); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 

@@ -18,6 +18,7 @@ package task
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -170,4 +171,117 @@ func processChunkPositions(ck map[string]any) {
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}
 	delete(ck, "positions")
+}
+
+// AggregateTableDocMetadata collects unique per-column values across all chunks
+// for columns with role "metadata" or "both", merges them into document metadata.
+// Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
+func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
+	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
+	if mode == "" {
+		mode = "auto"
+	}
+	if mode != "auto" && mode != "manual" {
+		return nil
+	}
+	if roles == nil {
+		roles = map[string]interface{}{}
+	}
+	var metaCols []string
+	if len(tableColumnNames) > 0 {
+		for _, n := range tableColumnNames {
+			col, _ := n.(string)
+			if col == "" {
+				continue
+			}
+			role, _ := roles[col].(string)
+			if role == "" {
+				role = "both"
+			}
+			if role == "metadata" || role == "both" {
+				metaCols = append(metaCols, col)
+			}
+		}
+	} else {
+		for col, v := range roles {
+			role, _ := v.(string)
+			if role == "metadata" || role == "both" {
+				metaCols = append(metaCols, col)
+			}
+		}
+	}
+	if len(metaCols) == 0 {
+		return nil
+	}
+
+	acc := make(map[string]map[string]struct{}, len(metaCols))
+	for _, col := range metaCols {
+		acc[col] = make(map[string]struct{})
+	}
+	for _, ck := range chunks {
+		cd, _ := ck["chunk_data"].(map[string]interface{})
+		if cd == nil {
+			continue
+		}
+		for _, col := range metaCols {
+			val, ok := cd[col]
+			if !ok {
+				continue
+			}
+			s, _ := val.(string)
+			if s == "" {
+				continue
+			}
+			acc[col][s] = struct{}{}
+		}
+	}
+
+	out := make(map[string]any, len(acc))
+	for col, vals := range acc {
+		if len(vals) == 0 {
+			continue
+		}
+		deduped := make([]string, 0, len(vals))
+		for v := range vals {
+			deduped = append(deduped, v)
+		}
+		out[col] = deduped
+	}
+	return out
+}
+
+// resolveTableColumnConfig reads table column settings from parser_config.
+// Tries root-level flat keys first; falls back to resolving from a Parser
+// component entry's spreadsheet config in a component-ID-keyed parser_config.
+func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
+	mode, _ = parserConfig["table_column_mode"].(string)
+	roles, _ = parserConfig["table_column_roles"].(map[string]interface{})
+	rawNames, _ := parserConfig["table_column_names"].([]interface{})
+	if mode != "" || roles != nil || len(rawNames) > 0 {
+		return mode, roles, rawNames
+	}
+	for cid, raw := range parserConfig {
+		if !strings.HasPrefix(cid, "Parser:") {
+			continue
+		}
+		comp, _ := raw.(map[string]interface{})
+		if comp == nil {
+			continue
+		}
+		ss, _ := comp["spreadsheet"].(map[string]interface{})
+		if ss == nil {
+			continue
+		}
+		if v, ok := ss["column_mode"].(string); ok {
+			mode = v
+		}
+		if v, ok := ss["column_roles"].(map[string]interface{}); ok {
+			roles = v
+		}
+		if v, ok := ss["column_names"].([]interface{}); ok {
+			rawNames = v
+		}
+		return mode, roles, rawNames
+	}
+	return "", nil, nil
 }
