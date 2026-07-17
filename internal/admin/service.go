@@ -1022,21 +1022,12 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[stri
 	switch serviceType {
 	case "meta_data":
 		return s.getMySQLStatus(name)
+	case "cache":
+		return s.getRedisInfo(name)
 	case "message_queue":
-		switch name {
-		case "redis":
-			return s.getRedisInfo(name)
-		case "nats":
-			host := configDict["host"].(string)
-			port := configDict["port"].(int)
-			return s.checkNatsAlive(name, host, port)
-		default:
-			return map[string]interface{}{
-				"service_name": name,
-				"status":       "unknown",
-				"message":      "Service type not supported",
-			}, nil
-		}
+		host := configDict["host"].(string)
+		port := configDict["port"].(int)
+		return s.checkNatsAlive(name, host, port)
 	case "retrieval":
 		// Check the extra.retrieval_type to determine which retrieval service
 		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
@@ -1396,7 +1387,7 @@ func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
 	if clickhouseDriver == nil {
 		return map[string]interface{}{
 			"service_name": name,
-			"status":       "ClickHouse engine not initialized",
+			"status":       "unknown",
 		}, nil
 	}
 
