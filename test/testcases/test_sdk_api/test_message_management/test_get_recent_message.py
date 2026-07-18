@@ -38,7 +38,7 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestGetRecentMessage:
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_get_recent_messages(self, client):
         memory_id = self.memory_id
         res = client.get_recent_messages([memory_id])

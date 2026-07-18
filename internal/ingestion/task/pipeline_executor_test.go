@@ -161,7 +161,10 @@ func TestKB_Doc_Tenant_Accessors(t *testing.T) {
 func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
 	chunks := []map[string]any{{"text": "hello world"}}
-	meta := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	meta, err := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
 
 	// Verify the wrapper method works correctly and chunks are processed
 	if chunks[0]["doc_id"] != "doc-1" {
@@ -258,7 +261,7 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 
 func TestRunPipeline_NilOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
-	_, err := svc.processOutput(context.Background(), nil)
+	_, err := svc.processOutput(context.Background(), nil, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for nil output, got %v", err)
 	}
@@ -268,7 +271,7 @@ func TestRunPipeline_EmptyOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{})
+	_, err := svc.processOutput(context.Background(), map[string]any{}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty output, got %v", err)
 	}
@@ -278,7 +281,7 @@ func TestRunPipeline_NormalizedEmpty(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{"markdown": ""})
+	_, err := svc.processOutput(context.Background(), map[string]any{"markdown": ""}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty normalized output, got %v", err)
 	}
@@ -296,7 +299,7 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 			{"text": "world"},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output)
+	_, err := svc.processOutput(context.Background(), output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -314,7 +317,7 @@ func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 			{"text": "hello", "q_768_vec": []float64{0.1, 0.2}},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output)
+	_, err := svc.processOutput(context.Background(), output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -327,7 +330,7 @@ func TestRunPipeline_ContextCanceled(t *testing.T) {
 
 	_, err := svc.processOutput(ctx, map[string]any{
 		"chunks": []map[string]any{{"text": "hello"}},
-	})
+	}, time.Now())
 	if err == nil {
 		t.Error("expected context canceled error")
 	}
@@ -406,7 +409,7 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 // =============================================================================
 
 // recordingProgressSink captures progress events for asserting the executor
-// forwards its sink through defaultRunPipeline into the pipeline.
+// forwards its sink through runPipelineWithDSL into the pipeline.
 type recordingProgressSink struct {
 	mu       sync.Mutex
 	total    int
@@ -433,10 +436,10 @@ func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (ma
 	return inputs, nil
 }
 
-// TestPipelineExecutorDefaultRunPipelineForwardsSink verifies the sink set via
-// WithProgressSink is threaded through defaultRunPipeline into the pipeline,
+// TestPipelineExecutorRunPipelineWithDSLForwardsSink verifies the sink set via
+// WithProgressSink is threaded through runPipelineWithDSL into the pipeline,
 // which reports the component total and lifecycle events back to the sink.
-func TestPipelineExecutorDefaultRunPipelineForwardsSink(t *testing.T) {
+func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	const nameA = "task.SinkPassthroughA"
 	runtime.MustRegister(nameA, runtime.CategoryIngestion,
 		func(_ string, _ map[string]any) (runtime.Component, error) { return sinkPassthroughStage{}, nil },
@@ -448,8 +451,8 @@ func TestPipelineExecutorDefaultRunPipelineForwardsSink(t *testing.T) {
 
 	dsl := `{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["a"]},"a":{"obj":{"component_name":"` + nameA + `","params":{}},"upstream":["begin"]}},"path":["begin","a"],"graph":{"nodes":[]}}}`
 
-	if _, _, err := svc.defaultRunPipeline(context.Background(), dsl); err != nil {
-		t.Fatalf("defaultRunPipeline: %v", err)
+	if _, _, err := svc.runPipelineWithDSL(context.Background(), dsl); err != nil {
+		t.Fatalf("runPipelineWithDSL: %v", err)
 	}
 
 	sink.mu.Lock()

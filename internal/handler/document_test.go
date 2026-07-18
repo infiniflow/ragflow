@@ -138,9 +138,6 @@ func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*servic
 		FileName:    "doc.pdf",
 	}, nil
 }
-func (f *fakeDocumentService) CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error) {
-	return nil, nil
-}
 func (f *fakeDocumentService) GetDocumentByID(id string) (*service.DocumentResponse, error) {
 	if f.docErr != nil {
 		return nil, f.docErr
@@ -519,7 +516,7 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
@@ -1028,7 +1025,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},

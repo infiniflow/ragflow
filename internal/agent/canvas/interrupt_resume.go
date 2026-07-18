@@ -118,17 +118,6 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 			return out, nil
 		}
 
-		// Initial-run fast path: match the legacy Python canvas behavior
-		// where Begin/UserFillUp consume the current run's inputs
-		// directly. We only auto-consume when the node declares form
-		// fields; plain wait-for-user nodes (no inputs schema) still
-		// interrupt on first execution.
-		if data, ok := initialUserFillUpData(ctx, inputSpec); ok {
-			out := buildUserFillUpResumeOutput(cpnID, inputSpec, data)
-			out["__cpn_id__"] = cpnID
-			return out, nil
-		}
-
 		// First-call branch: emit the interrupt signal. The returned
 		// error implements error; eino's runner catches it, persists a
 		// checkpoint, and bubbles it up.
@@ -170,35 +159,6 @@ func buildUserFillUpResumeOutput(cpnID string, inputSpec map[string]any, data an
 		}
 	}
 	return out
-}
-
-func initialUserFillUpData(ctx context.Context, inputSpec map[string]any) (any, bool) {
-	fields, _ := inputSpec["inputs"].(map[string]any)
-	if len(fields) == 0 {
-		return nil, false
-	}
-
-	state, _, err := GetStateFromContext[*CanvasState](ctx)
-	if err != nil || state == nil {
-		return nil, false
-	}
-	if consumed, _ := state.Sys["__initial_user_input_consumed__"].(bool); consumed {
-		return nil, false
-	}
-	raw, err := state.GetVar("sys.query")
-	if err != nil || raw == nil {
-		return nil, false
-	}
-	if values, ok := raw.(map[string]any); ok {
-		state.Sys["__initial_user_input_consumed__"] = true
-		return values, true
-	}
-	text, ok := raw.(string)
-	if !ok || text == "" {
-		return nil, false
-	}
-	state.Sys["__initial_user_input_consumed__"] = true
-	return text, true
 }
 
 // IsInterruptError reports whether err carries an eino interrupt signal.

@@ -205,7 +205,27 @@ func (s *IngestionTaskService) StartRunning(taskID string) (*entity.IngestionTas
 	}
 	switch task.Status {
 	case common.CREATED:
-		return s.transition(taskID, common.RUNNING)
+		task, err := s.transition(taskID, common.RUNNING)
+		if err != nil {
+			return nil, err
+		}
+		// The task just started running: mirror it to the document so its
+		// run status and progress counters reflect real processing, not
+		// just API acceptance. Best-effort - a DB blip here must not fail
+		// the task transition and trigger a redelivery loop. run uses the
+		// document's numeric TaskStatus enum ("1"), not the task's string
+		// status label.
+		if err := s.documentDAO.UpdateByID(task.DocumentID, map[string]interface{}{
+			"run":              string(entity.TaskStatusRunning),
+			"progress":         float64(0),
+			"chunk_num":        int64(0),
+			"token_num":        int64(0),
+			"process_begin_at": time.Now(),
+			"progress_msg":     "",
+		}); err != nil {
+			common.Warn(fmt.Sprintf("StartRunning: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
+		}
+		return task, nil
 	case common.STOPPING:
 		return s.transition(taskID, common.STOPPED)
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
@@ -241,12 +261,26 @@ func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask
 }
 
 func (s *IngestionTaskService) MarkCompleted(taskID string) error {
-	_, err := s.transition(taskID, common.COMPLETED)
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED {
+		return nil // already terminal, idempotent — mirrors MarkStopped
+	}
+	_, err = s.transition(taskID, common.COMPLETED)
 	return err
 }
 
 func (s *IngestionTaskService) MarkFailed(taskID string) error {
-	_, err := s.transition(taskID, common.FAILED)
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
+		return nil // already terminal, idempotent — mirrors MarkStopped
+	}
+	_, err = s.transition(taskID, common.FAILED)
 	return err
 }
 

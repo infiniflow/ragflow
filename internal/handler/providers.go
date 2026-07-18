@@ -572,6 +572,11 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 		updateDict["extra"] = req.Extra
 	}
 
+	if len(updateDict) == 0 {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "at least one update field is required besides model_name or model_id")
+		return
+	}
+
 	code, err := h.modelProviderService.AlterModel(providerName, instanceName, modelName, userID, modelID, updateDict)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -815,6 +820,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		"code":              0,
 		"reasoning_content": response.ReasonContent,
 		"answer":            response.Answer,
+		"usage":             response.Usage,
 	})
 }
 

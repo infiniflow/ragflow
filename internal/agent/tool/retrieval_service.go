@@ -15,11 +15,9 @@
 //
 
 // RetrievalService is the abstract interface for retrieval.
-// The full Python `Dealer.search()` surface (KB + memory +
-// rerank + cross-language + toc_enhance + metadata filter +
-// GraphRAG) lands incrementally as the corresponding
-// enhancements fill in. For now the interface is minimal —
-// just the entry point the RetrievalTool calls.
+// The Go path exposes only the parameters currently threaded into
+// internal/service/nlp. Extra Python-only options should be added
+// here only when the adapter can pass them through.
 package tool
 
 import (
@@ -33,23 +31,28 @@ import (
 // full Chunk type (with document_id, docnm_kwd, position, etc.)
 // lives in internal/entity and is wired in by a follow-up phase.
 type RetrievalChunk struct {
-	ID         string
-	Content    string
-	DocumentID string
-	Score      float64
+	ID               string
+	Content          string
+	DocumentID       string
+	DocumentName     string
+	DatasetID        string
+	ImageID          string
+	URL              string
+	Positions        any
+	Score            float64
+	TermSimilarity   float64
+	VectorSimilarity float64
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
 type RetrievalRequest struct {
-	Query               string
-	DatasetIDs          []string
-	TopN                int
-	UseKG               bool
-	UseRerank           bool
-	RerankID            string
-	TOCEnhance          bool
-	MetadataFilter      map[string]string
-	SimilarityThreshold float64
+	Query                    string
+	DatasetIDs               []string
+	TopN                     int
+	TopK                     int
+	KeywordsSimilarityWeight *float64
+	UseKG                    bool
+	SimilarityThreshold      float64
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// Optional for the nlp adapter; the KG adapter uses it to resolve the
 	// tenant's default chat + embedding models. Reads from

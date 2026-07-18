@@ -32,6 +32,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -89,7 +90,14 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 		if role == "" {
 			role = "user"
 		}
-		out = append(out, Message{Role: role, Content: mm.Content})
+		msg := Message{Role: role, Content: mm.Content}
+		if len(mm.ToolCalls) > 0 {
+			msg.ToolCalls = toolCallsToInternal(mm.ToolCalls)
+		}
+		if mm.ToolCallID != "" {
+			msg.ToolCallID = mm.ToolCallID
+		}
+		out = append(out, msg)
 	}
 	return out
 }
@@ -105,7 +113,14 @@ func fromInternalResponse(resp *ChatResponse) *schema.Message {
 	if resp.Answer != nil {
 		content = *resp.Answer
 	}
-	return &schema.Message{Role: schema.Assistant, Content: content}
+	msg := &schema.Message{Role: schema.Assistant, Content: content}
+	if resp.ReasonContent != nil {
+		msg.ReasoningContent = *resp.ReasonContent
+	}
+	if len(resp.ToolCalls) > 0 {
+		msg.ToolCalls = toolCallsFromInternal(resp.ToolCalls)
+	}
+	return msg
 }
 
 // Generate blocks until the model returns a complete response. Mirrors
@@ -128,7 +143,11 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	// without a usage block doesn't leak the previous call's data.
 	// Mirrors Python's LLMBundle._reset_last_usage().
 	m.inner.LastUsage = nil
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg)
+	chatCfg, err := m.chatConfigForGenerate()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}
@@ -144,6 +163,106 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	return fromInternalResponse(resp), nil
 }
 
+func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
+	if len(m.tools) == 0 {
+		return m.chatCfg, nil
+	}
+	cfg := &ChatConfig{}
+	if m.chatCfg != nil {
+		cp := *m.chatCfg
+		cfg = &cp
+	}
+	tools, err := openAIToolsFromEino(m.tools)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Tools = tools
+	choice := "auto"
+	cfg.ToolChoice = &choice
+	return cfg, nil
+}
+
+func openAIToolsFromEino(infos []*schema.ToolInfo) ([]map[string]any, error) {
+	tools := make([]map[string]any, 0, len(infos))
+	for _, info := range infos {
+		if info == nil {
+			continue
+		}
+		fn := map[string]any{
+			"name":        info.Name,
+			"description": info.Desc,
+		}
+		if info.ParamsOneOf != nil {
+			params, err := info.ParamsOneOf.ToJSONSchema()
+			if err != nil {
+				return nil, fmt.Errorf("models: convert tool %q schema: %w", info.Name, err)
+			}
+			fn["parameters"] = params
+		} else {
+			fn["parameters"] = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		tools = append(tools, map[string]any{
+			"type":     "function",
+			"function": fn,
+		})
+	}
+	return tools, nil
+}
+
+func toolCallsToInternal(calls []schema.ToolCall) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(calls))
+	for _, call := range calls {
+		fn := map[string]interface{}{
+			"name":      call.Function.Name,
+			"arguments": call.Function.Arguments,
+		}
+		out = append(out, map[string]interface{}{
+			"id":       call.ID,
+			"type":     call.Type,
+			"function": fn,
+		})
+	}
+	return out
+}
+
+func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
+	out := make([]schema.ToolCall, 0, len(calls))
+	for i, call := range calls {
+		id, _ := call["id"].(string)
+		if id == "" {
+			id = fmt.Sprintf("call_%d", i)
+		}
+		callType, _ := call["type"].(string)
+		if callType == "" {
+			callType = "function"
+		}
+		var fnName, fnArgs string
+		if fn, ok := call["function"].(map[string]interface{}); ok {
+			fnName, _ = fn["name"].(string)
+			switch args := fn["arguments"].(type) {
+			case string:
+				fnArgs = args
+			case nil:
+				fnArgs = "{}"
+			default:
+				b, err := json.Marshal(args)
+				if err == nil {
+					fnArgs = string(b)
+				}
+			}
+		}
+		out = append(out, schema.ToolCall{
+			ID:   id,
+			Type: callType,
+			Function: schema.FunctionCall{
+				Name:      fnName,
+				Arguments: fnArgs,
+			},
+		})
+	}
+	return out
+}
+
 // Stream returns a schema.StreamReader that yields message chunks
 // incrementally. Uses the existing ChatStreamlyWithSender pathway; the
 // sender callback pushes the streamed delta into the StreamReader.
@@ -157,19 +276,40 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if m.inner.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
+	if len(m.tools) > 0 {
+		msg, err := m.Generate(ctx, msgs, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+	}
 	internal := toInternalMessages(msgs)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
-	sender := func(content *string, _ *string) error {
+	sender := func(content *string, reasoning *string) error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
-		if content == nil {
+		if content == nil && reasoning == nil {
 			return nil
 		}
-		// Copy the string — the underlying buffer may be reused.
-		chunk := *content
-		if closed := sw.Send(&schema.Message{Role: schema.Assistant, Content: chunk}, nil); closed {
+		// Provider drivers use the OpenAI-compatible [DONE] sentinel to
+		// signal the end of their transport stream. It is not assistant
+		// content and must not reach Eino's message stream or callback.
+		if content != nil && *content == "[DONE]" {
+			return nil
+		}
+		msg := &schema.Message{Role: schema.Assistant}
+		if content != nil {
+			msg.Content = *content
+		}
+		if reasoning != nil {
+			msg.ReasoningContent = *reasoning
+		}
+		if m.chatCfg != nil && m.chatCfg.StreamCallback != nil {
+			m.chatCfg.StreamCallback(msg.Content, msg.ReasoningContent)
+		}
+		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
 		return nil

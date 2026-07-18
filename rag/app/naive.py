@@ -172,6 +172,8 @@ def by_mineru(
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
+                    page_from=from_page,
+                    page_to=min(to_page, MAXIMUM_PAGE_NUMBER),
                     **kwargs,
                 )
                 return sections, tables, pdf_parser

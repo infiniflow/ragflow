@@ -23,7 +23,7 @@ from utils.file_utils import create_image_file
 
 @pytest.mark.usefixtures("clear_chat_assistants")
 class TestChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_chunks")
     @pytest.mark.parametrize(
         "name, expected_message",

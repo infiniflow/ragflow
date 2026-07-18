@@ -59,17 +59,22 @@ func (u *docStateUpdater) apply(r *taskpkg.PipelineResult) {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, 0); err != nil {
+	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
 	}
 }
 
 // mergeDocMetadata reads existing metadata, fills in keys not already present
 // (existing keys are preserved, not overwritten), and writes the merged map back.
+// A read failure aborts the merge: SetDocumentMetadata is a full overwrite, so
+// writing with an empty baseline would destroy existing keys.
 func mergeDocMetadata(svc docStateSvc, docID string, metadata map[string]any) error {
 	existing, err := svc.GetDocumentMetadataByID(docID)
 	if err != nil {
-		existing = make(map[string]any)
+		return err
+	}
+	if existing == nil {
+		existing = map[string]any{}
 	}
 	for k, v := range metadata {
 		if _, exists := existing[k]; !exists {

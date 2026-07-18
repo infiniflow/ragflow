@@ -34,7 +34,6 @@ func NewRouter(handler *Handler) *Router {
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-
 	SetupEERouter(engine)
 
 	// Healthz to get system health

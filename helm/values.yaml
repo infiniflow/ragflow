@@ -210,7 +210,7 @@ mysql:
   enabled: true
   image:
     repository: mysql
-    tag: 8.0.39
+    tag: 8.0.40
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:

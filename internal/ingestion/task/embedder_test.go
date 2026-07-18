@@ -17,10 +17,8 @@
 package task
 
 import (
-	"strings"
 	"testing"
 
-	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 )
 
@@ -28,88 +26,45 @@ func makeEmbeddingModelForResolver() *models.EmbeddingModel {
 	return models.NewEmbeddingModel(&stubDriver{}, strPtr("embed"), &models.APIConfig{}, 128)
 }
 
-func TestEmbedderResolver_ExplicitEmbeddingModelWins(t *testing.T) {
+func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 	var gotTenantID, gotEmbdID string
 	resolver := newEmbedderResolver(
+		func(kbID string) (string, error) {
+			return "kb-embd-1", nil
+		},
 		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
 			gotTenantID, gotEmbdID = tenantID, embdID
 			return makeEmbeddingModelForResolver(), nil
 		},
-		func(string) (*entity.Knowledgebase, error) {
-			t.Fatal("kb lookup should not run when embedding_model is set")
-			return nil, nil
-		},
 	)
-	emb, err := resolver("tenant-1", "kb-1", "explicit-embd")
+	emb, err := resolver("tenant-1", "kb-1", "should-be-ignored")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
 	if emb == nil {
 		t.Fatal("expected embedder")
 	}
-	if gotTenantID != "tenant-1" || gotEmbdID != "explicit-embd" {
-		t.Fatalf("resolver args = (%q, %q), want (tenant-1, explicit-embd)", gotTenantID, gotEmbdID)
+	if gotTenantID != "tenant-1" || gotEmbdID != "kb-embd-1" {
+		t.Fatalf("resolver args = (%q, %q), want (tenant-1, kb-embd-1)", gotTenantID, gotEmbdID)
 	}
 }
 
-func TestEmbedderResolver_FallsBackToDatasetEmbedding(t *testing.T) {
-	var gotEmbdID string
+func TestEmbedderResolver_EmptyKBEmbdIDReturnsNil(t *testing.T) {
 	resolver := newEmbedderResolver(
-		func(_ string, embdID string) (*models.EmbeddingModel, error) {
-			gotEmbdID = embdID
-			return makeEmbeddingModelForResolver(), nil
+		func(kbID string) (string, error) {
+			return "", nil
 		},
-		func(kbID string) (*entity.Knowledgebase, error) {
-			if kbID != "kb-1" {
-				t.Fatalf("kb lookup id = %q, want kb-1", kbID)
-			}
-			return &entity.Knowledgebase{ID: "kb-1", EmbdID: "lookup-embd"}, nil
+		func(string, string) (*models.EmbeddingModel, error) {
+			t.Fatal("model resolver should not be called when kb embd_id is empty")
+			return nil, nil
 		},
 	)
-	if _, err := resolver("tenant-1", "kb-1", ""); err != nil {
+	emb, err := resolver("tenant-1", "kb-1", "ignored")
+	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
-	if gotEmbdID != "lookup-embd" {
-		t.Fatalf("got embd id %q, want lookup-embd", gotEmbdID)
-	}
-}
-
-func TestEmbedderResolver_MissingDatasetEmbeddingReturnsError(t *testing.T) {
-	resolver := newEmbedderResolver(
-		func(string, string) (*models.EmbeddingModel, error) {
-			t.Fatal("model resolver should not be called")
-			return nil, nil
-		},
-		func(string) (*entity.Knowledgebase, error) {
-			return &entity.Knowledgebase{ID: "kb-1", EmbdID: ""}, nil
-		},
-	)
-	_, err := resolver("tenant-1", "kb-1", "")
-	if err == nil {
-		t.Fatal("expected error when dataset embd_id is missing, got nil")
-	}
-	if !strings.Contains(err.Error(), "dataset has no embd_id configured") {
-		t.Fatalf("err = %v, want dataset has no embd_id configured", err)
-	}
-}
-
-func TestEmbedderResolver_MissingEmbeddingModelAndKBReturnsError(t *testing.T) {
-	resolver := newEmbedderResolver(
-		func(string, string) (*models.EmbeddingModel, error) {
-			t.Fatal("model resolver should not be called")
-			return nil, nil
-		},
-		func(string) (*entity.Knowledgebase, error) {
-			t.Fatal("kb lookup should not be called without a kb_id")
-			return nil, nil
-		},
-	)
-	_, err := resolver("tenant-1", "", "")
-	if err == nil {
-		t.Fatal("expected error when neither embedding_model nor kb_id provided")
-	}
-	if !strings.Contains(err.Error(), "neither embedding_model nor kb_id") {
-		t.Fatalf("err = %v, want neither embedding_model nor kb_id", err)
+	if emb != nil {
+		t.Fatal("expected nil embedder when kb has no embd_id")
 	}
 }
 

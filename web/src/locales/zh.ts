@@ -446,7 +446,7 @@ export default {
       testing: '检索测试',
       configuration: '配置',
       knowledgeGraph: '知识图谱',
-      compilation: '汇编',
+      compilation: '编译',
       export: '导出',
       version: '版本',
       versionHistory: '版本历史',
@@ -738,10 +738,12 @@ export default {
       此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件是<b> excel </b>格式，则应由两个列组成
-      没有标题：一个提出问题，另一个用于答案，
-      答案列之前的问题列。多张纸是
-      只要列正确结构，就可以接受。
+      如果文件是<b> excel </b>格式，
+      则文件应包含两列且不包含表头：
+      一列用于存放问题，另一列用于存放答案，
+      并且问题列必须位于答案列之前。
+      可以包含多个工作表（sheet），
+      只要每个工作表中的列结构都符合要求即可。
     </li>
     <li>
       如果文件是<b> csv/txt </b>格式
@@ -1284,8 +1286,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       datasourceDescription: '管理您的数据源和连接',
       chatChannels: '聊天渠道',
       chatChannelsDescription: '管理您的聊天渠道机器人及凭证',
-      compilationTemplates: 'Compilation templates',
-      compilationTemplatesDescription: '管理您的 Compilation templates',
+      compilationTemplates: '知识编译模板',
+      compilationTemplatesDescription: '管理您的知识编译模板',
       addTemplateGroup: '添加模板分组',
       editTemplateGroup: '编辑模板分组',
       groupName: '分组名称',
@@ -1500,6 +1502,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addInstance: '添加实例',
       addInstanceText: '添加实例',
       noInstancesConfigured: '尚未配置任何实例。',
+      saveAll: '保存',
       editInstanceName: '编辑实例名称',
       models: '模型',
       chatModel: 'LLM',
@@ -1527,9 +1530,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
-      instanceNameSaveTip: '请输入实例名称并保存。保存后不可修改。',
-      instanceNameSavePrompt: '请先保存实例名称，再编辑其他字段。',
-      instanceNameLockedHint: '实例名称已锁定',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
@@ -1656,7 +1656,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         baseUrl: 'Base URL',
         baseUrlMessage: '请输入 Base URL',
         baseUrlPlaceholder:
-          '使用 SoMark API 时填写 https://somark.tech/api/v1；私有化部署时填写本地部署的 Base URL',
+          '使用 SoMark API 时中国大陆填写 https://somark.cn/api/v1；中国大陆外（含中国台湾、中国香港、中国澳门及海外）填写 https://somark.ai/api/v1；私有化部署时填写本地部署的 Base URL',
         apiKey: 'API Key',
         apiKeyPlaceholder: '使用 SoMark API 时填写；私有化部署无需填写',
         verifyPassed: '验证通过',
@@ -1674,6 +1674,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         enableTextCrossPage: '文字跨页合并',
         enableTableCrossPage: '表格跨页合并',
         keepHeaderFooter: '保留页眉页脚',
+        purchaseUrl:
+          '购买 API：中国大陆 https://somark.cn/workbench/purchase；海外（含中国台湾、中国香港、中国澳门）https://somark.ai/studio/purchase',
       },
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
@@ -2543,8 +2545,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '汇编',
-      compilerDescription: '使用知识汇编模板将文档块编译为结构化产物。',
+      compiler: '知识编译',
+      compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
       fileFormatOptions: {

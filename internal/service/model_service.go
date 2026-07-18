@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -1158,6 +1159,34 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 		return nil, common.CodeServerError, err
 	}
 
+	// Repair records that have model_type == 0. Before the ModelTypeFromString
+	// fix that added "asr" support, models whose factory catalog used the
+	// canonical name "asr" (instead of the legacy "speech2text") were stored
+	// with model_type = 0. Re-derive the correct bitmask from the factory
+	// catalog and persist it so the model shows up in typed queries.
+	providerManager := dao.GetModelProviderManager()
+	for _, rec := range modelRecords {
+		if rec.ModelType != 0 {
+			continue
+		}
+		provInfo := providerInfoByID[rec.ProviderID]
+		if provInfo == nil {
+			continue
+		}
+		factoryModel, lookupErr := providerManager.GetModelByName(provInfo.ProviderName, rec.ModelName)
+		if lookupErr != nil || len(factoryModel.ModelTypes) == 0 {
+			continue
+		}
+		combinedType := entity.ModelType(0)
+		for _, t := range factoryModel.ModelTypes {
+			combinedType |= entity.ModelTypeFromString(t)
+		}
+		if combinedType != 0 {
+			rec.ModelType = int(combinedType)
+			_ = m.modelDAO.UpdateByID(rec.ID, map[string]interface{}{"model_type": int(combinedType)})
+		}
+	}
+
 	var targetRecords []*entity.TenantModel
 	if modelTypeFilterBin != 0 {
 		for _, rec := range modelRecords {
@@ -1170,7 +1199,6 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 	}
 
 	// Build model rank map from factory catalog (mirrors Python's model_rank_map).
-	providerManager := dao.GetModelProviderManager()
 	modelRankMap := make(map[string]int) // key: "providerName@modelName"
 	factoryRankMapping := make(map[string]int)
 	for i := range providerManager.Providers {
@@ -1312,15 +1340,165 @@ func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID stri
 	return tenant, common.CodeSuccess, nil
 }
 
-// ensureMineruFromEnv is a stub that mirrors Python's ensure_mineru_from_env.
+// ensureMineruFromEnv mirrors Python's ensure_mineru_from_env.
 // It ensures a MinerU OCR provider instance exists when env vars are configured.
-func (m *ModelProviderService) ensureMineruFromEnv(tenantID string) error { return nil }
+func (m *ModelProviderService) ensureMineruFromEnv(tenantID string) error {
+	config := collectEnvConfig(mineruEnvKeys, mineruDefaultConfig)
+	return m.ensureOCRProviderFromEnv(tenantID, "MinerU", "mineru-from-env", config)
+}
 
-// ensurePaddleOCREnabledFromEnv is a stub that mirrors Python's ensure_paddleocr_from_env.
-func (m *ModelProviderService) ensurePaddleOCREnabledFromEnv(tenantID string) error { return nil }
+// ensurePaddleOCREnabledFromEnv mirrors Python's ensure_paddleocr_from_env.
+func (m *ModelProviderService) ensurePaddleOCREnabledFromEnv(tenantID string) error {
+	config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig)
+	return m.ensureOCRProviderFromEnv(tenantID, "PaddleOCR", "paddleocr-from-env", config)
+}
 
-// ensureOpenDataLoaderFromEnv is a stub that mirrors Python's ensure_opendataloader_from_env.
-func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(tenantID string) error { return nil }
+// ensureOpenDataLoaderFromEnv mirrors Python's ensure_opendataloader_from_env.
+func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(tenantID string) error {
+	config := collectEnvConfig(openDataLoaderEnvKeys, openDataLoaderDefaultConfig)
+	return m.ensureOCRProviderFromEnv(tenantID, "OpenDataLoader", "opendataloader-from-env", config)
+}
+
+// env key / default config tables for the three OCR providers.
+// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+var (
+	mineruEnvKeys = []string{
+		common.EnvMineruApiServer,
+		"MINERU_OUTPUT_DIR",
+		common.EnvMineruBackend,
+		"MINERU_SERVER_URL",
+		"MINERU_DELETE_OUTPUT",
+	}
+	mineruDefaultConfig = map[string]interface{}{
+		common.EnvMineruApiServer: "",
+		"MINERU_OUTPUT_DIR":       "",
+		common.EnvMineruBackend:   "pipeline",
+		"MINERU_SERVER_URL":       "",
+		"MINERU_DELETE_OUTPUT":    1,
+	}
+	paddleOCREnvKeys = []string{
+		common.EnvPaddleOCRBaseUrl,
+		common.EnvPaddleOCRApiURL,
+		common.EnvPaddleOCRAccessToken,
+		common.EnvPaddleOCRAlgorithm,
+	}
+	paddleOCRDefaultConfig = map[string]interface{}{
+		common.EnvPaddleOCRBaseUrl:     "",
+		common.EnvPaddleOCRApiURL:      "",
+		common.EnvPaddleOCRAccessToken: nil,
+		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
+	}
+	openDataLoaderEnvKeys = []string{
+		common.EnvOpenDataLoaderApiServer,
+	}
+	openDataLoaderDefaultConfig = map[string]interface{}{
+		common.EnvOpenDataLoaderApiServer: "",
+	}
+)
+
+// collectEnvConfig collects environment variable values for the given keys
+// into a map pre-populated with defaultConfig. Returns nil if none of the
+// env vars are actually set, matching Python's _collect_env_config.
+func collectEnvConfig(envKeys []string, defaultConfig map[string]interface{}) map[string]interface{} {
+	config := make(map[string]interface{}, len(defaultConfig))
+	for k, v := range defaultConfig {
+		config[k] = v
+	}
+	found := false
+	for _, key := range envKeys {
+		value := os.Getenv(key)
+		if value != "" {
+			found = true
+			config[key] = value
+		}
+	}
+	if !found {
+		return nil
+	}
+	return config
+}
+
+// ensureOCRProviderFromEnv mirrors Python's _ensure_ocr_provider_from_env.
+// It finds or creates a provider, instance, and model for the given OCR provider.
+func (m *ModelProviderService) ensureOCRProviderFromEnv(tenantID, providerName, modelName string, config map[string]interface{}) error {
+	if config == nil {
+		return nil
+	}
+
+	// 1. Find or create the provider.
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			return fmt.Errorf("failed to get provider %s: %w", providerName, err)
+		}
+		providerID := utility.GenerateToken()
+		provider = &entity.TenantModelProvider{
+			ID:           providerID,
+			TenantID:     tenantID,
+			ProviderName: providerName,
+		}
+		if err := m.modelProviderDAO.Create(provider); err != nil {
+			return fmt.Errorf("failed to create provider %s: %w", providerName, err)
+		}
+	}
+
+	// 2. Find or create the instance (api_key stores the JSON config for dedup).
+	apiKeyBytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config for %s: %w", providerName, err)
+	}
+	apiKey := string(apiKeyBytes)
+
+	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(apiKey, provider.ID)
+	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			return fmt.Errorf("failed to get instance for %s: %w", providerName, err)
+		}
+		instanceID := utility.GenerateToken()
+		instance = &entity.TenantModelInstance{
+			ID:           instanceID,
+			ProviderID:   provider.ID,
+			InstanceName: modelName,
+			APIKey:       apiKey,
+			Extra:        "{}",
+		}
+		if err := m.modelInstanceDAO.Create(instance); err != nil {
+			return fmt.Errorf("failed to create instance for %s: %w", providerName, err)
+		}
+	}
+
+	// 3. Find or create the model.
+	_, err = m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
+		provider.ID,
+		instance.ID,
+		int(entity.ModelTypeOCR),
+		modelName,
+	)
+	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			return fmt.Errorf("failed to get model for %s: %w", providerName, err)
+		}
+		extraBytes, err := json.Marshal(map[string]int{"max_tokens": 0})
+		if err != nil {
+			return fmt.Errorf("failed to marshal extra for %s model: %w", providerName, err)
+		}
+		modelID := utility.GenerateToken()
+		tenantModel := &entity.TenantModel{
+			ID:         modelID,
+			ModelName:  modelName,
+			ProviderID: provider.ID,
+			InstanceID: instance.ID,
+			ModelType:  int(entity.ModelTypeOCR),
+			Status:     "active",
+			Extra:      string(extraBytes),
+		}
+		if err := m.modelDAO.Create(tenantModel); err != nil {
+			return fmt.Errorf("failed to create model for %s: %w", providerName, err)
+		}
+	}
+
+	return nil
+}
 
 func (m *ModelProviderService) AlterProviderInstance(userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
@@ -1518,31 +1696,48 @@ func (m *ModelProviderService) DropProviderInstances(providerIDOrName, userID st
 		return common.CodeServerError, err
 	}
 
-	// Delete each instance by provider_id + instance_name.
-	// Since instance names are unique within a provider, we can delete directly.
+	// First pass: resolve all instance IDs and collect not-found instances.
+	// Mirrors Python's drop_provider_instances which returns error immediately
+	// if any instance does not exist, without performing partial deletion.
 	notExistInstances := make([]string, 0)
-	for _, instanceName := range instanceIDOrNames {
-		instanceObj, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				notExistInstances = append(notExistInstances, instanceName)
-				continue
+	instanceIDs := make([]string, 0, len(instanceIDOrNames))
+	for _, idOrName := range instanceIDOrNames {
+		var instance *entity.TenantModelInstance
+		// Try by ID first, then by name — same as Python.
+		if idOrName != "" {
+			instance, err = m.modelInstanceDAO.GetByID(idOrName)
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.CodeServerError, err
 			}
-			return common.CodeServerError, err
+			if instance != nil && instance.ProviderID != provider.ID {
+				instance = nil
+			}
 		}
-
-		// Delete models under this instance first
-		if _, err := m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, instanceObj.ID); err != nil {
-			return common.CodeServerError, err
+		if instance == nil {
+			instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, idOrName)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					notExistInstances = append(notExistInstances, idOrName)
+					continue
+				}
+				return common.CodeServerError, err
+			}
 		}
-
-		// Delete the instance itself
-		if _, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName); err != nil {
-			return common.CodeServerError, err
-		}
+		instanceIDs = append(instanceIDs, instance.ID)
 	}
+
 	if len(notExistInstances) > 0 {
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerIDOrName, notExistInstances)
+	}
+
+	// Second pass: delete models and instances by IDs.
+	// Mirrors Python's: delete_models_by_instance_ids(instance_ids)
+	//                   TenantModelInstanceService.delete_by_ids(instance_ids)
+	if _, err := m.modelDAO.DeleteByInstanceIDs(instanceIDs); err != nil {
+		return common.CodeServerError, err
+	}
+	if _, err := m.modelInstanceDAO.DeleteByIDs(instanceIDs); err != nil {
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -1597,10 +1792,14 @@ func (m *ModelProviderService) DropInstanceModels(providerIDOrName, instanceIDOr
 		return common.CodeNotFound, fmt.Errorf("Models %v not found for provider '%s' and instance '%s'", notExist, providerIDOrName, instanceIDOrName)
 	}
 
-	// Collect IDs of models to delete.
+	// Collect IDs of only the requested models to delete.
+	requestedNames := make(map[string]struct{}, len(modelNames))
+	for _, name := range modelNames {
+		requestedNames[name] = struct{}{}
+	}
 	idsToDelete := make([]string, 0, len(modelNames))
 	for _, obj := range modelObjs {
-		if _, ok := existingNames[obj.ModelName]; ok {
+		if _, ok := requestedNames[obj.ModelName]; ok {
 			idsToDelete = append(idsToDelete, obj.ID)
 		}
 	}
@@ -2847,9 +3046,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -2886,6 +3085,17 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
 	if err != nil {
 		return "", err
+	}
+
+	// Builtin provider: Builtin models (e.g. local TEI embeddings) have no
+	// tenant_model_instance records, so there is no tenant-scoped model ID to
+	// resolve.  Downstream resolution (ResolveModelConfig / getModelConfig)
+	// falls through to parseModelName → Builtin routing, which already works.
+	if providerName == "Builtin" && modelType == entity.ModelTypeEmbedding {
+		if builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName); builtinDriver == nil {
+			return "", fmt.Errorf("builtin embedding model %q not found", pureModelName)
+		}
+		return "", nil
 	}
 
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
