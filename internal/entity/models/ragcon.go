@@ -217,7 +217,7 @@ func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, api
 		ToolCalls:     toolCalls,
 	}
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
+		chatResponse.Usage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
 	}
 
 	return chatResponse, nil
@@ -270,7 +270,7 @@ func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]interface{})
-	var streamUsage *ChatUsage
+	var streamUsage *TokenUsage
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -294,7 +294,7 @@ func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 
 		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
-			streamUsage = &ChatUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
+			streamUsage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
 		}
 
 		choices, ok := event["choices"].([]interface{})

@@ -63,16 +63,16 @@ type ChatResponse struct {
 	Answer        *string                  `json:"answer"`
 	ReasonContent *string                  `json:"reason_content"`
 	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
-	Usage         *ChatUsage               `json:"usage,omitempty"`
+	Usage         *TokenUsage              `json:"usage,omitempty"`
 }
 
 // ChatUsage holds token usage split for one LLM call. Consumed by
 // LLMBundle for accurate Langfuse reporting and run aggregation.
 // Mirrors Python's common.token_utils.usage_from_response() split.
-type ChatUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"  mapstructure:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"  mapstructure:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"  mapstructure:"total_tokens"`
 }
 
 type EmbeddingData struct {
@@ -174,7 +174,7 @@ type ChatConfig struct {
 	// The ChatStreamlyWithSender driver writes to this pointer (if
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
-	UsageResult *ChatUsage `json:"-"`
+	UsageResult *TokenUsage `json:"-"`
 	// StreamCallback receives raw content/reasoning deltas as soon as
 	// the model driver streams them.
 	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
@@ -267,7 +267,7 @@ type ChatModel struct {
 	// LastUsage holds the token usage (prompt/completion/total) of the most
 	// recent chat call. Consumed by callers for accurate Langfuse reporting
 	// and per-run token aggregation. Reset before each call.
-	LastUsage *ChatUsage
+	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel

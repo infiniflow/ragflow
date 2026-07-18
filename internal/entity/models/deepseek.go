@@ -242,7 +242,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		ToolCalls:     toolCalls,
 	}
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{
+		chatResponse.Usage = &TokenUsage{
 			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
 		}
 	}

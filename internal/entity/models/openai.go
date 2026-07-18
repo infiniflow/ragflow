@@ -217,7 +217,7 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	// providers that implement the OpenAI-compat API surface (DeepSeek,
 	// Moonshot, etc.) also return a "usage" key with the same shape.
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{
+		chatResponse.Usage = &TokenUsage{
 			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
 		}
 	}
@@ -338,7 +338,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// The last chunk in the stream carries the "usage" key alongside
 	// empty choices; we overwrite on every chunk so the final frame
 	// wins, matching Python's chat_model.py usage_from_response loop.
-	var streamUsage *ChatUsage
+	var streamUsage *TokenUsage
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -367,7 +367,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		// is true, the final chunk carries the full usage breakdown at the
 		// top level of the event alongside (possibly empty) choices.
 		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
-			streamUsage = &ChatUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
+			streamUsage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
 		}
 
 		choices, ok := event["choices"].([]interface{})

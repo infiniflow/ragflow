@@ -30,6 +30,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
 	"strings"
+	"time"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
@@ -197,18 +200,20 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		reasonContent = &result.Choices[0].Message.ReasoningContent
 	}
 
-	usage := &ChatUsage{
+	usage := &TokenUsage{
 		PromptTokens:     result.Usage.PromptTokens,
 		CompletionTokens: result.Usage.CompletionTokens,
 		TotalTokens:      result.Usage.TotalTokens,
 	}
 
+	modelUsage.RequestID = result.RequestId
 	modelUsage.InputTokens = result.Usage.PromptTokens
 	modelUsage.OutputTokens = result.Usage.CompletionTokens
 	modelUsage.TotalTokens = result.Usage.TotalTokens
+	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 
 	clickhouseDriver := clickhouse.GetDriver()
-	err = clickhouseDriver.CollectChatModelUsage(modelUsage)
+	err = clickhouseDriver.CollectModelUsage(modelUsage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect model usage: %w", err)
 	}
@@ -322,7 +327,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	// SSE parsing: read line by line
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
@@ -342,16 +347,29 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
+		}
+
+		tokenUsageMap, ok := event["usage"].(map[string]interface{})
+		if ok {
+			tokenUsage := TokenUsage{}
+			err = mapstructure.Decode(tokenUsageMap, &tokenUsage)
+			modelUsage.InputTokens = tokenUsage.PromptTokens
+			modelUsage.OutputTokens = tokenUsage.CompletionTokens
+			modelUsage.TotalTokens = tokenUsage.TotalTokens
+			modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+			clickhouseDriver := clickhouse.GetDriver()
+			err = clickhouseDriver.CollectModelUsage(modelUsage)
+			return nil
 		}
 
 		return nil

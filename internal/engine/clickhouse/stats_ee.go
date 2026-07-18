@@ -20,6 +20,9 @@ import (
 	"ragflow/internal/common"
 )
 
-func (d *Driver) CollectChatModelUsage(modelUsage *common.ModelUsage) error {
+func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
+	//if modelUsage != nil {
+	//	common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
+	//}
 	return nil
 }

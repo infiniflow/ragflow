@@ -241,7 +241,7 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		ToolCalls:     toolCalls,
 	}
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{
+		chatResponse.Usage = &TokenUsage{
 			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
 		}
 	}

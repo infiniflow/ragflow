@@ -2268,7 +2268,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 }
 
 // ChatToModelWithMessages sends messages to the model with messages array
-func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2323,7 +2323,11 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		}
 	}
 
-	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig, nil)
+	modelUsage.TenantID = info.ProviderEntity.TenantID
+	modelUsage.InstanceID = info.InstanceEntity.ID
+	modelUsage.APIKey = info.InstanceEntity.APIKey
+
+	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2335,7 +2339,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2386,7 +2390,11 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 	}
 
-	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, nil, sender)
+	modelUsage.TenantID = info.ProviderEntity.TenantID
+	modelUsage.InstanceID = info.InstanceEntity.ID
+	modelUsage.APIKey = info.InstanceEntity.APIKey
+
+	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}

@@ -155,7 +155,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	// Langfuse) can compute the run total. Mirrors Python's
 	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
 	if resp != nil && resp.Usage != nil {
-		m.inner.LastUsage = &ChatUsage{
+		m.inner.LastUsage = &TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, m.inner)
