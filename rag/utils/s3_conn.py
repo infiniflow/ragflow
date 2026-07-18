@@ -135,19 +135,18 @@ class RAGFlowS3:
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        last_err = None
         for attempt in range(MAX_RETRIES):
             try:
                 if not self.bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
                     logging.info(f"create bucket {bucket} ********")
                 return self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
-            except Exception as e:
-                last_err = e
+            except Exception:
                 logging.exception(f"Fail put {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
                 time.sleep(2 ** attempt)
-        raise last_err
 
     @use_prefix_path
     @use_default_bucket
@@ -160,24 +159,18 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        last_err = None
         for attempt in range(MAX_RETRIES):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
                 return r["Body"].read()
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "404":
-                    return None
-                last_err = e
-                logging.exception(f"fail get {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
-                self.__open__()
-                time.sleep(2 ** attempt)
             except Exception as e:
-                last_err = e
+                if isinstance(e, ClientError) and e.response["Error"]["Code"] == "404":
+                    return None
                 logging.exception(f"fail get {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
                 time.sleep(2 ** attempt)
-        raise last_err
 
     @use_prefix_path
     @use_default_bucket

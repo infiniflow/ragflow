@@ -155,8 +155,8 @@ class TestPut:
             instance.put("bkt", "key", b"data")
 
         assert instance.conn[0].upload_fileobj.call_count == MAX_RETRIES
-        assert len(patched["opens"]) == MAX_RETRIES
-        assert patched["sleeps"] == [1, 2, 4]
+        assert len(patched["opens"]) == MAX_RETRIES - 1
+        assert patched["sleeps"] == [1, 2]
 
     def test_raises_last_exception_not_first(self, patched):
         instance = _make_instance()
@@ -227,7 +227,7 @@ class TestGet:
 
         assert excinfo.value.response["Error"]["Code"] == "AccessDenied"
         assert instance.conn[0].get_object.call_count == MAX_RETRIES
-        assert patched["sleeps"] == [1, 2, 4]
+        assert patched["sleeps"] == [1, 2]
 
     def test_recovers_after_generic_exception(self, patched):
         instance = _make_instance()
