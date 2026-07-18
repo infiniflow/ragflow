@@ -88,7 +88,7 @@ func (d *stubDriver) Embed(modelName *string, texts []string, apiConfig *models.
 }
 func (d *stubDriver) NewInstance(baseURL map[string]string) models.ModelDriver { return d }
 func (d *stubDriver) Name() string                                             { return "stub" }
-func (d *stubDriver) ChatWithMessages(modelName string, messages []models.Message, apiConfig *models.APIConfig, chatModelConfig *models.ChatConfig, usage *common.ChatModelUsage) (*models.ChatResponse, error) {
+func (d *stubDriver) ChatWithMessages(modelName string, messages []models.Message, apiConfig *models.APIConfig, chatModelConfig *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
 func (d *stubDriver) ChatStreamlyWithSender(modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, sender func(*string, *string) error) error {

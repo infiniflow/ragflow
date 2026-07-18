@@ -93,7 +93,7 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{},
-		&common.ChatModelUsage{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -174,7 +174,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 		},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
-		&common.ChatModelUsage{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -225,7 +225,7 @@ func TestAnthropicChatMapsDataImageURL(t *testing.T) {
 		}}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{},
-		&common.ChatModelUsage{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)

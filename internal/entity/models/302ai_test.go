@@ -98,7 +98,7 @@ func TestAI302ChatForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
-		&common.ChatModelUsage{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -254,7 +254,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, &ChatConfig{}, &common.ChatModelUsage{})
+				_, err := newAI302ForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "api key is required",
@@ -262,7 +262,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, &common.ChatModelUsage{})
+				_, err := newAI302ForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "model name is required",

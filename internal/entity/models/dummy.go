@@ -45,7 +45,7 @@ func (d *DummyModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (d *DummyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ChatModelUsage) (*ChatResponse, error) {
+func (d *DummyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
