@@ -2988,6 +2988,9 @@ The Indexer will store the content in the corresponding data structures for the 
       metadata: 'Metadata',
       toc: 'PageIndex',
       fieldName: 'Result destination',
+      documentLevel: 'Summarize whole document in one pass',
+      documentLevelTip:
+        'When enabled, all chunks are concatenated and sent to the model in a single request instead of one request per chunk, and every chunk receives the same result. Use this for document-level fields (e.g. a document summary) so the result reflects the whole document rather than just the last chunk processed.',
       prompts: {
         system: {
           keywords: `Role
