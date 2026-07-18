@@ -236,6 +236,7 @@ class Dealer:
                             # candidates. Build a fresh expression because the doc
                             # engine may have rewritten the original's extra_options
                             # (e.g. Infinity attaches the full-text filter in place).
+                            logging.debug("Dealer.search dense-only fallback: no full-text matches for question.")
                             matchDenseOnly = MatchDenseExpr(matchDense.vector_column_name, matchDense.embedding_data, "float", "cosine", matchDense.topn, {"similarity": 0.17})
                             res = await thread_pool_exec(self.dataStore.search, src, [], filters, [matchDenseOnly], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                             total = self.dataStore.get_total(res)
