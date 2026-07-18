@@ -138,9 +138,6 @@ func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*servic
 		FileName:    "doc.pdf",
 	}, nil
 }
-func (f *fakeDocumentService) CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error) {
-	return nil, nil
-}
 func (f *fakeDocumentService) GetDocumentByID(id string) (*service.DocumentResponse, error) {
 	if f.docErr != nil {
 		return nil, f.docErr

@@ -40,6 +40,7 @@ type PipelineResult struct {
 	Metadata         map[string]any
 	ChunkCount       int
 	TokenConsumption int
+	Duration         float64 // pipeline wall-clock seconds
 }
 
 type PipelineExecutor struct {
@@ -52,7 +53,7 @@ type PipelineExecutor struct {
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, defaultRunPipeline passes WithRequireResume to the pipeline
+	requireResume   bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -148,6 +149,7 @@ func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
 
 func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error) {
+	start := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -170,7 +172,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, nil
 	}
 
-	result, err := s.processOutput(ctx, pipelineOutput)
+	result, err := s.processOutput(ctx, pipelineOutput, start)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +183,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	return result, nil
 }
 
-func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any) (*PipelineResult, error) {
+func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
 	if pipelineOutput == nil {
 		return nil, nil
 	}
@@ -228,6 +230,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		Metadata:         metadata,
 		ChunkCount:       len(chunks),
 		TokenConsumption: embeddingTokenConsumption,
+		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
 
@@ -281,6 +284,33 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	return string(raw), canvasID, nil
 }
 
+// warnUnknownComponentParams logs a warning for any component id in the
+// parserConfig whose id is absent from the pipeline DSL. The runtime merge
+// (component params -> PatchDSL / override_params) silently drops such
+// entries, so we surface them here for operability. API-side validation
+// already rejects unknown ids on write; this is purely a defensive guard
+// for legacy/stale rows.
+func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
+	if len(parserConfig) == 0 {
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams([]byte(dsl))
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
+		return
+	}
+	dslCPNs := make(map[string]struct{}, len(schemas))
+	for _, s := range schemas {
+		dslCPNs[s.CpnID] = struct{}{}
+	}
+	for cpnID := range parserConfig {
+		if _, ok := dslCPNs[cpnID]; !ok {
+			common.Warn(fmt.Sprintf(
+				"parser_config references cpnID %q not present in the pipeline DSL; it will be ignored at runtime", cpnID))
+		}
+	}
+}
+
 func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
 	if s == nil || s.taskCtx == nil {
 		return nil, dsl, fmt.Errorf("pipeline executor: nil task context")
@@ -288,6 +318,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 
 	parserConfig := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
 	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
+
+	// Surface component params whose cpnID is absent from the DSL. The
+	// runtime merge (PatchDSL / override_params) silently drops such entries;
+	// API-side validation already rejects unknown ids on write, so this is a
+	// defensive guard for legacy/stale rows.
+	warnUnknownComponentParams(dsl, parserConfig)
 	patchedDSL, err := pipelinepkg.PatchDSL(dsl, parserConfig)
 	if err != nil {
 		return nil, dsl, fmt.Errorf("patch dsl with parser_config: %w", err)
