@@ -38,7 +38,6 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -249,7 +248,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -327,7 +326,7 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
-	if err = common.Init(logLevel, fileOut); err != nil {
+	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
@@ -359,7 +358,7 @@ func main() {
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+	if err = engine.InitMessageQueueEngine(config.Ingestor.MQType); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
@@ -369,11 +368,12 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(); err != nil {
+	ctx := context.Background()
+	if err = server.StartServer(ctx, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
-	defer server.ShutdownServer()
+	defer server.ShutdownServer(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName
@@ -495,7 +495,7 @@ func runIngestor(args *serverArgs) error {
 	}
 	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, int32(runtime.NumCPU()), []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()

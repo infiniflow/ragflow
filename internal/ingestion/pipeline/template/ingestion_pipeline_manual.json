@@ -49,33 +49,37 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "doc": {
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "doc"
-                                ]
-                            },
-                            "docx": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "docx"
-                                ],
-                                "vlm": {}
-                            },
-                            "pdf": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": "main_content",
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            }
+                        "doc": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "doc"
+                            ]
+                        },
+                        "docx": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "docx"
+                            ],
+                            "vlm": {}
+                        },
+                        "pdf": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
                         }
                     }
                 },
@@ -85,7 +89,7 @@
             },
             "TitleChunker:NineInsectsFind": {
                 "downstream": [
-                    "Tokenizer:FunnyBalloonsGrin"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "TitleChunker",
@@ -149,8 +153,31 @@
                     }
                 },
                 "upstream": [
-                    "TitleChunker:NineInsectsFind"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TitleChunker:NineInsectsFind"
+                ],
+                "downstream": [
+                    "Tokenizer:FunnyBalloonsGrin"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -173,8 +200,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TitleChunker:NineInsectsFindstart-Tokenizer:FunnyBalloonsGrinend",
+                    "id": "xy-edge__TitleChunker:NineInsectsFindstart-Extractor:AutoExtractDefaultend",
                     "source": "TitleChunker:NineInsectsFind",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:FunnyBalloonsGrinend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:FunnyBalloonsGrin",
                     "targetHandle": "end"
@@ -226,18 +260,24 @@
                                     "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "doc",
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 },
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
                                     "output_format": "json",
-                                    "preprocess": "main_content"
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 }
                             ]
                         },
@@ -406,6 +446,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

@@ -36,6 +36,21 @@ import (
 // stable across calls (a fresh struct{}{} per call would key
 // distinctly and break ctx.Value lookups).
 type stateCtxKey struct{}
+type agentMessageEmitterCtxKey struct{}
+type canvasMessageEmitterCtxKey struct{}
+
+// AgentMessageEmitter emits visible assistant deltas for an Agent component.
+// The service layer owns the actual SSE envelope; runtime keeps the callback
+// shape free of canvas/service imports.
+type AgentMessageEmitter func(contentDelta, thinkingDelta string)
+type CanvasMessageEmitter func(content string)
+
+type agentMessageEmitterState struct {
+	emit     AgentMessageEmitter
+	finalize func() bool
+	reset    func()
+	emitted  bool
+}
 
 // WithState attaches *CanvasState to ctx for retrieval by
 // GetStateFromContext. Production code (canvas/compile.go) calls this
@@ -43,6 +58,110 @@ type stateCtxKey struct{}
 // before invoking a component.
 func WithState(ctx context.Context, s *CanvasState) context.Context {
 	return context.WithValue(ctx, stateCtxKey{}, s)
+}
+
+// WithAgentMessageEmitter attaches the Agent message stream callback used by
+// components that can surface thinking before their node_finished event.
+func WithAgentMessageEmitter(ctx context.Context, emit AgentMessageEmitter, finalize ...func() bool) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	state := &agentMessageEmitterState{emit: emit}
+	if len(finalize) > 0 {
+		state.finalize = finalize[0]
+	}
+	return context.WithValue(ctx, agentMessageEmitterCtxKey{}, state)
+}
+
+// WithAgentMessageEmitterControl attaches the Agent message stream callback
+// with explicit lifecycle hooks for invocation-scoped reset/finalization.
+func WithAgentMessageEmitterControl(ctx context.Context, emit AgentMessageEmitter, finalize func() bool, reset func()) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, agentMessageEmitterCtxKey{}, &agentMessageEmitterState{
+		emit:     emit,
+		finalize: finalize,
+		reset:    reset,
+	})
+}
+
+// WithCanvasMessageEmitter attaches the direct Message-component output
+// callback. Unlike AgentMessageEmitter, this path does not parse <think> tags
+// or buffer chunks; Message nodes are already resolved visible content.
+func WithCanvasMessageEmitter(ctx context.Context, emit CanvasMessageEmitter) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, canvasMessageEmitterCtxKey{}, emit)
+}
+
+// HasAgentMessageEmitter reports whether the service layer installed an
+// Agent message stream callback on ctx.
+func HasAgentMessageEmitter(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	return ok && state != nil && state.emit != nil
+}
+
+// EmitAgentMessage emits Agent answer/thinking deltas when the service layer
+// installed a callback. It returns true when a callback was present.
+func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil || state.emit == nil {
+		return false
+	}
+	state.emit(contentDelta, thinkingDelta)
+	if contentDelta != "" || thinkingDelta != "" {
+		state.emitted = true
+	}
+	return true
+}
+
+// EmitCanvasMessage emits already-rendered Message-component content directly.
+// It also marks the shared message stream as emitted so the service layer does
+// not re-emit the final state content after workflow completion.
+func EmitCanvasMessage(ctx context.Context, content string) bool {
+	emit, ok := ctx.Value(canvasMessageEmitterCtxKey{}).(CanvasMessageEmitter)
+	if !ok || emit == nil {
+		return false
+	}
+	emit(content)
+	if content != "" {
+		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil {
+			state.emitted = true
+		}
+	}
+	return true
+}
+
+// AgentMessageEventsEmitted reports whether the invocation-scoped Agent
+// message emitter has emitted any deltas during the current run.
+func AgentMessageEventsEmitted(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	return ok && state != nil && state.emitted
+}
+
+// FinalizeAgentMessage flushes the invocation-scoped Agent message emitter.
+func FinalizeAgentMessage(ctx context.Context) {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil || state.finalize == nil {
+		return
+	}
+	if state.finalize() {
+		state.emitted = true
+	}
+}
+
+// ResetAgentMessageEmission starts a fresh Agent message emission scope.
+func ResetAgentMessageEmission(ctx context.Context) {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return
+	}
+	if state.reset != nil {
+		state.reset()
+	}
+	state.emitted = false
 }
 
 // GetStateFromContext extracts a typed state attached via WithState.

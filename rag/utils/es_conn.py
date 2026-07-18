@@ -230,7 +230,7 @@ class ESConnection(ESConnectionBase):
         if bool_query:
             s = s.query(bool_query)
         for field in highlight_fields:
-            s = s.highlight(field)
+            s = s.highlight(field, fragment_size=50, number_of_fragments=5)
 
         if order_by:
             orders = list()

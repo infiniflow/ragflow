@@ -229,6 +229,67 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	}
 }
 
+func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put("user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
+		t.Fatalf("put text: %v", err)
+	}
+	if err := memory.Put("user-1-downloads", "image-id", []byte("png")); err != nil {
+		t.Fatalf("put image: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	contents, err := testFileService().parseAgentUploads("user-1", []map[string]interface{}{
+		{"id": "text-id", "name": "notes.txt", "mime_type": "text/plain", "created_by": "user-1"},
+		{"id": "image-id", "name": "photo.bin", "mime_type": "image/png", "created_by": "user-1"},
+	}, "Plain Text")
+	if err != nil {
+		t.Fatalf("ParseAgentUploads: %v", err)
+	}
+	if len(contents) != 2 {
+		t.Fatalf("contents length = %d, want 2", len(contents))
+	}
+	if !strings.Contains(contents[0], "File: notes.txt") || !strings.Contains(contents[0], "uploaded text") {
+		t.Fatalf("unexpected text content: %q", contents[0])
+	}
+	if contents[1] != "data:image/png;base64,cG5n" {
+		t.Fatalf("unexpected image content: %q", contents[1])
+	}
+}
+
+func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	_, err := testFileService().parseAgentUploads("user-1", []map[string]interface{}{
+		{"id": "file-id", "name": "secret.txt", "mime_type": "text/plain", "created_by": "user-2"},
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "created_by does not match") {
+		t.Fatalf("error = %v, want created_by mismatch", err)
+	}
+}
+
+func TestFileService_ParseAgentUploads_MissingObjectFails(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	_, err := testFileService().parseAgentUploads("user-1", []map[string]interface{}{
+		{"id": "missing", "name": "missing.txt", "mime_type": "text/plain", "created_by": "user-1"},
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "read upload") {
+		t.Fatalf("error = %v, want storage read failure", err)
+	}
+}
+
 func TestFileService_DownloadAgentFile_Success(t *testing.T) {
 	// Setup mock storage
 	expectedBlob := []byte("fake file content")

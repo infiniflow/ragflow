@@ -212,22 +212,12 @@ var defaultCheckpointTTL = 24 * time.Hour
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_params map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
 	if p.canvas == nil {
 		return nil, fmt.Errorf("pipeline: canvas is nil")
-	}
-	// runSetups, when non-nil, overrides components' DSL-baked
-	// `params["setups"]` at compile time. It is keyed by cpnID; each
-	// component is merged only with its own entry, and within that entry a
-	// top-level key fully replaces the base entry for that key (see
-	// canvas.mergeSetups). It is variadic so existing callers that pass
-	// only (ctx, inputs) keep working.
-	var runSetups map[string]any
-	if len(setups) > 0 {
-		runSetups = setups[0]
 	}
 	if runtime.DefaultFactory() == nil {
 		runtime.InstallDefaultRegistryFactory()
@@ -269,8 +259,10 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, setups ...map
 		)
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
-	// setups at compile time (higher priority; see canvas.WithSetupOverrides).
-	compileOpts = append(compileOpts, canvas.WithSetupOverrides(runSetups))
+	// setups at compile time (higher priority; see canvas.WithOverrideParams).
+	if override_params != nil {
+		compileOpts = append(compileOpts, canvas.WithOverrideParams(override_params))
+	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
@@ -493,4 +485,57 @@ func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 			Phase:      int(ev.Phase),
 		})
 	}
+}
+
+func PatchDSL(raw string, parserConfig map[string]interface{}) (string, error) {
+	if len(parserConfig) == 0 {
+		return raw, nil
+	}
+
+	var dslMap map[string]any
+	if err := json.Unmarshal([]byte(raw), &dslMap); err != nil {
+		return raw, fmt.Errorf("parse dsl: %w", err)
+	}
+
+	components, _ := dslMap["components"].(map[string]any)
+	if components == nil {
+		if inner, ok := dslMap["dsl"].(map[string]any); ok {
+			components, _ = inner["components"].(map[string]any)
+		}
+		if components == nil {
+			return raw, nil
+		}
+	}
+	for cid, extraVal := range parserConfig {
+		compVal, ok := components[cid]
+		if !ok {
+			continue
+		}
+		extraParams, _ := extraVal.(map[string]any)
+		if extraParams == nil {
+			continue
+		}
+		compMap, _ := compVal.(map[string]any)
+		if compMap == nil {
+			continue
+		}
+		obj, _ := compMap["obj"].(map[string]any)
+		if obj == nil {
+			continue
+		}
+		existing, _ := obj["params"].(map[string]any)
+		if existing == nil {
+			obj["params"] = extraParams
+		} else {
+			for k, v := range extraParams {
+				existing[k] = v
+			}
+		}
+	}
+
+	patched, err := json.Marshal(dslMap)
+	if err != nil {
+		return raw, fmt.Errorf("marshal patched dsl: %w", err)
+	}
+	return string(patched), nil
 }

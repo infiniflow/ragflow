@@ -172,6 +172,31 @@ type ChatConfig struct {
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
 	UsageResult *ChatUsage `json:"-"`
+	// StreamCallback receives raw content/reasoning deltas as soon as
+	// the model driver streams them.
+	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
+}
+
+type ChatAppConfig struct {
+	UserID         string  `json:"user_id"`
+	UserEmail      string  `json:"user_email"`
+	TenantID       string  `json:"tenant_id"`
+	TenantEmail    string  `json:"tenant_email"`
+	GroupID        *string `json:"group_id"`
+	GroupName      *string `json:"group_name"`
+	AppID          string  `json:"app_id"`
+	AppName        string  `json:"app_name"`
+	SessionID      *string `json:"session_id"`
+	ProviderName   string  `json:"provider_name"`
+	InstanceID     string  `json:"instance_id"`
+	ModelName      string  `json:"model_name"`
+	Type           string  `json:"type"`
+	InputTokens    uint64  `json:"input_tokens"`
+	OutputTokens   uint64  `json:"output_tokens"`
+	TotalTokens    uint64  `json:"total_tokens"`
+	RequestID      *string `json:"request_id"`
+	ResponseTimeMS uint64  `json:"response_time_ms"`
+	ErrorMessage   *string `json:"error_message"`
 }
 
 type APIConfig struct {

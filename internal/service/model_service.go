@@ -1159,6 +1159,34 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 		return nil, common.CodeServerError, err
 	}
 
+	// Repair records that have model_type == 0. Before the ModelTypeFromString
+	// fix that added "asr" support, models whose factory catalog used the
+	// canonical name "asr" (instead of the legacy "speech2text") were stored
+	// with model_type = 0. Re-derive the correct bitmask from the factory
+	// catalog and persist it so the model shows up in typed queries.
+	providerManager := dao.GetModelProviderManager()
+	for _, rec := range modelRecords {
+		if rec.ModelType != 0 {
+			continue
+		}
+		provInfo := providerInfoByID[rec.ProviderID]
+		if provInfo == nil {
+			continue
+		}
+		factoryModel, lookupErr := providerManager.GetModelByName(provInfo.ProviderName, rec.ModelName)
+		if lookupErr != nil || len(factoryModel.ModelTypes) == 0 {
+			continue
+		}
+		combinedType := entity.ModelType(0)
+		for _, t := range factoryModel.ModelTypes {
+			combinedType |= entity.ModelTypeFromString(t)
+		}
+		if combinedType != 0 {
+			rec.ModelType = int(combinedType)
+			_ = m.modelDAO.UpdateByID(rec.ID, map[string]interface{}{"model_type": int(combinedType)})
+		}
+	}
+
 	var targetRecords []*entity.TenantModel
 	if modelTypeFilterBin != 0 {
 		for _, rec := range modelRecords {
@@ -1171,7 +1199,6 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 	}
 
 	// Build model rank map from factory catalog (mirrors Python's model_rank_map).
-	providerManager := dao.GetModelProviderManager()
 	modelRankMap := make(map[string]int) // key: "providerName@modelName"
 	factoryRankMapping := make(map[string]int)
 	for i := range providerManager.Providers {
@@ -3019,9 +3046,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -3058,6 +3085,17 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
 	if err != nil {
 		return "", err
+	}
+
+	// Builtin provider: Builtin models (e.g. local TEI embeddings) have no
+	// tenant_model_instance records, so there is no tenant-scoped model ID to
+	// resolve.  Downstream resolution (ResolveModelConfig / getModelConfig)
+	// falls through to parseModelName → Builtin routing, which already works.
+	if providerName == "Builtin" && modelType == entity.ModelTypeEmbedding {
+		if builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName); builtinDriver == nil {
+			return "", fmt.Errorf("builtin embedding model %q not found", pureModelName)
+		}
+		return "", nil
 	}
 
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
