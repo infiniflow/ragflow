@@ -162,12 +162,28 @@ class Extractor(ProcessBase, LLM):
                 candidate = json_repair.loads(result)
             except Exception:
                 continue
-            if isinstance(candidate, dict) and candidate:
-                parsed = candidate
+            if not isinstance(candidate, dict):
+                continue
+            # This field's whole point is open-ended metadata extraction: the
+            # sys_prompt (not field_name -- DataflowService._process_chunks()
+            # only ever checks the literal chunk key "metadata") decides what
+            # keys come back, so there is no fixed schema to validate key
+            # names against here (unlike LLM._invoke_async's "structured"
+            # output branch, which has one via self._param.outputs). What IS
+            # fixed is the value shape update_metadata_to() (common/
+            # metadata_utils.py) accepts downstream: str or list-of-str,
+            # everything else is silently dropped there. Filter to that same
+            # shape here so a reply that's syntactically a JSON object but
+            # semantically useless (e.g. {"document_description": {"nested":
+            # 1}}) is treated as a failed attempt and retried, instead of
+            # being "accepted" and then silently dropped several calls later.
+            usable = {k: v for k, v in candidate.items() if isinstance(v, str) or (isinstance(v, list) and all(isinstance(vv, str) for vv in v))}
+            if usable:
+                parsed = usable
                 break
 
         if parsed is None:
-            logging.warning("Extractor document_level: model never returned a parsable JSON object for field %r; skipping.", self._param.field_name)
+            logging.warning("Extractor document_level: model never returned a usable JSON object for field %r; skipping.", self._param.field_name)
             return
 
         parsed = {k: (_strip_markdown(v) if isinstance(v, str) else v) for k, v in parsed.items()}

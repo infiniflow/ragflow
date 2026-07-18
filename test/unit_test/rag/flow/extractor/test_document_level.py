@@ -26,6 +26,8 @@ retry-until-parsable-JSON loop (mirroring LLM._invoke_async's own
 unparsable prose end up stored as metadata.
 """
 
+import json
+
 import pytest
 
 from rag.flow.extractor.extractor import Extractor, ExtractorParam, _strip_markdown
@@ -182,6 +184,27 @@ class TestDocumentLevelExtract:
 
         assert len(chat_mdl.calls) == 2
         assert chunks[0]["document_description"] == '{"document_description": "Real content."}'
+
+    async def test_non_string_values_are_filtered_and_retried(self):
+        """update_metadata_to() (common/metadata_utils.py) only accepts str
+        or list-of-str values and silently drops anything else per-key.
+        A reply that's valid JSON but carries an unusable value type (e.g. a
+        nested object) must not be "accepted" here only to be dropped later
+        -- filter it out and, if nothing usable is left, retry."""
+        chat_mdl = _FakeChatModel(
+            [
+                '{"document_description": {"nested": "not a string"}}',
+                '{"document_description": "Usable string.", "tags": ["a", "b"]}',
+            ]
+        )
+        cpn = _make_extractor(document_level=True, max_retries=1, chat_mdl=chat_mdl)
+        chunks = _chunks("some document text")
+
+        await cpn._document_level_extract(chunks, "document", {})
+
+        assert len(chat_mdl.calls) == 2
+        stored = json.loads(chunks[0]["document_description"])
+        assert stored == {"document_description": "Usable string.", "tags": ["a", "b"]}
 
     async def test_strips_markdown_from_stored_string_values(self):
         chat_mdl = _FakeChatModel(['{"document_description": "# Heading\\n**bold** summary text."}'])
