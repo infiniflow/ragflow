@@ -59,7 +59,7 @@ func (u *docStateUpdater) apply(r *taskpkg.PipelineResult) {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, 0); err != nil {
+	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
 	}
 }

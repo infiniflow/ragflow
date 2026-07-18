@@ -535,6 +535,29 @@ func MapRotatedPointToOriginal(x, y float64, angle int, origW, origH int) (float
 	}
 }
 
+// MapRotatedRectToOriginal maps a rotated-image rectangle back into original
+// image coordinates and normalizes the resulting bounds. For 90°/270° rotation,
+// mapping only two diagonal corners can invert X/Y bounds; mapping all four
+// corners preserves the enclosing rectangle.
+func MapRotatedRectToOriginal(x0, y0, x1, y1 float64, angle int, origW, origH int) (float64, float64, float64, float64) {
+	points := [][2]float64{
+		{x0, y0},
+		{x1, y0},
+		{x0, y1},
+		{x1, y1},
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, p := range points {
+		x, y := MapRotatedPointToOriginal(p[0], p[1], angle, origW, origH)
+		minX = math.Min(minX, x)
+		minY = math.Min(minY, y)
+		maxX = math.Max(maxX, x)
+		maxY = math.Max(maxY, y)
+	}
+	return minX, minY, maxX, maxY
+}
+
 // CropImageRegion crops a pdf.DLARegion from an image with a 3% margin
 // (matching Python's _table_transformer_job: w*0.03, h*0.03).
 func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {

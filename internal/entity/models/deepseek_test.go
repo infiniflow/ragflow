@@ -79,6 +79,7 @@ func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
 			},
 			ToolChoice: &toolChoice,
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -141,6 +142,7 @@ func TestDeepSeekChatWithMessagesForwardsToolHistory(t *testing.T) {
 			{Role: "tool", ToolCallID: "call-1", Content: `{"formalized_content":"marigold"}`},
 		},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err != nil {

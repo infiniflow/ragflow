@@ -120,6 +120,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -133,7 +134,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 }
 
 func TestTokenHubChatRequiresAPIKey(t *testing.T) {
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages("gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages("gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
@@ -141,7 +142,7 @@ func TestTokenHubChatRequiresAPIKey(t *testing.T) {
 
 func TestTokenHubChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Fatalf("expected model-name error, got %v", err)
 	}
@@ -163,6 +164,7 @@ func TestTokenHubStreamHappyPath(t *testing.T) {
 		"gpt-4o-mini",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, r *string) error {
 			if c != nil {
@@ -193,6 +195,7 @@ func TestTokenHubStreamRejectsFalseStreamConfig(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -208,6 +211,7 @@ func TestTokenHubStreamRequiresSender(t *testing.T) {
 		&APIConfig{ApiKey: &apiKey},
 		nil,
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Fatalf("expected sender error, got %v", err)
@@ -219,6 +223,7 @@ func TestTokenHubStreamRequiresAPIKey(t *testing.T) {
 		"gpt-4o-mini",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
+		nil,
 		nil,
 		func(*string, *string) error { return nil },
 	)
@@ -233,6 +238,7 @@ func TestTokenHubStreamRequiresModelName(t *testing.T) {
 		" ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(*string, *string) error { return nil },
 	)
@@ -263,7 +269,7 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newTokenHubForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newTokenHubForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -274,14 +280,14 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 
 func TestTokenHubEmbedValidatesInputs(t *testing.T) {
 	apiKey := "test-key"
-	if embeddings, err := newTokenHubForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newTokenHubForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty input should return empty embeddings, got %#v err=%v", embeddings, err)
 	}
-	if _, err := newTokenHubForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newTokenHubForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Fatalf("expected model-name error, got %v", err)
 	}
 	model := "text-embedding-3-small"
-	if _, err := newTokenHubForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newTokenHubForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
 }
