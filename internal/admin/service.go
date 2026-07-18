@@ -27,9 +27,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/stats"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -1383,7 +1383,7 @@ func (s *Service) checkTracingAlive(name string) (map[string]interface{}, error)
 
 // checkOlapAlive checks if ClickHouse is alive
 func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
-	clickhouseDriver := clickhouse.GetDriver()
+	clickhouseDriver := stats.GetDriver()
 	if clickhouseDriver == nil {
 		return map[string]interface{}{
 			"service_name": name,

@@ -28,7 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/clickhouse"
+	"ragflow/internal/engine/stats"
 	"strings"
 	"time"
 
@@ -212,7 +212,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	modelUsage.TotalTokens = result.Usage.TotalTokens
 	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 
-	clickhouseDriver := clickhouse.GetDriver()
+	clickhouseDriver := stats.GetDriver()
 	err = clickhouseDriver.CollectModelUsage(modelUsage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect model usage: %w", err)
@@ -367,7 +367,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			modelUsage.OutputTokens = tokenUsage.CompletionTokens
 			modelUsage.TotalTokens = tokenUsage.TotalTokens
 			modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
-			clickhouseDriver := clickhouse.GetDriver()
+			clickhouseDriver := stats.GetDriver()
 			err = clickhouseDriver.CollectModelUsage(modelUsage)
 			return nil
 		}

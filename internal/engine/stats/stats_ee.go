@@ -14,15 +14,33 @@
 //  limitations under the License.
 //
 
-package clickhouse
+package stats
 
 import (
 	"ragflow/internal/common"
+	"sync"
 )
+
+var (
+	globalDriver *Driver
+	once         sync.Once
+)
+
+type Driver struct {
+}
+
+// GetDriver gets global stats client instance
+func GetDriver() *Driver {
+	return globalDriver
+}
 
 func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
 	//if modelUsage != nil {
 	//	common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
 	//}
 	return nil
+}
+
+func (d *Driver) Status() (map[string]interface{}, error) {
+	return nil, nil
 }
