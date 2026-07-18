@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -16,43 +17,24 @@ func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[stri
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	documents, _, err := d.documentDAO.GetByKBID(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	status, err := d.documentDAO.GetParsingStatusByKBID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	total := len(documents)
-	running := 0
-	cancel := 0
-	done := 0
-	fail := 0
-	unstart := 0
-	for _, doc := range documents {
-		run := ""
-		if doc.Run != nil {
-			run = *doc.Run
-		}
-		switch run {
-		case string(entity.TaskStatusRunning):
-			running++
-		case string(entity.TaskStatusCancel):
-			cancel++
-		case string(entity.TaskStatusDone):
-			done++
-		case string(entity.TaskStatusFail):
-			fail++
-		default:
-			unstart++
-		}
-	}
-
 	return map[string]interface{}{
-		"total":   total,
-		"unset":   unstart,
-		"running": running,
-		"cancel":  cancel,
-		"done":    done,
-		"fail":    fail,
+		"doc_num":   kb.DocNum,
+		"chunk_num": kb.ChunkNum,
+		"token_num": kb.TokenNum,
+		"status":    status,
 	}, common.CodeSuccess, nil
 }
 
@@ -74,22 +56,35 @@ func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 		orderby = "create_time"
 	}
 
-	logs, total, err := d.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+	var (
+		logs  []*entity.PipelineOperationLog
+		total int64
+		err   error
+	)
+	if logType == "file" {
+		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
+	} else {
+		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+	}
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("list ingestion logs: %w", err)
 	}
 
-	data := make([]map[string]interface{}, 0, len(logs))
+	items := make([]map[string]interface{}, 0, len(logs))
 	for _, log := range logs {
 		if log == nil {
 			continue
 		}
-		data = append(data, datasetIngestionLogToMap(log))
+		if logType == "file" {
+			items = append(items, fileIngestionLogToMap(log))
+		} else {
+			items = append(items, datasetIngestionLogToMap(log))
+		}
 	}
 
 	return map[string]interface{}{
-		"data":  data,
 		"total": total,
+		"logs":  items,
 	}, common.CodeSuccess, nil
 }
 
@@ -143,5 +138,30 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog) map[string]inter
 }
 
 func fileIngestionLogToMap(log *entity.PipelineOperationLog) map[string]interface{} {
-	return datasetIngestionLogToMap(log)
+	return map[string]interface{}{
+		"id":               log.ID,
+		"document_id":      log.DocumentID,
+		"tenant_id":        log.TenantID,
+		"kb_id":            log.KbID,
+		"pipeline_id":      stringPointerValue(log.PipelineID),
+		"pipeline_title":   stringPointerValue(log.PipelineTitle),
+		"parser_id":        log.ParserID,
+		"document_name":    log.DocumentName,
+		"document_suffix":  log.DocumentSuffix,
+		"document_type":    log.DocumentType,
+		"source_from":      log.SourceFrom,
+		"progress":         log.Progress,
+		"progress_msg":     stringPointerValue(log.ProgressMsg),
+		"process_begin_at": timePointerValue(log.ProcessBeginAt),
+		"process_duration": log.ProcessDuration,
+		"dsl":              jsonMapValue(log.DSL),
+		"task_type":        log.TaskType,
+		"operation_status": log.OperationStatus,
+		"avatar":           stringPointerValue(log.Avatar),
+		"status":           stringPointerValue(log.Status),
+		"create_time":      int64PointerValue(log.CreateTime),
+		"create_date":      timePointerValue(log.CreateDate),
+		"update_time":      int64PointerValue(log.UpdateTime),
+		"update_date":      timePointerValue(log.UpdateDate),
+	}
 }

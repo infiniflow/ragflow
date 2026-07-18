@@ -23,7 +23,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Document not found.")
+			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
 		}
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
