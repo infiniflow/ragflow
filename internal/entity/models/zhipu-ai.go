@@ -405,7 +405,7 @@ type zhipuUsage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// Encode encodes a list of texts into embeddings
+// Embed embeddings a list of texts into embeddings
 func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
