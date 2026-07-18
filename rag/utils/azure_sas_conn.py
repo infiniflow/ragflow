@@ -20,7 +20,10 @@ import time
 from io import BytesIO
 from common.decorator import singleton
 from azure.storage.blob import ContainerClient
+from azure.core.exceptions import ResourceNotFoundError
 from common import settings
+
+MAX_RETRIES = 3
 
 
 @singleton
@@ -53,13 +56,15 @@ class RAGFlowAzureSasBlob:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(3):
+        for attempt in range(MAX_RETRIES):
             try:
                 return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary))
             except Exception:
-                logging.exception(f"Fail put {blob_name}")
+                logging.exception(f"Fail put {blob_name} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
 
     def rm(self, bucket, fnm):
         try:
@@ -69,14 +74,18 @@ class RAGFlowAzureSasBlob:
 
     def get(self, bucket, fnm):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 r = self.conn.download_blob(blob_name)
                 return r.read()
+            except ResourceNotFoundError:
+                return None
             except Exception:
-                logging.exception(f"fail get {blob_name}")
+                logging.exception(f"fail get {blob_name} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
         return None
 
     def obj_exist(self, bucket, fnm):
