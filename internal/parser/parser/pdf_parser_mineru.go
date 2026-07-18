@@ -50,7 +50,7 @@ func parsePDFWithMinerU(filename string, data []byte, parser *PDFParser) ParseRe
 		apiConfig.ApiKey = &apiKey
 	}
 
-	task, err := driver.ParseFile(&backend, data, nil, apiConfig, &models.ParseFileConfig{})
+	task, err := driver.ParseFile(&backend, data, nil, apiConfig, &models.ParseFileConfig{}, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}

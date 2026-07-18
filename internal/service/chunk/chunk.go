@@ -1352,7 +1352,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
