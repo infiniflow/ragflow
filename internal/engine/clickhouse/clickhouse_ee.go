@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package stats
+package clickhouse
 
 import (
 	"ragflow/internal/common"
