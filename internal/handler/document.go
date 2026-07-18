@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/httputil"
 	"ragflow/internal/utility"
 	"strconv"
 	"strings"
@@ -45,7 +44,6 @@ var IMG_BASE64_PREFIX = "data:image/png;base64,"
 
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
-	CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error)
 	GetDocumentByID(id string) (*service.DocumentResponse, error)
 	UpdateDocument(id string, req *service.UpdateDocumentRequest) error
 	DeleteDocument(id string) error
@@ -96,41 +94,6 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *se
 		documentService: documentService,
 		datasetService:  datasetService,
 	}
-}
-
-// CreateDocument create document
-// @Summary Create Document
-// @Description Create new document
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Param request body service.CreateDocumentRequest true "document info"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/documents [post]
-func (h *DocumentHandler) CreateDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req service.CreateDocumentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	document, err := h.documentService.CreateDocument(&req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	common.SuccessWithData(c, document, "created successfully")
 }
 
 // GetDocumentByID get document by ID
@@ -987,15 +950,15 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
 // public response shape (chunk_num→chunk_count, token_num→token_count,
-// kb_id→dataset_id, parser_id→chunk_method) and reports run as a label.
+// kb_id→dataset_id) and reports run as a label.
 // Mirrors Python map_doc_keys_with_run_status / map_doc_keys.
 func mapDocKeysWithRunStatus(raw map[string]interface{}) map[string]interface{} {
 	out := map[string]interface{}{
-		"chunk_count":  raw["chunk_num"],
-		"token_count":  raw["token_num"],
-		"dataset_id":   raw["kb_id"],
-		"chunk_method": raw["parser_id"],
-		"run":          "UNSTART",
+		"chunk_count": raw["chunk_num"],
+		"token_count": raw["token_num"],
+		"dataset_id":  raw["kb_id"],
+		"parser_id":   raw["parser_id"],
+		"run":         "UNSTART",
 	}
 	for _, k := range []string{"id", "name", "type", "size", "suffix", "source_type", "created_by", "parser_config", "location", "pipeline_id", "content_hash"} {
 		if v, ok := raw[k]; ok {
@@ -1058,7 +1021,6 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),
-		"chunk_method":     doc.ParserID,
 		"parser_id":        doc.ParserID,
 		"pipeline_id":      stringValue(doc.PipelineID),
 		"pipeline_name":    stringValue(doc.PipelineName),
@@ -1409,7 +1371,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 	parseResult, err = h.documentService.ListIngestionTasks(userID, req.DatasetID, 0, 0)
 	if err != nil {
-		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
+		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 
@@ -1459,7 +1421,7 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 
 	parseResult, err := h.documentService.StopIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
+		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, parseResult, "success")
@@ -1485,7 +1447,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, httputil.IngestionTaskErrorCode(err), nil, err.Error())
+		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, deletedTasks, "success")

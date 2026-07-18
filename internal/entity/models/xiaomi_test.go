@@ -115,7 +115,7 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking},
+		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -145,7 +145,7 @@ func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
 		map[string]string{"default": "http://unused"},
 		URLSuffix{Chat: "override/chat"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil)
+	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -207,13 +207,13 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 func TestXiaomiChatRequiresInputs(t *testing.T) {
 	apiKey := "test-key"
 	m := newXiaomiForTest("http://unused")
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("api key guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("model guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
+	if _, err := m.ChatWithMessages("mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("messages guard: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestXiaomiChatRejectsHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -253,6 +253,7 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, r *string) error {
 			if c != nil && *c == "[DONE]" {
@@ -299,6 +300,7 @@ func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 		func(c *string, _ *string) error {
 			if c != nil && *c != "[DONE]" {
 				content = append(content, *c)
@@ -323,7 +325,7 @@ func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
 
 	apiKey := "test-key"
 	// Malformed SSE frames are silently skipped; the stream completes and sends [DONE].
-	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error { return nil })
+	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })
 	if err != nil {
 		t.Errorf("expected no error on malformed frame, got %v", err)
 	}
@@ -335,10 +337,10 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
 
-	if _, err := m.Embed(&model, []string{"x"}, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(&model, []string{"x"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: %v", err)
 	}
-	if _, err := m.Rerank(&model, "q", []string{"d"}, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(&model, "q", []string{"d"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
 	// CheckConnection IS implemented — verifies API config and base URL are reachable.
@@ -346,14 +348,14 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 		t.Errorf("CheckConnection: %v", err)
 	}
 	// TranscribeAudio IS implemented; with nil file it returns input validation error.
-	if _, err := m.TranscribeAudio(&model, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "file is missing") {
+	if _, err := m.TranscribeAudio(&model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "file is missing") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
 	// AudioSpeech IS implemented; with nil content it returns input validation error.
-	if _, err := m.AudioSpeech(&model, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
+	if _, err := m.AudioSpeech(&model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

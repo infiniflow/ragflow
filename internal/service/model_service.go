@@ -2268,7 +2268,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 }
 
 // ChatToModelWithMessages sends messages to the model with messages array
-func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2323,7 +2323,11 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		}
 	}
 
-	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig)
+	modelUsage.TenantID = info.ProviderEntity.TenantID
+	modelUsage.InstanceID = info.InstanceEntity.ID
+	modelUsage.APIKey = info.InstanceEntity.APIKey
+
+	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2335,7 +2339,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2386,7 +2390,11 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 	}
 
-	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, sender)
+	modelUsage.TenantID = info.ProviderEntity.TenantID
+	modelUsage.InstanceID = info.InstanceEntity.ID
+	modelUsage.APIKey = info.InstanceEntity.APIKey
+
+	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2478,7 +2486,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig)
+	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2540,7 +2548,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig)
+	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2594,7 +2602,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 	}
 
 	var response *modelModule.ASRResponse
-	response, err = modelDriver.TranscribeAudio(modelName, audioFile, apiConfig, modelConfig)
+	response, err = modelDriver.TranscribeAudio(modelName, audioFile, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2650,7 +2658,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		}
 	}
 
-	err = modelDriver.TranscribeAudioWithSender(modelName, audioFile, apiConfig, modelConfig, sender)
+	err = modelDriver.TranscribeAudioWithSender(modelName, audioFile, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2704,7 +2712,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 	}
 
 	var response *modelModule.TTSResponse
-	response, err = modelDriver.AudioSpeech(modelName, audioContent, apiConfig, modelConfig)
+	response, err = modelDriver.AudioSpeech(modelName, audioContent, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2759,7 +2767,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		}
 	}
 
-	err = modelDriver.AudioSpeechWithSender(modelName, audioContent, apiConfig, modelConfig, sender)
+	err = modelDriver.AudioSpeechWithSender(modelName, audioContent, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2812,7 +2820,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, mo
 	}
 
 	var response *modelModule.OCRFileResponse
-	response, err = modelDriver.OCRFile(modelName, content, url, apiConfig, modelConfig)
+	response, err = modelDriver.OCRFile(modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2867,7 +2875,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 	}
 
 	var response *modelModule.ParseFileResponse
-	response, err = modelDriver.ParseFile(modelName, content, url, apiConfig, modelConfig)
+	response, err = modelDriver.ParseFile(modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

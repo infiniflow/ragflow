@@ -113,7 +113,7 @@ func TestRAGconChatHappyPath(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -134,7 +134,7 @@ func TestRAGconChatRequiresAPIKey(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key-required error, got %v", err)
@@ -147,7 +147,7 @@ func TestRAGconChatRequiresMessages(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
@@ -166,7 +166,7 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 status error, got %v", err)
@@ -198,6 +198,7 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
@@ -234,6 +235,7 @@ func TestRAGconStreamRejectsNilSender(t *testing.T) {
 		&APIConfig{ApiKey: &apiKey},
 		nil,
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
@@ -256,7 +258,7 @@ func TestRAGconEmbed(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newRAGconForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newRAGconForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -284,7 +286,7 @@ func TestRAGconRerank(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "rerank-v1"
-	resp, err := newRAGconForTest(srv.URL).Rerank(&model, "q", []string{"doc0", "doc1"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2})
+	resp, err := newRAGconForTest(srv.URL).Rerank(&model, "q", []string{"doc0", "doc1"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -350,7 +352,7 @@ func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "whisper-1"
-	resp, err := newRAGconForTest(srv.URL).TranscribeAudio(&model, &audioPath, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newRAGconForTest(srv.URL).TranscribeAudio(&model, &audioPath, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
 	}
@@ -374,7 +376,7 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 	apiKey := "test-key"
 	model := "tts-1"
 	text := "hello"
-	resp, err := newRAGconForTest(srv.URL).AudioSpeech(&model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}})
+	resp, err := newRAGconForTest(srv.URL).AudioSpeech(&model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}}, nil)
 	if err != nil {
 		t.Fatalf("AudioSpeech: %v", err)
 	}
@@ -390,10 +392,10 @@ func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	if _, err := r.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := r.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
-	if _, err := r.ParseFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ParseFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: expected no such method, got %v", err)
 	}
 	if _, err := r.ListTasks(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
