@@ -344,38 +344,38 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"stream", m.ChatStreamlyWithSender(modelName, []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error { return nil })},
+		{"stream", m.ChatStreamlyWithSender(modelName, []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })},
 	}
 	for _, check := range checks {
 		if check.err == nil || !strings.Contains(check.err.Error(), "no such method") {
 			t.Errorf("%s: want no such method, got %v", check.name, check.err)
 		}
 	}
-	if _, err := m.Embed(&modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(&modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: got %v", err)
 	}
-	if _, err := m.Rerank(&modelName, "q", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(&modelName, "q", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: got %v", err)
 	}
 	if _, err := m.Balance(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: got %v", err)
 	}
-	if _, err := m.TranscribeAudio(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: got %v", err)
 	}
-	if err := m.TranscribeAudioWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.TranscribeAudioWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: got %v", err)
 	}
-	if _, err := m.AudioSpeech(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: got %v", err)
 	}
-	if err := m.AudioSpeechWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.AudioSpeechWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: got %v", err)
 	}
-	if _, err := m.OCRFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: got %v", err)
 	}
-	if _, err := m.ParseFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ParseFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: got %v", err)
 	}
 	if _, err := m.ListTasks(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {

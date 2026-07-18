@@ -214,7 +214,7 @@ func TestAstraflowStreamHappyPath(t *testing.T) {
 	err := newAstraflowForTest(srv.URL).ChatStreamlyWithSender(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -252,7 +252,7 @@ func TestAstraflowStreamSplitsReasoning(t *testing.T) {
 	err := newAstraflowForTest(srv.URL).ChatStreamlyWithSender(
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -284,6 +284,7 @@ func TestAstraflowStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-true guard, got %v", err)
@@ -295,7 +296,7 @@ func TestAstraflowStreamRequiresSender(t *testing.T) {
 	err := newAstraflowForTest("http://unused").ChatStreamlyWithSender(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
@@ -311,7 +312,7 @@ func TestAstraflowStreamFailsWithoutTerminal(t *testing.T) {
 	err := newAstraflowForTest(srv.URL).ChatStreamlyWithSender(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
@@ -329,7 +330,7 @@ func TestAstraflowStreamRejectsMalformedFrame(t *testing.T) {
 	err := newAstraflowForTest(srv.URL).ChatStreamlyWithSender(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
 		t.Errorf("expected invalid-SSE error, got %v", err)
@@ -347,7 +348,7 @@ func TestAstraflowStreamSurfacesUpstreamError(t *testing.T) {
 	err := newAstraflowForTest(srv.URL).ChatStreamlyWithSender(
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
 		t.Errorf("expected upstream-error surfacing, got %v", err)
@@ -429,7 +430,7 @@ func TestAstraflowEmbedReturnsNoSuchMethod(t *testing.T) {
 	// Embed IS implemented (not a stub). It should NOT be blocked by APIConfigCheck.
 	// With empty input texts it short-circuits to empty result (no error).
 	apiKey := "test-key"
-	embeddings, err := newAstraflowForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newAstraflowForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Errorf("Embed: want empty result (no error), got embeddings=%v err=%v", embeddings, err)
 	}
@@ -440,16 +441,16 @@ func TestAstraflowAudioOCRReturnNoSuchMethod(t *testing.T) {
 	model := "x"
 	apiKey := "test-key"
 	// TranscribeAudio is a stub → "no such method"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
 	// AudioSpeech IS implemented; pass nil content to hit input validation,
 	// not api-key check (which would mean APIConfigCheck still blocks it).
-	if _, err := m.AudioSpeech(&model, nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.AudioSpeech(&model, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("AudioSpeech: expected non-api-key error, got %v", err)
 	}
 	// OCRFile is a stub → "no such method"
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

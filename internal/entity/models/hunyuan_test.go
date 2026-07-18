@@ -222,7 +222,7 @@ func TestHunyuanStreamHappyPath(t *testing.T) {
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -260,7 +260,7 @@ func TestHunyuanStreamSplitsReasoning(t *testing.T) {
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
 		"hunyuan-standard-256K",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -292,6 +292,7 @@ func TestHunyuanStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-true guard, got %v", err)
@@ -303,7 +304,7 @@ func TestHunyuanStreamRequiresSender(t *testing.T) {
 	err := newHunyuanForTest("http://unused").ChatStreamlyWithSender(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
@@ -319,7 +320,7 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
@@ -337,7 +338,7 @@ func TestHunyuanStreamRejectsMalformedFrame(t *testing.T) {
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
 		t.Errorf("expected invalid-SSE error, got %v", err)
@@ -355,7 +356,7 @@ func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
 	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
 		t.Errorf("expected upstream-error surfacing, got %v", err)
@@ -455,7 +456,7 @@ func TestHunyuanEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
-	embeddings, err := newHunyuanForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newHunyuanForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -468,24 +469,24 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
 
-	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
 		t.Errorf("empty input: embeddings=%+v err=%v", embeddings, err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("nil model: %v", err)
 	}
 	emptyModel := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(&emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("nil api config: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("missing api key: %v", err)
 	}
 	emptyKey := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty api key: %v", err)
 	}
 }
@@ -493,13 +494,13 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 func TestHunyuanAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := newHunyuanForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

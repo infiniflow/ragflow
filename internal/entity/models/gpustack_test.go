@@ -270,7 +270,7 @@ func TestGPUStackStreamHappyPath(t *testing.T) {
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -308,7 +308,7 @@ func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				reasoning = append(reasoning, *r)
@@ -338,6 +338,7 @@ func TestGPUStackStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -350,7 +351,7 @@ func TestGPUStackStreamRequiresSender(t *testing.T) {
 	err := newGPUStackForTest("http://unused").ChatStreamlyWithSender(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
@@ -367,7 +368,7 @@ func TestGPUStackStreamFailsWithoutTerminal(t *testing.T) {
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
@@ -386,7 +387,7 @@ func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
@@ -405,7 +406,7 @@ func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
@@ -479,7 +480,7 @@ func TestGPUStackEmbedHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512})
+		&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -507,7 +508,7 @@ func TestGPUStackEmbedReordersByIndex(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+		&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -528,7 +529,7 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	vecs, err := newGPUStackForTest(srv.URL).Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
+	vecs, err := newGPUStackForTest(srv.URL).Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -540,7 +541,7 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 // TestGPUStackEmbedRequiresAPIKey rejects requests without an API key.
 func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
 	model := "bge-m3"
-	_, err := newGPUStackForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
+	_, err := newGPUStackForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
@@ -560,7 +561,7 @@ func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -579,7 +580,7 @@ func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -598,7 +599,7 @@ func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
 		t.Errorf("expected missing-index error, got %v", err)
 	}
@@ -617,7 +618,7 @@ func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "empty embedding vector") {
 		t.Errorf("expected empty-vector error, got %v", err)
 	}
@@ -636,7 +637,7 @@ func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
@@ -645,19 +646,19 @@ func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
 func TestGPUStackUnsupportedMethods(t *testing.T) {
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
 	if _, err := m.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: %v", err)
 	}
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

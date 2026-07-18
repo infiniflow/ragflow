@@ -46,7 +46,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 	ch := make(chan string, 256)
 	go func() {
 		defer close(ch)
-		if err := chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, messages, chatModel.APIConfig, config,
+		if err := chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, messages, chatModel.APIConfig, config, nil,
 			func(delta *string, _ *string) error {
 				if delta == nil {
 					return nil

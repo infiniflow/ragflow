@@ -278,7 +278,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		var pendingThinkClose bool
 		var roundTokens int
 
-		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				if !reasoningStarted {
 					reasoningStarted = true
@@ -351,7 +351,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	var exceedUsage ChatUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
-	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 		if delta != nil && *delta != "" && *delta != "[DONE]" {
 			exceedTokens += tokenizer.NumTokensFromString(*delta)
 		}

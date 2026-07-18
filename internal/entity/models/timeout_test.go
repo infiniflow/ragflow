@@ -90,6 +90,7 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 		func(c *string, _ *string) error {
 			if c != nil && *c != "[DONE]" {
 				got.WriteString(*c)

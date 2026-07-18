@@ -1084,31 +1084,31 @@ func (d *stubEmbeddingDriver) Name() string                                     
 func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig) (*models.ASRResponse, error) {
+func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig) (*models.TTSResponse, error) {
+func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage) (*models.TTSResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig) (*models.OCRFileResponse, error) {
+func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig, *common.ModelUsage) (*models.OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig) (*models.ParseFileResponse, error) {
+func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig, *common.ModelUsage) (*models.ParseFileResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) ListModels(*models.APIConfig) ([]models.ListModelResponse, error) {

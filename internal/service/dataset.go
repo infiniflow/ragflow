@@ -942,7 +942,7 @@ func datasetCleanEmbeddingText(s string) string {
 
 func datasetEncodeEmbedding(embeddingModel *models.EmbeddingModel, texts []string) ([][]float64, error) {
 	embeddingConfig := &models.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, texts, embeddingModel.APIConfig, embeddingConfig)
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, texts, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

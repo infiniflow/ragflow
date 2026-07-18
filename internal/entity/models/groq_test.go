@@ -207,7 +207,7 @@ func TestGroqStreamHappyPath(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 		func(c *string, r *string) error {
 			if c != nil {
 				if *c == "[DONE]" {
@@ -244,6 +244,7 @@ func TestGroqStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -257,6 +258,7 @@ func TestGroqStreamRequiresSender(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		nil,
 	)
@@ -277,6 +279,7 @@ func TestGroqStreamRejectsUnterminatedStream(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(*string, *string) error { return nil },
 	)
@@ -375,16 +378,16 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 
 func TestGroqUnsupportedMethods(t *testing.T) {
 	m := newGroqForTest("http://unused")
-	if _, err := m.Embed(nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed error=%v", err)
 	}
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
-	if _, err := m.ParseFile(nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ParseFile(nil, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile error=%v", err)
 	}
 	if _, err := m.ListTasks(nil); err == nil || !strings.Contains(err.Error(), "no such method") {

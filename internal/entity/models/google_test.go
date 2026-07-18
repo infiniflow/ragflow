@@ -207,7 +207,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := model.ChatStreamlyWithSender("gemini-2.5-flash", messages, tc.apiConfig, nil, func(*string, *string) error {
+			err := model.ChatStreamlyWithSender("gemini-2.5-flash", messages, tc.apiConfig, nil, nil, func(*string, *string) error {
 				t.Errorf("sender should not be called without an API key")
 				return nil
 			})
@@ -237,7 +237,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected no response, got %v", response)
 	}
 
-	err = model.ChatStreamlyWithSender("", messages, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error {
+	err = model.ChatStreamlyWithSender("", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error {
 		t.Errorf("sender should not be called without a model name")
 		return nil
 	})
@@ -248,7 +248,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected model name error, got %v", err)
 	}
 
-	err = model.ChatStreamlyWithSender("gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	err = model.ChatStreamlyWithSender("gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected a sender error")
 	}

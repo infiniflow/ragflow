@@ -208,7 +208,7 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ type giteeUsage struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ type giteeRerankRequest struct {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (g *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (g *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -562,20 +562,20 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 }
 
 // TranscribeAudio transcribe audio
-func (g *GiteeModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (g *GiteeModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 // AudioSpeech convert text to audio
-func (g *GiteeModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (g *GiteeModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
@@ -585,7 +585,7 @@ type giteeOCRResponse struct {
 }
 
 // OCRFile OCR file
-func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -682,7 +682,7 @@ type giteeURLs struct {
 }
 
 // ParseFile parse file
-func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

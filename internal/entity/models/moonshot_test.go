@@ -213,6 +213,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(answer, reason *string) error {
 			if answer != nil {
 				if *answer == "[DONE]" {
@@ -257,6 +258,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(answer, _ *string) error {
 			if answer != nil && *answer == "[DONE]" {
@@ -413,21 +415,21 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream model",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
 			},
 			want: "model name is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},

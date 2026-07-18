@@ -220,7 +220,7 @@ func TestModelScopeStreamHappyPath(t *testing.T) {
 	var sawDone bool
 	err := m.ChatStreamlyWithSender("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				reasoning = append(reasoning, *r)
@@ -254,6 +254,7 @@ func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-must-be-true error, got %v", err)
@@ -282,7 +283,7 @@ func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
 	m := newModelScopeForTest(srv.URL)
 	err := m.ChatStreamlyWithSender("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream idle") {
 		t.Errorf("expected stream-idle error, got %v", err)
@@ -330,28 +331,28 @@ func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"
 
-	if _, err := m.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := m.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := m.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := m.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
 	}
-	if err := m.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: expected no such method, got %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: expected no such method, got %v", err)
 	}
-	if err := m.AudioSpeechWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.AudioSpeechWithSender(&model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: expected no such method, got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
 }

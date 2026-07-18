@@ -316,7 +316,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg, sender); err != nil {
+		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg, nil, sender); err != nil {
 			_ = sw.Send(nil, err)
 		}
 	}()

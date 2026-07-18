@@ -2386,7 +2386,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 	}
 
-	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, sender)
+	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2478,7 +2478,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig)
+	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2540,7 +2540,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig)
+	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2594,7 +2594,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 	}
 
 	var response *modelModule.ASRResponse
-	response, err = modelDriver.TranscribeAudio(modelName, audioFile, apiConfig, modelConfig)
+	response, err = modelDriver.TranscribeAudio(modelName, audioFile, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2650,7 +2650,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		}
 	}
 
-	err = modelDriver.TranscribeAudioWithSender(modelName, audioFile, apiConfig, modelConfig, sender)
+	err = modelDriver.TranscribeAudioWithSender(modelName, audioFile, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2704,7 +2704,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 	}
 
 	var response *modelModule.TTSResponse
-	response, err = modelDriver.AudioSpeech(modelName, audioContent, apiConfig, modelConfig)
+	response, err = modelDriver.AudioSpeech(modelName, audioContent, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2759,7 +2759,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		}
 	}
 
-	err = modelDriver.AudioSpeechWithSender(modelName, audioContent, apiConfig, modelConfig, sender)
+	err = modelDriver.AudioSpeechWithSender(modelName, audioContent, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2812,7 +2812,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, mo
 	}
 
 	var response *modelModule.OCRFileResponse
-	response, err = modelDriver.OCRFile(modelName, content, url, apiConfig, modelConfig)
+	response, err = modelDriver.OCRFile(modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2867,7 +2867,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 	}
 
 	var response *modelModule.ParseFileResponse
-	response, err = modelDriver.ParseFile(modelName, content, url, apiConfig, modelConfig)
+	response, err = modelDriver.ParseFile(modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

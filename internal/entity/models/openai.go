@@ -226,7 +226,7 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
-func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -483,7 +483,7 @@ type openaiUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -625,12 +625,12 @@ func (o *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
 
 // Rerank calculates similarity scores between query and documents. OpenAI does
 // not expose a rerank API, so this is left unimplemented.
-func (o *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (o *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", o.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
@@ -659,7 +659,7 @@ func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return decodeOpenAIASRResponse(respBody, responseFormat)
 }
 
-func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -751,7 +751,7 @@ func decodeOpenAIASRResponse(respBody []byte, responseFormat string) (*ASRRespon
 }
 
 // AudioSpeech convert text to audio
-func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
@@ -778,7 +778,7 @@ func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -1042,12 +1042,12 @@ func writeOpenAIMultipartField(writer *multipart.Writer, key string, value inter
 }
 
 // OCRFile OCR file
-func (o *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (o *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 // ParseFile parse file
-func (o *OpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (o *OpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 

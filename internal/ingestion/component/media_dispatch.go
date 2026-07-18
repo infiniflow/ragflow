@@ -294,7 +294,7 @@ func maybeDispatchAudio(
 	}
 	defer os.Remove(tmpFile)
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpFile, apiConfig, nil)
+	resp, err := driver.TranscribeAudio(&modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)

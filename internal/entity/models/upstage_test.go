@@ -98,6 +98,7 @@ func TestUpstageStreamPropagatesReasoningEffort(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Effort: &effort},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err != nil {
@@ -226,7 +227,7 @@ func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -241,7 +242,7 @@ func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -260,7 +261,7 @@ func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	vecs, err := u.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	vecs, err := u.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -300,7 +301,7 @@ func TestUpstageStreamExtractsReasoningDelta(t *testing.T) {
 	var contentChunks, reasoningChunks []string
 	err := u.ChatStreamlyWithSender("solar-pro3",
 		[]Message{{Role: "user", Content: "What is 15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(content *string, reason *string) error {
 			// At most one of (content, reason) is set per call: callers
 			// need this contract to route to the right UI channel.
@@ -355,7 +356,7 @@ func TestUpstageStreamReasoningChunksArriveBeforeContent(t *testing.T) {
 	var seq []string
 	err := u.ChatStreamlyWithSender("solar-pro3",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(content *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				seq = append(seq, "R:"+*reason)
@@ -401,7 +402,7 @@ func TestUpstageStreamWithoutReasoningStillWorks(t *testing.T) {
 	var reasonCalled bool
 	err := u.ChatStreamlyWithSender("solar-mini",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				reasonCalled = true

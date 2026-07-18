@@ -90,6 +90,7 @@ func TestVllmRerankHappyPath(t *testing.T) {
 		[]string{"doc-zero", "doc-one", "doc-two"},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Rerank failed: %v", err)
@@ -122,6 +123,7 @@ func TestVllmRerankTopNClamp(t *testing.T) {
 		[]string{"a", "b", "c", "d"},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{TopN: 2},
+		nil,
 	); err != nil {
 		t.Fatalf("Rerank failed: %v", err)
 	}
@@ -131,7 +133,7 @@ func TestVllmRerankEmptyDocuments(t *testing.T) {
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	resp, err := model.Rerank(&modelName, "q", nil, &APIConfig{ApiKey: &apiKey}, &RerankConfig{})
+	resp, err := model.Rerank(&modelName, "q", nil, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty documents, got %v", err)
 	}
@@ -155,7 +157,7 @@ func TestVllmRerankWithoutAPIKey(t *testing.T) {
 
 	model := newVllmModelForTest(srv.URL)
 	modelName := "BAAI/bge-reranker-v2-m3"
-	resp, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{})
+	resp, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("Rerank failed without api key: %v", err)
 	}
@@ -167,7 +169,7 @@ func TestVllmRerankWithoutAPIKey(t *testing.T) {
 func TestVllmRerankRequiresModelName(t *testing.T) {
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
-	_, err := model.Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{})
+	_, err := model.Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -183,7 +185,7 @@ func TestVllmRerankRejectsHTTPError(t *testing.T) {
 	model := newVllmModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	_, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{})
+	_, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "vLLM rerank API error") {
 		t.Errorf("expected API error, got %v", err)
 	}
@@ -202,7 +204,7 @@ func TestVllmRerankRejectsOutOfRangeIndex(t *testing.T) {
 	model := newVllmModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	_, err := model.Rerank(&modelName, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{})
+	_, err := model.Rerank(&modelName, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unexpected rerank index") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}

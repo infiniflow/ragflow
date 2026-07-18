@@ -199,7 +199,7 @@ func buildSearchExprs(embModel *modelModule.EmbeddingModel, matchText *types.Mat
 		return []interface{}{matchText}
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{matchText.MatchingText}, embModel.APIConfig, embeddingConfig)
+	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{matchText.MatchingText}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil || len(embeddings) == 0 {
 		return []interface{}{matchText}
 	}

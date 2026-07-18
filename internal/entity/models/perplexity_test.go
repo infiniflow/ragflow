@@ -184,7 +184,7 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 	err := newPerplexityForTest(srv.URL).ChatStreamlyWithSender(
 		"sonar",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil {
 				content = append(content, *c)
@@ -221,7 +221,7 @@ func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
 	err := newPerplexityForTest(srv.URL).ChatStreamlyWithSender(
 		"sonar",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c != nil {
 				chunks = append(chunks, *c)
@@ -319,6 +319,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 		[]string{"hello", "world"},
 		&APIConfig{ApiKey: &apiKey},
 		&EmbeddingConfig{Dimension: 16},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
@@ -337,7 +338,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 	modelName := "pplx-embed-v1-0.6b"
 	apiKey := "test-key"
-	out, err := newPerplexityForTest("http://unused").Embed(&modelName, nil, &APIConfig{ApiKey: &apiKey}, nil)
+	out, err := newPerplexityForTest("http://unused").Embed(&modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -348,7 +349,7 @@ func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 
 func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newPerplexityForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -356,7 +357,7 @@ func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 
 func TestPerplexityUnsupportedMethods(t *testing.T) {
 	m := newPerplexityForTest("http://unused")
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {

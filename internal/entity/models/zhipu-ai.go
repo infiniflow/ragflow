@@ -223,7 +223,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ type zhipuUsage struct {
 }
 
 // Encode encodes a list of texts into embeddings
-func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -591,7 +591,7 @@ type zhipuOCRResponse struct {
 // Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
-func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -673,7 +673,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 }
 
 // TranscribeAudio transcribe audio
-func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -697,13 +697,13 @@ func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfi
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
-	if err := writer.WriteField("stream", "false"); err != nil {
+	if err = writer.WriteField("stream", "false"); err != nil {
 		return nil, fmt.Errorf("failed to write stream field: %w", err)
 	}
-	if err := writeZhipuASRParams(writer, asrConfig); err != nil {
+	if err = writeZhipuASRParams(writer, asrConfig); err != nil {
 		return nil, err
 	}
 
@@ -800,12 +800,12 @@ func writeZhipuASRField(writer *multipart.Writer, key string, value interface{})
 	}
 }
 
-func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // AudioSpeech convert text to audio
-func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -847,7 +847,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -945,7 +945,7 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 }
 
 // OCRFile OCR file
-func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -1028,7 +1028,7 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 }
 
 // ParseFile parse file
-func (z *ZhipuAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (z *ZhipuAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
