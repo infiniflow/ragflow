@@ -1669,21 +1669,28 @@ async def list_wiki_topics(
     meta: dict[str, dict] = {}
     try:
         meta_fields = ["topic_kwd", "title_kwd", "slug_kwd"]
-        meta_res = settings.docStoreConn.search(
-            select_fields=meta_fields,
-            highlight_fields=[],
-            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["topic"]},
-            match_expressions=[],
-            order_by=OrderByExpr(),
-            offset=0,
-            limit=1000,
-            index_names=index_nm,
-            knowledgebase_ids=[dataset_id],
-        )
-        for row in (settings.docStoreConn.get_fields(meta_res, meta_fields) or {}).values():
-            t = row.get("topic_kwd")
-            if isinstance(t, str) and t:
-                meta[t] = {"title": row.get("title_kwd") or t, "slug": row.get("slug_kwd") or t}
+        _BATCH = 1000
+        _offset = 0
+        while True:
+            meta_res = settings.docStoreConn.search(
+                select_fields=meta_fields,
+                highlight_fields=[],
+                condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["topic"]},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=_offset,
+                limit=_BATCH,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(meta_res, meta_fields) or {}
+            if not rows:
+                break
+            for row in rows.values():
+                t = row.get("topic_kwd")
+                if isinstance(t, str) and t:
+                    meta[t] = {"title": row.get("title_kwd") or t, "slug": row.get("slug_kwd") or t}
+            _offset += _BATCH
     except Exception:
         logging.exception("list_wiki_topics: topic metadata lookup failed for kb=%s", dataset_id)
 

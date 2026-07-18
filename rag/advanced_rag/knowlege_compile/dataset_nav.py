@@ -967,10 +967,7 @@ async def search_dataset_nav(
             try:
                 rows = await _store_knn(tenant_id, kb_id, vec, len(vec), condition, top_k=top_k)
                 vf = _vec_field(len(vec))
-                rows_with_scores = [
-                    (r, _cosine_sim(vec, r.get(vf) or []))
-                    for r in rows
-                ]
+                rows_with_scores = [(r, _cosine_sim(vec, r.get(vf) or [])) for r in rows]
             except Exception:
                 logging.exception("search_dataset_nav: knn failed for kb=%s", kb_id)
                 rows_with_scores = []
@@ -984,6 +981,9 @@ async def search_dataset_nav(
             rows = []
         rows_with_scores = [(r, _nav_text_score(query, r)) for r in rows]
         rows_with_scores.sort(key=lambda item: item[1], reverse=True)
+
+    # Discard zero-score rows (text match produced no relevant hits)
+    rows_with_scores = [(r, s) for r, s in rows_with_scores if s > 0]
 
     out: list[dict] = []
     for r, score in rows_with_scores[:top_k]:
