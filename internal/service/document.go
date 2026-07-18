@@ -564,21 +564,6 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 	if req.Name != nil {
 		document.Name = req.Name
 	}
-	if req.Run != nil {
-		document.Run = req.Run
-	}
-	if req.TokenNum != nil {
-		document.TokenNum = *req.TokenNum
-	}
-	if req.ChunkNum != nil {
-		document.ChunkNum = *req.ChunkNum
-	}
-	if req.Progress != nil {
-		document.Progress = *req.Progress
-	}
-	if req.ProgressMsg != nil {
-		document.ProgressMsg = req.ProgressMsg
-	}
 
 	return s.documentDAO.Update(document)
 }

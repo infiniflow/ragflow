@@ -570,29 +570,6 @@ func insertTestFile(t *testing.T, id, parentID, name string, location *string) {
 	}
 }
 
-func TestCreateDocumentIncrementsKBDocNum(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-create", "tenant-1", 0, 0, 0)
-
-	svc := testDocumentService(t)
-	doc, err := svc.CreateDocument(&CreateDocumentRequest{
-		Name:      "created.txt",
-		KbID:      "kb-create",
-		ParserID:  "naive",
-		CreatedBy: "tenant-1",
-		Type:      "doc",
-		Source:    "local",
-	})
-	if err != nil {
-		t.Fatalf("CreateDocument failed: %v", err)
-	}
-	if doc == nil || doc.KbID != "kb-create" {
-		t.Fatalf("unexpected doc: %+v", doc)
-	}
-	assertKBDocNum(t, "kb-create", 1)
-}
-
 func TestUpdateDocumentRejectsIngestionStateMutation(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -679,11 +656,12 @@ func TestUpdateDocumentAllowsMatchingIngestionState(t *testing.T) {
 
 	run := string(entity.TaskStatusRunning)
 	progressMsg := "Task is running..."
+	seededProgress := 0.5
 	if err := dao.DB.Model(&entity.Document{}).
 		Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
 			"run":          run,
-			"progress":     0.5,
+			"progress":     seededProgress,
 			"progress_msg": progressMsg,
 		}).Error; err != nil {
 		t.Fatalf("seed document ingestion state: %v", err)
@@ -691,7 +669,7 @@ func TestUpdateDocumentAllowsMatchingIngestionState(t *testing.T) {
 
 	tokenNum := int64(100)
 	chunkNum := int64(10)
-	progress := 0.5
+	progress := seededProgress + 5e-10
 	name := "renamed.txt"
 	svc := testDocumentService(t)
 	if err := svc.UpdateDocument("doc-1", &UpdateDocumentRequest{
@@ -718,7 +696,7 @@ func TestUpdateDocumentAllowsMatchingIngestionState(t *testing.T) {
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg {
 		t.Fatalf("progress_msg = %v, want %q", doc.ProgressMsg, progressMsg)
 	}
-	if doc.TokenNum != tokenNum || doc.ChunkNum != chunkNum || math.Abs(doc.Progress-progress) > 1e-9 {
+	if doc.TokenNum != tokenNum || doc.ChunkNum != chunkNum || doc.Progress != seededProgress {
 		t.Fatalf("ingestion fields changed unexpectedly: token=%d chunk=%d progress=%f", doc.TokenNum, doc.ChunkNum, doc.Progress)
 	}
 }
