@@ -261,7 +261,7 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 
 func TestRunPipeline_NilOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
-	_, err := svc.processOutput(context.Background(), nil)
+	_, err := svc.processOutput(context.Background(), nil, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for nil output, got %v", err)
 	}
@@ -271,7 +271,7 @@ func TestRunPipeline_EmptyOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{})
+	_, err := svc.processOutput(context.Background(), map[string]any{}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty output, got %v", err)
 	}
@@ -281,7 +281,7 @@ func TestRunPipeline_NormalizedEmpty(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{"markdown": ""})
+	_, err := svc.processOutput(context.Background(), map[string]any{"markdown": ""}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty normalized output, got %v", err)
 	}
@@ -299,7 +299,7 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 			{"text": "world"},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output)
+	_, err := svc.processOutput(context.Background(), output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 			{"text": "hello", "q_768_vec": []float64{0.1, 0.2}},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output)
+	_, err := svc.processOutput(context.Background(), output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestRunPipeline_ContextCanceled(t *testing.T) {
 
 	_, err := svc.processOutput(ctx, map[string]any{
 		"chunks": []map[string]any{{"text": "hello"}},
-	})
+	}, time.Now())
 	if err == nil {
 		t.Error("expected context canceled error")
 	}
