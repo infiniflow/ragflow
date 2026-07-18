@@ -226,6 +226,19 @@ class Dealer:
                             self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature
                         )
                         total = self.dataStore.get_total(res)
+                        if total == 0:
+                            # The full-text predicate matched nothing even at low
+                            # min_match — e.g. rag_tokenizer cannot segment the
+                            # question's language (#17041). Recall on the dense leg
+                            # alone: a dense-only expression list is pre-filtered by
+                            # the scope conditions only on every doc engine, so a
+                            # multilingual embedding model can still surface
+                            # candidates. Build a fresh expression because the doc
+                            # engine may have rewritten the original's extra_options
+                            # (e.g. Infinity attaches the full-text filter in place).
+                            matchDenseOnly = MatchDenseExpr(matchDense.vector_column_name, matchDense.embedding_data, "float", "cosine", matchDense.topn, {"similarity": 0.17})
+                            res = await thread_pool_exec(self.dataStore.search, src, [], filters, [matchDenseOnly], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
+                            total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
