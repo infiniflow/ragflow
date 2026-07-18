@@ -20,6 +20,6 @@ import (
 	"ragflow/internal/common"
 )
 
-func (d *Driver) CollectChatModelUsage(chatModelUsage *common.ModelUsage) error {
+func (d *Driver) CollectChatModelUsage(modelUsage *common.ModelUsage) error {
 	return nil
 }

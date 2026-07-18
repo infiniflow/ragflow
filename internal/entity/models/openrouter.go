@@ -54,7 +54,7 @@ func (o *OpenRouterModel) Name() string {
 	return "openrouter"
 }
 
-func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

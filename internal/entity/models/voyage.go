@@ -262,7 +262,7 @@ func (v *VoyageModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 // ChatWithMessages is not exposed by the Voyage AI API.
-func (v *VoyageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (v *VoyageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 

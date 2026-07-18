@@ -82,7 +82,7 @@ type ZhipuChatResponse struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -203,12 +203,15 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		TotalTokens:      result.Usage.TotalTokens,
 	}
 
-	chatModelUsage.InputTokens = result.Usage.PromptTokens
-	chatModelUsage.OutputTokens = result.Usage.CompletionTokens
-	chatModelUsage.TotalTokens = result.Usage.TotalTokens
+	modelUsage.InputTokens = result.Usage.PromptTokens
+	modelUsage.OutputTokens = result.Usage.CompletionTokens
+	modelUsage.TotalTokens = result.Usage.TotalTokens
 
 	clickhouseDriver := clickhouse.GetDriver()
-	clickhouseDriver.CollectChatModelUsage(chatModelUsage)
+	err = clickhouseDriver.CollectChatModelUsage(modelUsage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect model usage: %w", err)
+	}
 
 	chatResponse := &ChatResponse{
 		Answer:        content,

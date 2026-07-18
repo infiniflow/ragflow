@@ -47,7 +47,7 @@ func (b *BuiltinModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (b *BuiltinModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, chatModelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (b *BuiltinModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support chat")
 }
 
