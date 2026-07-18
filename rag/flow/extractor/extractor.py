@@ -45,8 +45,14 @@ def _strip_markdown(text: str) -> str:
     t = re.sub(r"^\s*[-*]\s+", "", t, flags=re.MULTILINE)
     t = re.sub(r"^\s*\d+\.\s+", "", t, flags=re.MULTILINE)
     t = re.sub(r"^-{3,}\s*$", "", t, flags=re.MULTILINE)
-    t = re.sub(r"^\|.*\|\s*$", "", t, flags=re.MULTILINE)
-    t = re.sub(r"^:?-{2,}:?(\s*\|\s*:?-{2,}:?)*\s*$", "", t, flags=re.MULTILINE)
+    # Table syntax -> plain text: drop separator rows entirely (pure
+    # formatting, e.g. "|---|---|"), but keep cell content from data rows
+    # instead of deleting the whole line. The trailing/leading whitespace
+    # here is deliberately [ \t]* rather than \s* -- \s matches newlines
+    # too, so a greedy \s*$ right before another "|"-led line would eat the
+    # blank line between two table rows and merge their content together.
+    t = re.sub(r"^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?[ \t]*$", "", t, flags=re.MULTILINE)
+    t = re.sub(r"^[ \t]*\|(.*)\|[ \t]*$", lambda m: m.group(1).replace("|", " ").strip(), t, flags=re.MULTILINE)
     t = re.sub(r"^>\s*", "", t, flags=re.MULTILINE)
     t = re.sub(r"\n{2,}", "\n", t)
     t = re.sub(r"[ \t]{2,}", " ", t)
@@ -61,7 +67,11 @@ class ExtractorParam(ProcessParamBase, LLMParam):
         # document-level request instead of one LLM call per chunk. Every
         # chunk then carries the same result, so whichever chunk a later
         # "last write wins" doc-metadata merge picks is still the
-        # whole-document answer rather than one arbitrary chunk's.
+        # document-level answer rather than one arbitrary chunk's. The
+        # concatenated text is still subject to the model's context budget
+        # (see Extractor._document_level_extract) -- documents larger than
+        # that budget are summarized from a truncated prefix/suffix, not
+        # reduced in stages.
         self.document_level = False
 
     def check(self):
@@ -112,6 +122,17 @@ class Extractor(ProcessBase, LLM):
     async def _document_level_extract(self, chunks, chunks_key, args):
         """Summarize every upstream chunk's text in a single LLM call and
         write the same result onto every chunk (see ExtractorParam.document_level).
+
+        The concatenated text is fit to the chat model's context budget via
+        the same fit_messages() every other LLM component call site uses, so
+        for a document whose combined chunk text exceeds that budget, the
+        model sees a truncated prefix/suffix rather than the literal full
+        text (see fit_messages()/message_fit_in() in agent/component/llm.py
+        and rag/prompts/generator.py). That is still a single call over the
+        concatenated document rather than per-chunk calls, which is what
+        fixes the "summary of the last chunk only" bug this mode exists for
+        -- it does not turn this into a map-reduce summarizer for documents
+        larger than one context window.
 
         Mirrors the retry-until-parsable-JSON pattern LLM._invoke_async uses
         for its own "structured" output (agent/component/llm.py) instead of a

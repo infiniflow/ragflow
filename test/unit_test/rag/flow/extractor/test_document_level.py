@@ -79,11 +79,18 @@ class TestStripMarkdown:
         cleaned = _strip_markdown(raw)
         assert "```" not in cleaned
 
-    def test_removes_table_syntax(self):
+    def test_removes_table_syntax_without_losing_cell_content(self):
         raw = "summary text\n| a | b |\n|---|---|\n| 1 | 2 |"
         cleaned = _strip_markdown(raw)
         assert "|" not in cleaned
         assert "summary text" in cleaned
+        # The separator row ("|---|---|") is pure formatting and should
+        # disappear, but data-row cell content ("a", "b", "1", "2") must
+        # survive -- an earlier version of this regex deleted whole table
+        # rows (content included), not just the "|" syntax.
+        assert "a" in cleaned and "b" in cleaned
+        assert "1" in cleaned and "2" in cleaned
+        assert "---" not in cleaned
 
     def test_leaves_plain_text_untouched_besides_whitespace(self):
         assert _strip_markdown("Just a plain sentence.") == "Just a plain sentence."
@@ -94,23 +101,23 @@ class TestStripMarkdown:
 class TestDocumentLevelDisabled:
     async def test_per_chunk_path_is_unaffected(self):
         """Regression guard: document_level=False must still call the model
-        once per chunk and let each chunk keep its own result."""
+        once per chunk and let each chunk keep its own result.
+
+        Drives this through Extractor._invoke() itself (not a hand-rolled
+        re-implementation of its loop) so a future change to _invoke()'s
+        per-chunk branch would actually be caught here.
+        """
         chat_mdl = _FakeChatModel(["desc for chunk 1", "desc for chunk 2"])
         cpn = _make_extractor(document_level=False, chat_mdl=chat_mdl)
-        chunks = _chunks("chunk one text", "chunk two text")
+        input_chunks = _chunks("chunk one text", "chunk two text")
+        cpn.get_input_elements = lambda: {"document": {"value": input_chunks, "name": "document"}}
 
-        async def fake_generate(msg, **kwargs):
-            return chat_mdl._replies.pop(0)
+        await cpn._invoke()
 
-        cpn._generate_async = fake_generate
-        for i, ck in enumerate(chunks):
-            args = {"document": ck["text"]}
-            msg, sys_prompt = cpn._sys_prompt_and_msg([], args)
-            msg.insert(0, {"role": "system", "content": sys_prompt})
-            ck[cpn._param.field_name] = await cpn._generate_async(msg)
-
-        assert chunks[0]["document_description"] == "desc for chunk 1"
-        assert chunks[1]["document_description"] == "desc for chunk 2"
+        result_chunks = cpn.output("chunks")
+        assert len(chat_mdl.calls) == 2
+        assert result_chunks[0]["document_description"] == "desc for chunk 1"
+        assert result_chunks[1]["document_description"] == "desc for chunk 2"
 
 
 @pytest.mark.p1
@@ -162,6 +169,19 @@ class TestDocumentLevelExtract:
 
         assert len(chat_mdl.calls) == 2
         assert "document_description" not in chunks[0]
+
+    async def test_empty_json_object_does_not_count_as_success(self):
+        """A syntactically valid but empty {} is not usable output -- it
+        must be treated the same as an unparsable reply (retry, then give
+        up), not accepted as "the model successfully returned JSON"."""
+        chat_mdl = _FakeChatModel(["{}", '{"document_description": "Real content."}'])
+        cpn = _make_extractor(document_level=True, max_retries=1, chat_mdl=chat_mdl)
+        chunks = _chunks("some document text")
+
+        await cpn._document_level_extract(chunks, "document", {})
+
+        assert len(chat_mdl.calls) == 2
+        assert chunks[0]["document_description"] == '{"document_description": "Real content."}'
 
     async def test_strips_markdown_from_stored_string_values(self):
         chat_mdl = _FakeChatModel(['{"document_description": "# Heading\\n**bold** summary text."}'])
