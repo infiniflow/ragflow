@@ -631,7 +631,10 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", docID)
 		}
 
-		task, _ := dao.NewIngestionTaskDAO().GetByDocumentID(docID)
+		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(docID)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
+		}
 		if task == nil || task.Status == common.COMPLETED ||
 			task.Status == common.STOPPED || task.Status == common.FAILED {
 			return &service.StopParsingResponse{
@@ -1349,7 +1352,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}

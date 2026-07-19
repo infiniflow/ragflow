@@ -95,6 +95,7 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -139,6 +140,7 @@ func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -150,7 +152,7 @@ func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
 
 func TestTogetherAIChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newTogetherAIForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newTogetherAIForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -182,7 +184,7 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 	err := newTogetherAIForTest(srv.URL).ChatStreamlyWithSender(
 		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil {
 				content = append(content, *c)
@@ -218,7 +220,7 @@ func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
 	err := newTogetherAIForTest(srv.URL).ChatStreamlyWithSender(
 		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c != nil {
 				chunks = append(chunks, *c)
@@ -268,7 +270,7 @@ func TestTogetherAIUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with nil documents it short-circuits to empty response (no error).
 	// It should NOT be blocked by APIConfigCheck.
-	if _, err := m.Rerank(nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+	if _, err := m.Rerank(nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
 		t.Errorf("Rerank error=%v (expected no error for empty documents)", err)
 	}
 	// Balance IS a stub → "no such method"

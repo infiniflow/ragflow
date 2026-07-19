@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/utility"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -83,7 +84,7 @@ type Ingestor struct {
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	if maxConcurrency <= 0 {
-		maxConcurrency = 1
+		maxConcurrency = int32(runtime.NumCPU())
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()

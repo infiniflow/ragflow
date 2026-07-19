@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -321,7 +322,7 @@ type spyEmbedDriver struct {
 	err           error
 }
 
-func (s *spyEmbedDriver) Embed(_ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, error) {
+func (s *spyEmbedDriver) Embed(_ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	s.capturedTexts = texts
 	if s.err != nil {
 		return nil, s.err
