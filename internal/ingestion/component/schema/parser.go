@@ -64,25 +64,7 @@ type Page map[string]any
 type ParserSetup map[string]any
 
 // ParserParam is the static configuration for the Parser component.
-// Mirrors rag/flow/parser/parser.py:ParserParam.
-//
-// Two top-level fields are configured in the Python class:
-//
-//	setups: dict[str, dict]  (one entry per file type: pdf, docx, ...)
-//	allowed_output_format: dict[str, list[str]]  (per-file-type formats)
-//
-// `check()` runs further validation that is intentionally NOT
-// replicated here — Validate() enforces wire-shape only; business-rule
-// validation lives in the component implementation (Phase 2.2).
 type ParserParam struct {
-	// Setups holds the per-file-type parser config. Keys are file-type
-	// identifiers ("pdf", "docx", "markdown", "spreadsheet", "image",
-	// "audio", "video", "email", "epub", "doc", "text&code", "html",
-	// "slides"); values are free-form config blobs.
-	Setups map[string]ParserSetup `json:"setups"`
-
-	// AllowedOutputFormat mirrors `allowed_output_format` from the
-	// Python class. Used for client-side input-form validation.
 	AllowedOutputFormat map[string][]string `json:"allowed_output_format"`
 }
 
@@ -107,97 +89,6 @@ func (ParserParam) Defaults() ParserParam {
 			"video":       {},
 			"epub":        {"text", "json"},
 			"json":        {"json"},
-		},
-		Setups: map[string]ParserSetup{
-			"pdf": {
-				"parse_method":          "deepdoc",
-				"lang":                  "Chinese",
-				"flatten_media_to_text": false,
-				"remove_toc":            false,
-				"remove_header_footer":  false,
-				"suffix":                []string{"pdf"},
-				"output_format":         "json",
-			},
-			"spreadsheet": {
-				"parse_method":          "deepdoc",
-				"flatten_media_to_text": false,
-				"output_format":         "html",
-				"suffix":                []string{"xls", "xlsx", "csv"},
-			},
-			"doc": {
-				"remove_toc":           false,
-				"remove_header_footer": false,
-				"suffix":               []string{"doc"},
-				"output_format":        "json",
-			},
-			"docx": {
-				"flatten_media_to_text": false,
-				"remove_toc":            false,
-				"remove_header_footer":  false,
-				"suffix":                []string{"docx"},
-				"output_format":         "json",
-			},
-			"markdown": {
-				"flatten_media_to_text": false,
-				"suffix":                []string{"md", "markdown", "mdx"},
-				"remove_toc":            false,
-				"output_format":         "json",
-			},
-			"text&code": {
-				"suffix": []string{
-					"txt", "py", "js", "java", "c", "cpp", "h", "php",
-					"go", "ts", "sh", "cs", "kt", "sql",
-				},
-				"output_format": "json",
-			},
-			"html": {
-				"suffix":               []string{"htm", "html"},
-				"remove_toc":           false,
-				"remove_header_footer": false,
-				"output_format":        "json",
-			},
-			"slides": {
-				"parse_method":  "deepdoc",
-				"suffix":        []string{"pptx", "ppt"},
-				"output_format": "json",
-			},
-			"image": {
-				"parse_method":  "ocr",
-				"llm_id":        "",
-				"lang":          "Chinese",
-				"system_prompt": "",
-				"suffix":        []string{"jpg", "jpeg", "png", "gif"},
-				"output_format": "json",
-			},
-			"email": {
-				"suffix": []string{"eml", "msg"},
-				"fields": []string{
-					"from", "to", "cc", "bcc", "date", "subject",
-					"body", "attachments", "metadata",
-				},
-				"output_format": "text",
-			},
-			"audio": {
-				"suffix": []string{
-					"da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-					"aiff", "au", "midi", "wma", "realaudio", "vqf",
-					"oggvorbis", "ape",
-				},
-				"output_format": "text",
-			},
-			"video": {
-				"suffix":        []string{"mp4", "avi", "mkv"},
-				"output_format": "text",
-				"prompt":        "",
-			},
-			"epub": {
-				"suffix":        []string{"epub"},
-				"output_format": "json",
-			},
-			"json": {
-				"suffix":        []string{"json", "jsonl", "ldjson"},
-				"output_format": "json",
-			},
 		},
 	}
 }

@@ -119,7 +119,7 @@ func TestLongCatChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	apiKey := "test-key"
 	resp, err := m.ChatWithMessages("LongCat-Flash-Thinking",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -211,7 +211,9 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		// Deliberately pass Stop/Effort to prove they are filtered out.
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort})
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -221,7 +223,8 @@ func TestLongCatChatRequiresAPIKey(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -230,7 +233,7 @@ func TestLongCatChatRequiresAPIKey(t *testing.T) {
 func TestLongCatChatRequiresMessages(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages("LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
@@ -247,7 +250,7 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -268,7 +271,7 @@ func TestLongCatStreamHappyPath(t *testing.T) {
 	var sawDone bool
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -309,7 +312,7 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 	var content, reasoning []string
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Thinking",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -341,6 +344,7 @@ func TestLongCatStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-true guard, got %v", err)
@@ -352,7 +356,7 @@ func TestLongCatStreamRequiresSender(t *testing.T) {
 	apiKey := "test-key"
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
@@ -368,7 +372,7 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 	apiKey := "test-key"
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
@@ -389,7 +393,7 @@ func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
 	apiKey := "test-key"
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
 		t.Errorf("expected invalid-SSE error, got %v", err)
@@ -410,7 +414,7 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 	apiKey := "test-key"
 	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
 		t.Errorf("expected upstream-error surfacing, got %v", err)
@@ -514,7 +518,7 @@ func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
 func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil)
+	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}
@@ -523,7 +527,7 @@ func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
 func TestLongCatRerankReturnsNoSuchMethod(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1})
+	_, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: want 'no such method', got %v", err)
 	}
@@ -540,13 +544,13 @@ func TestLongCatBalanceReturnsNoSuchMethod(t *testing.T) {
 func TestLongCatAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: want 'no such method', got %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: want 'no such method', got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: want 'no such method', got %v", err)
 	}
 }

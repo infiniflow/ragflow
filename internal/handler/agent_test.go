@@ -715,7 +715,7 @@ type stubChatRunner struct {
 	err    error
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -933,15 +933,19 @@ func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T)
 	}
 }
 
-// captureChatRunner records the userInput it was called with and
+// captureChatRunner records the userInput and files it was called with and
 // returns an empty (closed) channel. Used to assert on argument
 // derivation without exercising the runner.
 type captureChatRunner struct {
-	captured *any
+	captured      *any
+	capturedFiles *[]map[string]interface{}
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
+	if c.capturedFiles != nil {
+		*c.capturedFiles = files
+	}
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -1187,4 +1191,71 @@ type stubDocService struct {
 
 func (s *stubDocService) Accessible(_, _ string) bool {
 	return s.accessible
+}
+
+// TestAgentChatCompletions_FilesDeserialized verifies that when the
+// JSON request body contains a `files` field, the
+// agentChatCompletionsRequest struct deserializes it correctly.
+// Mirrors Python's req.get("files", []) at agent_api.py:1313.
+func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{
+		"agent_id": "a1",
+		"query": "hi",
+		"files": [
+			{"id": "file-1", "name": "resume.txt", "mime_type": "text/plain", "created_by": "u1"}
+		]
+	}`
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	var capturedFiles []map[string]interface{}
+	runner := &captureChatRunner{captured: &captured, capturedFiles: &capturedFiles}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if len(capturedFiles) != 1 {
+		t.Fatalf("capturedFiles length = %d, want 1", len(capturedFiles))
+	}
+	if id, _ := capturedFiles[0]["id"].(string); id != "file-1" {
+		t.Errorf("capturedFiles[0][\"id\"] = %q, want %q", id, "file-1")
+	}
+	if name, _ := capturedFiles[0]["name"].(string); name != "resume.txt" {
+		t.Errorf("capturedFiles[0][\"name\"] = %q, want %q", name, "resume.txt")
+	}
+	mime, _ := capturedFiles[0]["mime_type"].(string)
+	if mime != "text/plain" {
+		t.Errorf("capturedFiles[0][\"mime_type\"] = %q, want %q", mime, "text/plain")
+	}
+}
+
+// TestAgentChatCompletions_EmptyFilesNil verifies that when the JSON
+// request body does NOT include `files`, the handler passes nil to
+// RunAgent (no crash, no spurious slice). Mirrors Python's behavior
+// where req.get("files", []) defaults to [].
+func TestAgentChatCompletions_EmptyFilesNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	var capturedFiles []map[string]interface{}
+	runner := &captureChatRunner{captured: &captured, capturedFiles: &capturedFiles}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if capturedFiles != nil {
+		t.Errorf("capturedFiles = %v, want nil when files not in request", capturedFiles)
+	}
 }
