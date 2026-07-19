@@ -27,6 +27,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
+	"sort"
 	"strings"
 )
 
@@ -52,7 +54,7 @@ func (x *XiaomiModel) Name() string {
 	return "xiaomi"
 }
 
-func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -76,14 +78,19 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -117,6 +124,14 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 					"type": "disabled",
 				}
 			}
+		}
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			toolChoice := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				toolChoice = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
 		}
 	}
 
@@ -153,7 +168,7 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 
 	// Parse response
 	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -192,15 +207,25 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 		reasonContent = reasonContent[1:]
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
 }
 
-func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -225,14 +250,19 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMessages[i]["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessages[i]["tool_calls"] = msg.ToolCalls
+		}
 	}
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if modelConfig != nil {
@@ -267,6 +297,15 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 				}
 			}
 		}
+
+		if modelConfig.Tools != nil {
+			reqBody["tools"] = modelConfig.Tools
+			toolChoice := "auto"
+			if modelConfig.ToolChoice != nil {
+				toolChoice = *modelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -297,7 +336,11 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	// SSE parsing: read line by line
-	if _, err := ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+	}
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	if _, err = ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -313,16 +356,61 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			return nil
 		}
 
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if hasExisting {
+					if id, ok := tcMap["id"].(string); ok && id != "" {
+						existing["id"] = id
+					}
+					if typ, ok := tcMap["type"].(string); ok && typ != "" {
+						existing["type"] = typ
+					}
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						ef, ok := existing["function"].(map[string]interface{})
+						if !ok {
+							ef = make(map[string]interface{})
+							existing["function"] = ef
+						}
+						if name, ok := fn["name"].(string); ok && name != "" {
+							if en, ok := ef["name"].(string); ok {
+								ef["name"] = en + name
+							} else {
+								ef["name"] = name
+							}
+						}
+						if args, ok := fn["arguments"].(string); ok {
+							if ea, ok := ef["arguments"].(string); ok {
+								ef["arguments"] = ea + args
+							} else {
+								ef["arguments"] = args
+							}
+						}
+					}
+				} else {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+				}
+			}
+		}
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -330,6 +418,19 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+
+	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			tcs = append(tcs, accumulatedToolCalls[idx])
+		}
+		modelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
@@ -341,15 +442,15 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return nil
 }
 
-func (x *XiaomiModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (x *XiaomiModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (x *XiaomiModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (x *XiaomiModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
@@ -384,7 +485,7 @@ func (x *XiaomiModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return &ASRResponse{Text: result.Choices[0].Message.Content}, nil
 }
 
-func (x *XiaomiModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (x *XiaomiModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -595,7 +696,7 @@ func readXiaomiASRStream(body io.Reader, sender func(*string, *string) error) er
 	return sender(&done, nil)
 }
 
-func (x *XiaomiModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (x *XiaomiModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
@@ -621,7 +722,7 @@ func (x *XiaomiModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return decodeXiaomiTTSResponse(body)
 }
 
-func (x *XiaomiModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (x *XiaomiModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -794,11 +895,11 @@ func decodeXiaomiAudioData(data string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(data)
 }
 
-func (x *XiaomiModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (x *XiaomiModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 

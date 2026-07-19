@@ -375,7 +375,7 @@ func (s *BotService) ChatbotCompletion(
 	go func() {
 		defer close(out)
 		resp, callErr := chatModel.ModelDriver.ChatWithMessages(
-			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{},
+			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{}, nil,
 		)
 		if callErr != nil {
 			// Log the real error with structured context so

@@ -84,7 +84,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(&modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"})
+		resp, err := driver.AudioSpeech(&modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
@@ -234,7 +234,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err := driver.TranscribeAudioWithSender(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, sender); err != nil {
+		if err = driver.TranscribeAudioWithSender(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -252,7 +252,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{})
+	resp, err := driver.TranscribeAudio(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
