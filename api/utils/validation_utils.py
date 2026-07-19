@@ -481,6 +481,12 @@ class UpdateDocumentReq(Base):
     chunk_count: Annotated[int | None, Field(default=None, ge=0)]
     token_count: Annotated[int | None, Field(default=None, ge=0)]
     progress: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)]
+    # `run` and `progress_msg` are ingestion-managed fields. Added in
+    # #16838 to close the parity gap left by #16836 (which only
+    # validated chunk_count / token_count / progress). The PATCH
+    # handler enforces the same set via validate_immutable_fields.
+    run: Annotated[str | None, Field(default=None, max_length=65535)]
+    progress_msg: Annotated[str | None, Field(default=None, max_length=65535)]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     meta_fields: Annotated[dict | None, Field(default={})]
 
@@ -1060,8 +1066,12 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
     """
     Validate that immutable fields have not been changed.
 
-    Checks that fields like chunk_count, token_count, and progress
-    cannot be modified directly by the user.
+    Checks that fields like chunk_count, token_count, progress,
+    run, and progress_msg cannot be modified directly by the user.
+    The `run` and `progress_msg` checks were added in #16838 to close
+    the parity gap left by the original fix in #16836 / #16831: the
+    issue listed all five fields as ingestion-managed, but the
+    initial fix only covered three.
 
     Args:
         update_doc_req: The validated update document request.
@@ -1082,6 +1092,12 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):
             return "Can't change `progress`.", RetCode.DATA_ERROR
+
+    if update_doc_req.run is not None and update_doc_req.run != getattr(doc, "run", ""):
+        return "Can't change `run`.", RetCode.DATA_ERROR
+
+    if update_doc_req.progress_msg is not None and update_doc_req.progress_msg != getattr(doc, "progress_msg", ""):
+        return "Can't change `progress_msg`.", RetCode.DATA_ERROR
 
     return None, None
 
