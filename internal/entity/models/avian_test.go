@@ -122,6 +122,7 @@ func TestAvianChatHappyPath(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -153,6 +154,7 @@ func TestAvianChatFallsBackToReasoningField(t *testing.T) {
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -168,6 +170,7 @@ func TestAvianChatRequiresAPIKey(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key-required error, got %v", err)
@@ -180,6 +183,7 @@ func TestAvianChatRequiresMessages(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
@@ -199,6 +203,7 @@ func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
@@ -231,7 +236,7 @@ func TestAvianStreamHappyPath(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				reasoning = append(reasoning, *r)
@@ -267,6 +272,7 @@ func TestAvianStreamRejectsFalseStreamConfig(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -280,6 +286,7 @@ func TestAvianStreamRequiresSender(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		nil,
 	)
@@ -319,6 +326,7 @@ func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL") {
 		t.Errorf("expected no-base-URL error, got %v", err)
@@ -329,22 +337,22 @@ func TestAvianUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	a := newAvianForTest("http://unused")
 	model := "deepseek/deepseek-v3.2"
 
-	if _, err := a.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := a.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := a.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := a.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.TranscribeAudio(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
 	}
-	if _, err := a.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.AudioSpeech(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: expected no such method, got %v", err)
 	}
-	if _, err := a.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
 }

@@ -671,7 +671,7 @@ func (dr *DeepResearcher) chatOnce(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, dr.ChatModel.APIConfig, cfg,
+		modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err

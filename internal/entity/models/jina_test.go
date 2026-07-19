@@ -77,7 +77,7 @@ func TestJinaChatHappyPath(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -119,6 +119,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -173,7 +174,7 @@ func TestJinaChatValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := j.ChatWithMessages(tt.modelName, tt.messages, tt.apiConfig, nil)
+			_, err := j.ChatWithMessages(tt.modelName, tt.messages, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
@@ -190,7 +191,7 @@ func TestJinaChatRejectsHTTPError(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -204,7 +205,7 @@ func TestJinaChatRejectsMalformedResponse(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no choices in response") {
 		t.Errorf("expected malformed-response error, got %v", err)
 	}
@@ -215,7 +216,8 @@ func TestJinaChatRejectsUnknownRegion(t *testing.T) {
 	apiKey := "test-key"
 	region := "eu"
 	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
 	}
@@ -233,7 +235,8 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	apiKey := "test-key"
 	emptyRegion := ""
 	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
+		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil,
+	)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
