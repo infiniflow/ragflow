@@ -18,10 +18,8 @@ func generalDSL(t *testing.T) []byte {
 					"component_name": "Parser",
 					"params": map[string]any{
 						"outputs": map[string]any{},
-						"setups": map[string]any{
-							"pdf":   map[string]any{"parse_method": "DeepDOC", "lang": "en"},
-							"excel": map[string]any{"parse_method": "DeepDOC"},
-						},
+						"pdf":     map[string]any{"parse_method": "DeepDOC", "lang": "en"},
+						"docx":    map[string]any{"output_format": "json"},
 					},
 				},
 			},
@@ -43,9 +41,6 @@ func generalDSL(t *testing.T) []byte {
 	}
 	return raw
 }
-
-// --- CleanComponentParams ---
-
 func TestCleanComponentParams_DropsLegacyFlatFields(t *testing.T) {
 	dslJSON := generalDSL(t)
 	raw := map[string]any{
@@ -74,7 +69,7 @@ func TestCleanComponentParams_DropsUnknownParamKey(t *testing.T) {
 	raw := map[string]any{
 		"Parser:HipSignsRhyme": map[string]any{
 			"no_such_param": 1,
-			"setups":        map[string]any{"pdf": map[string]any{"parse_method": "deepdoc"}},
+			"pdf":           map[string]any{"parse_method": "deepdoc"},
 		},
 	}
 	result := CleanComponentParams(dslJSON, raw)
@@ -82,8 +77,8 @@ func TestCleanComponentParams_DropsUnknownParamKey(t *testing.T) {
 	if _, ok := params["no_such_param"]; ok {
 		t.Error("expected unknown param key to be dropped")
 	}
-	if _, ok := params["setups"]; !ok {
-		t.Error("expected known param key 'setups' to be kept")
+	if _, ok := params["pdf"]; !ok {
+		t.Error("expected known param key 'pdf' to be kept")
 	}
 }
 
@@ -98,7 +93,7 @@ func TestCleanComponentParams_ValidCPNIDPassesThrough(t *testing.T) {
 	dslJSON := generalDSL(t)
 	raw := map[string]any{
 		"Parser:HipSignsRhyme": map[string]any{
-			"setups": map[string]any{"pdf": map[string]any{"parse_method": "deepdoc"}},
+			"pdf": map[string]any{"parse_method": "deepdoc"},
 		},
 		"Chunker:LegalReadersDecide": map[string]any{
 			"chunk_size": float64(256),
@@ -235,8 +230,8 @@ func TestResolveComponentParamsDefaults_Basic(t *testing.T) {
 	if _, ok := parser["outputs"]; ok {
 		t.Error("expected outputs to be stripped")
 	}
-	if _, ok := parser["setups"]; !ok {
-		t.Error("expected setups to be present")
+	if _, ok := parser["pdf"]; !ok {
+		t.Error("expected pdf to be present")
 	}
 	chunker := result["Chunker:LegalReadersDecide"].(map[string]any)
 	if chunker["chunk_size"] != float64(512) {
@@ -260,12 +255,12 @@ func TestResolveComponentParamsDefaults_ResultIsMutable(t *testing.T) {
 	}
 	// Mutate the result.
 	parser := result["Parser:HipSignsRhyme"].(map[string]any)
-	delete(parser, "setups")
+	delete(parser, "pdf")
 	// Re-read: the second call should return a fresh copy unaffected by the mutation.
 	result2, _ := ResolveComponentParamsDefaults(dslJSON)
 	parser2 := result2["Parser:HipSignsRhyme"].(map[string]any)
-	if _, ok := parser2["setups"]; !ok {
-		t.Error("expected result to be independent copy (setups preserved)")
+	if _, ok := parser2["pdf"]; !ok {
+		t.Error("expected result to be independent copy (pdf preserved)")
 	}
 }
 
