@@ -383,3 +383,54 @@ def test_parser_config_normalizes_legacy_vectorize_table_column_role():
         "country": "metadata",
         "x": "both",
     }
+
+
+# Regression tests for issue #16838: validate_immutable_fields now
+# also rejects `run` and `progress_msg` mismatches. The PATCH handler
+# at api/apps/services/document_service.py calls this validator, so
+# any authenticated caller that previously could overwrite pipeline-
+# managed `run` state or the human-readable progress message is now
+# rejected with RetCode.DATA_ERROR (matching the existing
+# chunk_count / token_count / progress behaviour).
+
+
+def test_validate_immutable_fields_run_mismatch_rejected():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq(run="99")
+    err, code = validate_immutable_fields(req, doc)
+    assert err == "Can't change `run`." and code == RetCode.DATA_ERROR
+
+
+def test_validate_immutable_fields_progress_msg_mismatch_rejected():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq(progress_msg="fake")
+    err, code = validate_immutable_fields(req, doc)
+    assert err == "Can't change `progress_msg`." and code == RetCode.DATA_ERROR
+
+
+def test_validate_immutable_fields_run_matches_accepted():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq(run="0")
+    err, code = validate_immutable_fields(req, doc)
+    assert err is None and code is None
+
+
+def test_validate_immutable_fields_progress_msg_matches_accepted():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq(progress_msg="running")
+    err, code = validate_immutable_fields(req, doc)
+    assert err is None and code is None
+
+
+def test_validate_immutable_fields_run_nil_accepted():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq()  # run is None
+    err, code = validate_immutable_fields(req, doc)
+    assert err is None and code is None
+
+
+def test_validate_immutable_fields_progress_msg_nil_accepted():
+    doc = Mock(chunk_num=10, token_num=200, progress=0.5, run="0", progress_msg="running")
+    req = UpdateDocumentReq()  # progress_msg is None
+    err, code = validate_immutable_fields(req, doc)
+    assert err is None and code is None

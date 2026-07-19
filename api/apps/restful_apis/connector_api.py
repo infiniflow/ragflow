@@ -333,6 +333,13 @@ def _exchange_google_web_oauth_code(
     return flow
 
 
+_WEB_OAUTH_PRODUCT_TITLES = {
+    "drive":       "Google Drive",
+    "google-drive": "Google Drive",
+    "gmail":       "Gmail",
+}
+
+
 async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, source="drive"):
     status = "success" if success else "error"
     auto_close = "window.close();" if success else ""
@@ -348,9 +355,12 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
             "message": message,
         }
     )
-    # TODO(google-oauth): title/heading/message may need to reflect drive/gmail based on cached type
+    # Use an explicit product-name map rather than `str.capitalize()`,
+    # which produces "Google-google-drive" (literal `-drive` suffix) for
+    # hyphenated source names. Issue #16871.
+    title = _WEB_OAUTH_PRODUCT_TITLES.get(source, source)
     html = WEB_OAUTH_POPUP_TEMPLATE.format(
-        title=f"Google {source.capitalize()} Authorization",
+        title=f"{title} Authorization",
         heading="Authorization complete" if success else "Authorization failed",
         message=escaped_message,
         payload_json=payload_json,
