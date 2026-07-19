@@ -23,20 +23,19 @@ import { Trash2 } from 'lucide-react';
 export interface InstanceNameSectionProps {
   draftName: string;
   setDraftName: (name: string) => void;
-  handleSaveName: () => Promise<void>;
   handleDelete: () => Promise<void>;
 }
 
 /**
  * The instance-name input section shown at the top of a draft (unsaved)
- * card. The input itself carries the destructive red border (no wrapping
- * red box) and is paired with a Save button + delete icon. The helper
- * text below explains the workflow.
+ * card. The input carries the destructive red border and is paired with
+ * a delete icon. There is no inline Save button - the parent page's
+ * top Save button drives persistence through the imperative ref API.
+ * The helper text below explains the workflow.
  */
 export function InstanceNameSection({
   draftName,
   setDraftName,
-  handleSaveName,
   handleDelete,
 }: InstanceNameSectionProps) {
   const { t: tSetting } = useTranslate('setting');
@@ -56,26 +55,11 @@ export function InstanceNameSection({
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
           placeholder={tSetting('instanceNamePlaceholder')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void handleSaveName();
-            }
-          }}
-          // The input itself carries the red border (not a wrapping
-          // box). Persists while the name is unsaved.
-          className="flex-1  rounded-r-none"
+          // The input itself carries the red border. Persists while the
+          // name is unsaved.
+          className="flex-1"
           data-testid="instance-name-input"
         />
-        <Button
-          onClick={() => void handleSaveName()}
-          disabled={!draftName.trim()}
-          data-testid="instance-name-save"
-          variant="outline"
-          className="rounded-l-none bg-bg-input shrink-0"
-        >
-          {tSetting('save')}
-        </Button>
         <ConfirmDeleteDialog onOk={handleDelete}>
           <Button
             variant="delete"
@@ -88,12 +72,6 @@ export function InstanceNameSection({
           </Button>
         </ConfirmDeleteDialog>
       </div>
-      <p
-        className="text-xs text-text-secondary"
-        data-testid="instance-name-helper"
-      >
-        {tSetting('instanceNameSaveTip')}
-      </p>
     </div>
   );
 }

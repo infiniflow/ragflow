@@ -99,7 +99,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 	// without usage doesn't leak the prior call's data.
 	cm.LastUsage = nil
 	var totalTokens int
-	aggUsage := &ChatUsage{}
+	aggUsage := &TokenUsage{}
 
 	addRoundUsage := func(resp *ChatResponse) {
 		u := resp.Usage
@@ -112,7 +112,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens = aggUsage.TotalTokens
 		// Store per-round delta (not cumulative) so RecordRunTokenUsage
 		// records each round's contribution exactly once.
-		cm.LastUsage = &ChatUsage{
+		cm.LastUsage = &TokenUsage{
 			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, cm)
@@ -129,7 +129,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		tcChoice := "auto"
 		cfg.ToolChoice = &tcChoice
 
-		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
 		if err != nil {
 			return "", totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -163,7 +163,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
 	})
 	cfg := *chatCfg
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
 	}
@@ -231,7 +231,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	// Reset stale per-call usage from a previous call.
 	cm.LastUsage = nil
 	var totalTokens int
-	aggUsage := &ChatUsage{}
+	aggUsage := &TokenUsage{}
 
 	commitRound := func(cfg *ChatConfig, roundTokens int) {
 		// Prefer the authoritative usage from the API (extracted via
@@ -251,7 +251,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			aggUsage.TotalTokens += deltaTotal
 		}
 		totalTokens = aggUsage.TotalTokens
-		cm.LastUsage = &ChatUsage{
+		cm.LastUsage = &TokenUsage{
 			PromptTokens: deltaPrompt, CompletionTokens: deltaCompletion, TotalTokens: deltaTotal,
 		}
 		recordUsageFromResponse(ctx, cm)
@@ -270,7 +270,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		cfg.Stream = boolPtr(true)
 		var tcs []map[string]interface{}
 		cfg.ToolCallsResult = &tcs
-		var roundUsage ChatUsage
+		var roundUsage TokenUsage
 		cfg.UsageResult = &roundUsage
 
 		reasoningStarted := false
@@ -278,7 +278,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		var pendingThinkClose bool
 		var roundTokens int
 
-		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				if !reasoningStarted {
 					reasoningStarted = true
@@ -348,10 +348,10 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	})
 	cfg := *chatCfg
 	cfg.Stream = boolPtr(true)
-	var exceedUsage ChatUsage
+	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
-	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 		if delta != nil && *delta != "" && *delta != "[DONE]" {
 			exceedTokens += tokenizer.NumTokensFromString(*delta)
 		}

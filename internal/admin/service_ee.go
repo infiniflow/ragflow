@@ -434,7 +434,7 @@ func (s *Service) ShowUserDatasetSummary(email, dataset string) (map[string]inte
 	return result, nil
 }
 
-// GetUserSummary get user summary for enterprise edition
+// ShowUserSummary show user summary for enterprise edition
 func (s *Service) ShowUserSummary(email string) (map[string]interface{}, error) {
 	// Query user by email
 	var user entity.User

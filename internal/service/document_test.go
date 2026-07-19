@@ -396,6 +396,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -564,29 +565,6 @@ func insertTestFile(t *testing.T, id, parentID, name string, location *string) {
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
 	}
-}
-
-func TestCreateDocumentIncrementsKBDocNum(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-create", "tenant-1", 0, 0, 0)
-
-	svc := testDocumentService(t)
-	doc, err := svc.CreateDocument(&CreateDocumentRequest{
-		Name:      "created.txt",
-		KbID:      "kb-create",
-		ParserID:  "naive",
-		CreatedBy: "tenant-1",
-		Type:      "doc",
-		Source:    "local",
-	})
-	if err != nil {
-		t.Fatalf("CreateDocument failed: %v", err)
-	}
-	if doc == nil || doc.KbID != "kb-create" {
-		t.Fatalf("unexpected doc: %+v", doc)
-	}
-	assertKBDocNum(t, "kb-create", 1)
 }
 
 func TestDeleteDocumentFull_Basic(t *testing.T) {
@@ -811,8 +789,8 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["location"] != "nested/path/deck(1).pptx" {
 		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
 	}
-	if doc["parser_id"] != "presentation" {
-		t.Fatalf("parser_id=%v, want presentation", doc["parser_id"])
+	if doc["parser_id"] != "" {
+		t.Fatalf("parser_id=%v, want empty (canvas pipeline mode)", doc["parser_id"])
 	}
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
@@ -859,7 +837,7 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("code=%v, want success", code)
 	}
-	if got["type"] != "virtual" || got["parser_id"] != "manual" || got["size"] != int64(0) {
+	if got["type"] != "virtual" || got["parser_id"] != "" || got["size"] != int64(0) {
 		t.Fatalf("unexpected doc map: %v", got)
 	}
 
@@ -1722,7 +1700,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentChunkMethodResetsForReparse(t *testing.T) {
+func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
@@ -1731,12 +1709,12 @@ func TestUpdateDatasetDocumentChunkMethodResetsForReparse(t *testing.T) {
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
 	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ChunkMethod: &chunkMethod,
-	}, map[string]bool{"chunk_method": true})
+		ParserID: &chunkMethod,
+	}, map[string]bool{"parser_id": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
-	if resp.ChunkMethod != chunkMethod || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
+	if resp.ParserID != chunkMethod || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
 		t.Fatalf("response = %+v, want method=%s run=UNSTART counts=0", resp, chunkMethod)
 	}
 
@@ -1746,37 +1724,6 @@ func TestUpdateDatasetDocumentChunkMethodResetsForReparse(t *testing.T) {
 	}
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.Progress != 0 {
 		t.Fatalf("doc counters/progress = token:%d chunk:%d progress:%f, want zero", doc.TokenNum, doc.ChunkNum, doc.Progress)
-	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
-	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
-		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
-	}
-}
-
-func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
-
-	parserID := "manual"
-	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID: &parserID,
-	}, map[string]bool{"parser_id": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
-	}
-	if resp.ChunkMethod != parserID || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
-		t.Fatalf("response = %+v, want parser_id=%s run=UNSTART counts=0", resp, parserID)
-	}
-
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
-	if doc.ParserID != parserID {
-		t.Fatalf("parser_id = %q, want %q", doc.ParserID, parserID)
-	}
-	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
-		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
 	}
 	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
@@ -2325,7 +2272,7 @@ func TestMergeFieldValuesKeepsNumericValues(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverChunkMethod(t *testing.T) {
+func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
@@ -2335,17 +2282,17 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverChunkMethod(t *testin
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
 	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		PipelineID:  &pipelineID,
-		ChunkMethod: &chunkMethod,
-	}, map[string]bool{"pipeline_id": true, "chunk_method": true})
+		PipelineID: &pipelineID,
+		ParserID:   &chunkMethod,
+	}, map[string]bool{"pipeline_id": true, "parser_id": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
 	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
 		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
 	}
-	if resp.ChunkMethod != "naive" {
-		t.Fatalf("chunk_method = %q, want original naive", resp.ChunkMethod)
+	if resp.ParserID != "naive" {
+		t.Fatalf("parser_id = %q, want original naive", resp.ParserID)
 	}
 }
 

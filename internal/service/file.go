@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -1121,6 +1122,91 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 		}
 	}
 	return texts, images, nil
+}
+
+// parseAgentUploads resolves descriptors returned by upload_info from the
+// caller's downloads bucket and converts them to sys.files values.
+func (s *FileService) parseAgentUploads(userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	contents := make([]string, 0, len(fileDicts))
+	for i, fd := range fileDicts {
+		id, _ := fd["id"].(string)
+		name, _ := fd["name"].(string)
+		mimeType, _ := fd["mime_type"].(string)
+		createdBy, _ := fd["created_by"].(string)
+		if id == "" || name == "" || mimeType == "" || createdBy == "" {
+			return nil, fmt.Errorf("file %d: id, name, mime_type, and created_by are required", i)
+		}
+		if createdBy != userID {
+			return nil, fmt.Errorf("file %q: created_by does not match the current user", name)
+		}
+
+		data, err := storageImpl.Get(createdBy+"-downloads", id)
+		if err != nil {
+			return nil, fmt.Errorf("file %q: read upload: %w", name, err)
+		}
+		if len(data) == 0 {
+			return nil, fmt.Errorf("file %q: upload is empty", name)
+		}
+
+		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+		if strings.HasPrefix(mediaType, "image/") {
+			contents = append(contents, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
+			continue
+		}
+
+		content, err := parseAgentUploadContent(name, data, layoutRecognize)
+		if err != nil {
+			return nil, fmt.Errorf("file %q: parse upload: %w", name, err)
+		}
+		contents = append(contents, content)
+	}
+	return contents, nil
+}
+
+func parseAgentUploadContent(filename string, data []byte, layoutRecognize string) (string, error) {
+	content := string(data)
+	fileType := utility.GetFileType(filename)
+	if fileType != utility.FileTypeOTHER {
+		fp, err := parser.GetParser(fileType)
+		if err != nil {
+			return "", err
+		}
+		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
+			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
+		}
+		res := fp.ParseWithResult(filename, data)
+		if res.Err != nil {
+			return "", res.Err
+		}
+		switch res.OutputFormat {
+		case "text":
+			content = res.Text
+		case "markdown":
+			content = res.Markdown
+		case "html":
+			content = res.HTML
+		case "json":
+			parts := make([]string, 0, len(res.JSON))
+			for _, item := range res.JSON {
+				if text, ok := item["text"].(string); ok {
+					parts = append(parts, text)
+					continue
+				}
+				raw, err := json.Marshal(item)
+				if err != nil {
+					return "", err
+				}
+				parts = append(parts, string(raw))
+			}
+			content = strings.Join(parts, "\n")
+		}
+	}
+	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
