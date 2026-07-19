@@ -127,6 +127,7 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		[]Message{{Role: "system", Content: "be helpful"}, {Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -165,7 +166,7 @@ func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
 		version,
 		[]Message{{Role: "user", Content: "hello"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -205,7 +206,7 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "user", Content: "hello"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 	err := newReplicateForTest(apiSrv.URL).ChatStreamlyWithSender(
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "user", Content: "hello"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c != nil {
 				chunks = append(chunks, *c)
@@ -312,7 +313,7 @@ func TestReplicateUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).
 	// Pass non-empty docs + nil modelName to trigger model-name validation.
-	if _, err := m.Rerank(nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.Rerank(nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	// Balance IS a stub → "no such method"

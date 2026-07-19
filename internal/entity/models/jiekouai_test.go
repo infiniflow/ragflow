@@ -94,6 +94,7 @@ func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -135,6 +136,7 @@ func TestJieKouAIStreamForcesStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(answer, reason *string) error {
 			if answer != nil {
 				content = append(content, *answer)
@@ -225,7 +227,7 @@ func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
 
 	apiKey := "test-key"
 	model := " text-embedding-3-large "
-	embeddings, err := newJieKouAIForTest(srv.URL).Embed(&model, []string{"hello"}, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newJieKouAIForTest(srv.URL).Embed(&model, []string{"hello"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -259,7 +261,7 @@ func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	model := " baai/bge-reranker-v2-m3 "
-	resp, err := newJieKouAIForTest(srv.URL).Rerank(&model, " question ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newJieKouAIForTest(srv.URL).Rerank(&model, " question ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -282,7 +284,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -290,7 +292,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -298,21 +300,21 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newJieKouAIForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, send)
+				return newJieKouAIForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newJieKouAIForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				return newJieKouAIForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -320,7 +322,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "embed api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Embed(&model, []string{"x"}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Embed(&model, []string{"x"}, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -328,7 +330,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(nil, "q", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(nil, "q", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -336,7 +338,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(&model, "q", []string{"doc"}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(&model, "q", []string{"doc"}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -344,7 +346,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank query",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(&model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(&model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "query is required",

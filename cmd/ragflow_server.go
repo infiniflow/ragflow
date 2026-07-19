@@ -368,8 +368,8 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	ctx := context.Background()
-	if err = server.StartServer(ctx, serverName); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}

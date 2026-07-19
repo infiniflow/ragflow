@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -234,7 +235,7 @@ type cometapiModelCatalogItem struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -273,7 +274,7 @@ func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
-func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -383,7 +384,7 @@ type cometapiEmbeddingRequest struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -533,12 +534,12 @@ func (c *CometAPIModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 // Rerank calculates similarity scores between query and documents.
-func (c *CometAPIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (c *CometAPIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // TranscribeAudio transcribe audio
-func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -653,12 +654,12 @@ func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConf
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (c *CometAPIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (c *CometAPIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // AudioSpeech synthesizes speech audio from text.
-func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -718,16 +719,16 @@ func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, api
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (c *CometAPIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (c *CometAPIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // OCRFile OCR file
-func (c *CometAPIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (c *CometAPIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CometAPIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (c *CometAPIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 

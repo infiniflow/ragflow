@@ -133,6 +133,7 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 			"language":    "en",
 			"temperature": 0.2,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
@@ -191,6 +192,7 @@ func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
 		&model,
 		&audioPath,
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(content, _ *string) error {
 			if content != nil {
@@ -262,6 +264,7 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 				"speed": 1.25,
 			},
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("AudioSpeech: %v", err)
@@ -281,6 +284,7 @@ func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
 		&input,
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "voice is required") {
 		t.Fatalf("err=%v, want voice is required", err)
@@ -297,6 +301,7 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 		&input,
 		&APIConfig{ApiKey: &apiKey},
 		&TTSConfig{Params: map[string]interface{}{"voice": 123}},
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "voice is required") {
 		t.Fatalf("err=%v, want voice is required", err)
@@ -349,6 +354,7 @@ func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
 		&input,
 		&APIConfig{ApiKey: &apiKey},
 		&TTSConfig{Params: map[string]interface{}{"voice": "alloy"}},
+		nil,
 		func(content, _ *string) error {
 			if content != nil {
 				chunks = append(chunks, *content)
@@ -398,6 +404,7 @@ func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
 			"voice":         "alloy",
 			"stream_format": "sse",
 		}},
+		nil,
 		func(content, _ *string) error {
 			if content != nil {
 				chunks = append(chunks, *content)
