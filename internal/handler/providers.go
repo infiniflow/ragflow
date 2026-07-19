@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -722,8 +723,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
-
 	if !req.Thinking {
 		req.Effort = nil
 		req.Verbosity = nil
@@ -747,6 +746,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		Verbosity:   req.Verbosity,
 	}
 
+	userID := c.GetString("user_id")
+	email := c.GetString("email")
+	modelUsage := common.ModelUsage{
+		UserID:       userID,
+		UserEmail:    email,
+		ProviderName: *req.ProviderName,
+		ModelName:    *req.ModelName,
+		Type:         "chat",
+		StartAt:      time.Now(),
+	}
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
@@ -789,7 +798,18 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (the best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, messages, &apiConfig, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(
+			req.ProviderName,
+			req.InstanceName,
+			req.ModelName,
+			req.ModelID,
+			userID,
+			messages,
+			&apiConfig,
+			&chatConfig,
+			&modelUsage,
+			sender,
+		)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
@@ -809,7 +829,17 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		content := msg["content"]
 		messages[i] = models.Message{Role: role, Content: content}
 	}
-	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, messages, &apiConfig, &chatConfig)
+	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(
+		req.ProviderName,
+		req.InstanceName,
+		req.ModelName,
+		req.ModelID,
+		userID,
+		messages,
+		&apiConfig,
+		&chatConfig,
+		&modelUsage,
+	)
 
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())

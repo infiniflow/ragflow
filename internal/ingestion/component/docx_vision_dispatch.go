@@ -296,5 +296,5 @@ func defaultVisionChatInvoker(
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
 	vision := true
-	return driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision})
+	return driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 }

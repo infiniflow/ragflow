@@ -14,40 +14,33 @@
 //  limitations under the License.
 //
 
-package server
+package clickhouse
 
 import (
-	"context"
-	"errors"
-
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"ragflow/internal/common"
+	"sync"
 )
 
-var serverEE *EEServer
+var (
+	globalDriver *Driver
+	once         sync.Once
+)
 
-func init() {
-	serverEE = newEEServer()
+type Driver struct {
 }
 
-type EEServer struct {
-	tracerProvider *sdktrace.TracerProvider
+// GetDriver gets global stats client instance
+func GetDriver() *Driver {
+	return globalDriver
 }
 
-func newEEServer() *EEServer {
-	return &EEServer{}
-}
-
-func StartServer(ctx context.Context, cancel context.CancelFunc, serverName string) error {
-	if serverEE == nil {
-		return errors.New("server EE is nil")
-	}
-
+func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
+	//if modelUsage != nil {
+	//	common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
+	//}
 	return nil
 }
 
-func ShutdownServer(ctx context.Context) error {
-	if serverEE == nil {
-		return errors.New("server EE is nil")
-	}
-	return nil
+func (d *Driver) Status() (map[string]interface{}, error) {
+	return nil, nil
 }
