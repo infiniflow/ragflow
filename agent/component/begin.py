@@ -36,6 +36,27 @@ class BeginParam(UserFillUpParam):
 class Begin(UserFillUp):
     component_name = "Begin"
 
+    def _merge_runtime_inputs(self, runtime_inputs):
+        if runtime_inputs:
+            return runtime_inputs
+
+        fields = self.get_input_elements()
+        query = self._canvas.globals.get("sys.query")
+        if not fields or query is None or query == "":
+            return {}
+
+        if isinstance(query, dict):
+            return {
+                key: value if isinstance(value, dict) else {"value": value}
+                for key, value in query.items()
+                if key in fields
+            }
+
+        if len(fields) == 1:
+            return {next(iter(fields)): {"value": query}}
+
+        return {}
+
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Begin processing"):
             return

@@ -170,12 +170,19 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	go ingestor.executeTask(newAckTaskCtx(context.Background(), taskID, docID, handle))
 
 	<-started
-	time.Sleep(30 * time.Millisecond) // let the ticker fire a few times
-	close(proceed)                    // release the long task
 
+	// Poll for heartbeats with a generous deadline so the test is resilient
+	// to slow CI schedulers. The ticker fires every heartbeatInterval (5ms);
+	// the first tick may be delayed if the goroutine is not scheduled promptly.
+	heartbeatDeadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(heartbeatDeadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if handle.inProgress.Load() == 0 {
 		t.Fatal("expected InProgress heartbeats while runDocumentTask was blocked, got 0")
 	}
+
+	close(proceed) // release the long task — only after confirming heartbeats
 
 	// Poll for Ack completion (executeTask must finish MarkCompleted + Ack).
 	deadline := time.Now().Add(2 * time.Second)

@@ -1,6 +1,3 @@
-//go:build integration
-// +build integration
-
 package task
 
 import (
@@ -386,7 +383,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.processOutput(context.Background(), pipelineOut); err != nil {
+	if _, err := svc.processOutput(context.Background(), pipelineOut, time.Now()); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -430,7 +427,7 @@ func taskRepoRoot(t *testing.T) string {
 
 func mustLoadTaskRealIntegrationConfig(t *testing.T) *server.Config {
 	t.Helper()
-	if err := common.Init("info", common.FileOutput{}); err != nil {
+	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)
 	}
 	server.SetLogger(zap.NewNop())

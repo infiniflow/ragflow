@@ -861,14 +861,8 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 		return
 	}
 
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -887,14 +881,8 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 
 // ShowUserSummary handle show user summary
 func (h *Handler) ShowUserSummary(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -913,14 +901,8 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 
 // ShowUserStorage handle show user storage
 func (h *Handler) ShowUserStorage(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -939,14 +921,8 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 
 // ShowUserQuota handle show user quota
 func (h *Handler) ShowUserQuota(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -965,14 +941,8 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 
 // ShowUserIndex handle show user index
 func (h *Handler) ShowUserIndex(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -996,14 +966,8 @@ type UpdateUserRoleHTTPRequest struct {
 
 // UpdateUserRole handle update user role
 func (h *Handler) UpdateUserRole(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1024,14 +988,8 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 
 // ShowUserPermission handle show user permission
 func (h *Handler) ShowUserPermission(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1046,14 +1004,8 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 
 // ListUserDatasets handle show user datasets
 func (h *Handler) ListUserDatasets(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1068,14 +1020,8 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 
 // ListUserAgents handle show user agents
 func (h *Handler) ListUserAgents(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1090,14 +1036,8 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1112,14 +1052,8 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 
 // ListUserSearches handle show user searches
 func (h *Handler) ListUserSearches(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1134,14 +1068,8 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 
 // ListUserModels handle show user models
 func (h *Handler) ListUserModels(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1156,14 +1084,8 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 
 // ListUserFiles handle show user files
 func (h *Handler) ListUserFiles(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1178,14 +1100,8 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 
 // ListUserProviders handle show user providers
 func (h *Handler) ListUserProviders(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1662,14 +1578,8 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1758,14 +1668,8 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 
 // ListUserAPIKeys handle list user API keys
 func (h *Handler) ListUserAPIKeys(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 

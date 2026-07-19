@@ -450,10 +450,14 @@ func ptrStringValue(s *string) string {
 }
 
 func factoryModelTypeName(modelType string) string {
-	if modelType == "image2text" {
+	switch modelType {
+	case "image2text":
 		return "vision"
+	case "speech2text":
+		return "asr"
+	default:
+		return modelType
 	}
-	return modelType
 }
 
 // GetDefaultModelName returns the full default model ID for a tenant and model type
@@ -662,32 +666,32 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	if ownedTenant.OCRID == "" {
-		return result, nil
+	if ownedTenant.OCRID != "" {
+		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultOCRModelProvider,
+				ModelInstance: defaultOCRModelInstance,
+				ModelName:     defaultOCRModelName,
+				ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
+				ModelType:     "ocr",
+				Enable:        defaultOCRModelEnable,
+			})
+		}
 	}
 
-	defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultOCRModelProvider,
-			ModelInstance: defaultOCRModelInstance,
-			ModelName:     defaultOCRModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
-			ModelType:     "ocr",
-			Enable:        defaultOCRModelEnable,
-		})
-	}
-
-	defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.TTSID, "tts")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultTTSModelProvider,
-			ModelInstance: defaultTTSModelInstance,
-			ModelName:     defaultTTSModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
-			ModelType:     "tts",
-			Enable:        defaultTTSModelEnable,
-		})
+	if ownedTenant.TTSID != "" {
+		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.TTSID, "tts")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultTTSModelProvider,
+				ModelInstance: defaultTTSModelInstance,
+				ModelName:     defaultTTSModelName,
+				ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
+				ModelType:     "tts",
+				Enable:        defaultTTSModelEnable,
+			})
+		}
 	}
 
 	return result, nil
@@ -697,6 +701,24 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	_, _, modelTypeBit, err := tenantDefaultModelFields(modelType)
 	if err != nil {
 		return err
+	}
+
+	// Static bypass: deepdoc is a built-in model that doesn't need DB checks (mirrors Python _check_model_available).
+	if providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return nil
+	}
+
+	// Static bypass: OCR with infiniflow@default@deepdoc is always enabled (mirrors Python _check_model_available).
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return nil
+	}
+
+	// Static bypass: TEI Builtin embedding model when COMPOSE_PROFILES includes tei- (mirrors Python _check_model_available).
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if modelType == "embedding" && strings.Contains(composeProfiles, "tei-") && teiModel != "" &&
+		modelName == teiModel && (providerName == "" || providerName == "Builtin") {
+		return nil
 	}
 
 	// Check if the provider and instance exists
@@ -794,19 +816,25 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 			return err
 		}
 		if modelID == "" {
-			modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
-			if err != nil {
-				return err
+			// Builtin provider doesn't use tenant_model rows; leave tenantModelID nil
+			// (mirrors Python resolve_model_id returning None for Builtin).
+			if modelProvider == "Builtin" {
+				tenantModelID = nil
+			} else {
+				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
+				if err != nil {
+					return err
+				}
+				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
+				if err != nil {
+					return err
+				}
+				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				if err != nil {
+					return err
+				}
+				tenantModelID = modelEntity.ID
 			}
-			modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
-			if err != nil {
-				return err
-			}
-			modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
-			if err != nil {
-				return err
-			}
-			tenantModelID = modelEntity.ID
 		}
 		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
 	} else {

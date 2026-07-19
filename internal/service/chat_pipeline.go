@@ -1116,7 +1116,7 @@ func (s *ChatPipelineService) AsyncChat(
 					})
 			} else {
 				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
@@ -1253,7 +1253,7 @@ func (s *ChatPipelineService) AsyncChat(
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
 				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 				)
 				if respErr != nil {
 					err = respErr
@@ -1434,7 +1434,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			timer.Enter(common.PhaseGenerateAnswer)
 
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
@@ -1560,7 +1560,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, nil)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 			)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
@@ -2251,7 +2251,7 @@ func (s *ChatPipelineService) synthesizeTTS(ttsModel *modelModule.ChatModel, tex
 		return nil
 	}
 	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"},
+		ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
 	)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
@@ -2642,7 +2642,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(e.embModel.ModelName, texts, e.embModel.APIConfig, config)
+	embeds, err := e.embModel.ModelDriver.Embed(e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3599,7 +3599,7 @@ func chatForSQL(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, cfg,
+		modelName, msgs, chatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err
