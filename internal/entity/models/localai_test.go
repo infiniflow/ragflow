@@ -80,7 +80,7 @@ func TestLocalAIStreamCancelsOnIdle(t *testing.T) {
 	var mu sync.Mutex
 	err := l.ChatStreamlyWithSender("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(content *string, _ *string) error {
 			if content == nil || *content == "" {
 				return nil
@@ -130,7 +130,7 @@ func TestLocalAIStreamCompletesWithoutTriggeringWatchdog(t *testing.T) {
 	var chunks []string
 	err := l.ChatStreamlyWithSender("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(content *string, _ *string) error {
 			if content != nil && *content != "" && *content != "[DONE]" {
 				chunks = append(chunks, *content)
@@ -150,7 +150,7 @@ func TestLocalAIStreamRequiresSender(t *testing.T) {
 	l := newLocalAIForTest("http://unused")
 	err := l.ChatStreamlyWithSender("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil)
+		&APIConfig{}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
@@ -163,7 +163,8 @@ func TestLocalAIChatMissingBaseURLFailsClearly(t *testing.T) {
 	l := NewLocalAIModel(map[string]string{}, URLSuffix{Chat: "chat/completions"})
 	_, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
@@ -183,7 +184,8 @@ func TestLocalAIChatOmitsAuthHeaderWhenKeyEmpty(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -207,7 +209,8 @@ func TestLocalAIChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 	key := "secret"
 	_, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -235,7 +238,7 @@ func TestLocalAIEmbedHappyPath(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(&model, []string{"a", "b", "c"}, &APIConfig{}, nil)
+	vecs, err := l.Embed(&model, []string{"a", "b", "c"}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -260,7 +263,7 @@ func TestLocalAIEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -274,7 +277,7 @@ func TestLocalAIEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -288,7 +291,7 @@ func TestLocalAIEmbedRejectsMissingSlot(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
@@ -302,7 +305,7 @@ func TestLocalAIEmbedEmptyInputShortCircuits(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(&model, []string{}, &APIConfig{}, nil)
+	vecs, err := l.Embed(&model, []string{}, &APIConfig{}, nil, nil)
 	if err != nil || len(vecs) != 0 {
 		t.Errorf("Embed([])=(%v,%v) want ([],nil)", vecs, err)
 	}
@@ -369,7 +372,8 @@ func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("kimi-k2.6",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -396,7 +400,8 @@ func TestLocalAIChatExtractsThinking(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("qwen3-32b",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -419,7 +424,8 @@ func TestLocalAIChatHandlesAbsentReasoning(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	resp, err := l.ChatWithMessages("llama-3-8b-instruct",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{}, nil)
+		&APIConfig{}, nil, nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -452,7 +458,7 @@ func TestLocalAIStreamExtractsReasoningContentDelta(t *testing.T) {
 	var content, reasoning []string
 	err := l.ChatStreamlyWithSender("kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -495,7 +501,7 @@ func TestLocalAIStreamExtractsThinkingDelta(t *testing.T) {
 	var got []string
 	err := l.ChatStreamlyWithSender("qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				got = append(got, "R:"+*r)
@@ -537,7 +543,7 @@ func TestLocalAIChatPropagatesReasoningEffort(t *testing.T) {
 	effort := "high"
 	_, err := l.ChatWithMessages("kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, &ChatConfig{Effort: &effort})
+		&APIConfig{}, &ChatConfig{Effort: &effort}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -571,7 +577,7 @@ func TestLocalAIChatPropagatesEnableThinking(t *testing.T) {
 	think := true
 	_, err := l.ChatWithMessages("qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, &ChatConfig{Thinking: &think})
+		&APIConfig{}, &ChatConfig{Thinking: &think}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -606,7 +612,7 @@ func TestLocalAIStreamPropagatesReasoningParams(t *testing.T) {
 	think := true
 	err := l.ChatStreamlyWithSender("kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, &ChatConfig{Effort: &effort, Thinking: &think},
+		&APIConfig{}, &ChatConfig{Effort: &effort, Thinking: &think}, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err != nil {

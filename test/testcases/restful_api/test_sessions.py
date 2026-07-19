@@ -320,7 +320,7 @@ def test_session_delete_error_and_repeat_contract(rest_client, create_chat):
         assert f"The chat doesn't own the session {session_id}" in second_payload["message"], second_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_session_delete_concurrent_and_bulk_contract(rest_client, create_chat):
     concurrent_chat_id, concurrent_sessions = _seed_sessions(rest_client, create_chat, "delete_concurrent", count=20)
 
@@ -677,7 +677,7 @@ def test_chat_completion_nonstream_without_chat(rest_client):
     assert "answer" in completion_payload["data"], completion_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_completion_stream_events(rest_client, create_chat):
     chat_id = create_chat("restful_completion_stream_chat")
     stream_res = rest_client.post(

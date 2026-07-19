@@ -14,16 +14,11 @@
 #  limitations under the License.
 #
 import json
-import logging
 import re
 from functools import partial
 
 from agent.component.base import ComponentParamBase, ComponentBase
 from api.db.services.file_service import FileService
-
-_logger = logging.getLogger(__name__)
-
-_INITIAL_USER_INPUT_CONSUMED_KEY = "sys.__initial_user_input_consumed__"
 
 
 class UserFillUpParam(ComponentParamBase):
@@ -41,41 +36,7 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _merge_runtime_inputs(self, runtime_inputs):
-        if runtime_inputs:
-            return runtime_inputs
-
-        # Only the entry `Begin` node may consume the initial user query as its
-        # form answer. A mid-flow `Await Response` (UserFillUp) must always pause
-        # for a fresh user response; otherwise a single-field form would silently
-        # continue using the opening message instead of waiting (multi-field forms
-        # already wait, so this restores consistent behavior).
-        if self.component_name.lower() != "begin":
-            _logger.debug("[UserFillUp] '%s' is not Begin; skipping initial query consumption and waiting for user input", self.component_name)
-            return {}
-
-        fields = self.get_input_elements()
-        if not fields:
-            return {}
-
-        if self._canvas.globals.get(_INITIAL_USER_INPUT_CONSUMED_KEY):
-            return {}
-
-        query = self._canvas.globals.get("sys.query")
-        if query is None or query == "":
-            return {}
-
-        if isinstance(query, dict):
-            matched = {key: value if isinstance(value, dict) else {"value": value} for key, value in query.items() if key in fields}
-            if matched:
-                self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
-            return matched
-
-        if len(fields) == 1:
-            field_name = next(iter(fields))
-            self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
-            return {field_name: {"value": query}}
-
-        return {}
+        return runtime_inputs or {}
 
     def _resolve_input_value(self, value, layout_recognize):
         if isinstance(value, dict) and value.get("type", "").lower().find("file") >= 0:

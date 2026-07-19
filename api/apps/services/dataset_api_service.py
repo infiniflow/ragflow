@@ -409,10 +409,25 @@ def list_datasets(tenant_id: str, args: dict):
     kbs, total = KnowledgebaseService.get_list(tenant_ids, tenant_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
+
+    ips_arg = args.get("include_parsing_status", False)
+    if isinstance(ips_arg, str):
+        include_parsing_status = ips_arg.lower() not in ("false", "0", "")
+    elif isinstance(ips_arg, bool):
+        include_parsing_status = ips_arg
+    else:
+        include_parsing_status = bool(ips_arg)
+
+    status_by_kb = {}
+    if include_parsing_status and kbs:
+        status_by_kb = DocumentService.get_parsing_status_by_kb_ids([kb["id"] for kb in kbs])
+
     response_data_list = []
     for kb in kbs:
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
+        if status_by_kb:
+            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
         response_data_list.append(remap_dictionary_keys(kb))
     return True, {"data": response_data_list, "total": total}
 
