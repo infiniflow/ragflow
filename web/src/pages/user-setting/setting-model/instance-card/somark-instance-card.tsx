@@ -28,7 +28,6 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
-  useAddProviderInstance,
   useDeleteProviderInstance,
   useFetchProviderInstance,
   useVerifyProviderConnection,
@@ -37,11 +36,23 @@ import { IProviderInstance } from '@/interfaces/database/llm';
 import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { VerifyResult } from '../hooks';
+import {
+  ProviderInstanceCardProps,
+  ProviderInstanceCardRef,
+} from './interface';
 import VerifyButton from './verify-button';
 
 const IMAGE_FORMATS = ['url', 'base64', 'none'] as const;
@@ -64,24 +75,6 @@ const buildFormatOptions = <T extends keyof typeof FORMAT_LABELS>(
   formats: readonly T[],
 ) => formats.map((value) => ({ label: FORMAT_LABELS[value], value }));
 
-// Field names whose value commits via click (Selects, Switches) rather
-// than blur. Their popovers render in Radix portals outside the card's
-// blur container, so blur-driven saves don't catch them — a form.watch
-// watcher is used instead to schedule a save when they change.
-const SOMARK_WATCHED_FIELDS = new Set([
-  'somark_image_format',
-  'somark_formula_format',
-  'somark_table_format',
-  'somark_cs_format',
-  'somark_enable_text_cross_page',
-  'somark_enable_table_cross_page',
-  'somark_enable_title_level_recognition',
-  'somark_enable_inline_image',
-  'somark_enable_table_image',
-  'somark_enable_image_understanding',
-  'somark_keep_header_footer',
-]);
-
 type SoMarkFormValues = {
   llm_name: string;
   somark_base_url: string;
@@ -103,23 +96,19 @@ interface SoMarkInstanceCardProps {
   providerName: string;
   instance: IProviderInstance;
   isDraft?: boolean;
-  onSaved?: (values: Record<string, any>) => void | Promise<void>;
-  onNameSaved?: (instanceName: string) => void;
   onDelete?: () => void;
-  /**
-   * When true, this card starts expanded and fetches its instance
-   * details on mount. Default `false` so non-first cards stay
-   * collapsed until the user opens them.
-   */
   defaultOpen?: boolean;
 }
 
 /**
- * Inline instance card for SoMark. Mirrors the two-stage UX of
- * `BedrockInstanceCard` (save name first, then edit fields) but renders
- * SoMark-specific fields (model name, base URL, API key, 4 element-format
- * selects, 7 feature toggles) directly. The model type is fixed to
- * `['ocr']` (SoMark is an OCR provider) and not exposed in the form.
+ * Inline instance card for SoMark. Renders SoMark-specific fields
+ * (model name, base URL, API key, 4 element-format selects, 7 feature
+ * toggles) directly. The model type is fixed to `['ocr']` (SoMark is
+ * an OCR provider) and not exposed in the form.
+ *
+ * All fields are editable from the start (no name-first lock); the
+ * parent page's top Save button drives persistence through the
+ * imperative ref API.
  *
  * Payload shape (matches the legacy `useSubmitSoMark` hook so the
  * backend contract is unchanged):
@@ -134,28 +123,21 @@ interface SoMarkInstanceCardProps {
  *     }]
  *   }
  */
-export function SoMarkInstanceCard({
-  providerName,
-  instance,
-  isDraft = false,
-  onSaved,
-  onNameSaved,
-  onDelete,
-  defaultOpen = false,
-}: SoMarkInstanceCardProps) {
+export const SoMarkInstanceCard = forwardRef<
+  ProviderInstanceCardRef,
+  SoMarkInstanceCardProps
+>(function SoMarkInstanceCard(
+  { providerName, instance, isDraft = false, onDelete, defaultOpen = false },
+  ref,
+) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
-  const [nameSaved, setNameSaved] = useState(!isDraft);
-  const savingRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
       setDraftName('');
-      setNameSaved(false);
-    } else {
-      setNameSaved(true);
     }
   }, [providerName, isDraft]);
 
@@ -226,12 +208,19 @@ export function SoMarkInstanceCard({
       llm_name: modelInfo?.llm_name ?? modelInfo?.model_name ?? '',
       somark_base_url: (merged.base_url as string) ?? '',
       somark_api_key: apiKey,
-      somark_image_format: (extra.somark_image_format as (typeof IMAGE_FORMATS)[number]) ?? 'url',
-      somark_formula_format: (extra.somark_formula_format as (typeof FORMULA_FORMATS)[number]) ?? 'latex',
-      somark_table_format: (extra.somark_table_format as (typeof TABLE_FORMATS)[number]) ?? 'html',
-      somark_cs_format: (extra.somark_cs_format as (typeof CS_FORMATS)[number]) ?? 'image',
-      somark_enable_text_cross_page: extra.somark_enable_text_cross_page ?? false,
-      somark_enable_table_cross_page: extra.somark_enable_table_cross_page ?? false,
+      somark_image_format:
+        (extra.somark_image_format as (typeof IMAGE_FORMATS)[number]) ?? 'url',
+      somark_formula_format:
+        (extra.somark_formula_format as (typeof FORMULA_FORMATS)[number]) ??
+        'latex',
+      somark_table_format:
+        (extra.somark_table_format as (typeof TABLE_FORMATS)[number]) ?? 'html',
+      somark_cs_format:
+        (extra.somark_cs_format as (typeof CS_FORMATS)[number]) ?? 'image',
+      somark_enable_text_cross_page:
+        extra.somark_enable_text_cross_page ?? false,
+      somark_enable_table_cross_page:
+        extra.somark_enable_table_cross_page ?? false,
       somark_enable_title_level_recognition:
         extra.somark_enable_title_level_recognition ?? false,
       somark_enable_inline_image: extra.somark_enable_inline_image ?? false,
@@ -345,163 +334,6 @@ export function SoMarkInstanceCard({
     ],
   );
 
-  const { addProviderInstance } = useAddProviderInstance();
-
-  const handleSaveName = useCallback(async () => {
-    const trimmed = draftName.trim();
-    if (!trimmed) return;
-    const ret = await addProviderInstance({
-      llm_factory: providerName,
-      instance_name: trimmed,
-    } as any);
-    if (ret?.code === 0) {
-      onNameSaved?.(trimmed);
-    }
-  }, [draftName, addProviderInstance, providerName, onNameSaved]);
-
-  // Auto-save in draft mode after the name is locked. Debounced on form
-  // value changes; refuses to fire until validation passes.
-  useEffect(() => {
-    if (!isDraft) return;
-    if (!nameSaved) return;
-    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-    const sub = form.watch(() => {
-      if (saveTimeout) clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(async () => {
-        if (cancelled || savingRef.current) return;
-        const isValid = await form.trigger();
-        if (cancelled || savingRef.current) return;
-        if (!isValid) return;
-        const trimmed = draftName.trim();
-        if (!trimmed) return;
-        savingRef.current = true;
-        try {
-          const values = form.getValues();
-          const payload = buildPayload(values, trimmed);
-          await onSaved?.(payload as unknown as Record<string, any>);
-        } finally {
-          savingRef.current = false;
-        }
-      }, 200);
-    });
-    return () => {
-      cancelled = true;
-      if (saveTimeout) clearTimeout(saveTimeout);
-      try {
-        sub?.unsubscribe?.();
-      } catch {
-        // ignore
-      }
-    };
-  }, [isDraft, nameSaved, form, draftName, buildPayload, onSaved]);
-
-  // Saved-mode auto-save. Both blur-driven (text inputs) and
-  // change-driven (Selects / Switches) edits are coalesced through
-  // a shared debounced `scheduleSave`. Selects render in Radix portals
-  // outside the card's blur container, and Switches are click-based
-  // (no blur), so a `form.watch` watcher is needed to catch them.
-  const blurSavingRef = useRef(false);
-  const lastSavedSigRef = useRef('');
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const AUTO_SAVE_DEBOUNCE_MS = 500;
-
-  const performSave = useCallback(async () => {
-    if (isDraft) return;
-    if (blurSavingRef.current) return;
-    const isValid = await form.trigger();
-    if (!isValid) return;
-    const values = form.getValues();
-    const payload = buildPayload(values, instance.instance_name);
-    const finalPayload = {
-      ...payload,
-      id: instanceDetails?.id || instance.id,
-    };
-    const sig = JSON.stringify(finalPayload);
-    if (sig === lastSavedSigRef.current) return;
-    blurSavingRef.current = true;
-    try {
-      const ret = await addProviderInstance(finalPayload as any);
-      if (ret?.code === 0) {
-        lastSavedSigRef.current = sig;
-      }
-    } finally {
-      blurSavingRef.current = false;
-    }
-  }, [
-    isDraft,
-    form,
-    buildPayload,
-    instance.instance_name,
-    instance.id,
-    instanceDetails?.id,
-    addProviderInstance,
-  ]);
-
-  const scheduleSave = useCallback(() => {
-    if (isDraft) return;
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveTimeoutRef.current = null;
-      void performSave();
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, [isDraft, performSave]);
-
-  const handleFieldsBlur = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      if (isDraft) return;
-      if (
-        e.currentTarget.contains(e.relatedTarget as Node | null) &&
-        e.relatedTarget !== null
-      ) {
-        return;
-      }
-      scheduleSave();
-    },
-    [isDraft, scheduleSave],
-  );
-
-  // Dropdown / Switch change-driven save (saved mode only). Text
-  // inputs are handled by blur; Selects and Switches commit via click
-  // and their popovers live in portals, so we watch the form directly.
-  // Only react to user-driven changes (type === 'change'); ignore
-  // programmatic resets (form.reset when instanceDetails loads).
-  useEffect(() => {
-    if (isDraft) return;
-    if (!instanceDetails) return;
-    let cancelled = false;
-    const subscription = form.watch(
-      (_values: any, meta: { name?: string; type?: string }) => {
-        if (cancelled) return;
-        if (meta?.type !== 'change') return;
-        if (!meta?.name || !SOMARK_WATCHED_FIELDS.has(meta.name)) return;
-        scheduleSave();
-      },
-    );
-    return () => {
-      cancelled = true;
-      try {
-        subscription?.unsubscribe?.();
-      } catch {
-        // ignore
-      }
-    };
-  }, [isDraft, instanceDetails, form, scheduleSave]);
-
-  // Clear pending save on unmount.
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-        autoSaveTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
   const { deleteProviderInstance } = useDeleteProviderInstance();
   const handleDelete = useCallback(async () => {
     if (isDraft) {
@@ -520,15 +352,102 @@ export function SoMarkInstanceCard({
     onDelete,
   ]);
 
+  // ── Dirty tracking (no auto-save) ────────────────────────────────
+  // Baseline signature mirrors the persisted state so `getSavePayload`
+  // can skip redundant saves. For drafts the baseline stays empty
+  // (drafts are always dirty once a name is typed).
+  const baselinePayloadRef = useRef<string>('');
+  const draftNameRef = useRef(draftName);
+  useEffect(() => {
+    draftNameRef.current = draftName;
+  });
+
+  useEffect(() => {
+    if (isDraft) {
+      baselinePayloadRef.current = '';
+      return;
+    }
+    if (!instanceDetails && !instance.id) return;
+    const baseline = buildPayload(initialValues, instance.instance_name);
+    const finalBaseline = {
+      ...baseline,
+      id: instanceDetails?.id || instance.id,
+    };
+    baselinePayloadRef.current = JSON.stringify(finalBaseline);
+  }, [
+    isDraft,
+    initialValues,
+    buildPayload,
+    instance.instance_name,
+    instance.id,
+    instanceDetails,
+  ]);
+
+  const getSavePayload = useCallback(() => {
+    const trimmed = draftNameRef.current.trim();
+    if (isDraft) {
+      if (!trimmed) return null;
+      const values = form.getValues();
+      const payload = buildPayload(values, trimmed);
+      return {
+        payload,
+        instanceName: trimmed,
+        isDraft: true,
+        // SoMark drafts use the add endpoint (no id).
+        apiKind: 'add' as const,
+      };
+    }
+    const values = form.getValues();
+    const payload = buildPayload(values, instance.instance_name);
+    const finalPayload = {
+      ...payload,
+      id: instanceDetails?.id || instance.id,
+    };
+    const sig = JSON.stringify(finalPayload);
+    if (sig === baselinePayloadRef.current) return null;
+    return {
+      payload: finalPayload,
+      instanceName: instance.instance_name,
+      isDraft: false,
+      // SoMark saved cards update via `addProviderInstance` with an `id`
+      // (matches the legacy auto-save behaviour).
+      apiKind: 'add' as const,
+    };
+  }, [
+    isDraft,
+    form,
+    buildPayload,
+    instance.instance_name,
+    instance.id,
+    instanceDetails,
+  ]);
+
+  const markSaved = useCallback(() => {
+    const result = getSavePayload();
+    if (result) {
+      baselinePayloadRef.current = JSON.stringify(result.payload);
+    }
+  }, [getSavePayload]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      validate: async () => {
+        if (isDraft && !draftNameRef.current.trim()) return false;
+        const isValid = await form.trigger();
+        return !!isValid;
+      },
+      getSavePayload,
+      markSaved,
+    }),
+    [isDraft, form, getSavePayload, markSaved],
+  );
+
   // ──────────────── Field group rendered in both modes ────────────────
   const renderFields = () => (
     <Form {...form}>
       <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-        <RAGFlowFormItem
-          name="llm_name"
-          label={tSetting('modelName')}
-          required
-        >
+        <RAGFlowFormItem name="llm_name" label={tSetting('modelName')} required>
           <Input placeholder="somark-from-env-1" />
         </RAGFlowFormItem>
 
@@ -540,7 +459,10 @@ export function SoMarkInstanceCard({
           <Input placeholder={tSetting('somark.baseUrlPlaceholder')} />
         </RAGFlowFormItem>
 
-        <RAGFlowFormItem name="somark_api_key" label={tSetting('somark.apiKey')}>
+        <RAGFlowFormItem
+          name="somark_api_key"
+          label={tSetting('somark.apiKey')}
+        >
           <Input
             type="password"
             placeholder={tSetting('somark.apiKeyPlaceholder')}
@@ -613,10 +535,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -626,10 +545,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -639,10 +555,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -652,10 +565,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -665,10 +575,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -678,10 +585,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
 
@@ -691,10 +595,7 @@ export function SoMarkInstanceCard({
           labelClassName="!mb-0"
         >
           {(field) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
           )}
         </RAGFlowFormItem>
       </form>
@@ -718,7 +619,45 @@ export function SoMarkInstanceCard({
       className="border-b border-border-button mb-5 pb-5"
       data-testid={`instance-card-${instance.instance_name || 'draft'}`}
     >
-      {nameSaved ? (
+      {isDraft ? (
+        <div className="px-2 py-3 flex flex-col gap-4">
+          <div
+            className="flex flex-col gap-1.5"
+            data-testid="instance-name-section"
+          >
+            <label
+              htmlFor="instance-name-input"
+              className="text-sm font-medium text-text-primary"
+            >
+              <span className="text-destructive mr-0.5">*</span>
+              {tSetting('instanceName')}
+            </label>
+            <div className="flex items-center">
+              <Input
+                id="instance-name-input"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder={tSetting('instanceNamePlaceholder')}
+                className="flex-1"
+                data-testid="instance-name-input"
+              />
+              <ConfirmDeleteDialog onOk={handleDelete}>
+                <Button
+                  variant="delete"
+                  size="icon-sm"
+                  className="ml-2 shrink-0"
+                  aria-label={tSetting('deleteInstance')}
+                  data-testid="draft-delete"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </ConfirmDeleteDialog>
+            </div>
+          </div>
+
+          {renderFields()}
+        </div>
+      ) : (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
             <div className="flex items-center gap-1 w-full mb-5">
@@ -764,82 +703,19 @@ export function SoMarkInstanceCard({
             forceMount
             className="data-[state=closed]:hidden overflow-hidden"
           >
-            <div
-              className="px-2 pb-4 flex flex-col gap-4"
-              onBlurCapture={handleFieldsBlur}
-            >
+            <div className="px-2 pb-4 flex flex-col gap-4">
               {renderFields()}
             </div>
           </CollapsibleContent>
         </Collapsible>
-      ) : (
-        <div className="px-2 py-3 flex flex-col gap-4">
-          <div
-            className="flex flex-col gap-1.5"
-            data-testid="instance-name-section"
-          >
-            <label
-              htmlFor="instance-name-input"
-              className="text-sm font-medium text-text-primary"
-            >
-              <span className="text-destructive mr-0.5">*</span>
-              {tSetting('instanceName')}
-            </label>
-            <div className="flex items-center">
-              <Input
-                id="instance-name-input"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                placeholder={tSetting('instanceNamePlaceholder')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSaveName();
-                  }
-                }}
-                className="flex-1 rounded-r-none"
-                data-testid="instance-name-input"
-              />
-              <Button
-                onClick={handleSaveName}
-                disabled={!draftName.trim()}
-                data-testid="instance-name-save"
-                variant="outline"
-                className="rounded-l-none bg-bg-input shrink-0"
-              >
-                {tSetting('save')}
-              </Button>
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  className="ml-2 shrink-0"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="draft-delete"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-            </div>
-            <p
-              className="text-xs text-text-secondary"
-              data-testid="instance-name-helper"
-            >
-              {tSetting('instanceNameSaveTip')}
-            </p>
-          </div>
-
-          <fieldset
-            disabled={!nameSaved}
-            className="contents disabled:[&_*]:pointer-events-none disabled:opacity-60"
-            data-testid="instance-locked-fields"
-          >
-            {renderFields()}
-          </fieldset>
-        </div>
       )}
     </div>
   );
-}
+});
 
 export default SoMarkInstanceCard;
+
+// Ensure the component is usable with the same props shape as the
+// generic card (keeps the dispatch in provider-instance-card.tsx happy
+// when forwarding props + ref).
+export type { ProviderInstanceCardProps };

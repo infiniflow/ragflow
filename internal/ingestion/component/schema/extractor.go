@@ -66,9 +66,8 @@ func (ExtractorFromUpstream) Validate() error { return nil }
 // the wiring is explicit.
 type ExtractorParam struct {
 	// FieldName is the chunk key the LLM extraction result is written
-	// to (Python: `self._param.field_name`). Required — `check()`
-	// raises when empty. Mapped to "Result Destination" in the
-	// frontend.
+	// to (Python: `self._param.field_name`). Optional — when empty,
+	// auto_keywords or auto_questions may still be used.
 	FieldName string `json:"field_name"`
 
 	// LLMID identifies the LLM model used for extraction. This is the
@@ -81,25 +80,30 @@ type ExtractorParam struct {
 
 	// Prompt is the user-side template passed to the LLM.
 	Prompt string `json:"prompt,omitempty"`
+
+	// AutoKeywords enables automatic keyword extraction with a fixed
+	// prompt. The value determines the top-N count.
+	AutoKeywords int `json:"auto_keywords,omitempty"`
+
+	// AutoQuestions enables automatic question generation with a fixed
+	// prompt. The value determines the top-N count.
+	AutoQuestions int `json:"auto_questions,omitempty"`
 }
 
-// Defaults returns the Python default ExtractorParam: FieldName is
-// the empty string and is meant to be supplied at runtime.
+// Defaults returns the default ExtractorParam.
 func (ExtractorParam) Defaults() ExtractorParam {
 	return ExtractorParam{
-		FieldName:    "",
-		LLMID:        "",
-		SystemPrompt: "",
-		Prompt:       "",
+		FieldName:     "",
+		LLMID:         "",
+		SystemPrompt:  "",
+		Prompt:        "",
+		AutoKeywords:  0,
+		AutoQuestions: 0,
 	}
 }
 
-// Validate enforces the Python `check()` invariant: FieldName must
-// be non-empty.
+// Validate always returns nil.
 func (p *ExtractorParam) Validate() error {
-	if p.FieldName == "" {
-		return errRequiredField{Field: "field_name"}
-	}
 	return nil
 }
 

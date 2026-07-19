@@ -34,39 +34,105 @@ import (
 )
 
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
-// agent/templates/*.json files. This mirrors Python's
-// init_data.add_graph_templates() so that the Go backend serves the same
-// template catalogue without relying on Python-side initialization.
+// agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
 func SeedCanvasTemplates() error {
-	dir := findAgentTemplatesDir()
-	if dir == "" {
-		common.Warn("Agent templates directory not found, skipping canvas template seeding")
-		return nil
-	}
-
-	// The canvas_template table may have been created by the Python backend,
-	// which has no parser_ids column, and the Go server is often started with
-	// migration disabled so GORM AutoMigrate never adds it. Ensure the column
-	// exists before inserting, otherwise every INSERT below fails with
-	// "Unknown column 'parser_ids'" and the catalogue ends up empty.
 	if err := addColumnIfNotExists(DB, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
 		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("failed to read agent templates directory %s: %w", dir, err)
+	var allTemplates []*entity.CanvasTemplate
+	var allIDs []string
+	for _, dir := range findTemplateDirs() {
+		if dir == "" {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			common.Warn("Failed to read template directory", zap.String("dir", dir), zap.Error(err))
+			continue
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		templates, ids := loadTemplatesFromDir(dir, entries)
+		allTemplates = append(allTemplates, templates...)
+		allIDs = append(allIDs, ids...)
 	}
 
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	if len(allTemplates) == 0 {
+		common.Warn("No template directories found, skipping canvas template seeding")
+		return nil
+	}
 
-	seeded, err := seedCanvasTemplates(DB, dir, entries)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for _, tmpl := range allTemplates {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "id"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"avatar", "title", "description", "canvas_type", "canvas_types", "canvas_category", "dsl",
+				}),
+			}).Create(tmpl).Error; err != nil {
+				return fmt.Errorf("failed to save agent template %s: %w", tmpl.ID, err)
+			}
+		}
+		if err := tx.Where("id NOT IN ?", allIDs).Delete(&entity.CanvasTemplate{}).Error; err != nil {
+			return fmt.Errorf("failed to remove stale agent templates: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	common.Info("Seeded canvas templates", zap.Int("count", seeded), zap.String("dir", dir))
+	common.Info("Seeded canvas templates", zap.Int("count", len(allTemplates)))
 	return nil
+}
+
+func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTemplate, []string) {
+	templates := make([]*entity.CanvasTemplate, 0, len(entries))
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			common.Warn("Failed to read agent template", zap.String("file", path), zap.Error(err))
+			continue
+		}
+		tmpl, err := parseCanvasTemplateFile(raw)
+		if err != nil {
+			common.Warn("Failed to parse agent template", zap.String("file", path), zap.Error(err))
+			continue
+		}
+		templates = append(templates, tmpl)
+		ids = append(ids, tmpl.ID)
+	}
+	return templates, ids
+}
+
+func findTemplateDirs() []string {
+	var dirs []string
+	if d := findAgentTemplatesDir(); d != "" {
+		dirs = append(dirs, d)
+	}
+	if d := findIngestionTemplatesDir(); d != "" {
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
+
+func findIngestionTemplatesDir() string {
+	candidates := []string{
+		"internal/ingestion/pipeline/template",
+		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
+		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
+		filepath.Join("..", "..", "..", "internal", "ingestion", "pipeline", "template"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
@@ -90,11 +156,9 @@ func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, e
 		templates = append(templates, tmpl)
 		ids = append(ids, tmpl.ID)
 	}
-
 	if len(templates) == 0 {
 		return 0, nil
 	}
-
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, tmpl := range templates {
 			if err := tx.Clauses(clause.OnConflict{
@@ -106,7 +170,6 @@ func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, e
 				return fmt.Errorf("failed to save agent template %s: %w", tmpl.ID, err)
 			}
 		}
-
 		if err := tx.Where("id NOT IN ?", ids).Delete(&entity.CanvasTemplate{}).Error; err != nil {
 			return fmt.Errorf("failed to remove stale agent templates: %w", err)
 		}

@@ -40,6 +40,9 @@ TEST_CSV = b"""row_id,title,content,country,category
 2,Oil prices surge,Brent crude jumped 4.2 percent,Global,Economy
 3,AI regulation proposed,EU unveiled a draft regulation,EU,Technology
 """
+TEST_DUPLICATE_COLUMNS_CSV = b"""name,name,name_2
+Alice,Engineer,Team A
+"""
 
 FILENAME = "test.csv"
 KB_ID = "test_kb_id"
@@ -105,6 +108,24 @@ def _run_chunk(table_module, parser_config: dict, mock_update_kb: MagicMock):
         parser_config=parser_config,
         lang="Chinese",
     )
+
+
+def test_chunk_deduplicates_repeated_column_names(table_module, mock_update_kb: MagicMock):
+    chunks = table_module.chunk(
+        FILENAME,
+        binary=TEST_DUPLICATE_COLUMNS_CSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert len(chunks) == 1
+    cww = chunks[0]["content_with_weight"]
+    assert "- name: Alice" in cww
+    assert "- name_3: Engineer" in cww
+    assert "- name_2: Team A" in cww
+    args, kwargs = mock_update_kb.call_args
+    assert args[1]["table_column_names"] == ["name", "name_3", "name_2"]
 
 
 def test_chunk_auto_mode_all_columns_in_text_and_stored(table_module, mock_update_kb: MagicMock):

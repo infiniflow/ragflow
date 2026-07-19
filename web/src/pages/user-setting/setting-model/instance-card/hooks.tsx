@@ -14,34 +14,33 @@
  *  limitations under the License.
  */
 
-import { DynamicFormRef, FormFieldType } from '@/components/dynamic-form';
+import { DynamicFormRef } from '@/components/dynamic-form';
 import {
-  useAddProviderInstance,
   useDeleteProviderInstance,
   useFetchAvailableProviders,
   useFetchProviderInstance,
-  useUpdateProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
-import {
-  IModelInfo,
-  IUpdateProviderInstanceRequestBody,
-} from '@/interfaces/request/llm';
+import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
-import { API_KEY_NESTED_FIELDS, ApiKeyNestedField } from './interface';
+import {
+  API_KEY_NESTED_FIELDS,
+  ApiKeyNestedField,
+  InstanceSavePayload,
+} from './interface';
 
 // ---------------------------------------------------------------------------
-// Pure helpers — api_key shape normalization
+// Pure helpers - api_key shape normalization
 // ---------------------------------------------------------------------------
 
 /**
  * Build the `api_key` payload value from the flat form values. If any of
  * the nested credential fields (see `API_KEY_NESTED_FIELDS`) carry a
  * value, returns `{ api_key, ...nested }`; otherwise returns the plain
- * api_key string. Used by both the auto-save payload and its change
+ * api_key string. Used by both the payload builder and its change
  * signature baseline so the two stay byte-identical.
  */
 export function buildApiKeyValue(
@@ -101,7 +100,7 @@ function pickDefaultUrl(
 }
 
 // ---------------------------------------------------------------------------
-// useProviderBaseUrlOptions — fetch provider catalog and build URL options
+// useProviderBaseUrlOptions - fetch provider catalog and build URL options
 // ---------------------------------------------------------------------------
 
 /**
@@ -150,7 +149,7 @@ export function useProviderBaseUrlOptions(providerName: string) {
 }
 
 // ---------------------------------------------------------------------------
-// useProviderInitialValues — form initial values for draft vs saved
+// useProviderInitialValues - form initial values for draft vs saved
 // ---------------------------------------------------------------------------
 
 /**
@@ -211,7 +210,7 @@ export function useProviderInitialValues(
     // submit logic can echo it back.
     if ((merged as any).region) values.region = (merged as any).region;
     // Fallback: some backends may still surface these credential fields
-    // at the top level rather than nested in api_key — echo any that
+    // at the top level rather than nested in api_key - echo any that
     // weren't already lifted from the api_key object above.
     for (const field of API_KEY_NESTED_FIELDS) {
       if (values[field] === undefined && (merged as any)[field] !== undefined) {
@@ -223,7 +222,7 @@ export function useProviderInitialValues(
 }
 
 // ---------------------------------------------------------------------------
-// useLazyInstanceDetails — fetch full instance details when card opens
+// useLazyInstanceDetails - fetch full instance details when card opens
 // ---------------------------------------------------------------------------
 
 /**
@@ -231,7 +230,7 @@ export function useProviderInitialValues(
  * sensitive/heavy fields like `api_key` or `base_url`. Pull the full
  * instance via `showProviderInstance` so the form can be pre-filled when
  * the user clicks an existing provider on the left. The hook is
- * `enabled: false` by default — we trigger it manually here so we
+ * `enabled: false` by default - we trigger it manually here so we
  * don't change behavior of other call sites.
  */
 export function useLazyInstanceDetails(
@@ -256,7 +255,7 @@ export function useLazyInstanceDetails(
 }
 
 // ---------------------------------------------------------------------------
-// useFormResetOnDetailsLoad — re-fill form when instanceDetails resolves
+// useFormResetOnDetailsLoad - re-fill form when instanceDetails resolves
 // ---------------------------------------------------------------------------
 
 /**
@@ -284,28 +283,66 @@ export function useFormResetOnDetailsLoad(
 }
 
 // ---------------------------------------------------------------------------
-// useVerifyProvider — wraps useVerifyProviderConnection for the card
+// useVerifyProvider - wraps useVerifyProviderConnection for the card
 // ---------------------------------------------------------------------------
+
+/** Optional transform supplied by the provider config. When present it
+ *  maps provider-specific form field names (e.g. OpenDataLoader's
+ *  `opendataloader_apiserver`) onto the `{ apiKey, baseUrl, modelInfo }`
+ *  shape the verify endpoint expects. When absent the generic mapping
+ *  (`values.api_key` / `values.base_url ?? values.api_base`) is used. */
+type VerifyTransform = (values: Record<string, any>) => {
+  apiKey: string | object | Record<string, any>;
+  baseUrl?: string;
+  region?: string;
+  modelInfo?: IModelInfo[];
+};
 
 /**
  * Adapter that reads the current form values and proxies them into
  * `verifyProviderConnection`, then shapes the response into the
  * `VerifyResult` consumed by {@link VerifyButton}.
+ *
+ * When `verifyTransform` is supplied (provider-specific field mapping,
+ * e.g. OpenDataLoader's nested `opendataloader_apiserver` /
+ * `opendataloader_api_key`), it is used to build the verify args;
+ * otherwise the generic `values.api_key` / `values.base_url` mapping
+ * is used.
  */
 export function useVerifyProvider(
   providerName: string,
   formRef: RefObject<DynamicFormRef>,
+  verifyTransform?: VerifyTransform,
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
   return useCallback(
     async (params: any) => {
       const values = { ...(formRef.current?.getValues?.() ?? {}), ...params };
+      let verifyArgs: {
+        api_key: string | object;
+        base_url?: string;
+        model_info?: IModelInfo[];
+        region?: string;
+      };
+      if (verifyTransform) {
+        const transformed = verifyTransform(values);
+        verifyArgs = {
+          api_key: transformed.apiKey,
+          base_url: transformed.baseUrl,
+          model_info: transformed.modelInfo ?? values.model_info,
+          region: transformed.region,
+        };
+      } else {
+        verifyArgs = {
+          api_key: values.api_key ?? '',
+          base_url: values.base_url ?? values.api_base,
+          model_info: values.model_info,
+        };
+      }
       const ret = await verifyProviderConnection({
         provider_name: providerName,
-        api_key: values.api_key ?? '',
-        base_url: values.base_url ?? values.api_base,
-        model_info: values.model_info,
+        ...(verifyArgs as any),
       });
       if (ret.code === 0) {
         return { isValid: true, logs: ret.message } as {
@@ -318,42 +355,12 @@ export function useVerifyProvider(
         logs: string;
       };
     },
-    [providerName, formRef, verifyProviderConnection],
+    [providerName, formRef, verifyProviderConnection, verifyTransform],
   );
 }
 
 // ---------------------------------------------------------------------------
-// useSaveInstanceName — dedicated hook for the draft name Save button
-// ---------------------------------------------------------------------------
-
-/**
- * Save the instance name on its own. Calls `addProviderInstance` with
- * only the instance name (backend now supports creating an instance with
- * just a name). On success notifies the parent via `onNameSaved` so it
- * can remove this draft — the invalidated `providerInstances` query
- * will surface the persisted card automatically.
- */
-export function useSaveInstanceName(
-  providerName: string,
-  draftName: string,
-  onNameSaved?: (instanceName: string) => void,
-) {
-  const { addProviderInstance } = useAddProviderInstance();
-  return useCallback(async () => {
-    const trimmed = draftName.trim();
-    if (!trimmed) return;
-    const ret = await addProviderInstance({
-      llm_factory: providerName,
-      instance_name: trimmed,
-    } as any);
-    if (ret?.code === 0) {
-      onNameSaved?.(trimmed);
-    }
-  }, [draftName, addProviderInstance, providerName, onNameSaved]);
-}
-
-// ---------------------------------------------------------------------------
-// useDeleteInstance — wires the card's delete button
+// useDeleteInstance - wires the card's delete button
 // ---------------------------------------------------------------------------
 
 /**
@@ -380,287 +387,184 @@ export function useDeleteInstance(
 }
 
 // ---------------------------------------------------------------------------
-// useDraftAutoSave — 200ms-debounced watch-based save for draft mode
+// useInstanceSaveState - payload builder + dirty tracking (no auto-save)
 // ---------------------------------------------------------------------------
 
+interface UseInstanceSaveStateArgs {
+  formRef: RefObject<DynamicFormRef>;
+  providerName: string;
+  /** Persisted instance name - used for the dirty-tracking baseline. */
+  instanceName: string;
+  /**
+   * The instance name currently shown in the UI (may differ from
+   * `instanceName` when the user has double-clicked to rename a saved
+   * card). Used in the save payload so a rename is persisted. Falls
+   * back to `instanceName` when not provided (drafts use `draftName`).
+   */
+  editedInstanceName?: string;
+  instanceId: string | undefined;
+  isDraft: boolean;
+  draftName: string;
+  instanceDetails: IProviderInstance | undefined;
+  initialValues: Record<string, any>;
+  modelInfoRef: { current: IModelInfo[] };
+  /**
+   * Optional provider-specific transform that maps form values to the
+   * submit API body (e.g. OpenDataLoader's nested
+   * `opendataloader_apiserver` / `opendataloader_api_key` fields). When
+   * absent the generic `buildApiKeyValue` + `values.base_url` mapping is
+   * used.
+   */
+  submitTransform?: (values: Record<string, any>) => Record<string, any>;
+}
+
 /**
- * Auto-save: whenever the form's other fields change (in draft mode),
- * watch the form values and, after a 200ms debounce (acting as a blur
- * proxy — fires shortly after the user stops typing / blurs out of a
- * field), trigger validation. If all required fields are valid AND
- * the instance name has been entered and saved, call `onSaved` with
- * the merged values.
+ * Owns payload construction + dirty tracking for a single instance card.
+ *
+ * Replaces the old `useDraftAutoSave` + `useSavedAutoSave` pair. The
+ * auto-save effects are gone - the parent page now drives save
+ * explicitly through the imperative ref API. What remains is:
+ *   - `buildPayload()`: assemble the API body from current form values.
+ *   - `getSavePayload()`: return the body if dirty (or a draft with a
+ *     name), else `null` so the parent can skip the redundant call.
+ *   - `markSaved()`: re-baseline after a successful save.
+ *   - `markModelsEdited()`: absorb a model PATCH into the baseline so
+ *     the next top-save does not re-PUT the same model_info (the PATCH
+ *     endpoint already persisted it).
+ *
+ * The dirty check compares a JSON signature of the current payload to
+ * the baseline signature, mirroring the old `lastSavedPayloadRef`
+ * approach. `model_info` is folded into the signature so editing a
+ * nested credential field (e.g. MiniMax `group_id`, which is nested
+ * inside `api_key` by `buildApiKeyValue`) still counts as dirty.
  */
-export function useDraftAutoSave(
-  formRef: RefObject<DynamicFormRef>,
-  isDraft: boolean,
-  nameSaved: boolean,
-  draftName: string,
-  onSaved: ((values: Record<string, any>) => void | Promise<void>) | undefined,
-  modelInfoRef: { current: IModelInfo[] },
-) {
-  // Keep the latest `onSaved` and `draftName` in refs so the auto-save
-  // effect below can read them without re-subscribing on every render
-  // (the parent passes a fresh `onSaved` arrow each render).
-  const onSavedRef = useRef(onSaved);
-  useEffect(() => {
-    onSavedRef.current = onSaved;
-  });
+export function useInstanceSaveState({
+  formRef,
+  providerName,
+  instanceName,
+  editedInstanceName,
+  instanceId,
+  isDraft,
+  draftName,
+  instanceDetails,
+  initialValues,
+  modelInfoRef,
+  submitTransform,
+}: UseInstanceSaveStateArgs) {
+  const baselinePayloadRef = useRef<string>('');
   const draftNameRef = useRef(draftName);
   useEffect(() => {
     draftNameRef.current = draftName;
   });
-
+  // Keep the latest edited name in a ref so `buildPayload` reads the
+  // current value without being recreated on every keystroke.
+  const editedNameRef = useRef(editedInstanceName ?? instanceName);
   useEffect(() => {
-    if (!isDraft) return;
+    editedNameRef.current = editedInstanceName ?? instanceName;
+  });
 
-    const formInstance = (formRef.current as any)?.form;
-    if (!formInstance || typeof formInstance.watch !== 'function') return;
+  // Build the API payload from the current form values. For drafts the
+  // body targets `addProviderInstance` (no `id`, `llm_factory` at the
+  // top level); for saved cards it targets `updateProviderInstance`
+  // (`provider_name`, `id`, `verify: false`). `api_key` is normalised
+  // via `buildApiKeyValue` so nested credential fields (group_id /
+  // api_version / provider_order) are bundled inside `api_key` as the
+  // backend expects.
+  const buildPayload = useCallback((): Record<string, any> | null => {
+    const values = (formRef.current?.getValues?.() ?? {}) as Record<
+      string,
+      any
+    >;
+    const modelInfo =
+      modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
 
-    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-    const savingRef = { current: false };
-
-    const subscription = formInstance.watch(() => {
-      if (saveTimeout) clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(async () => {
-        if (cancelled || savingRef.current) return;
-        const isValid = await formRef.current?.trigger();
-        if (cancelled || savingRef.current) return;
-        if (!isValid) return;
-
-        // Name gate: refuse to actually save if the name is empty or
-        // has not been "saved" (locked). The red border on the name
-        // section is the visible signal — it stays on while
-        // `!nameSaved` regardless of whether the user has touched
-        // other fields.
-        if (!draftNameRef.current.trim() || !nameSaved) return;
-        if (!onSavedRef.current) return;
-
-        savingRef.current = true;
-        try {
-          const values = formRef.current?.getValues?.() ?? {};
-          const payload: Record<string, any> = {
-            ...values,
-            instance_name: draftNameRef.current.trim(),
-          };
-          // Forward the latest per-instance model list as `model_info`
-          // when the user has attached models to the draft. The list
-          // is normally empty for drafts (the backend has nothing yet),
-          // but it can be populated once ModelsSection has fetched /
-          // received data — we only set the key when non-empty so an
-          // absent value is preserved as `undefined` rather than
-          // forcing an empty-array clear on the server.
-          if (modelInfoRef.current.length > 0) {
-            payload.model_info = modelInfoRef.current;
-          }
-          await onSavedRef.current(payload);
-        } finally {
-          savingRef.current = false;
-        }
-      }, 200);
-    });
-
-    return () => {
-      cancelled = true;
-      if (saveTimeout) clearTimeout(saveTimeout);
-      try {
-        subscription?.unsubscribe?.();
-      } catch {
-        // ignore cleanup errors
+    // Provider-specific field mapping (e.g. OpenDataLoader's nested
+    // `opendataloader_apiserver` / `opendataloader_api_key`). The
+    // transform produces the canonical submit body shape
+    // (`instance_name`, `llm_factory`, `api_key`, `api_base`,
+    // `model_info`); we then layer on the card's own state (typed /
+    // edited name, model_info ref, update-only fields for saved cards).
+    if (submitTransform) {
+      const transformed = submitTransform({
+        ...values,
+        model_info: modelInfo,
+      }) as Record<string, any>;
+      if (isDraft) {
+        const trimmed = draftNameRef.current.trim();
+        if (!trimmed) return null;
+        return {
+          ...transformed,
+          llm_factory: providerName,
+          instance_name: trimmed,
+          model_info: modelInfo,
+        };
       }
-    };
-  }, [isDraft, nameSaved, formRef, modelInfoRef]);
-}
+      const resolvedId = instanceDetails?.id || instanceId;
+      return {
+        ...transformed,
+        provider_name: providerName,
+        instance_name: editedNameRef.current,
+        id: resolvedId,
+        base_url: transformed.base_url ?? transformed.api_base ?? '',
+        region: values.region || 'default',
+        model_info: modelInfo,
+        verify: false,
+      };
+    }
 
-// ---------------------------------------------------------------------------
-// useSavedAutoSave — blur + dropdown-driven auto-save for saved cards
-// ---------------------------------------------------------------------------
+    if (isDraft) {
+      const trimmed = draftNameRef.current.trim();
+      if (!trimmed) return null;
+      const payload: Record<string, any> = {
+        llm_factory: providerName,
+        instance_name: trimmed,
+        api_key: buildApiKeyValue(values) ?? '',
+        base_url: values.base_url ?? values.api_base,
+      };
+      if (modelInfoRef.current.length > 0) {
+        payload.model_info = modelInfoRef.current;
+      }
+      return payload;
+    }
 
-/** Field types whose value is committed via click/select (not blur). The
- *  card's `onBlurCapture` auto-save fires before the dropdown click
- *  handler commits the new value, and the popover content is rendered in
- *  a Radix portal outside the card's blur container, so blur-based saves
- *  are unreliable for these. We watch the form values directly and
- *  trigger the same auto-save on value change. */
-const DROPDOWN_FIELD_TYPES = new Set<FormFieldType>([
-  FormFieldType.Select,
-  FormFieldType.MultiSelect,
-  FormFieldType.Segmented,
-  // `Custom` is the form-field type used by `inputSelect` in this
-  // codebase (see use-provider-fields). Every `Custom` field rendered
-  // inside the provider instance card is an `InputSelect` dropdown.
-  FormFieldType.Custom,
-]);
-
-interface UseSavedAutoSaveArgs {
-  formRef: RefObject<DynamicFormRef>;
-  formFields: Array<{ name: string; type: FormFieldType; [k: string]: any }>;
-  providerName: string;
-  instanceName: string;
-  instanceId: string | undefined;
-  isDraft: boolean;
-  instanceDetails: IProviderInstance | undefined;
-  initialValues: Record<string, any>;
-  modelInfoRef: { current: IModelInfo[] };
-}
-
-/**
- * Wires the blur-driven + dropdown-driven auto-save flow used by saved
- * (non-draft) cards. Returns a `handleFieldsBlur` for the card body to
- * attach to `onBlurCapture`, plus a `markModelsEdited` callback for
- * `onInstanceModelsEdited` so the next auto-save short-circuits after
- * a PATCH-driven model change.
- */
-export function useSavedAutoSave({
-  formRef,
-  formFields,
-  providerName,
-  instanceName,
-  instanceId,
-  isDraft,
-  instanceDetails,
-  initialValues,
-  modelInfoRef,
-}: UseSavedAutoSaveArgs) {
-  const { updateProviderInstance } = useUpdateProviderInstance();
-  const blurSavingRef = useRef(false);
-  const blurSuppressRef = useRef(false);
-  const lastSavedPayloadRef = useRef<string>('');
-  const hasSyncedInstanceRef = useRef(false);
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const AUTO_SAVE_DEBOUNCE_MS = 500;
-
-  // Shared auto-save routine. Triggered by:
-  //   - `handleFieldsBlur` (focus leaves a non-dropdown field), and
-  //   - the dropdown value-change watcher (a dropdown field's value
-  //     commits via click, not blur — and the popover is rendered in a
-  //     Radix portal outside the card's blur container, so blur-based
-  //     saves are unreliable for dropdowns).
-  const performAutoSave = useCallback(async () => {
-    if (isDraft) return;
-    if (blurSavingRef.current) return;
-    if (blurSuppressRef.current) return;
-
-    const isValid = await formRef.current?.trigger();
-    if (!isValid) return;
-
-    const values = formRef.current?.getValues?.() ?? {};
     const resolvedId = instanceDetails?.id || instanceId;
-    // Providers like MiniMax / Azure-OpenAI / OpenRouter carry extra
-    // credential fields (group_id / api_version / provider_order) that
-    // the backend expects bundled *inside* api_key as an object rather
-    // than as top-level keys. Nesting them here also folds their values
-    // into the change signature below, so editing one actually triggers
-    // a blur-save.
-    const apiKeyValue = buildApiKeyValue(values as Record<string, any>);
-    const payload: IUpdateProviderInstanceRequestBody = {
+    const apiKeyValue = buildApiKeyValue(values);
+    const payload: Record<string, any> = {
       provider_name: providerName,
-      instance_name: instanceName,
+      // Use the edited name (may differ from the persisted `instanceName`
+      // when the user has renamed the instance via double-click).
+      instance_name: editedNameRef.current,
       id: resolvedId,
       api_key: apiKeyValue ?? '',
       base_url: values.base_url ?? values.api_base,
       region: values.region || 'default',
-      model_info: [],
+      model_info: modelInfoRef.current.length > 0 ? modelInfoRef.current : [],
       verify: false,
     };
-    // Pull the latest model list from ModelsSection (via the ref it
-    // updates). Only attach when non-empty so we don't accidentally
-    // wipe the persisted model set with an empty array.
-    if (modelInfoRef.current.length > 0) {
-      payload.model_info = modelInfoRef.current;
-    }
-    // Skip if nothing actually changed since the last save (or initial
-    // mount): prevents a no-op PUT on every focus shift.
-    const signature = JSON.stringify(payload);
-    if (signature === lastSavedPayloadRef.current) return;
-
-    blurSavingRef.current = true;
-    try {
-      const ret = await updateProviderInstance(payload);
-      if (ret?.code === 0) {
-        lastSavedPayloadRef.current = signature;
-        hasSyncedInstanceRef.current = true;
-      }
-    } finally {
-      blurSavingRef.current = false;
-    }
+    return payload;
   }, [
     isDraft,
     providerName,
     instanceName,
     instanceId,
     instanceDetails?.id,
-    updateProviderInstance,
     formRef,
     modelInfoRef,
+    submitTransform,
   ]);
 
-  // Debounced auto-save: coalesces rapid edits (blur cascade,
-  // successive dropdown changes, typing in filterable dropdowns) into
-  // a single delayed `performAutoSave` call.
-  const scheduleAutoSave = useCallback(() => {
-    if (isDraft) return;
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
+  // Seed the "last saved" baseline once instance details (or the
+  // draft's empty state) are available, so the first `getSavePayload()`
+  // after mount doesn't flag a phantom dirty. For drafts the baseline
+  // stays empty - a draft is always considered dirty once it has a
+  // name, so the baseline is only consulted for saved cards.
+  useEffect(() => {
+    if (isDraft) {
+      baselinePayloadRef.current = '';
+      return;
     }
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveTimeoutRef.current = null;
-      void performAutoSave();
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, [isDraft, performAutoSave]);
-
-  const handleFieldsBlur = useCallback(
-    async (e: React.FocusEvent<HTMLDivElement>) => {
-      if (isDraft) return;
-      // Ignore focus moves that stay inside the same container.
-      if (
-        e.currentTarget.contains(e.relatedTarget as Node | null) &&
-        e.relatedTarget !== null
-      ) {
-        return;
-      }
-      scheduleAutoSave();
-    },
-    [isDraft, scheduleAutoSave],
-  );
-
-  // Refs so the dropdown watcher effect can invoke the latest callbacks
-  // without re-subscribing on every render (the parent passes a fresh
-  // `onBlurCapture` arrow each render, and `performAutoSave` changes
-  // whenever its deps change — e.g. when `instanceDetails` loads).
-  const performAutoSaveRef = useRef(performAutoSave);
-  useEffect(() => {
-    performAutoSaveRef.current = performAutoSave;
-  });
-  const scheduleAutoSaveRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    scheduleAutoSaveRef.current = scheduleAutoSave;
-  });
-
-  // Clear any pending debounced save when the card unmounts so we don't
-  // fire a stale request after teardown.
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-        autoSaveTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  // Seed the "last saved" signature once initial values are loaded so
-  // the first blur after mount doesn't trigger an unnecessary save.
-  useEffect(() => {
-    if (isDraft) return;
     const resolvedId = instanceDetails?.id || instanceId;
     if (!resolvedId) return;
-    if (hasSyncedInstanceRef.current) return;
-    // Match the api_key shape performAutoSave produces (extra credential
-    // fields nested inside api_key) so the first blur after mount
-    // doesn't see a signature diff and fire a redundant save. model_info
-    // is omitted for the same reason as in performAutoSave: model
-    // changes are owned by the per-model endpoints, not this auto-save.
     const baseline = {
       provider_name: providerName,
       instance_name: instanceName,
@@ -668,9 +572,15 @@ export function useSavedAutoSave({
       api_key: buildApiKeyValue(initialValues),
       base_url: initialValues.base_url ?? initialValues.api_base,
       region: initialValues.region,
+      // model_info baseline is `[]`; `markModelsEdited` rewrites it after
+      // a model PATCH so the next top-save short-circuits. The first
+      // save after the models initially load may re-send the same
+      // model_info (idempotent) - acceptable, matches the old
+      // `lastSavedPayloadRef` seeding behaviour.
       model_info: [] as IModelInfo[],
+      verify: false,
     };
-    lastSavedPayloadRef.current = JSON.stringify(baseline);
+    baselinePayloadRef.current = JSON.stringify(baseline);
   }, [
     isDraft,
     providerName,
@@ -680,120 +590,102 @@ export function useSavedAutoSave({
     initialValues,
   ]);
 
-  // Dropdown value-change auto-save (saved mode only). A dropdown
-  // field's value commits via click, not blur — and the popover is
-  // rendered in a Radix portal outside the card's blur container, so
-  // blur-based saves are unreliable for dropdowns.
-  //
-  // We subscribe to the *raw* RHF form so we can read the change
-  // metadata `{ name, type }`. Only genuine user edits carry
-  // `type === 'change'`; programmatic updates (the `form.reset` that
-  // runs when `instanceDetails` loads, `setValue`, etc.) come through
-  // with an undefined type. Gating on `type === 'change'` is what stops
-  // merely opening the card / loading its details from firing a save —
-  // only an actual user selection in a dropdown schedules one. The
-  // shared debounce (`scheduleAutoSave`) coalesces it with any
-  // blur-triggered save. Skipped in draft mode (which has its own
-  // 200ms-debounced watch) and until `instanceDetails` loads.
-  const dropdownFieldNames = useMemo(
-    () =>
-      formFields
-        .filter((f) => DROPDOWN_FIELD_TYPES.has(f.type))
-        .map((f) => f.name),
-    [formFields],
-  );
-
-  useEffect(() => {
-    if (isDraft) return;
-    if (dropdownFieldNames.length === 0) return;
-    if (!instanceDetails) return;
-    const form = (formRef.current as any)?.form;
-    if (!form || typeof form.watch !== 'function') return;
-
-    let cancelled = false;
-    const dropdownFieldSet = new Set(dropdownFieldNames);
-
-    const subscription = form.watch(
-      (_values: any, meta: { name?: string; type?: string }) => {
-        if (cancelled) return;
-        // Ignore programmatic value changes (reset/setValue) — they have
-        // no `type`. Only react to user-driven dropdown selections.
-        if (meta?.type !== 'change') return;
-        if (!meta?.name || !dropdownFieldSet.has(meta.name)) return;
-        scheduleAutoSaveRef.current();
-      },
-    );
-
-    return () => {
-      cancelled = true;
-      try {
-        subscription?.unsubscribe?.();
-      } catch {
-        // ignore cleanup errors
-      }
+  // `getSavePayload()` is the imperative entry point the parent calls
+  // when the user clicks the top Save button. For drafts it always
+  // returns a payload (provided the name is non-empty); for saved
+  // cards it returns `null` when the current signature matches the
+  // baseline, so the parent skips the no-op PUT.
+  const getSavePayload = useCallback((): InstanceSavePayload | null => {
+    const payload = buildPayload();
+    if (!payload) return null;
+    if (!isDraft) {
+      const sig = JSON.stringify(payload);
+      if (sig === baselinePayloadRef.current) return null;
+    }
+    return {
+      payload,
+      instanceName: isDraft
+        ? draftNameRef.current.trim()
+        : editedNameRef.current,
+      isDraft,
+      // Generic drafts go through `addProviderInstance`; generic saved
+      // cards go through `updateProviderInstance` (their payload matches
+      // `IUpdateProviderInstanceRequestBody`).
+      apiKind: isDraft ? 'add' : 'update',
     };
-  }, [isDraft, dropdownFieldNames, instanceDetails, formRef]);
+  }, [buildPayload, isDraft, instanceName]);
 
-  // Absorb a model patch into the host's last-saved baseline. When the
-  // user saves the edit modal, patchInstanceModel has already persisted
-  // the new max_tokens / model_type / features server-side, so the next
-  // blur auto-save should NOT re-PUT the same model_info. By parsing
-  // the previously-saved payload and overwriting ONLY model_info, the
-  // baseline now matches the current state and the signature check in
-  // performAutoSave short-circuits — while any in-flight edits to
-  // api_key / base_url / region remain in `lastSavedPayloadRef`
-  // unchanged and will still trigger a save on blur via signature
+  // After a successful save the parent calls `markSaved()` so the
+  // baseline catches up to the just-persisted values. Without this,
+  // the next `getSavePayload()` would re-fire the same PUT.
+  const markSaved = useCallback(() => {
+    const payload = buildPayload();
+    if (payload) {
+      baselinePayloadRef.current = JSON.stringify(payload);
+    }
+  }, [buildPayload]);
+
+  // Absorb a model patch into the baseline. `patchInstanceModel` has
+  // already persisted the new max_tokens / model_type / features
+  // server-side, so the next top-save should NOT re-PUT the same
+  // model_info. By parsing the previously-saved baseline and overwriting
+  // ONLY model_info, the baseline now matches the current state and the
+  // signature check in `getSavePayload` short-circuits - while any
+  // in-flight edits to api_key / base_url / region remain in the
+  // baseline unchanged and will still trigger a save via signature
   // mismatch.
   //
-  // Skipped until the host has synced at least once. Before that the
-  // baseline still carries the initial `model_info: []`; rewriting it
-  // here would skip the very first PUT that syncs the user's first
-  // add/edit into the persisted model_info.
+  // Skipped for drafts (the baseline is empty there) and until the
+  // baseline has been seeded.
   const markModelsEdited = useCallback(() => {
     if (isDraft) return;
-    if (!hasSyncedInstanceRef.current) return;
-    const prev = lastSavedPayloadRef.current;
+    const prev = baselinePayloadRef.current;
     if (!prev) return;
-    const parsed = JSON.parse(prev) as IUpdateProviderInstanceRequestBody;
-    parsed.model_info =
-      modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
-    // Mirror the `verify: false` field that performAutoSave always
-    // attaches, otherwise the next signature comparison would diff on
-    // this key alone and re-fire the save.
-    (parsed as any).verify = false;
-    lastSavedPayloadRef.current = JSON.stringify(parsed);
+    try {
+      const parsed = JSON.parse(prev) as Record<string, any>;
+      parsed.model_info =
+        modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
+      parsed.verify = false;
+      baselinePayloadRef.current = JSON.stringify(parsed);
+    } catch {
+      // ignore parse errors - baseline will be re-seeded on next details load
+    }
   }, [isDraft, modelInfoRef]);
 
   return {
-    handleFieldsBlur,
-    performAutoSave,
-    scheduleAutoSave,
-    blurSuppressRef,
+    buildPayload,
+    getSavePayload,
+    markSaved,
     markModelsEdited,
   };
 }
 
 // ---------------------------------------------------------------------------
-// useFormFields — wraps useProviderFields and strips instance_name
+// useFormFields - wraps useProviderFields and strips instance_name
 // ---------------------------------------------------------------------------
 
 /**
  * Wraps `useProviderFields` and removes the `instance_name` field from
- * both the field list and the default values — the card header owns
+ * both the field list and the default values - the card header owns
  * the instance name (editable on hover), so we keep a single source of
  * truth and avoid showing it twice in the form.
  */
 export function useFormFields(
   providerName: string,
-  isDraft: boolean,
+  _isDraft: boolean,
   initialValues: Record<string, any>,
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
 ) {
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
-    editMode: !isDraft,
-    viewMode: isDraft,
+    // Always seed initial values (drafts need the default base_url;
+    // saved cards need the persisted api_key / base_url).
+    editMode: true,
+    // Never disable fields - the old name-first lock is gone. Drafts
+    // are fully editable from the start; saved cards are edited via the
+    // top Save button.
+    viewMode: false,
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,

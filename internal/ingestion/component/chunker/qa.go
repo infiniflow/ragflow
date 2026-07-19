@@ -34,6 +34,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/parser"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -41,9 +44,17 @@ import (
 
 const ComponentNameQAChunker = "QAChunker"
 
-type qaChunkerParam struct{}
+type qaChunkerParam struct {
+	Lang string `json:"lang,omitempty"`
+}
 
-func (p *qaChunkerParam) Update(conf map[string]any) {}
+func (p *qaChunkerParam) Update(conf map[string]any) {
+	if v, ok := conf["lang"]; ok {
+		if s, ok := v.(string); ok {
+			p.Lang = s
+		}
+	}
+}
 
 func (qaChunkerParam) Defaults() qaChunkerParam { return qaChunkerParam{} }
 
@@ -86,12 +97,20 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		}, nil
 	}
 
+	qPrefix, aPrefix := "问题：", "回答："
+	eng := strings.EqualFold(c.param.Lang, "english") || c.param.Lang == ""
+	if eng {
+		qPrefix, aPrefix = "Question: ", "Answer: "
+	}
+
 	var qaPairs []qaPair
+	var isMarkdown bool
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatHTML:
 		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult))
 	case schema.PayloadFormatMarkdown:
 		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
+		isMarkdown = true
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
@@ -102,8 +121,12 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	for _, pair := range qaPairs {
 		contentLTKS, _ := tokenizer.Tokenize(pair.Question)
 		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
+		answer := rmQAPrefix(pair.Answer)
+		if isMarkdown {
+			answer = renderMarkdown(answer)
+		}
 		chunk := schema.ChunkDoc{
-			ContentWithWeight: fmt.Sprintf("Question: %s\tAnswer: %s", rmQAPrefix(pair.Question), rmQAPrefix(pair.Answer)),
+			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
 			DocType:           "text",
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
@@ -114,12 +137,18 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	return chunkOutputs(chunks), nil
 }
 
+func renderMarkdown(s string) string {
+	mdParser := parser.NewWithExtensions(parser.CommonExtensions | parser.Tables)
+	output := markdown.ToHTML([]byte(s), mdParser, nil)
+	return string(output)
+}
+
 type qaPair struct {
 	Question string
 	Answer   string
 }
 
-var rmQAPrefixRe = regexp.MustCompile(`^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
+var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[ \t]*(?:[:：]|\t)[ \t]*`)
 
 func rmQAPrefix(txt string) string {
 	return strings.TrimSpace(rmQAPrefixRe.ReplaceAllString(txt, ""))
@@ -167,7 +196,7 @@ func extractQATable(htmlStr string) []qaPair {
 // Markdown QA extraction
 // ---------------------------------------------------------------------------
 
-var mdHeading = regexp.MustCompile(`^(#{1,6})\s+`)
+var mdHeading = regexp.MustCompile(`^(#*)`)
 
 func extractQAMarkdown(md string) []qaPair {
 	if md == "" {
@@ -175,7 +204,8 @@ func extractQAMarkdown(md string) []qaPair {
 	}
 	lines := strings.Split(md, "\n")
 	var pairs []qaPair
-	var questionStack, levelStack []string
+	var questionStack []string
+	var levelStack []int
 	var answer []string
 	codeBlock := false
 
@@ -199,16 +229,16 @@ func extractQAMarkdown(md string) []qaPair {
 		}
 
 		m := mdHeading.FindStringSubmatch(line)
-		if m == nil || len(m[1]) > 6 {
+		level := len(m[1])
+		if level == 0 || level > 6 {
 			answer = append(answer, line)
 			continue
 		}
 
 		flushAnswer()
-		level := m[1]
-		question := strings.TrimSpace(line[len(m[0]):])
+		question := strings.TrimSpace(line[level:])
 
-		for len(levelStack) > 0 && len(level) <= len(levelStack[len(levelStack)-1]) {
+		for len(levelStack) > 0 && level <= levelStack[len(levelStack)-1] {
 			questionStack = questionStack[:len(questionStack)-1]
 			levelStack = levelStack[:len(levelStack)-1]
 		}

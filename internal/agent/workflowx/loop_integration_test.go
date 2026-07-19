@@ -297,12 +297,11 @@ func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
 	}
 }
 
-// TestIntegration_MaxIterationsExceeded_OnInvokePath asserts
-// that a sustained (non-converging) loop run surfaces
-// ErrLoopMaxIterationsExceeded through the outer invoke. This
-// uses a non-interrupting sub-workflow so the loop actually
-// reaches the cap.
-func TestIntegration_MaxIterationsExceeded_OnInvokePath(t *testing.T) {
+// TestIntegration_ExplicitMaxIterationsStops_OnInvokePath asserts that a
+// sustained non-converging loop returns normally when it reaches an explicit
+// cap. This uses a non-interrupting sub-workflow so the loop actually reaches
+// the cap.
+func TestIntegration_ExplicitMaxIterationsStops_OnInvokePath(t *testing.T) {
 	var subCalls atomic.Int64
 	subStore := newInMemoryStore()
 	sub := counterSub(t, &subCalls)
@@ -328,9 +327,12 @@ func TestIntegration_MaxIterationsExceeded_OnInvokePath(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), 0)
-	if !errors.Is(err, ErrLoopMaxIterationsExceeded) {
-		t.Fatalf("got %v, want ErrLoopMaxIterationsExceeded", err)
+	out, err := compiled.Invoke(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out != 3 {
+		t.Errorf("output: got %d, want 3", out)
 	}
 	if got := subCalls.Load(); got != 3 {
 		t.Errorf("sub invocations: got %d, want 3", got)

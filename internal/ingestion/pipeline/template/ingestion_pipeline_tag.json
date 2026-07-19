@@ -49,43 +49,28 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "spreadsheet": {
-                                "flatten_media_to_text": false,
-                                "output_format": "html",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "xls",
-                                    "xlsx",
-                                    "csv"
-                                ],
-                                "vlm": {}
-                            },
-                            "text&code": {
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "txt",
-                                    "py",
-                                    "js",
-                                    "java",
-                                    "c",
-                                    "cpp",
-                                    "h",
-                                    "php",
-                                    "go",
-                                    "ts",
-                                    "sh",
-                                    "cs",
-                                    "kt",
-                                    "sql"
-                                ]
-                            }
+                        "spreadsheet": {
+                            "flatten_media_to_text": false,
+                            "output_format": "html",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "xls",
+                                "xlsx",
+                                "csv"
+                            ],
+                            "vlm": {}
+                        },
+                        "text&code": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "txt"
+                            ]
                         }
                     }
                 },
@@ -151,9 +136,6 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
                     "id": "xy-edge__TagChunker:NewNoonsGlowstart-Tokenizer:OldOwlsWatchend",
                     "source": "TagChunker:NewNoonsGlow",
                     "sourceHandle": "start",
