@@ -28,6 +28,7 @@ from test.testcases.utils.file_utils import create_image_file, create_txt_file
 
 
 ARGUMENT_ERROR_CODE = 102 if IS_GO_PROXY else 101
+PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
 
 
 def _skip_go_ignored_null(payload, field):
@@ -159,7 +160,7 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         json={
             "name": "dataset_update_lang_connectors",
             "description": "",
-            "chunk_method": "naive",
+            PARSER_ID_FIELD: "naive",
             "language": "English",
             "connectors": [],
             "avatar": avatar_value,
@@ -210,12 +211,12 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
 
     update_res = rest_client.put(
         f"/datasets/{dataset_id}",
-        json={"chunk_method": chunk_method},
+        json={PARSER_ID_FIELD: chunk_method},
     )
     assert update_res.status_code == 200
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
-    assert update_payload["data"]["chunk_method"] == chunk_method, update_payload
+    assert update_payload["data"][PARSER_ID_FIELD] == chunk_method, update_payload
 
 
 @pytest.mark.p1
@@ -362,9 +363,9 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
 @pytest.mark.parametrize(
     "name, update_payload",
     [
-        ("parser_config_empty", {"chunk_method": "qa", "parser_config": {}}),
-        ("parser_config_none", {"chunk_method": "qa", "parser_config": None}),
-        ("parser_config_unset", {"chunk_method": "qa"}),
+        ("parser_config_empty", {PARSER_ID_FIELD: "qa", "parser_config": {}}),
+        ("parser_config_none", {PARSER_ID_FIELD: "qa", "parser_config": None}),
+        ("parser_config_unset", {PARSER_ID_FIELD: "qa"}),
     ],
     ids=["parser_config_empty", "parser_config_none", "parser_config_unset"],
 )
@@ -895,21 +896,21 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
 
     expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for chunk_method in ("", "unknown", []):
-        res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": chunk_method})
+        res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: chunk_method})
         assert res.status_code == 200
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and not isinstance(chunk_method, str):
-            assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
+            assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
         elif IS_GO_PROXY:
             assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
-    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": None})
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    _skip_go_ignored_null(none_payload, "chunk_method")
+    _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
         assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
@@ -1072,7 +1073,7 @@ def test_dataset_update_field_unset_and_unsupported_contract(rest_client, clear_
     assert after_list_payload["data"][0]["description"] == original_data["description"], after_list_payload
     assert after_list_payload["data"][0]["embedding_model"] == original_data["embedding_model"], after_list_payload
     assert after_list_payload["data"][0]["permission"] == original_data["permission"], after_list_payload
-    assert after_list_payload["data"][0]["chunk_method"] == original_data["chunk_method"], after_list_payload
+    assert after_list_payload["data"][0][PARSER_ID_FIELD] == original_data[PARSER_ID_FIELD], after_list_payload
     assert after_list_payload["data"][0]["pagerank"] == original_data["pagerank"], after_list_payload
     assert after_list_payload["data"][0]["parser_config"] == original_data["parser_config"], after_list_payload
 
@@ -1142,6 +1143,8 @@ def test_dataset_create_name_and_case_insensitive_contract(rest_client, clear_da
 
 @pytest.mark.p2
 def test_dataset_create_avatar_and_description_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgN6J1tQAAAAASUVORK5CYII="
     payload = {
         "name": "dataset_avatar_description",
@@ -1176,11 +1179,11 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
     ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
 )
 def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
-    res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+    res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
-    assert payload["data"]["chunk_method"] == chunk_method, payload
+    assert payload["data"][PARSER_ID_FIELD] == chunk_method, payload
 
 
 @pytest.mark.p2
@@ -1277,6 +1280,8 @@ def test_dataset_create_embedding_model_format_contract(rest_client, clear_datas
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {
         "name": "test_parser_config_missing_fields",
         "parser_config": {"chunk_token_num": 1024},
@@ -1429,6 +1434,8 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
     ],
 )
 def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {"name": name, "parser_config": parser_config}
     res = rest_client.post("/datasets", json=payload)
     assert res.status_code == 200
@@ -1459,6 +1466,8 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
 def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
     assert res.status_code == 200
     body = res.json()
@@ -1478,9 +1487,11 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     ids=["qa", "manual", "paper", "book", "laws", "presentation"],
 )
 def test_dataset_create_parser_config_different_chunk_methods_contract(rest_client, clear_datasets, chunk_method):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {
         "name": f"test_parser_config_{chunk_method}",
-        "chunk_method": chunk_method,
+        PARSER_ID_FIELD: chunk_method,
         "parser_config": {"chunk_token_num": 512},
     }
     res = rest_client.post("/datasets", json=payload)
@@ -1550,6 +1561,8 @@ def test_dataset_create_content_type_and_payload_bad_contract(rest_client):
 
 @pytest.mark.p2
 def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     exceed_res = rest_client.post(
         "/datasets",
         json={"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536},
@@ -1594,6 +1607,8 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
 
 @pytest.mark.p2
 def test_dataset_create_description_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     exceeds_limit_res = rest_client.post(
         "/datasets",
         json={"name": "description_exceeds_limit_length", "description": "a" * 65536},
@@ -1657,18 +1672,18 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     ]
     expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for name, chunk_method in chunk_method_invalid_cases:
-        res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+        res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
         assert res.status_code == 200
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and not isinstance(chunk_method, str):
-            assert "cannot unmarshal" in payload["message"] and ".chunk_method" in payload["message"], payload
+            assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
         elif IS_GO_PROXY:
             assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
-    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", "chunk_method": None})
+    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", PARSER_ID_FIELD: None})
     assert chunk_method_none_res.status_code == 200
     chunk_method_none_payload = chunk_method_none_res.json()
     assert chunk_method_none_payload["code"] == ARGUMENT_ERROR_CODE, chunk_method_none_payload
@@ -1681,11 +1696,13 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     assert chunk_method_unset_res.status_code == 200
     chunk_method_unset_payload = chunk_method_unset_res.json()
     assert chunk_method_unset_payload["code"] == 0, chunk_method_unset_payload
-    assert chunk_method_unset_payload["data"]["chunk_method"] == "naive", chunk_method_unset_payload
+    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == "naive", chunk_method_unset_payload
 
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     invalid_cases = [
         ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
         ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
@@ -1754,6 +1771,8 @@ def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datase
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     empty_res = rest_client.post("/datasets", json={"name": "parser_config_empty", "parser_config": {}})
     assert empty_res.status_code == 200
     empty_payload = empty_res.json()

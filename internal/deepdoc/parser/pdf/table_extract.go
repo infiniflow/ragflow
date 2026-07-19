@@ -108,8 +108,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 				p.ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
 			}
 			for i := range cells {
-				cells[i].X0, cells[i].Y0 = util.MapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
-				cells[i].X1, cells[i].Y1 = util.MapRotatedPointToOriginal(cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
+				cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1 = util.MapRotatedRectToOriginal(
+					cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
 			}
 		}
 		firstCellTop := 1e9

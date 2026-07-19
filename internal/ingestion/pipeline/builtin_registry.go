@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -21,12 +22,20 @@ var builtinTemplateFS embed.FS
 // BuiltinPipelineMeta is the API-facing metadata for one built-in ingestion
 // pipeline template. The ParserID field is the value stored in the dataset's
 // parser_id column for built-in pipelines.
+// JSON tag "id" aligns with AgentItem.id for format consistency with
+// GET /api/v1/agents?canvas_category=dataflow_canvas.
 type BuiltinPipelineMeta struct {
-	ParserID    string         `json:"parser_id"`
-	Title       string         `json:"title"`
-	Description string         `json:"description,omitempty"`
-	Filename    string         `json:"filename"`
-	DSL         map[string]any `json:"dsl"`
+	ParserID    string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Filename    string `json:"filename"`
+}
+
+// BuiltinPipelineListResponse wraps the builtin pipeline list for
+// format consistency with ListAgentsResponse.
+type BuiltinPipelineListResponse struct {
+	BuiltinPipelines []*BuiltinPipelineMeta `json:"canvas"`
+	Total            int64                  `json:"total"`
 }
 
 type BuiltinPipeline struct {
@@ -119,7 +128,7 @@ func (r *Registry) canonicalRef(ref string) string {
 	return ref
 }
 
-func (r *Registry) List() []*BuiltinPipelineMeta {
+func (r *Registry) List() *BuiltinPipelineListResponse {
 	if r == nil {
 		return nil
 	}
@@ -131,7 +140,10 @@ func (r *Registry) List() []*BuiltinPipelineMeta {
 		cp := *item
 		out = append(out, &cp)
 	}
-	return out
+	return &BuiltinPipelineListResponse{
+		BuiltinPipelines: out,
+		Total:            int64(len(out)),
+	}
 }
 
 func (r *Registry) Refs() []string {
@@ -176,6 +188,39 @@ func (r *Registry) IsValid(ref string) bool {
 	return ok
 }
 
+// fileTypeParserOverrides maps a file type value to the canonical parser_id that
+// must be used for all files of that type. The type values are FileType constants
+// defined in the utility package.
+var fileTypeParserOverrides = map[string]string{
+	"visual": "picture",
+	"aural":  "audio",
+}
+
+var (
+	presentationExtPattern = regexp.MustCompile(`(?i)\.(ppt|pptx|pages)$`)
+	emailExtPattern        = regexp.MustCompile(`(?i)\.(msg|eml)$`)
+)
+
+// DefaultParserID returns the canonical parser_id for a document given its file
+// type, filename and the dataset-level parser_id. File-type-based overrides
+// (e.g. "visual" → "picture", "aural" → "audio") take precedence, followed by
+// filename extension heuristics (presentation / email), then falling back to
+// the dataset's parser_id.
+func (r *Registry) DefaultParserID(fileType, filename, fallback string) string {
+	if override, ok := fileTypeParserOverrides[strings.ToLower(fileType)]; ok {
+		return override
+	}
+	base := filepath.Base(strings.TrimSpace(filename))
+	switch {
+	case presentationExtPattern.MatchString(base):
+		return "presentation"
+	case emailExtPattern.MatchString(base):
+		return "email"
+	default:
+		return fallback
+	}
+}
+
 func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -197,7 +242,6 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 			Title:       englishText(data["title"], ref),
 			Description: englishText(data["description"], ""),
 			Filename:    filename,
-			DSL:         dsl,
 		},
 		DSL: dsl,
 	}
