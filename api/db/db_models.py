@@ -1456,6 +1456,14 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         pass
 
 
+def alter_db_drop_index(migrator, table_name, index_name):
+    try:
+        migrate(migrator.drop_index(table_name, index_name))
+    except Exception:
+        # rename fail will lead to a weired error.
+        # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
+        pass
+
 def ensure_model_indexes(migrator):
     """Create indexes declared by the Peewee models when they are missing."""
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
@@ -1774,6 +1782,10 @@ def migrate_db():
     alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
     alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
     alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_secret_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_public_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_host")
+
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases

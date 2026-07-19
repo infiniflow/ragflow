@@ -2,10 +2,53 @@ package models
 
 import (
 	"context"
+	"errors"
+	"io"
+	"ragflow/internal/common"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
+	modelName := "chat"
+	driver := &streamSentinelDriver{captureToolDriver: &captureToolDriver{}}
+	var callbacks []string
+	base := NewChatModel(driver, &modelName, &APIConfig{})
+	model := NewEinoChatModel(base, &ChatConfig{
+		StreamCallback: func(content, _ string) {
+			if content != "" {
+				callbacks = append(callbacks, content)
+			}
+		},
+	})
+
+	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var messages []string
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream.Recv: %v", recvErr)
+		}
+		if msg != nil {
+			messages = append(messages, msg.Content)
+		}
+	}
+
+	if len(messages) != 2 || messages[0] != "answer" || messages[1] != "DONE!" {
+		t.Fatalf("stream messages = %#v, want [answer DONE!]", messages)
+	}
+	if len(callbacks) != 2 || callbacks[0] != "answer" || callbacks[1] != "DONE!" {
+		t.Fatalf("stream callbacks = %#v, want [answer DONE!]", callbacks)
+	}
+}
 
 func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 	apiKey := "key"
@@ -148,37 +191,54 @@ type captureToolDriver struct {
 	lastConfig *ChatConfig
 }
 
+type streamSentinelDriver struct {
+	*captureToolDriver
+}
+
+func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	answer := "answer"
+	if err := sender(&answer, nil); err != nil {
+		return err
+	}
+	visibleDone := "DONE!"
+	if err := sender(&visibleDone, nil); err != nil {
+		return err
+	}
+	done := "[DONE]"
+	return sender(&done, nil)
+}
+
 func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver { return d }
 func (d *captureToolDriver) Name() string                                      { return "capture" }
-func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig) (*ChatResponse, error) {
+func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	d.lastConfig = cfg
 	return d.resp, nil
 }
-func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) Embed(_ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig) ([]EmbeddingData, error) {
+func (d *captureToolDriver) Embed(_ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Rerank(_ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig) (*RerankResponse, error) {
+func (d *captureToolDriver) Rerank(_ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudio(_ *string, _ *string, _ *APIConfig, _ *ASRConfig) (*ASRResponse, error) {
+func (d *captureToolDriver) TranscribeAudio(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudioWithSender(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) TranscribeAudioWithSender(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) AudioSpeech(_ *string, _ *string, _ *APIConfig, _ *TTSConfig) (*TTSResponse, error) {
+func (d *captureToolDriver) AudioSpeech(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage) (*TTSResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) AudioSpeechWithSender(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) AudioSpeechWithSender(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) OCRFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig) (*OCRFileResponse, error) {
+func (d *captureToolDriver) OCRFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig, _ *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) ParseFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig) (*ParseFileResponse, error) {
+func (d *captureToolDriver) ParseFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig, _ *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, nil
 }
 func (d *captureToolDriver) ListModels(_ *APIConfig) ([]ListModelResponse, error) {

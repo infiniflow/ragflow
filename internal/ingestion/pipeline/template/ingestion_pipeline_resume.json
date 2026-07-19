@@ -46,7 +46,9 @@
                         "temperatureEnabled": true,
                         "tenant_llm_id": 29,
                         "topPEnabled": true,
-                        "top_p": 0.3
+                        "top_p": 0.3,
+                        "auto_keywords": 0,
+                        "auto_questions": 0
                     }
                 },
                 "upstream": [
@@ -88,52 +90,37 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "docx": {
-                                "flatten_media_to_text": true,
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "docx"
-                                ],
-                                "vlm": {}
-                            },
-                            "pdf": {
-                                "flatten_media_to_text": true,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            },
-                            "text&code": {
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "txt",
-                                    "py",
-                                    "js",
-                                    "java",
-                                    "c",
-                                    "cpp",
-                                    "h",
-                                    "php",
-                                    "go",
-                                    "ts",
-                                    "sh",
-                                    "cs",
-                                    "kt",
-                                    "sql"
-                                ]
-                            }
+                        "docx": {
+                            "flatten_media_to_text": true,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "docx"
+                            ],
+                            "vlm": {}
+                        },
+                        "pdf": {
+                            "flatten_media_to_text": true,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
+                        },
+                        "text&code": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "txt"
+                            ]
                         }
                     }
                 },
@@ -426,7 +413,7 @@
                             "top_p": 0.3
                         },
                         "label": "Extractor",
-                        "name": "Auto Metadata"
+                        "name": "Extractor_0"
                     },
                     "dragging": false,
                     "id": "Extractor:ThreeDrinksAct",

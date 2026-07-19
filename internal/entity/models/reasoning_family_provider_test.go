@@ -76,6 +76,7 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking, ModelClass: &modelClass},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -113,6 +114,7 @@ func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t 
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking, ModelClass: &modelClass},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
