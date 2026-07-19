@@ -78,15 +78,21 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
     verbatim_output = 0
     last_added_newline = False
 
-    for e in document.descendants:
-        verbatim_output -= 1
-        # ``descendants`` yields opening tags only, so table and link scope is read
-        # from each element's ancestors: a flag set on <table>/<a> would never clear.
-        in_table = e.find_parent("table") is not None
-        anchor = e.find_parent("a")
-        href_value = anchor.get("href", None) if anchor is not None else None
+    # ``descendants`` yields opening tags only, so a flag set on <table>/<a> would
+    # never clear. Scope is therefore taken from each element's ancestors, resolved
+    # up-front in one pass: probing per element instead costs O(depth) each.
+    table_scope = {id(d) for table in document.find_all("table") for d in table.descendants}
+    href_scope = {}
+    for anchor in document.find_all("a"):  # document order, so a nested <a> wins over its parent
+        href_value = anchor.get("href", None)
         # mostly for typing, having multiple hrefs is not valid HTML
         link_href = href_value[0] if isinstance(href_value, list) else href_value
+        href_scope.update((id(d), link_href) for d in anchor.descendants)
+
+    for e in document.descendants:
+        verbatim_output -= 1
+        in_table = id(e) in table_scope
+        link_href = href_scope.get(id(e))
 
         if isinstance(e, bs4.element.NavigableString):
             if isinstance(e, (bs4.element.Comment, bs4.element.Doctype)):
