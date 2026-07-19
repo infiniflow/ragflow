@@ -38,7 +38,6 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -359,7 +358,7 @@ func main() {
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+	if err = engine.InitMessageQueueEngine(config.Ingestor.MQType); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
@@ -369,8 +368,8 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	ctx := context.Background()
-	if err = server.StartServer(ctx, serverName); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
@@ -496,7 +495,7 @@ func runIngestor(args *serverArgs) error {
 	}
 	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, int32(runtime.NumCPU()), []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 
 	go func() {
 		err := ingestor.Start()

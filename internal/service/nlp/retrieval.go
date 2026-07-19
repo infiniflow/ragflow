@@ -785,7 +785,7 @@ func (s *RetrievalService) GetVector(txt string, embModel *models.EmbeddingModel
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig)
+	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

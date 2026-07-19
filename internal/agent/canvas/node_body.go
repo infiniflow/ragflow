@@ -74,8 +74,8 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
-// ctxKeyOverrideParams carries the run-level setups override map into
-// BuildWorkflow so a component's `params["setups"]` can be merged with it
+// ctxKeyOverrideParams carries the run-level override map into
+// BuildWorkflow so a component's params can be merged with it
 // at compile time. The map is keyed by cpnID; each component only sees the
 // entry for its own id (an arbitrary string-keyed map). It mirrors the ctx
 // plumbing used for the per-run component factory
@@ -84,7 +84,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // package ever importing the ingestion layer.
 const ctxKeyOverrideParams ctxKey = "canvas_override_params"
 
-// withOverrideParams attaches a run-level setups override map to ctx. It is
+// withOverrideParams attaches a run-level override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
 // straight through.
 func withOverrideParams(ctx context.Context, m map[string]any) context.Context {
@@ -100,39 +100,23 @@ func overrideParamsFromContext(ctx context.Context) map[string]any {
 }
 
 // applyOverrideParams returns a clone of params with the per-component
-// setups override (already resolved for this cpnID by the caller) merged
-// into params["setups"]. The override wins on top-level key collisions. The
-// original params map is never mutated — the merge result is a fresh map —
+// override (already resolved for this cpnID by the caller) merged into
+// params. The override wins on top-level key collisions. The original
+// params map is never mutated — the merge result is a fresh map —
 // because the params come from the shared *Canvas and a per-run override
 // must not leak into the next Run on the same Pipeline.
 func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
 	}
-	out := make(map[string]any, len(params)+1)
+	out := make(map[string]any, len(params)+len(cpnOverride))
 	for k, v := range params {
 		out[k] = v
 	}
-	base, _ := out["setups"].(map[string]any)
-	out["setups"] = mergeSetups(base, cpnOverride)
+	for k, v := range cpnOverride {
+		out[k] = v
+	}
 	return out
-}
-
-// mergeSetups merges a component-level setups map (base) with a run-level
-// override map. The maps are arbitrary string-keyed maps; when the same
-// top-level key exists in both, the override value wins (a full replacement
-// of that entry). The merge is shallow: only the top-level key-value pairs
-// are considered. (The Parser component happens to use file-type keys such
-// as "pdf"/"docx" as one example, but that is not required by this merge.)
-func mergeSetups(base, override map[string]any) map[string]any {
-	merged := make(map[string]any, len(base)+len(override))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, ov := range override {
-		merged[k] = ov
-	}
-	return merged
 }
 
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
@@ -316,10 +300,12 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body directly), the wrapper degrades to a plain invocation:
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
-func withStateBracket(body nodeBodyFn) nodeBodyFn {
+func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		originalIn := in
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 		if state != nil {
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {
 				in = map[string]any{}
 			}
@@ -333,21 +319,30 @@ func withStateBracket(body nodeBodyFn) nodeBodyFn {
 		}
 		out, err := body(ctx, in)
 		if err != nil {
+			if state != nil {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
+			}
 			return nil, err
 		}
-		if state == nil || out == nil {
+		if state == nil {
 			return out, nil
 		}
-		cpnID, _ := out["__cpn_id__"].(string)
-		if cpnID == "" {
+		if out == nil {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			return out, nil
+		}
+		outputCpnID, _ := out["__cpn_id__"].(string)
+		if outputCpnID == "" {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 			return out, nil
 		}
 		for k, v := range out {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
-			state.SetVar(cpnID, k, v)
+			state.SetVar(outputCpnID, k, v)
 		}
+		nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 		return out, nil
 	}
 }
