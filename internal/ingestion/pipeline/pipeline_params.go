@@ -85,13 +85,12 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		}
 		if over, ok := cleaned[cpnID]; ok {
 			if om, ok := over.(map[string]any); ok {
-				result[cpnID] = common.DeepMergeMaps(base, map[string]interface{}(om))
-			} else {
-				result[cpnID] = base
+				for k, v := range om {
+					base[k] = v
+				}
 			}
-		} else {
-			result[cpnID] = base
 		}
+		result[cpnID] = base
 	}
 	return result
 }
