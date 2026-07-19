@@ -13,33 +13,33 @@ func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 		call func() error
 	}{
 		{"Embed", func() error {
-			_, err := driver.Embed(&modelName, []string{text}, &APIConfig{}, nil)
+			_, err := driver.Embed(&modelName, []string{text}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"Rerank", func() error {
-			_, err := driver.Rerank(&modelName, text, []string{text}, &APIConfig{}, nil)
+			_, err := driver.Rerank(&modelName, text, []string{text}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"TranscribeAudio", func() error {
-			_, err := driver.TranscribeAudio(&modelName, &text, &APIConfig{}, nil)
+			_, err := driver.TranscribeAudio(&modelName, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"TranscribeAudioWithSender", func() error {
-			return driver.TranscribeAudioWithSender(&modelName, &text, &APIConfig{}, nil, nil)
+			return driver.TranscribeAudioWithSender(&modelName, &text, &APIConfig{}, nil, nil, nil)
 		}},
 		{"AudioSpeech", func() error {
-			_, err := driver.AudioSpeech(&modelName, &text, &APIConfig{}, nil)
+			_, err := driver.AudioSpeech(&modelName, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"AudioSpeechWithSender", func() error {
-			return driver.AudioSpeechWithSender(&modelName, &text, &APIConfig{}, nil, nil)
+			return driver.AudioSpeechWithSender(&modelName, &text, &APIConfig{}, nil, nil, nil)
 		}},
 		{"OCRFile", func() error {
-			_, err := driver.OCRFile(&modelName, nil, &text, &APIConfig{}, nil)
+			_, err := driver.OCRFile(&modelName, nil, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"ParseFile", func() error {
-			_, err := driver.ParseFile(&modelName, nil, &text, &APIConfig{}, nil)
+			_, err := driver.ParseFile(&modelName, nil, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"Balance", func() error {

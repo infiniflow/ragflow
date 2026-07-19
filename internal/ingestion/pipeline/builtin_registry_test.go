@@ -20,8 +20,11 @@ func TestRegistryLoadsSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistryFromDir: %v", err)
 	}
-	if got := len(r.List()); got != 2 {
+	if got := len(r.List().BuiltinPipelines); got != 2 {
 		t.Fatalf("len(List()) = %d, want 2", got)
+	}
+	if got := r.List().Total; got != 2 {
+		t.Fatalf("Total = %d, want 2", got)
 	}
 	tpl, ok := r.Get("general")
 	if !ok {
@@ -164,7 +167,7 @@ func TestRegistryAliasNaiveResolvesGeneral(t *testing.T) {
 			t.Error("Refs() contains alias naive; aliases must be hidden from listing")
 		}
 	}
-	for _, meta := range r.List() {
+	for _, meta := range r.List().BuiltinPipelines {
 		if meta.ParserID == "naive" {
 			t.Error("List() contains alias naive; aliases must be hidden from listing")
 		}
@@ -236,5 +239,39 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	_, err := LoadBuiltinDSL("nonexistent")
 	if err == nil {
 		t.Fatal("LoadBuiltinDSL(nonexistent) = nil, want error")
+	}
+}
+
+func TestDefaultRegistry_DefaultParserID(t *testing.T) {
+	r, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		fileType string
+		filename string
+		fallback string
+		want     string
+	}{
+		{name: "visual", fileType: "visual", filename: "img.png", fallback: "naive", want: "picture"},
+		{name: "aural", fileType: "aural", filename: "audio.mp3", fallback: "naive", want: "audio"},
+		{name: "presentation by ext", fileType: "doc", filename: "deck.pptx", fallback: "naive", want: "presentation"},
+		{name: "email by ext", fileType: "doc", filename: "mail.eml", fallback: "naive", want: "email"},
+		{name: "pages as presentation", fileType: "doc", filename: "slides.pages", fallback: "naive", want: "presentation"},
+		{name: "msg as email", fileType: "doc", filename: "message.msg", fallback: "naive", want: "email"},
+		{name: "fallback default", fileType: "doc", filename: "notes.txt", fallback: "manual", want: "manual"},
+		{name: "unknown filetype fallback", fileType: "unknown", filename: "file.bin", fallback: "general", want: "general"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.DefaultParserID(tt.fileType, tt.filename, tt.fallback)
+			if got != tt.want {
+				t.Fatalf("DefaultParserID(%q, %q, %q) = %q, want %q",
+					tt.fileType, tt.filename, tt.fallback, got, tt.want)
+			}
+		})
 	}
 }

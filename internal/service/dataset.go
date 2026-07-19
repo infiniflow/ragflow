@@ -942,7 +942,7 @@ func datasetCleanEmbeddingText(s string) string {
 
 func datasetEncodeEmbedding(embeddingModel *models.EmbeddingModel, texts []string) ([][]float64, error) {
 	embeddingConfig := &models.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, texts, embeddingModel.APIConfig, embeddingConfig)
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, texts, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1548,21 +1548,6 @@ func (d *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}, nil
 }
 
-// AutoMetadataField mirrors the REST dataset auto metadata field schema.
-type AutoMetadataField struct {
-	Name           string      `json:"name"`
-	Type           string      `json:"type"`
-	Description    *string     `json:"description,omitempty"`
-	Examples       interface{} `json:"examples,omitempty"`
-	RestrictValues bool        `json:"restrict_values,omitempty"`
-}
-
-// AutoMetadataConfig mirrors the REST dataset auto metadata schema.
-type AutoMetadataConfig struct {
-	Enabled *bool               `json:"enabled,omitempty"`
-	Fields  []AutoMetadataField `json:"fields,omitempty"`
-}
-
 // MetadataConfigField mirrors one field in the dataset metadata config API.
 type MetadataConfigField struct {
 	Key         string   `json:"key"`
@@ -1579,17 +1564,14 @@ type MetadataConfigRequest struct {
 
 // CreateDatasetRequest represents the request for creating a dataset.
 type CreateDatasetRequest struct {
-	Name               string                 `json:"name" binding:"required"`
-	Avatar             *string                `json:"avatar,omitempty"`
-	Description        *string                `json:"description,omitempty"`
-	EmbeddingModel     *string                `json:"embedding_model,omitempty"`
-	Permission         *string                `json:"permission,omitempty"`
-	ChunkMethod        *string                `json:"chunk_method,omitempty"`
-	ParseType          *int                   `json:"parse_type,omitempty"`
-	PipelineID         *string                `json:"pipeline_id,omitempty"`
-	ParserConfig       map[string]interface{} `json:"parser_config,omitempty"`
-	AutoMetadataConfig *AutoMetadataConfig    `json:"auto_metadata_config,omitempty"`
-	Ext                map[string]interface{} `json:"ext,omitempty"`
+	Name           string  `json:"name" binding:"required"`
+	EmbeddingModel *string `json:"embedding_model,omitempty"`
+	Permission     *string `json:"permission,omitempty"`
+	ParserID       *string `json:"parser_id,omitempty"`
+	PipelineID     *string `json:"pipeline_id,omitempty"`
+	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
+	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	ParseType *int `json:"parse_type,omitempty"`
 }
 
 // ListDatasets lists datasets with pagination and filtering.
@@ -1693,41 +1675,41 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
 
+	// parse_type explicitly signals the pipeline mode (1 = BuiltIn, 2 = Pipeline).
+	// When absent (nil), infer intent from which field is present for backward compat.
+	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
+	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
+
+	if isBuiltinMode && req.PipelineID != nil {
+		// BuiltIn mode: discard pipeline_id so only parser_id matters.
+		req.PipelineID = nil
+	}
+	if isPipelineMode && req.ParserID != nil {
+		// Pipeline mode: ignore parser_id.
+		req.ParserID = nil
+	}
+
+	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
+		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
+	}
+
 	parserID := ""
 	permission := "me"
 	embeddingModel := ""
-	parserConfig := req.ParserConfig
 	pipelineID := req.PipelineID
-	description := req.Description
-	avatar := req.Avatar
-	var language *string
 
-	if req.Description != nil && len(*req.Description) > 65535 {
-		return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
-	}
-	if req.Avatar != nil {
-		if len(*req.Avatar) > 65535 {
-			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
-		}
-		if err := validateDatasetAvatar(*req.Avatar); err != nil {
-			return nil, common.CodeDataError, err
-		}
-	}
 	if req.Permission != nil {
 		permission = strings.TrimSpace(*req.Permission)
 		if permission != "me" && permission != "team" {
 			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
 		}
 	}
-	if req.ChunkMethod != nil {
-		parserID = strings.TrimSpace(*req.ChunkMethod)
+	if req.ParserID != nil {
+		parserID = strings.TrimSpace(*req.ParserID)
 		if err := validateParserID(parserID); err != nil {
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = nil
-	}
-	if req.ParseType != nil && (*req.ParseType < 0 || *req.ParseType > 64) {
-		return nil, common.CodeDataError, fmt.Errorf("Input should be between 0 and 64")
 	}
 	if req.PipelineID != nil {
 		normalizedPipelineID, err := normalizeDatasetPipelineID(*req.PipelineID)
@@ -1742,151 +1724,27 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 			return nil, common.CodeDataError, err
 		}
 	}
-	if err := validateDatasetParserConfigSize(parserConfig); err != nil {
-		return nil, common.CodeDataError, err
-	}
 
-	// ext mirrors the Python REST implementation and overrides known top-level fields.
-	for key, value := range req.Ext {
-		switch key {
-		case "name":
-			nameValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Dataset name must be string.")
-			}
-			nameValue = strings.TrimSpace(nameValue)
-			if nameValue == "" {
-				return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
-			}
-			if len(nameValue) > entity.DatasetNameLimit {
-				return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(nameValue), entity.DatasetNameLimit)
-			}
-			name = nameValue
-		case "description":
-			descriptionValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Description must be string.")
-			}
-			if len(descriptionValue) > 65535 {
-				return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
-			}
-			description = &descriptionValue
-		case "avatar":
-			avatarValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Avatar must be string.")
-			}
-			if len(avatarValue) > 65535 {
-				return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
-			}
-			if err := validateDatasetAvatar(avatarValue); err != nil {
-				return nil, common.CodeDataError, err
-			}
-			avatar = &avatarValue
-		case "language":
-			languageValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Language must be string.")
-			}
-			languageValue = strings.TrimSpace(languageValue)
-			language = &languageValue
-		case "permission":
-			permissionValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Permission must be string.")
-			}
-			permissionValue = strings.TrimSpace(permissionValue)
-			if permissionValue != "me" && permissionValue != "team" {
-				return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
-			}
-			permission = permissionValue
-		case "embedding_model", "embd_id":
-			embeddingModelValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Embedding model identifier must follow <model_name>@<provider> format")
-			}
-			embeddingModelValue = strings.TrimSpace(embeddingModelValue)
-			if err := validateDatasetEmbeddingModel(embeddingModelValue); err != nil {
-				return nil, common.CodeDataError, err
-			}
-			embeddingModel = embeddingModelValue
-		case "chunk_method", "parser_id":
-			parserIDValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, parserIDError()
-			}
-			parserIDValue = strings.TrimSpace(parserIDValue)
-			if err := validateParserID(parserIDValue); err != nil {
-				return nil, common.CodeDataError, err
-			}
-			parserID = parserIDValue
-			pipelineID = nil
-		case "pipeline_id":
-			pipelineIDValue, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("pipeline_id must be 32 hex characters")
-			}
-			normalizedPipelineID, err := normalizeDatasetPipelineID(pipelineIDValue)
-			if err != nil {
-				return nil, common.CodeDataError, err
-			}
-			pipelineID = normalizedPipelineID
-		case "parser_config":
-			parserConfigValue, ok := value.(map[string]interface{})
-			if !ok {
-				return nil, common.CodeDataError, errors.New("parser_config must be valid JSON")
-			}
-			if err := validateDatasetParserConfigSize(parserConfigValue); err != nil {
-				return nil, common.CodeDataError, err
-			}
-			parserConfig = parserConfigValue
+	// Reject references to a custom canvas the caller does not own or share.
+	// The handler passes the caller's user id in tenantID for CreateDataset.
+	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+		if ok, err := canvasAccessibleForUser(tenantID, strings.TrimSpace(*pipelineID)); err != nil {
+			return nil, common.CodeServerError, err
+		} else if !ok {
+			return nil, common.CodeDataError, errors.New("canvas is not accessible")
 		}
 	}
 
-	// parser_id wins when it is present; otherwise parse_type and pipeline_id must arrive together.
-	if parserID == "" {
-		if req.ParseType == nil && pipelineID == nil {
-			parserID = "naive"
-		} else if req.ParseType == nil || pipelineID == nil {
-			missingFields := make([]string, 0, 2)
-			if req.ParseType == nil {
-				missingFields = append(missingFields, "parse_type")
-			}
-			if pipelineID == nil {
-				missingFields = append(missingFields, "pipeline_id")
-			}
-			return nil, common.CodeDataError, fmt.Errorf("parser_id omitted -> required fields missing: %s", strings.Join(missingFields, ", "))
-		}
+	// Resolve component params defaults from the DSL template. parser_config
+	// stores component params directly: {cpnID: {param: value}}.
+	parserConfig, cpErr := resolveComponentParamsDefaults(parserID, pipelineID)
+	if cpErr != nil {
+		common.Warn("failed to resolve component params defaults for dataset",
+			zap.String("parserID", parserID), zap.Error(cpErr))
+		parserConfig = entity.JSONMap{}
 	}
 
-	if req.AutoMetadataConfig != nil {
-		parserConfig = applyAutoMetadataConfig(parserConfig, req.AutoMetadataConfig)
-	}
-
-	// Build parser_config. When pipeline_id is set, seed from pipeline DSL defaults.
-	var parserConfigMap map[string]interface{}
-	if pipelineID != nil {
-		if parserConfig == nil {
-			parserConfig = make(map[string]interface{})
-		}
-		canvas, err := dao.NewUserCanvasDAO().GetByID(*pipelineID)
-		if err != nil || canvas == nil {
-			return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", *pipelineID)
-		}
-		pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
-		if pipelineDefaults != nil {
-			parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfig)
-		} else {
-			parserConfigMap = common.DeepMergeMaps(nil, parserConfig)
-		}
-		common.InjectExtractorLLMID(parserConfigMap, tenant.LLMID)
-	} else {
-		parserConfigMap = common.GetParserConfig(parserID, parserConfig)
-		parserConfigMap["llm_id"] = tenant.LLMID
-	}
-	if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
-		return nil, common.CodeDataError, err
-	}
+	var parserConfigMap map[string]interface{} = parserConfig
 
 	embdID := tenant.EmbdID
 	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
@@ -1908,7 +1766,6 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 	}
 
 	kbID := utility.GenerateToken()
-
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -1931,16 +1788,6 @@ func (d *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		EmbdID:       embdID,
 		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
-	}
-
-	if description != nil {
-		kb.Description = description
-	}
-	if avatar != nil {
-		kb.Avatar = avatar
-	}
-	if language != nil {
-		kb.Language = language
 	}
 
 	if err = d.kbDAO.Create(kb); err != nil {
@@ -2080,21 +1927,21 @@ type DatasetConnectorRequest struct {
 }
 
 type UpdateDatasetRequest struct {
-	Name               *string                    `json:"name,omitempty"`
-	Avatar             *string                    `json:"avatar,omitempty"`
-	Description        *string                    `json:"description,omitempty"`
-	Language           *string                    `json:"language,omitempty"`
-	Connectors         *[]DatasetConnectorRequest `json:"connectors,omitempty"`
-	EmbdID             *string                    `json:"embd_id,omitempty"`
-	EmbeddingModel     *string                    `json:"embedding_model,omitempty"`
-	Permission         *string                    `json:"permission,omitempty"`
-	ParserID           *string                    `json:"parser_id,omitempty"`
-	ChunkMethod        *string                    `json:"chunk_method,omitempty"`
-	Pagerank           *int64                     `json:"pagerank,omitempty"`
-	ParserConfig       map[string]interface{}     `json:"parser_config,omitempty"`
-	PipelineID         *string                    `json:"pipeline_id,omitempty"`
-	AutoMetadataConfig *AutoMetadataConfig        `json:"auto_metadata_config,omitempty"`
-	Ext                map[string]interface{}     `json:"ext,omitempty"`
+	Name           *string                    `json:"name,omitempty"`
+	Avatar         *string                    `json:"avatar,omitempty"`
+	Description    *string                    `json:"description,omitempty"`
+	Language       *string                    `json:"language,omitempty"`
+	Connectors     *[]DatasetConnectorRequest `json:"connectors,omitempty"`
+	EmbdID         *string                    `json:"embd_id,omitempty"`
+	EmbeddingModel *string                    `json:"embedding_model,omitempty"`
+	Permission     *string                    `json:"permission,omitempty"`
+	ParserID       *string                    `json:"parser_id,omitempty"`
+	Pagerank       *int64                     `json:"pagerank,omitempty"`
+	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
+	PipelineID     *string                    `json:"pipeline_id,omitempty"`
+	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
+	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	ParseType *int `json:"parse_type,omitempty"`
 }
 
 // UpdateDataset Update a dataset
@@ -2118,7 +1965,6 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	}
 
 	updates := make(map[string]interface{})
-	extUpdates := normalizeDatasetUpdateExt(req.Ext)
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -2159,6 +2005,19 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 		updates["permission"] = permission
 	}
+
+	// parse_type explicitly signals the pipeline mode (1 = BuiltIn, 2 = Pipeline).
+	// When absent (nil), existing mutual-exclusivity behavior is preserved.
+	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
+	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
+
+	if isBuiltinMode && req.PipelineID != nil {
+		req.PipelineID = nil
+	}
+	if isPipelineMode && req.ParserID != nil {
+		req.ParserID = nil
+	}
+
 	if req.PipelineID != nil {
 		pipelineID, err := normalizeDatasetPipelineID(*req.PipelineID)
 		if err != nil {
@@ -2169,51 +2028,22 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 	}
 
-	for key, value := range extUpdates {
-		if _, exists := updates[key]; !exists {
-			updates[key] = value
-		}
-	}
-
 	parserID, parserIDProvided, err := datasetUpdateParserID(req)
 	if err != nil {
 		return nil, common.CodeDataError, err
-	}
-	if !parserIDProvided {
-		if extParserID, ok := updates["parser_id"]; ok {
-			parserIDValue, ok := extParserID.(string)
-			if !ok {
-				return nil, common.CodeDataError, parserIDError()
-			}
-			parserID = strings.TrimSpace(parserIDValue)
-			if err := validateParserID(parserID); err != nil {
-				return nil, common.CodeDataError, err
-			}
-			parserIDProvided = true
-		}
 	}
 	if parserIDProvided {
 		updates["parser_id"] = parserID
 	}
 
+	// When parse_type is absent, parser_id and pipeline_id are mutually exclusive.
+	if req.ParseType == nil && parserIDProvided && req.PipelineID != nil {
+		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
+	}
+
 	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
 	if err != nil {
 		return nil, common.CodeDataError, err
-	}
-	if !embdIDProvided {
-		if extEmbdID, ok := updates["embd_id"]; ok {
-			embdIDValue, ok := extEmbdID.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("Embedding model identifier must follow <model_name>@<provider> format")
-			}
-			embdID = strings.TrimSpace(embdIDValue)
-			if embdID != "" {
-				if err := validateDatasetEmbeddingModel(embdID); err != nil {
-					return nil, common.CodeDataError, err
-				}
-			}
-			embdIDProvided = true
-		}
 	}
 	if embdIDProvided {
 		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
@@ -2236,19 +2066,37 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 	}
 
-	if req.AutoMetadataConfig != nil {
-		req.ParserConfig = applyAutoMetadataConfig(req.ParserConfig, req.AutoMetadataConfig)
-	}
 	if req.ParserConfig != nil {
 		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
 		if len(req.ParserConfig) > 0 {
-			merged := common.DeepMergeMaps(kb.ParserConfig, req.ParserConfig)
-			if err := validateDatasetParserConfigSize(merged); err != nil {
-				return nil, common.CodeDataError, err
+			// Resolve the effective pipeline and load its DSL schema.
+			effectiveParserID := kb.ParserID
+			if parserIDProvided {
+				effectiveParserID = parserID
 			}
-			updates["parser_config"] = entity.JSONMap(merged)
+			effectivePipelineID := kb.PipelineID
+			if req.PipelineID != nil {
+				if normalized, err := normalizeDatasetPipelineID(*req.PipelineID); err == nil {
+					effectivePipelineID = normalized
+				}
+			} else if parserIDProvided && kb.PipelineID != nil {
+				effectivePipelineID = nil
+			}
+
+			isCanvas := effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != ""
+			dslJSON, dslErr := loadPipelineDSL(isCanvas, effectiveParserID, effectivePipelineID)
+			if dslErr != nil {
+				common.Warn("failed to load pipeline DSL for building parser_config",
+					zap.String("parserID", effectiveParserID), zap.Error(dslErr))
+			}
+			if dslJSON != nil {
+				// Start from DSL defaults, overlay the cleaned incoming overrides.
+				// Unknown cpnIDs, unknown params, and legacy flat fields are
+				// dropped. Full replace — no merge with the stored config.
+				updates["parser_config"] = buildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+			}
 		}
 	}
 
@@ -2273,12 +2121,17 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 
 	if parserIDProvided && parserID != kb.ParserID {
 		if _, ok := updates["parser_config"]; !ok {
-			updates["parser_config"] = entity.JSONMap(common.GetParserConfig(parserID, nil))
+			if resolved, cpErr := resolveComponentParamsDefaults(parserID, nil); cpErr != nil {
+				common.Warn("failed to resolve component params defaults on parser_id switch",
+					zap.String("parserID", parserID), zap.Error(cpErr))
+			} else if resolved != nil {
+				updates["parser_config"] = resolved
+			}
 		}
 	}
 	if kb.PipelineID != nil && parserIDProvided {
 		if _, ok := updates["pipeline_id"]; !ok {
-			updates["pipeline_id"] = ""
+			updates["pipeline_id"] = nil // clear to NULL, not empty string
 		}
 	}
 
@@ -2290,28 +2143,17 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		if parserIDProvided {
 			cfgParserID = parserID
 		}
-		parserConfigMap := common.GetParserConfig(cfgParserID, nil)
-		if upPipelineID, ok := updates["pipeline_id"].(string); ok && upPipelineID != "" {
-			canvas, err := dao.NewUserCanvasDAO().GetByID(upPipelineID)
-			if err != nil || canvas == nil {
-				return nil, common.CodeDataError, fmt.Errorf("pipeline %s not found", upPipelineID)
-			}
-			pipelineDefaults := common.ExtractPipelineDefaults(canvas.DSL)
-			if pipelineDefaults != nil {
-				parserConfigMap = common.DeepMergeMaps(pipelineDefaults, parserConfigMap)
-			}
+		cfgPipelineID, _ := updates["pipeline_id"].(string)
+		var cpPipelineID *string
+		if cfgPipelineID != "" {
+			cpPipelineID = &cfgPipelineID
 		}
-		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			parserConfigMap = common.DeepMergeMaps(parserConfigMap, req.ParserConfig)
+		if cpDefaults, cpErr := resolveComponentParamsDefaults(cfgParserID, cpPipelineID); cpErr != nil {
+			common.Warn("failed to resolve component params defaults on pipeline change",
+				zap.String("parserID", cfgParserID), zap.Error(cpErr))
+		} else if cpDefaults != nil {
+			updates["parser_config"] = cpDefaults
 		}
-		tenant, err := d.tenantDAO.GetByID(tenantID)
-		if err == nil && tenant != nil {
-			common.InjectExtractorLLMID(parserConfigMap, tenant.LLMID)
-		}
-		if err := validateDatasetParserConfigSize(parserConfigMap); err != nil {
-			return nil, common.CodeDataError, err
-		}
-		updates["parser_config"] = entity.JSONMap(parserConfigMap)
 	}
 
 	if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(kb.Name) {
@@ -2377,10 +2219,6 @@ func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
 	provided := false
 	if req.ParserID != nil {
 		parserID = strings.TrimSpace(*req.ParserID)
-		provided = true
-	}
-	if req.ChunkMethod != nil {
-		parserID = strings.TrimSpace(*req.ChunkMethod)
 		provided = true
 	}
 	if !provided {
@@ -3114,30 +2952,6 @@ func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID str
 	return true, ""
 }
 
-func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMetadataConfig) map[string]interface{} {
-	if parserConfig == nil {
-		parserConfig = make(map[string]interface{})
-	}
-
-	fields := make([]map[string]interface{}, 0, len(config.Fields))
-	for _, field := range config.Fields {
-		fields = append(fields, map[string]interface{}{
-			"name":            field.Name,
-			"type":            field.Type,
-			"description":     field.Description,
-			"examples":        field.Examples,
-			"restrict_values": field.RestrictValues,
-		})
-	}
-	parserConfig["metadata"] = fields
-	enableMetadata := true
-	if config.Enabled != nil {
-		enableMetadata = *config.Enabled
-	}
-	parserConfig["enable_metadata"] = enableMetadata
-	return parserConfig
-}
-
 func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {
 	if parserConfig == nil {
 		return []interface{}{}
@@ -3191,7 +3005,7 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 		"document_count":  kb.DocNum,
 		"token_num":       kb.TokenNum,
 		"chunk_count":     kb.ChunkNum,
-		"chunk_method":    kb.ParserID,
+		"parser_id":       kb.ParserID,
 		"embedding_model": kb.EmbdID,
 		"nickname":        kb.Nickname,
 	}
@@ -3228,7 +3042,7 @@ func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 		"chunk_count":              kb.ChunkNum,
 		"similarity_threshold":     kb.SimilarityThreshold,
 		"vector_similarity_weight": kb.VectorSimilarityWeight,
-		"chunk_method":             kb.ParserID,
+		"parser_id":                kb.ParserID,
 		"parser_config":            kb.ParserConfig,
 		"pagerank":                 kb.Pagerank,
 		"create_time":              kb.CreateTime,
@@ -3328,4 +3142,49 @@ func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (ma
 
 func (d *DatasetService) GetFieldMap(ids []string) (map[string]interface{}, error) {
 	return d.kbDAO.GetFieldMap(ids)
+}
+
+// resolveComponentParamsDefaults loads the DSL for the target pipeline and
+// returns the component params defaults as an entity.JSONMap {cpnID: {param: value}}.
+// For builtin templates the DSL is loaded from the embedded registry; for custom
+// canvas pipelines it is loaded from the canvas row in the database.
+func resolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
+	isCanvas := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	var cp map[string]map[string]any
+	var err error
+	if isCanvas {
+		dslJSON, lerr := loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
+		if lerr != nil {
+			return nil, fmt.Errorf("load canvas DSL: %w", lerr)
+		}
+		cp, err = pipelinepkg.ComponentParamsDefaults(dslJSON)
+	} else {
+		registry, regErr := pipelinepkg.DefaultRegistry()
+		if regErr != nil {
+			return nil, fmt.Errorf("builtin registry: %w", regErr)
+		}
+		if !registry.IsValid(parserID) {
+			return nil, fmt.Errorf("unknown builtin parser_id: %q", parserID)
+		}
+		dslStr, dslErr := pipelinepkg.LoadBuiltinDSL(parserID)
+		if dslErr != nil {
+			return nil, fmt.Errorf("load builtin DSL: %w", dslErr)
+		}
+		cp, err = pipelinepkg.ComponentParamsDefaults([]byte(dslStr))
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make(entity.JSONMap, len(cp))
+	for k, v := range cp {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// canvasAccessibleForUser reports whether the given canvas is owned by or
+// team-shared with the caller.
+func canvasAccessibleForUser(userID, canvasID string) (bool, error) {
+	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	return dao.NewUserCanvasDAO().Accessible(canvasID, userID, tenantIDs), nil
 }

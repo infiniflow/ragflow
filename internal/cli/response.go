@@ -530,11 +530,11 @@ func (r *MessageResponse) PrintOut() {
 }
 
 type NonStreamResponse struct {
-	Code             int               `json:"code"`
-	ReasoningContent string            `json:"reasoning_content"`
-	Answer           string            `json:"answer"`
-	Message          string            `json:"message"`
-	Usage            *models.ChatUsage `json:"usage"`
+	Code             int                `json:"code"`
+	ReasoningContent string             `json:"reasoning_content"`
+	Answer           string             `json:"answer"`
+	Message          string             `json:"message"`
+	Usage            *models.TokenUsage `json:"usage"`
 	Duration         float64
 	OutputFormat     OutputFormat
 }
