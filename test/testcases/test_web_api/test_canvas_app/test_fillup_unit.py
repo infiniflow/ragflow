@@ -125,7 +125,7 @@ def test_begin_auto_consumes_initial_query_for_single_field(monkeypatch):
     component = _make_begin(
         module,
         query="code",
-        inputs={"demo": {"type": "options", "name": "Demo"}},
+        inputs={"demo": {"type": "options", "name": "Demo", "value": None}},
     )
 
     component._invoke(inputs={})
@@ -141,7 +141,7 @@ def test_begin_only_auto_consumes_initial_query_once(monkeypatch):
     component = _make_begin(
         module,
         query="code",
-        inputs={"demo": {"type": "options", "name": "Demo"}},
+        inputs={"demo": {"type": "options", "name": "Demo", "value": None}},
     )
 
     component._invoke(inputs={})
@@ -160,7 +160,7 @@ def test_user_fillup_does_not_consume_initial_query_for_single_field(monkeypatch
     component = _make_fillup(
         module,
         query="code",
-        inputs={"demo": {"type": "options", "name": "Demo"}},
+        inputs={"demo": {"type": "options", "name": "Demo", "value": None}},
     )
 
     component._invoke(inputs={})
@@ -175,7 +175,7 @@ def test_begin_does_not_consume_unmatched_structured_query(monkeypatch):
     component = _make_begin(
         module,
         query={"x": 8},
-        inputs={"demo": {"type": "options", "name": "Demo"}},
+        inputs={"demo": {"type": "options", "name": "Demo", "value": None}},
     )
 
     component._invoke(inputs={})
