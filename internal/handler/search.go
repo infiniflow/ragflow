@@ -438,8 +438,6 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 			writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
 			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
-			writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
-			return
 		}
 	}
 	if !hadError {
