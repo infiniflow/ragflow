@@ -275,8 +275,8 @@ type ppioModelInfo struct {
 }
 
 type ppioListModelsResponse struct {
-	Data  []DSModel   `json:"data"`
-	Error interface{} `json:"error"`
+	Data  []ModelListItem `json:"data"`
+	Error interface{}     `json:"error"`
 }
 
 func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {

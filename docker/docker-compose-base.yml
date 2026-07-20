@@ -76,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.0
+    image: infiniflow/infinity:v0.7.2-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml

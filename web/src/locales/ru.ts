@@ -1299,8 +1299,8 @@ export default {
       modelNameMessage: 'Пожалуйста, введите название вашей модели!',
       modelType: 'Тип модели',
       modelTypeMessage: 'Пожалуйста, введите тип вашей модели!',
-      addLlmBaseUrl: 'Базовый url',
-      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый url!',
+      addLlmBaseUrl: 'Базовый URL',
+      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый URL',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:

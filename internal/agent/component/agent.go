@@ -727,14 +727,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	if driver == "" {
 		driver = "dummy"
 	}
-	baseURL := baseURLMapForDriver(driver, p.BaseURL)
-	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
-	// The factory's NewModelDriver stores URLSuffix verbatim; the
-	// driver then appends URLSuffix.Chat to baseURL to build the
-	// chat-completions endpoint, so an empty suffix leaves the URL
-	// pointing at the v1 root (404). Seed the right suffix per
-	// driver so the agent's ReAct loop hits a working endpoint.
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, chatURLSuffixFor(driver))
+	d, err := newChatModelDriver(driver, p.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
 	}

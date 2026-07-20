@@ -575,7 +575,7 @@ export default {
       modelType: 'Tipo de modelo',
       modelTypeMessage: 'Por favor, insira o tipo do seu modelo!',
       addLlmBaseUrl: 'URL base',
-      baseUrlNameMessage: 'Por favor, insira sua URL base!',
+      baseUrlNameMessage: 'Por favor, insira sua URL base',
       paddleocr: {
         apiUrl: 'URL da API do PaddleOCR',
         apiUrlPlaceholder:

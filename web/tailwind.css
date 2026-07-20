@@ -95,7 +95,7 @@
     /* card color , dividing line */
     --bg-card: rgba(0, 0, 0, 0.05);
     --bg-component: #ffffff;
-    --bg-input: rgba(255, 255, 255, 0);
+    --bg-input: rgba(0, 0, 0, 0.05);
     --bg-canvas: 246 246 247;
     --bg-list: 246 246 247;
     /* Button ,Body text, Input completed text */
