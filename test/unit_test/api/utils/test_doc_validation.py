@@ -47,12 +47,14 @@ def test_rest_api_page_size_rejects_values_above_100():
 
 
 def test_update_document_req_accepts_resume_chunk_method():
+    """Verify document updates can keep the resume parser method."""
     update_doc_req = UpdateDocumentReq(chunk_method="resume")
 
     assert update_doc_req.chunk_method == "resume"
 
 
 def test_update_document_req_rejects_audio_chunk_method():
+    """Verify unsupported document parser methods still fail validation."""
     with pytest.raises(ValidationError, match="`chunk_method` audio doesn't exist"):
         UpdateDocumentReq(chunk_method="audio")
 
