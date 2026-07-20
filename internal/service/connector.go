@@ -79,7 +79,16 @@ var (
 	// ErrConnectorTestUnsupported is returned for connector sources whose
 	// validation path is not yet ported to Go.
 	ErrConnectorTestUnsupported = errors.New("test endpoint currently supports only REST API connectors")
+	// ErrInvalidRefreshFreq is returned when a connector refresh frequency is negative.
+	ErrInvalidRefreshFreq = errors.New("refresh_freq must be a non-negative integer")
 )
+
+func validateRefreshFreq(refreshFreq *int64) error {
+	if refreshFreq != nil && *refreshFreq < 0 {
+		return ErrInvalidRefreshFreq
+	}
+	return nil
+}
 
 // ConnectorService connector service
 type ConnectorService struct {
@@ -236,6 +245,10 @@ func (s *ConnectorService) cancelConnectorTasks(connectorID string) error {
 // CreateConnector creates a connector owned by the current user.
 // Equivalent to Python's create_connector endpoint.
 func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	if err := validateRefreshFreq(req.RefreshFreq); err != nil {
+		return nil, err
+	}
+
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
@@ -890,6 +903,11 @@ func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *Upda
 
 	if !s.canAccessConnector(connector, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+	if req != nil {
+		if err := validateRefreshFreq(req.RefreshFreq); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
 
 	updates := map[string]interface{}{}

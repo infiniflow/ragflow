@@ -273,6 +273,41 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 	}
 }
 
+func TestConnectorHandlerCreateConnectorRejectsNegativeRefreshFreq(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{err: service.ErrInvalidRefreshFreq}}
+	router := gin.New()
+	router.POST("/api/v1/connectors", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.CreateConnector(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/connectors",
+		strings.NewReader(`{"name":"connector","source":"webdav","config":{},"refresh_freq":-1}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("code=%v want=%v body=%v", body["code"], common.CodeArgumentError, body)
+	}
+	if body["message"] != "refresh_freq must be a non-negative integer" {
+		t.Fatalf("message=%v body=%v", body["message"], body)
+	}
+}
+
 func TestConnectorHandlerDeleteConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
