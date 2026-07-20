@@ -385,36 +385,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			continue
 		}
 
-		// Accumulate streaming tool_call deltas (mirrors Python's
-		// async_chat_streamly_with_tools in rag/llm/chat_model.py:500-509).
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				if tcMap, ok := tc.(map[string]interface{}); ok {
-					idxF, ok := tcMap["index"].(float64)
-					if !ok {
-						continue
-					}
-					idx := int(idxF)
-					existing, hasExisting := accumulatedToolCalls[idx]
-					if hasExisting {
-						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-							if args, ok := fn["arguments"].(string); ok {
-								if ef, ok := existing["function"].(map[string]interface{}); ok {
-									if ea, ok := ef["arguments"].(string); ok {
-										ef["arguments"] = ea + args
-									} else {
-										ef["arguments"] = args
-									}
-								}
-							}
-						}
-					} else {
-						accumulatedToolCalls[idx] = cloneMap(tcMap)
-					}
-				}
-			}
-			continue // tool_call deltas don't carry content
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {

@@ -366,35 +366,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			return nil
 		}
 
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if hasExisting {
-					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-						if args, ok := fn["arguments"].(string); ok {
-							if ef, ok := existing["function"].(map[string]interface{}); ok {
-								if ea, ok := ef["arguments"].(string); ok {
-									ef["arguments"] = ea + args
-								} else {
-									ef["arguments"] = args
-								}
-							}
-						}
-					}
-				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-				}
-			}
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {

@@ -356,51 +356,8 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			return nil
 		}
 
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if hasExisting {
-					if id, ok := tcMap["id"].(string); ok && id != "" {
-						existing["id"] = id
-					}
-					if typ, ok := tcMap["type"].(string); ok && typ != "" {
-						existing["type"] = typ
-					}
-					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-						ef, ok := existing["function"].(map[string]interface{})
-						if !ok {
-							ef = make(map[string]interface{})
-							existing["function"] = ef
-						}
-						if name, ok := fn["name"].(string); ok && name != "" {
-							if en, ok := ef["name"].(string); ok {
-								ef["name"] = en + name
-							} else {
-								ef["name"] = name
-							}
-						}
-						if args, ok := fn["arguments"].(string); ok {
-							if ea, ok := ef["arguments"].(string); ok {
-								ef["arguments"] = ea + args
-							} else {
-								ef["arguments"] = args
-							}
-						}
-					}
-				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-				}
-			}
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
 			if err = sender(nil, &reasoningContent); err != nil {
