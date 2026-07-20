@@ -8,6 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
+import { getBackendLanguage } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -326,7 +327,13 @@ export function transformParserParams(params: ParserFormSchemaType) {
     return pre;
   }, {});
 
-  return { ...omit(params, ['setups']), ...setups };
+  // The Go backend expects the setups map flattened into top-level params,
+  // while the Python backend reads them from the nested `setups` object.
+  // Default to the Python shape while the language probe is unresolved.
+  if (getBackendLanguage() === 'go') {
+    return { ...omit(params, ['setups']), ...setups };
+  }
+  return { ...params, setups };
 }
 
 export function transformTokenChunkerParams(

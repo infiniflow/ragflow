@@ -19,6 +19,7 @@ import { formatPureDate } from '@/utils/date';
 
 import { IDataset } from '@/interfaces/database/dataset';
 import { useParams } from 'react-router';
+import { getBackendLanguage } from '@/utils/backend-runtime';
 
 type PropType = {
   refreshCount?: number;
@@ -47,16 +48,24 @@ export function SideBar({ dataset: data }: PropType) {
         label: t(`knowledgeDetails.overview`),
         key: Routes.DataSetOverview,
       },
-      {
-        icon: <LucideSettings className="size-[1em]" />,
-        label: t(`knowledgeDetails.configuration`),
-        key: Routes.DataSetSetting,
-      },
-      {
-        icon: <LucideCog className="size-[1em]" />,
-        label: t(`knowledgeDetails.nextConfiguration`),
-        key: Routes.DataSetSettingNext,
-      },
+      ...(getBackendLanguage() === 'python'
+        ? [
+            {
+              icon: <LucideSettings className="size-[1em]" />,
+              label: t(`knowledgeDetails.configuration`),
+              key: Routes.DataSetSetting,
+            },
+          ]
+        : []),
+      ...(getBackendLanguage() === 'go'
+        ? [
+            {
+              icon: <LucideCog className="size-[1em]" />,
+              label: t(`knowledgeDetails.nextConfiguration`),
+              key: Routes.DataSetSettingNext,
+            },
+          ]
+        : []),
       {
         icon: <LucideBookText className="size-[1em]" />,
         label: t(`knowledgeDetails.compilation`),
