@@ -148,7 +148,7 @@ class RAGFlowOSS:
                 object_data = r["Body"].read()
                 return object_data
             except Exception as e:
-                if isinstance(e, ClientError) and e.response["Error"]["Code"] == "404":
+                if isinstance(e, ClientError) and e.response["Error"]["Code"] in ("404", "NoSuchKey"):
                     return None
                 logging.exception(f"fail get {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
                 if attempt == MAX_RETRIES - 1:
