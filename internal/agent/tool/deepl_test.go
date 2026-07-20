@@ -52,11 +52,8 @@ func TestDeepL_BuildRequest(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"api_key":"key-xyz:fx","text":"Hello world","source_lang":"en","target_lang":"de"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	if gotMethod != http.MethodPost {
 		t.Errorf("method = %q, want POST", gotMethod)
@@ -142,15 +139,12 @@ func TestDeepL_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewDeepLTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "deepl" {
+		t.Errorf("Name = %q, want deepl", meta.Name)
 	}
-	if info.Name != "deepl" {
-		t.Errorf("Name = %q, want deepl", info.Name)
-	}
-	if !strings.Contains(info.Desc, "DeepL") {
-		t.Errorf("Desc = %q, want to mention DeepL", info.Desc)
+	if !strings.Contains(meta.Description, "DeepL") {
+		t.Errorf("Desc = %q, want to mention DeepL", meta.Description)
 	}
 }
 

@@ -241,19 +241,16 @@ func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	}
 }
 
-func TestGoogleScholar_Info(t *testing.T) {
+func TestGoogleScholar_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleScholarTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "google_scholar_search" {
+		t.Errorf("Name = %q, want google_scholar_search", meta.Name)
 	}
-	if info.Name != "google_scholar_search" {
-		t.Errorf("Name = %q, want google_scholar_search", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Scholar") {
-		t.Errorf("Desc = %q, want to mention Scholar", info.Desc)
+	if !strings.Contains(meta.Description, "Scholar") {
+		t.Errorf("Description = %q, want to mention Scholar", meta.Description)
 	}
 }
 

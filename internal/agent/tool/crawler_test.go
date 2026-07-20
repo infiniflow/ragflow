@@ -150,41 +150,24 @@ func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
 	}
 }
 
-func TestCrawler_Info(t *testing.T) {
+func TestCrawler_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	info, err := c.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := c.ToolMeta()
+	if meta.Name != "web_crawler" {
+		t.Errorf("Name = %q, want web_crawler", meta.Name)
 	}
-	if info.Name != "web_crawler" {
-		t.Errorf("Name = %q, want web_crawler", info.Name)
+	if !strings.Contains(meta.Description, "text") {
+		t.Errorf("Description = %q, want to mention text extraction", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "text") {
-		t.Errorf("Desc = %q, want to mention text extraction", info.Desc)
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Fatalf("parameters missing 'query'")
 	}
-	if info.ParamsOneOf == nil {
-		t.Fatal("ParamsOneOf = nil, want schema definition")
+	if !meta.Parameters["query"].Required {
+		t.Fatalf("query param should be required")
 	}
-	paramsSchema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	paramsJSON, err := json.Marshal(paramsSchema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(paramsJSON)
-	if !strings.Contains(params, `"query"`) {
-		t.Fatalf("schema missing query parameter: %s", params)
-	}
-	if !strings.Contains(params, `"required":["query"]`) {
-		t.Fatalf("schema does not require query: %s", params)
-	}
-	if strings.Contains(params, `"url"`) {
-		t.Fatalf("schema exposes legacy url parameter: %s", params)
+	if _, ok := meta.Parameters["url"]; ok {
+		t.Fatalf("parameters should not expose legacy url param")
 	}
 }
-
-// jsonString is defined in exesql_test.go (same package).

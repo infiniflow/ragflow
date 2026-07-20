@@ -66,7 +66,7 @@ func TestRetrievalTool_SimpleServiceReturnsChunks(t *testing.T) {
 func TestSimpleRetrievalService_EmptyQuery(t *testing.T) {
 	chunks, err := simpleRetrievalService{}.Search(context.Background(), RetrievalRequest{Query: ""})
 	if err != nil {
-		t.Errorf("err: %v", err)
+		t.Fatalf("Search: %v", err)
 	}
 	if len(chunks) != 0 {
 		t.Errorf("expected 0 chunks for empty query, got %d", len(chunks))
@@ -81,7 +81,7 @@ func TestSimpleRetrievalService_RespectsTopN(t *testing.T) {
 		TopN:  1,
 	})
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Fatalf("Search: %v", err)
 	}
 	if len(chunks) != 1 {
 		t.Errorf("expected 1 chunk for top_n=1, got %d", len(chunks))

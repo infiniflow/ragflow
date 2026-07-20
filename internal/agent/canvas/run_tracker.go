@@ -16,7 +16,7 @@
 
 // run_tracker.go persists canvas-run business metadata to a Redis Hash.
 // See plan §2.6 (Key 2: "agent:run:{run_id}"). This is the *business*
-// channel — checkpoint payload (eino bytes) lives in checkpoint_store.go.
+// channel — checkpoint payload lives in checkpoint_store.go.
 //
 // Status code mapping (stored as int under the "status" field):
 //
@@ -52,7 +52,7 @@ func runKey(runID string) string { return runKeyPrefix + runID }
 
 // RunTracker manages canvas-run metadata (canvas_id, status, checkpoint
 // link, resume chain, ...) on a Redis Hash. Operations are explicit — the
-// eino CheckPointStore does NOT write these fields, so callers (HTTP
+// CheckPointStore does NOT write these fields, so callers
 // handler, cancel watcher) must invoke Start/Mark* at the right points.
 type RunTracker struct {
 	client *redis.Client

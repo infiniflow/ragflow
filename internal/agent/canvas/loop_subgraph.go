@@ -1,37 +1,17 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
 // loop_subgraph.go — Loop macro expansion for BuildWorkflow.
 //
 // The RAGFlow DSL expresses a loop as a parent Loop component with a
-// chain of downstream body components. In the Go port we collapse this
-// to a SINGLE eino node by:
-//  1. Collecting the Loop's downstream descendants into a sub-graph
-//     (a *compose.Workflow[map[string]any, map[string]any]).
-//  2. Prepending a synthetic "LoopInit" lambda that resolves the DSL's
-//     `loop_variables` and writes them into the per-run CanvasState
-//     under `state.Outputs[loopID][name]`, then passes the outer input
-//     through.
-//  3. Translating the DSL's `loop_termination_condition` list into a
-//     `workflowx.LoopCondition[map[string]any]` closure that reads the
-//     same state slots via `state.GetVar` on every iteration.
+// chain of downstream body components. We collapse this to a SINGLE
+// harness node by:
 //
-// The actual installation into the outer graph is done by BuildWorkflow
-// (canvas.go) via workflowx.AddLoopNode, which registers the resulting
-// *WorkflowNode inside the outer *compose.Workflow.
+//  1. Collecting the Loop's downstream descendants into a sub-graph
+//     (a *graphpkg.StateGraph).
+//  2. Compiling it into a *graphpkg.CompiledGraph.
+//  3. Creating a LoopCondition closure that reads CanvasState slots.
+//  4. Wrapping via graph.NewLoopNodeFunc into a single NodeFunc.
+//
+// The returned compiled sub-graph is passed to NewLoopNodeFunc, which
+// produces a NodeFunc that the outer StateGraph registers as one node.
 package canvas
 
 import (
@@ -40,35 +20,26 @@ import (
 	"slices"
 	"strings"
 
-	"ragflow/internal/agent/workflowx"
-
-	"github.com/cloudwego/eino/compose"
+	"ragflow/internal/harness/graph/constants"
+	graphpkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
-// loopExpansion holds the two artefacts produced by buildLoopExpansion
-// and consumed by BuildWorkflow to install the loop node.
+// loopExpansion holds the artefacts produced by buildLoopExpansion.
 type loopExpansion struct {
-	Sub        *compose.Workflow[map[string]any, map[string]any]
-	ShouldQuit workflowx.LoopCondition[map[string]any]
+	Sub        types.CompiledGraph  // compiled loop body sub-graph
+	ShouldQuit LoopConditionHarness // terminal condition
 	MaxIters   int
-	Members    map[string]bool // cpn_ids consumed by the sub-graph; caller skips these in the main pass.
+	Members    map[string]bool // cpn_ids consumed by the sub-graph
 }
 
-// buildLoopExpansion constructs the sub-workflow + termination condition
-// for the given Loop cpn. It does NOT touch the outer workflow — the
-// caller is responsible for installing the result via
-// workflowx.AddLoopNode and for skipping the members in the main
-// BuildWorkflow pass.
-//
-// Parameters:
-//
-//	c      — the parent Canvas (DSL representation).
-//	loopID — the cpn_id of the Loop component being expanded.
-//
-// The returned `Members` is the set of cpn_ids that the expansion
-// consumed as body nodes. BuildWorkflow must skip these when iterating
-// `c.Components` in the main pass (they will be wired inside the
-// sub-graph, not the outer graph).
+// LoopConditionHarness is a graph.LoopCondition alias for internal use.
+// It is the same as graph.LoopCondition.
+type LoopConditionHarness = graphpkg.LoopCondition
+
+// buildLoopExpansion constructs the sub-graph + termination condition
+// for the given Loop cpn. It does NOT touch the outer graph — the
+// caller is responsible for installing the result via graph.NewLoopNodeFunc.
 func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExpansion, error) {
 	if c == nil {
 		return nil, fmt.Errorf("canvas: nil canvas")
@@ -81,8 +52,7 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 	}
 
 	loopComp := c.Components[loopID]
-
-	members := collectLoopMembers(c, loopID)
+	members := collectDescendants(c, loopID)
 
 	initValues, err := resolveInitialVariables(loopComp.Obj.Params)
 	if err != nil {
@@ -96,7 +66,7 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 
 	maxIters := readMaxLoopCount(loopComp.Obj.Params)
 
-	sub, err := buildSubWorkflow(ctx, c, members, loopID, initValues)
+	sub, err := buildSubGraph(ctx, c, members, loopID, initValues)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
 	}
@@ -110,17 +80,7 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 }
 
 // collectDescendants returns the set of cpn_ids reachable from root via
-// downstream edges, NOT including root itself. The BFS stops at the
-// back-edge to root (i.e. a node whose Downstream contains root). This
-// prevents infinite recursion on cyclic graphs.
-func collectLoopMembers(c *Canvas, loopID string) map[string]bool {
-	members := collectGroupedMembers(c, loopID)
-	if len(members) > 0 {
-		return members
-	}
-	return collectDescendants(c, loopID)
-}
-
+// downstream edges, NOT including root itself.
 func collectDescendants(c *Canvas, root string) map[string]bool {
 	visited := make(map[string]bool)
 	queue := []string{}
@@ -149,93 +109,48 @@ func collectDescendants(c *Canvas, root string) map[string]bool {
 	return visited
 }
 
-// buildSubWorkflow constructs a fresh *compose.Workflow[map[string]any,
-// map[string]any] containing one node per member cpn, plus a synthetic
-// "LoopInit" entry node that seeds the loop variables into the per-run
-// state. Edges within the sub-graph mirror the canvas's Downstream
-// relations. The sub-workflow's START wires to LoopInit; the END wires
-// to whichever member has no downstream within the sub-graph (the
-// "tail" of the body).
-//
-// Body nodes are built through buildNodeBody so they share the same
-// legacy-no-op / factory / placeholder routing as the outer graph,
-// and receive the same statePre / statePost handlers so loop body
-// outputs land in CanvasState.Outputs alongside outer-node outputs.
-func buildSubWorkflow(
+// buildSubGraph constructs a fresh StateGraph containing one node per
+// member cpn, plus a synthetic "LoopInit" entry node. It compiles the
+// graph and returns the CompiledGraph.
+func buildSubGraph(
 	ctx context.Context,
 	c *Canvas,
 	members map[string]bool,
 	loopID string,
 	initValues map[string]initVarSpec,
-) (*compose.Workflow[map[string]any, map[string]any], error) {
+) (types.CompiledGraph, error) {
 	_ = ctx
-	sub := compose.NewWorkflow[map[string]any, map[string]any]()
-	nodes := make(map[string]*compose.WorkflowNode, len(members)+1)
+	sg := graphpkg.NewStateGraph(map[string]any{})
 
-	// Synthetic entry: writes loop variables into the per-run state
-	// the FIRST TIME the sub-workflow runs, then returns the input
-	// map unchanged. Subsequent iterations skip the seeding so the
-	// body's mutations accumulate across iterations — otherwise a
-	// VariableAssigner that increments `counter` would be clobbered
-	// back to its initial value at the top of every iteration and
-	// the loop could never terminate on a condition that watches the
-	// counter.
-	//
-	// "First time" is detected by checking whether the loop's state
-	// bucket already holds the variable: a missing bucket entry
-	// (GetVar returns nil with no error) means the loop has not yet
-	// seeded; any non-nil value means the body already wrote it on
-	// a prior iteration. This is safe even for "zero-init" loop
-	// variables (number→0, string→"") because Go's typed zero
-	// values are non-nil when stored back through SetVar.
-	//
-	// input_mode dispatch (per agent/component/loop.py:60-77):
-	//   "constant"  → use the literal value from the DSL
-	//   "variable"  → dereference the value as a state ref via
-	//                 state.GetVar; store the resolved value
-	//                 (or nil if the ref is unresolvable — mirrors
-	//                 Python's "treat as literal" fallback)
-	//   "" (zero)   → use the type-derived zero value (resolved at
-	//                 build time by resolveLoopVarValue)
-	initNode := sub.AddLambdaNode(loopInitKey,
-		compose.InvokableLambda(func(ctx context.Context, in map[string]any) (map[string]any, error) {
-			state, _, err := GetStateFromContext[*CanvasState](ctx)
-			if err != nil || state == nil {
-				return in, nil
-			}
-			for k, spec := range initValues {
-				existing, _ := state.GetVar(loopID + "@" + k)
-				if existing != nil {
-					continue
-				}
-				v := spec.Value
-				if spec.InputMode == "variable" {
-					ref, _ := spec.Value.(string)
-					resolved, err := state.GetVar(ref)
-					if err != nil {
-						return nil, fmt.Errorf("canvas: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
-					}
-					v = resolved
-				}
-				state.SetVar(loopID, k, v)
-			}
+	// Synthetic entry node: writes loop variables into CanvasState
+	// the FIRST time the sub-graph runs.
+	initNode := func(ctx context.Context, in any) (any, error) {
+		state, _, err := GetStateFromContext[*CanvasState](ctx)
+		if err != nil || state == nil {
 			return in, nil
-		}),
-	)
-	nodes[loopInitKey] = initNode
+		}
+		for k, spec := range initValues {
+			existing, _ := state.GetVar(loopID + "@" + k)
+			if existing != nil {
+				continue
+			}
+			v := spec.Value
+			if spec.InputMode == "variable" {
+				ref, _ := spec.Value.(string)
+				resolved, err := state.GetVar(ref)
+				if err != nil {
+					return nil, fmt.Errorf("canvas: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
+				}
+				v = resolved
+			}
+			state.SetVar(loopID, k, v)
+		}
+		return in, nil
+	}
+	sg.AddNode(loopInitKey, initNode)
 
-	// Body nodes: each member becomes a real factory-built (or
-	// placeholder, when no factory is registered) component invoke
-	// wrapped by withStateBracket so it shares the same state
-	// snapshot / result-persistence contract as outer-graph nodes.
-	// We do NOT use eino's StatePreHandler / StatePostHandler here
-	// because the sub-workflow has no WithGenLocalState of its own:
-	// state flows in through ctx (runtime.WithState) attached by
-	// the caller, and is read back via runtime.GetStateFromContext
-	// inside withStateBracket. This is what lets a Loop body
-	// actually mutate CanvasState (e.g. VariableAssigner
-	// incrementing the loop counter) so the LoopCondition closure
-	// can observe the change on the next iteration.
+	// Body nodes: register each member.
+	nodes := map[string]bool{loopInitKey: true}
 	for cpnID := range members {
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
@@ -245,59 +160,35 @@ func buildSubWorkflow(
 		if err != nil {
 			return nil, err
 		}
-		nodes[cpnID] = sub.AddLambdaNode(cpnID,
-			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(cpnID, name, body)),
-			compose.WithNodeName(cpnID),
-		)
+		sg.AddNode(cpnID, withStateBracket(body))
+		nodes[cpnID] = true
 	}
 
 	// Wire edges. The synthetic init node connects to every body node
-	// that has no upstream within the sub-graph (the body's "entry"
-	// nodes). For diamond / merge topologies within the body, we use
-	// the same eino one-data-input rule as BuildWorkflow: the first
-	// upstream carries data, the rest are exec-only AddDependency.
+	// that has no upstream within the sub-graph.
 	for cpnID := range members {
 		upstreams := c.Components[cpnID].Upstream
-		first := true
+		wired := false
 		for _, up := range upstreams {
-			if up == loopID {
-				// Upstream is the parent Loop; in the sub-graph the
-				// data source is the synthetic init node.
-				if first {
-					nodes[cpnID].AddInput(loopInitKey)
-					first = false
-				} else {
-					nodes[cpnID].AddDependency(loopInitKey)
+			if up == loopID || members[up] {
+				target := up
+				if up == loopID {
+					target = loopInitKey
 				}
-				continue
-			}
-			if !members[up] {
-				continue
-			}
-			if first {
-				nodes[cpnID].AddInput(up)
-				first = false
-			} else {
-				nodes[cpnID].AddDependency(up)
+				if err := sg.AddEdge(target, cpnID); err != nil {
+					// Ignore errors from mid-construction edges
+					_ = err
+				}
+				wired = true
 			}
 		}
-		if first {
-			// No in-subgraph upstream: wire from init (this happens
-			// for body entries whose only upstream in the DSL is the
-			// Loop itself).
-			nodes[cpnID].AddInput(loopInitKey)
+		if !wired {
+			// No in-subgraph upstream: wire from init.
+			_ = sg.AddEdge(loopInitKey, cpnID)
 		}
 	}
 
-	// Loop body sub-graphs need the same runtime MultiBranch wiring as the
-	// outer workflow, otherwise in-body Switch/Categorize nodes fan out to
-	// every declared child and loop exit/continue semantics diverge.
-	wireMultiBranches(sub, subCanvasForMembers(c, members), nil)
-
-	// Wire END: every member that has no downstream within the
-	// sub-graph is a sub-graph terminal. Multi-terminal loop bodies
-	// need the same merge-node treatment as outer workflows; otherwise
-	// eino's END node rejects repeated output mappings during compile.
+	// Wire END: every member with no in-subgraph downstream.
 	hasDownstream := make(map[string]bool, len(members))
 	for cpnID := range members {
 		for _, down := range c.Components[cpnID].Downstream {
@@ -307,62 +198,99 @@ func buildSubWorkflow(
 			}
 		}
 	}
-	terminals := make([]string, 0, len(members))
+	hasEnd := false
 	for cpnID := range members {
 		if hasDownstream[cpnID] {
 			continue
 		}
-		if isLegacyNoOp(c.Components[cpnID].Obj.ComponentName) {
-			if strings.EqualFold(c.Components[cpnID].Obj.ComponentName, "ExitLoop") {
-				terminals = append(terminals, cpnID)
-			}
-			continue
-		}
-		terminals = append(terminals, cpnID)
+		_ = sg.AddEdge(cpnID, constants.End)
+		hasEnd = true
 	}
-	if err := wireWorkflowTerminals(sub, terminals, loopInitKey, false); err != nil {
-		return nil, err
+	if !hasEnd {
+		_ = sg.AddEdge(loopInitKey, constants.End)
 	}
 
-	// Wire START. The synthetic init node is the sub-workflow's
-	// entry; eino's Workflow requires every start node to be wired
-	// from compose.START explicitly. The init node takes the
-	// sub-workflow's input (the per-iteration `prev`) and seeds the
-	// loop variables into state.
-	initNode.AddInput(compose.START)
+	// Wire START to the init node.
+	_ = sg.AddEdge(constants.Start, loopInitKey)
 
-	return sub, nil
+	// Compile the sub-graph.
+	compiled, err := sg.Compile()
+	if err != nil {
+		return nil, fmt.Errorf("canvas: loop %q sub-graph compile: %w", loopID, err)
+	}
+	return compiled, nil
 }
 
-func subCanvasForMembers(c *Canvas, members map[string]bool) *Canvas {
-	if c == nil {
-		return nil
-	}
-	sub := &Canvas{
-		Components: make(map[string]CanvasComponent, len(members)),
-	}
-	for id := range members {
-		comp, ok := c.Components[id]
-		if !ok {
-			continue
-		}
-		sub.Components[id] = comp
-	}
-	return sub
-}
-
-// loopInitKey is the synthetic cpn_id used for the LoopInit entry node
-// inside the sub-workflow. Using a reserved key avoids collisions with
-// user-defined cpn_ids.
+// loopInitKey is the synthetic cpn_id used for the LoopInit entry node.
 const loopInitKey = "__loop_init__"
+
+// translateLoopCondition converts DSL loop_termination_condition to
+// a graph.LoopCondition closure. The closure reads state via ctx.
+//
+// The DSL `loop_termination_condition` schema is unchanged from the
+// harness version; only the return type changes to graph.LoopCondition
+// to graph.LoopCondition (same signature).
+func translateLoopCondition(loopID string, params map[string]any) (graphpkg.LoopCondition, error) {
+	rawList, _ := params["loop_termination_condition"].([]any)
+	conditions := make([]loopConditionSpec, 0, len(rawList))
+	for i, raw := range rawList {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("loop_termination_condition[%d]: not a map", i)
+		}
+		variable, hasVar := m["variable"].(string)
+		operator, hasOp := m["operator"].(string)
+		if !hasVar || variable == "" {
+			return nil, fmt.Errorf("loop_termination_condition[%d] is incomplete (missing 'variable')", i)
+		}
+		if !hasOp || operator == "" {
+			return nil, fmt.Errorf("loop_termination_condition[%d] is incomplete (missing 'operator')", i)
+		}
+		inputMode, _ := m["input_mode"].(string)
+		if inputMode == "" {
+			inputMode = "constant"
+		}
+		conditions = append(conditions, loopConditionSpec{
+			Variable:  variable,
+			Operator:  operator,
+			Value:     m["value"],
+			InputMode: inputMode,
+		})
+	}
+	logicalOp, _ := params["logical_operator"].(string)
+	if logicalOp == "" {
+		logicalOp = "and"
+	}
+	if logicalOp != "and" && logicalOp != "or" {
+		return nil, fmt.Errorf("invalid logical_operator %q (want 'and' or 'or')", logicalOp)
+	}
+
+	return func(ctx context.Context, _ int, _, _ interface{}) (bool, error) {
+		state, _, err := GetStateFromContext[*CanvasState](ctx)
+		if err != nil || state == nil {
+			return false, fmt.Errorf("loop %q: condition eval: no canvas state in context", loopID)
+		}
+		if len(conditions) == 0 {
+			return false, nil
+		}
+		combined := logicalOp == "and"
+		for _, spec := range conditions {
+			v, err := evalOneLoopCondition(state, loopID, spec)
+			if err != nil {
+				return false, err
+			}
+			if logicalOp == "or" {
+				combined = combined || v
+			} else {
+				combined = combined && v
+			}
+		}
+		return combined, nil
+	}, nil
+}
 
 // initVarSpec carries the per-variable info the init lambda needs to
 // decide how to seed the loop variable into the per-run state.
-//
-// For input_mode == "variable", Value is the ref string to dereference
-// at init time via state.GetVar; for "constant", Value is used as-is;
-// for "" (zero-init), Value is the type-derived zero (resolved at build
-// time by resolveLoopVarValue) and the init lambda stores it directly.
 type initVarSpec struct {
 	Value     any
 	InputMode string
@@ -370,19 +298,6 @@ type initVarSpec struct {
 
 // resolveInitialVariables applies the input_mode dispatch from
 // agent/component/loop.py:60-77 to a list of loop_variable entries.
-//
-//	input_mode == "variable"  → returns the ref string in Value
-//	                            (the init lambda dereferences it at
-//	                            runtime via state.GetVar; resolution
-//	                            is deferred because this helper is
-//	                            state-free).
-//	input_mode == "constant"  → Value is the literal value.
-//	otherwise (zero-init)     → Value is the type-based zero value.
-//
-// The init lambda (buildSubWorkflow) iterates the returned map and
-// writes each Value into the per-run state under
-// `state.Outputs[loopID][name]`. The "variable" dereference happens
-// there, in the lambda body, where the live CanvasState is available.
 func resolveInitialVariables(params map[string]any) (map[string]initVarSpec, error) {
 	rawList, _ := params["loop_variables"].([]any)
 	out := make(map[string]initVarSpec, len(rawList))
@@ -437,9 +352,6 @@ func readLoopVarFields(item map[string]any) (name, inputMode string, value, typ 
 func resolveLoopVarValue(inputMode string, value, typ any) (any, error) {
 	switch inputMode {
 	case "variable":
-		// The "variable" path is handled at init time inside
-		// buildSubWorkflow's init lambda, where the state is
-		// available. Here we just return the ref string.
 		return value, nil
 	case "constant":
 		return value, nil
@@ -473,96 +385,15 @@ func zeroValueForType(typ any) any {
 	return ""
 }
 
-// translateLoopCondition converts the DSL's loop_termination_condition
-// list into a workflowx.LoopCondition[map[string]any] closure.
-//
-// The closure reads each condition's variable via
-// `state.GetVar(loopID + "." + variable)` on every iteration, applies
-// the operator, and combines results via the configured logical
-// operator ("and" by default, "or" otherwise).
-//
-// The closure's per-iteration cost is one state lookup per condition —
-// no allocations once the conditions slice is captured.
-func translateLoopCondition(loopID string, params map[string]any) (workflowx.LoopCondition[map[string]any], error) {
-	rawList, _ := params["loop_termination_condition"].([]any)
-	conditions := make([]loopConditionSpec, 0, len(rawList))
-	for i, raw := range rawList {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("loop_termination_condition[%d]: not a map", i)
-		}
-		variable, hasVar := m["variable"].(string)
-		operator, hasOp := m["operator"].(string)
-		if !hasVar || variable == "" {
-			return nil, fmt.Errorf("loop_termination_condition[%d] is incomplete (missing 'variable')", i)
-		}
-		if !hasOp || operator == "" {
-			return nil, fmt.Errorf("loop_termination_condition[%d] is incomplete (missing 'operator')", i)
-		}
-		inputMode, _ := m["input_mode"].(string)
-		if inputMode == "" {
-			inputMode = "constant"
-		}
-		conditions = append(conditions, loopConditionSpec{
-			Variable:  variable,
-			Operator:  operator,
-			Value:     m["value"],
-			InputMode: inputMode,
-		})
-	}
-	logicalOp, _ := params["logical_operator"].(string)
-	if logicalOp == "" {
-		logicalOp = "and"
-	}
-	if logicalOp != "and" && logicalOp != "or" {
-		return nil, fmt.Errorf("invalid logical_operator %q (want 'and' or 'or')", logicalOp)
-	}
-
-	return func(ctx context.Context, _ int, _, _ map[string]any) (bool, error) {
-		// The condition is evaluated at the end of each iteration.
-		// We need access to the per-run state to read loop variables
-		// and other DSL variables. The workflowx lambda passes the
-		// loop's outer context into this closure, so
-		// canvas.GetStateFromContext works.
-		state, _, err := GetStateFromContext[*CanvasState](ctx)
-		if err != nil || state == nil {
-			return false, fmt.Errorf("loop %q: condition eval: no canvas state in context", loopID)
-		}
-		if len(conditions) == 0 {
-			// No conditions means the loop only stops at max count
-			// — never quit on conditions. Mirrors Python fallback.
-			return false, nil
-		}
-		// Vacuous starting value: true for AND, false for OR.
-		combined := logicalOp == "and"
-		for _, spec := range conditions {
-			v, err := evalOneLoopCondition(state, loopID, spec)
-			if err != nil {
-				return false, err
-			}
-			if logicalOp == "or" {
-				combined = combined || v
-			} else {
-				combined = combined && v
-			}
-		}
-		return combined, nil
-	}, nil
-}
-
 type loopConditionSpec struct {
 	Variable  string
 	Operator  string
 	Value     any
-	InputMode string // "constant" or "variable"
+	InputMode string
 }
 
-// evalOneLoopCondition resolves a single condition entry. Mirrors
-// loopitem.py:128-142. Variable lookup is by full cpn_id path
-// ("loopID.varName" for loop variables, or whatever ref the DSL
-// supplies for state-level refs).
+// evalOneLoopCondition resolves a single condition entry.
 func evalOneLoopCondition(state *CanvasState, loopID string, spec loopConditionSpec) (bool, error) {
-	// Resolve the right-hand side value.
 	var rhs any
 	if spec.InputMode == "variable" {
 		ref, _ := spec.Value.(string)
@@ -576,14 +407,8 @@ func evalOneLoopCondition(state *CanvasState, loopID string, spec loopConditionS
 	} else {
 		rhs = spec.Value
 	}
-	// Resolve the variable being tested. The DSL stores either a bare
-	// variable name (loop variable) or a full cpn_id@param ref. For
-	// loop variables written by the init lambda, the bucket key is
-	// "loopID" so the ref is "loopID@name". For arbitrary state refs,
-	// the DSL passes the full path.
 	ref := spec.Variable
 	if !strings.Contains(ref, ".") && !strings.Contains(ref, "@") {
-		// Bare name — assume it's a loop variable.
 		ref = loopID + "@" + ref
 	}
 	got, err := state.GetVar(ref)
@@ -593,10 +418,7 @@ func evalOneLoopCondition(state *CanvasState, loopID string, spec loopConditionS
 	return evaluateCondition(got, spec.Operator, rhs)
 }
 
-// evaluateCondition is the type-dispatched operator logic that mirrors
-// loopitem.py:48-122. The operator set is the union of operators used
-// across all type branches — at runtime only the branches matching
-// the dynamic type of `var` are reachable.
+// evaluateCondition is the type-dispatched operator logic.
 func evaluateCondition(varVal any, op string, value any) (bool, error) {
 	switch v := varVal.(type) {
 	case nil:
@@ -661,7 +483,6 @@ func evalBoolOp(b bool, op string, value any) (bool, error) {
 		vb, _ := value.(bool)
 		return b != vb, nil
 	case "empty":
-		// mirrors `var is None` for booleans
 		return b == false && value == nil, nil
 	case "not empty":
 		return b == true || value != nil, nil
@@ -760,7 +581,9 @@ func isNilOp(op string) bool {
 }
 
 // readMaxLoopCount returns the configured `maximum_loop_count` for the
-// Loop. 0 means "infinite" (no cap, only condition-driven termination).
+// Loop. 0 means "use default cap" (1024 iterations) — the scheduler only
+// calls WithLoopMaxIterations when exp.MaxIters > 0, so 0 falls back to
+// the harness's default recursion limit.
 func readMaxLoopCount(params map[string]any) int {
 	v, ok := params["maximum_loop_count"]
 	if !ok {

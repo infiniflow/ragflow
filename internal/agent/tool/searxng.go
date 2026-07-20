@@ -29,9 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -102,24 +99,24 @@ func newSearXNGToolWithDefaults(helper *HTTPHelper, defaults searxngParams) *Sea
 	}
 }
 
-// Info exposes the Python model-call schema, not Canvas-only configuration.
-func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: searxngToolName,
-		Desc: searxngToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (s *SearXNGTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        searxngToolName,
+		Description: searxngToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Required:    true,
 			},
 			"searxng_url": {
-				Type:     schema.String,
-				Desc:     "The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func buildSearXNGURL(baseURL, query string) string {
@@ -143,7 +140,7 @@ func mergeSearXNGDefaults(defaults, params searxngParams) searxngParams {
 
 // InvokableRun performs the same request and result slicing as Python
 // SearXNG._invoke. Empty try-run inputs return an empty result without I/O.
-func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var params searxngParams
 	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil {
 		err = fmt.Errorf("searxng: parse arguments: %w", err)

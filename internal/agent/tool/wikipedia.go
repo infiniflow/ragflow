@@ -30,9 +30,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -70,7 +67,7 @@ func WikipediaLanguageSupported(language string) bool {
 }
 
 // wikipediaParams is the JSON shape the model sends into InvokableRun.
-// LLM only sees query via Info(); lang and max_results are accepted for
+// LLM only sees query via ToolMeta(); lang and max_results are accepted for
 // non-agent callers and fall back to the tool instance's node-level
 // defaults (WikipediaTool.lang / WikipediaTool.topN) when absent.
 type wikipediaParams struct {
@@ -146,19 +143,19 @@ func NewWikipediaToolWithParams(h *HTTPHelper, topN int, language string) *Wikip
 	return &WikipediaTool{helper: h, topN: topN, lang: strings.TrimSpace(language)}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (w *WikipediaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wikipediaToolName,
-		Desc: wikipediaToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (w *WikipediaTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        wikipediaToolName,
+		Description: wikipediaToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func (w *WikipediaTool) ComponentSpec() ComponentSpec {
@@ -195,7 +192,7 @@ func buildWikipediaURL(lang, query string, topN int) string {
 }
 
 // InvokableRun performs the Wikipedia search.
-func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p wikipediaParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return wikipediaErrJSON(fmt.Errorf("wikipedia: parse arguments: %w", err)),

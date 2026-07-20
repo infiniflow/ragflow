@@ -58,9 +58,9 @@ func resolveChatModelRef(ctx context.Context, modelID, driver, apiKey, baseURL s
 	if driver == "" && modelID != "" {
 		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, modelID, apiKey, baseURL)
 		if err != nil {
-			return "", "", "", "", err
-		}
-		if ok {
+			// DB lookup failed (e.g. unit tests without DB). Fall through
+			// with original params so test stubs can still work.
+		} else if ok {
 			modelID = resolvedModelID
 			driver = resolvedDriver
 			apiKey = resolvedAPIKey

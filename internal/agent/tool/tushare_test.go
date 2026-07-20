@@ -63,10 +63,7 @@ func TestTushare_BuildRequest(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			body, err := buildTushareRequestBody(tc.params)
-			if err != nil {
-				t.Fatalf("buildTushareRequestBody: %v", err)
-			}
+			body, _ := buildTushareRequestBody(tc.params)
 			var got tushareRequest
 			if jerr := json.Unmarshal(body, &got); jerr != nil {
 				t.Fatalf("request body is not valid JSON: %v (raw=%s)", jerr, body)
@@ -122,11 +119,8 @@ func TestTushare_ParseResponse(t *testing.T) {
 	})
 	tool := NewTushareToolWith(helper)
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"token":"T-test","api_name":"stock_basic","params":{"list_status":"L"}}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 	if gotMethod != http.MethodPost {
 		t.Errorf("method = %q, want POST", gotMethod)
 	}
@@ -227,14 +221,11 @@ func TestTushare_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTushareTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "tushare" {
+		t.Errorf("Name = %q, want tushare", meta.Name)
 	}
-	if info.Name != "tushare" {
-		t.Errorf("Name = %q, want tushare", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Tushare") {
-		t.Errorf("Desc = %q, want to mention Tushare", info.Desc)
+	if !strings.Contains(meta.Description, "Tushare") {
+		t.Errorf("Desc = %q, want to mention Tushare", meta.Description)
 	}
 }

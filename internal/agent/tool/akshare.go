@@ -25,9 +25,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const akshareToolName = "akshare_stock_news"
@@ -117,24 +114,24 @@ func NewAkShareToolWithTopN(h *HTTPHelper, topN int) *AkShareTool {
 	return &AkShareTool{helper: h, topN: topN}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (a *AkShareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: akshareToolName,
-		Desc: akshareToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (a *AkShareTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        akshareToolName,
+		Description: akshareToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Stock symbol/code to fetch East Money news for, e.g. 600519.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Stock symbol/code to fetch East Money news for, e.g. 600519.",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun fetches stock news from East Money and returns both a
 // formatted content string and structured article records.
-func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (a *AkShareTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p akshareParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return akshareErrJSON(fmt.Errorf("akshare: parse arguments: %w", err)),

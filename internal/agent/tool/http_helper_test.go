@@ -60,17 +60,14 @@ func TestHTTPHelper_HappyPath(t *testing.T) {
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
 	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
-		t.Fatalf("Do returned error: %v", err)
+		t.Fatalf("h.Do: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
+	body, _ := io.ReadAll(resp.Body)
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("body = %q, want %q", body, `{"ok":true}`)
 	}
@@ -96,7 +93,7 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
 	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
-		t.Fatalf("Do returned error: %v", err)
+		t.Fatalf("h.Do: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -128,7 +125,7 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
 	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
-		t.Fatalf("Do returned error: %v", err)
+		t.Fatalf("h.Do: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -236,7 +233,7 @@ func TestHTTPHelper_HeadersAndContentType(t *testing.T) {
 	h := newTestHelper(1, 1*time.Millisecond, 5*time.Millisecond)
 	resp, err := h.Do(context.Background(), http.MethodPost, srv.URL, `{"k":1}`, "application/json", map[string]string{"X-Token": "abc"})
 	if err != nil {
-		t.Fatalf("Do: %v", err)
+		t.Fatalf("h.Do: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -356,7 +353,7 @@ func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 	resp, err := h.DoPinned(context.Background(),
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
-		t.Fatalf("DoPinned: %v", err)
+		t.Fatalf("h.DoPinned: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -470,7 +467,7 @@ func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 	resp, err := h.DoPinned(context.Background(),
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
-		t.Fatalf("DoPinned: %v (proxy may not have been bypassed)", err)
+		t.Fatalf("h.DoPinned: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -489,10 +486,7 @@ func TestPinnedDialer_RewritesAddress(t *testing.T) {
 
 	// Stand up a TCP server on 127.0.0.1:<random> and capture the
 	// accepted conn to confirm the pinned dialer actually dialed it.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	defer ln.Close()
 
 	accepted := make(chan struct{}, 1)
@@ -559,9 +553,6 @@ func generateTestCert(t *testing.T, dnsName string) tls.Certificate {
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		t.Fatalf("x509.CreateCertificate: %v", err)
-	}
 	return tls.Certificate{
 		Certificate: [][]byte{der},
 		PrivateKey:  priv,

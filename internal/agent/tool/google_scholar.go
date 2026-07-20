@@ -29,8 +29,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"golang.org/x/net/html"
 
 	"ragflow/internal/tokenizer"
@@ -50,7 +48,7 @@ var googleScholarNewlinePattern = regexp.MustCompile(`\n+`)
 
 // googleScholarParams is the JSON shape the model sends into InvokableRun.
 // All fields come from the canvas node form; only query is exposed to
-// the LLM via Info() (matching Python's meta — the LLM only sees query).
+// the LLM via ToolMeta() (matching Python's meta — the LLM only sees query).
 // Patents uses *bool so the zero value (nil) means "not set" → default
 // true (include patents). False means explicitly exclude patents.
 type googleScholarParams struct {
@@ -81,10 +79,7 @@ type googleScholarEnvelope struct {
 // a package var so tests can substitute a httptest.Server URL.
 var googleScholarEndpoint = "https://scholar.google.com/scholar"
 
-// GoogleScholarTool is the
-// Google Scholar search tool.
-// There is no public Scholar API, so we fetch the search-results
-// HTML and parse it with golang.org/x/net/html.
+// GoogleScholarTool searches Google Scholar.
 type GoogleScholarTool struct {
 	helper   *HTTPHelper
 	defaults googleScholarParams
@@ -99,8 +94,7 @@ func NewGoogleScholarTool() *GoogleScholarTool {
 	return NewGoogleScholarToolWith(NewHTTPHelper())
 }
 
-// NewGoogleScholarToolWith returns a GoogleScholarTool that uses the
-// provided HTTPHelper. Useful for tests.
+// NewGoogleScholarToolWith returns a GoogleScholarTool using the provided HTTPHelper.
 func NewGoogleScholarToolWith(h *HTTPHelper) *GoogleScholarTool {
 	if h == nil {
 		h = NewHTTPHelper()
@@ -108,8 +102,7 @@ func NewGoogleScholarToolWith(h *HTTPHelper) *GoogleScholarTool {
 	return &GoogleScholarTool{helper: h}
 }
 
-// NewGoogleScholarToolWithDefaults returns a GoogleScholarTool that
-// uses the provided HTTPHelper and node-level default params.
+// NewGoogleScholarToolWithDefaults returns a GoogleScholarTool with node-level defaults.
 func NewGoogleScholarToolWithDefaults(h *HTTPHelper, defaults googleScholarParams) *GoogleScholarTool {
 	if h == nil {
 		h = NewHTTPHelper()
@@ -117,22 +110,20 @@ func NewGoogleScholarToolWithDefaults(h *HTTPHelper, defaults googleScholarParam
 	return &GoogleScholarTool{helper: h, defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
-// Only query is exposed — matching Python's meta which does not
-// include top_n / sort_by / year_low / year_high / patents.
-// Those are canvas-form-only parameters passed by the component wrapper.
-func (g *GoogleScholarTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleScholarToolName,
-		Desc: googleScholarToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+// Only query is exposed — matching Python's meta.
+func (g *GoogleScholarTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        googleScholarToolName,
+		Description: googleScholarToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func (g *GoogleScholarTool) ComponentSpec() ComponentSpec {
@@ -157,8 +148,6 @@ func (g *GoogleScholarTool) ComponentSpec() ComponentSpec {
 
 // buildGoogleScholarURL composes the Scholar query URL. Centralized
 // for testability. sortBy: "relevance" (default) or "date".
-// yearLow / yearHigh: 0 means no filter. patents: nil or true includes
-// patents; false explicitly excludes them.
 func buildGoogleScholarURL(query string, maxResults int, sortBy string, yearLow, yearHigh int, patents *bool) string {
 	if maxResults <= 0 {
 		maxResults = defaultGoogleScholarTopN
@@ -185,7 +174,7 @@ func buildGoogleScholarURL(query string, maxResults int, sortBy string, yearLow,
 }
 
 // InvokableRun performs the Google Scholar search.
-func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p googleScholarParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleScholarErrJSON(fmt.Errorf("google_scholar: parse arguments: %w", err)),
@@ -198,7 +187,6 @@ func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string, _
 
 	endpoint := buildGoogleScholarURL(p.Query, p.TopN, p.SortBy, p.YearLow, p.YearHigh, p.Patents)
 	headers := map[string]string{
-		// Scholar blocks obviously non-browser UAs.
 		"User-Agent": "Mozilla/5.0 (compatible; ragflow/1.0)",
 		"Accept":     "text/html,application/xhtml+xml",
 	}
@@ -341,11 +329,7 @@ func mergeGoogleScholarDefaults(defaults, p googleScholarParams) googleScholarPa
 	return p
 }
 
-// parseGoogleScholarHTML walks the Scholar search-results HTML and
-// extracts the conventional .gs_rt / .gs_a / .gs_rs fields. We
-// deliberately stay defensive: Scholar's markup changes without
-// notice, so we tolerate missing fields and silently skip articles
-// that are missing the title.
+// parseGoogleScholarHTML walks the Scholar search-results HTML.
 func parseGoogleScholarHTML(body interface {
 	Read(p []byte) (int, error)
 }, maxResults int) ([]googleScholarResult, error) {
@@ -366,7 +350,6 @@ func parseGoogleScholarHTML(body interface {
 		if n.Type == html.ElementNode {
 			for _, a := range n.Attr {
 				if a.Key == "class" && strings.Contains(a.Val, "gs_ri") {
-					// gs_ri wraps one Scholar result card
 					if r, ok := extractScholarResult(n); ok {
 						results = append(results, r)
 						return
@@ -382,13 +365,9 @@ func parseGoogleScholarHTML(body interface {
 	return results, nil
 }
 
-// extractScholarResult pulls title/link, snippet, and authors/year
-// from a single .gs_ri node. Returns ok=false when the title anchor
-// is missing (e.g. PDF / citation links the search layout omits).
 func extractScholarResult(card *html.Node) (googleScholarResult, bool) {
 	res := googleScholarResult{}
 
-	// Title + link live inside .gs_rt > a
 	title, link := findFirstAnchorInClassedAncestor(card, "gs_rt")
 	if title == "" {
 		return res, false
@@ -396,14 +375,12 @@ func extractScholarResult(card *html.Node) (googleScholarResult, bool) {
 	res.Title = strings.TrimSpace(title)
 	res.Link = link
 
-	// Authors + year live in .gs_a (a single line)
 	if t := findTextWithClass(card, "gs_a"); t != "" {
 		authors, year := splitScholarAuthorsYear(t)
 		res.Authors = authors
 		res.Year = year
 	}
 
-	// Snippet lives in .gs_rs
 	if t := findTextWithClass(card, "gs_rs"); t != "" {
 		res.Snippet = strings.TrimSpace(t)
 	}
@@ -411,10 +388,6 @@ func extractScholarResult(card *html.Node) (googleScholarResult, bool) {
 	return res, true
 }
 
-// findFirstAnchorInClassedAncestor returns the text and href of the
-// first <a> descendant of n whose ancestor chain contains an element
-// with `want` in its class list. The `want` argument lets callers
-// pin the search to a specific Scholar sub-element (e.g. .gs_rt).
 func findFirstAnchorInClassedAncestor(n *html.Node, want string) (string, string) {
 	var text, href string
 	var found bool
@@ -450,9 +423,6 @@ func findFirstAnchorInClassedAncestor(n *html.Node, want string) (string, string
 	return text, href
 }
 
-// findTextWithClass returns the concatenated text of the first
-// descendant element that has `want` in its class list. If the
-// matched element is empty, the search continues into its subtree.
 func findTextWithClass(n *html.Node, want string) string {
 	var found string
 	var walk func(*html.Node)
@@ -476,8 +446,7 @@ func findTextWithClass(n *html.Node, want string) string {
 	return found
 }
 
-// collectText concatenates all text nodes under n (trimmed of
-// surrounding whitespace per node).
+// collectText concatenates all text nodes under n.
 func collectText(n *html.Node) string {
 	var b strings.Builder
 	var walk func(*html.Node)
@@ -493,26 +462,17 @@ func collectText(n *html.Node) string {
 	return b.String()
 }
 
-// splitScholarAuthorsYear parses the .gs_a line, which has the form
-// "<authors> - <journal>, <year>" or "<authors> - <year>". We pull
-// the first 4-digit year out and treat everything before " - " as
-// the author list. Anything we can't parse is returned verbatim so
-// the model can still see it.
 func splitScholarAuthorsYear(line string) (authors, year string) {
 	cleaned := strings.TrimSpace(line)
-	// The hyphen between authors and venue is the unicode dash "-".
 	if head, rest, ok := strings.Cut(cleaned, " - "); ok {
 		authors = strings.TrimSpace(head)
-		venue := strings.TrimSpace(rest)
-		year = firstFourDigitYear(venue)
+		year = firstFourDigitYear(strings.TrimSpace(rest))
 		return authors, year
 	}
 	year = firstFourDigitYear(cleaned)
 	return cleaned, year
 }
 
-// firstFourDigitYear returns the first 4-digit year in s, or "" if
-// none is found. Years 1900-2099 are recognized.
 func firstFourDigitYear(s string) string {
 	for i := 0; i+4 <= len(s); i++ {
 		candidate := s[i : i+4]

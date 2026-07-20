@@ -16,7 +16,7 @@
 
 // Package component — Switch component (T2).
 //
-// Switch is a multi-condition router implemented in pure Go (no eino
+// Switch is a multi-condition router implemented in pure Go.
 // Lambda dependency). It walks a list of AND/OR-combined condition
 // groups against the current *CanvasState, picks the first matching
 // group's downstream cpn_id, and returns it as outputs["_next"]. The
@@ -25,7 +25,7 @@
 // "matched_<i>" naming used in the spec's example assertions.
 //
 // Switch's runtime choice is consumed by the canvas scheduler's
-// MultiBranch wiring (see canvas/multibranch.go). The eino
+// MultiBranch wiring (see canvas/multibranch.go). The harness
 // `compose.NewGraphMultiBranch` integration is a thin pass-through:
 // the routing decision lives here, MultiBranch just wires the edges.
 //
@@ -68,7 +68,7 @@ func (s *SwitchComponent) Name() string { return s.name }
 // matching group's downstream cpn_ids at outputs["_next"]. If no
 // group matches, outputs["_next"] = inputs["default"] (a
 // free-form string — resolved to a real cpn_id by the canvas
-// scheduler's MultiBranch wiring in canvas/multibranch.go).
+// MultiBranch wiring (see canvas/multibranch.go). The harness
 // Unknown / empty inputs are tolerated: an absent "conditions"
 // list yields outputs["_next"] = inputs["default"].
 //

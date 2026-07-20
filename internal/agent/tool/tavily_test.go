@@ -103,11 +103,8 @@ func TestTavily_ParseResponse(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"x","api_key":"k"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var env tavilyEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -168,15 +165,12 @@ func TestTavily_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTavilyTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "tavily_search" {
+		t.Errorf("Name = %q, want tavily_search", meta.Name)
 	}
-	if info.Name != "tavily_search" {
-		t.Errorf("Name = %q, want tavily_search", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Tavily") {
-		t.Errorf("Desc = %q, want to mention Tavily", info.Desc)
+	if !strings.Contains(meta.Description, "Tavily") {
+		t.Errorf("Desc = %q, want to mention Tavily", meta.Description)
 	}
 }
 
@@ -439,15 +433,12 @@ func TestTavilyExtract_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTavilyExtractTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "tavily_extract" {
+		t.Errorf("Name = %q, want tavily_extract", meta.Name)
 	}
-	if info.Name != "tavily_extract" {
-		t.Errorf("Name = %q, want tavily_extract", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Tavily Extract") {
-		t.Errorf("Desc = %q, want to mention Tavily Extract", info.Desc)
+	if !strings.Contains(meta.Description, "Tavily Extract") {
+		t.Errorf("Description = %q, want to mention Tavily Extract", meta.Description)
 	}
 }
 

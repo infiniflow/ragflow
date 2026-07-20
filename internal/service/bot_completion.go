@@ -209,8 +209,7 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	}
 
 	payload := map[string]any{
-		"data":       data,
-		"created_at": ev.CreatedAt,
+		"data": data,
 	}
 	if ev.Type != "" {
 		payload["event"] = ev.Type

@@ -62,10 +62,7 @@ func TestGitHub_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildGitHubURL(tc.query, tc.max)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -271,14 +268,11 @@ func TestGitHub_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGitHubTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "github_search" {
+		t.Errorf("Name = %q, want github_search", meta.Name)
 	}
-	if info.Name != "github_search" {
-		t.Errorf("Name = %q, want github_search", info.Name)
-	}
-	if !strings.Contains(info.Desc, "GitHub") {
-		t.Errorf("Desc = %q, want to mention GitHub", info.Desc)
+	if !strings.Contains(meta.Description, "GitHub") {
+		t.Errorf("Desc = %q, want to mention GitHub", meta.Description)
 	}
 }

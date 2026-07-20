@@ -48,7 +48,7 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	if cc.Workflow == nil {
+	if cc.Graph == nil {
 		t.Fatal("compiled Workflow is nil")
 	}
 
@@ -69,7 +69,7 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 	// Invoke and is written to state.Sys["query"], where Message's
 	// ResolveTemplate of "{{sys.query}}" will read it.
 	in := map[string]any{"query": "world"}
-	out, err := cc.Workflow.Invoke(ctx, in)
+	out, err := cc.Graph.Invoke(ctx, in)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestBuildWorkflow_PreservesRequestSysValues(t *testing.T) {
 	state.Sys["files"] = []string{"File: notes.txt\nContent as following:\nhello"}
 	state.Sys["user_id"] = "user-1"
 	ctx := withState(context.Background(), state)
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "hello"}); err != nil {
+	if _, err := cc.Graph.Invoke(ctx, map[string]any{"query": "hello"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 

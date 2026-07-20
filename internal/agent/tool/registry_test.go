@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -14,19 +13,13 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
-	info0, err := tools[0].Info(context.Background())
-	if err != nil {
-		t.Fatalf("tools[0].Info: %v", err)
+	meta0 := tools[0].ToolMeta()
+	if meta0.Name != "search_my_dateset" {
+		t.Errorf("tools[0].ToolMeta().Name = %q, want search_my_dateset", meta0.Name)
 	}
-	if info0.Name != "search_my_dateset" {
-		t.Errorf("tools[0].Info().Name = %q, want search_my_dateset", info0.Name)
-	}
-	info1, err := tools[1].Info(context.Background())
-	if err != nil {
-		t.Fatalf("tools[1].Info: %v", err)
-	}
-	if info1.Name != "wikipedia_search" {
-		t.Errorf("tools[1].Info().Name = %q, want wikipedia_search", info1.Name)
+	meta1 := tools[1].ToolMeta()
+	if meta1.Name != "wikipedia_search" {
+		t.Errorf("tools[1].ToolMeta().Name = %q, want wikipedia_search", meta1.Name)
 	}
 }
 
@@ -95,8 +88,8 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
 // retrieval/search_my_dateset alias pairs), builds the tool, and
-// asserts that its Info() returns a complete schema — non-empty
-// Name and Desc, non-nil ParamsOneOf, and a consistent canonical
+// asserts that its ToolMeta() returns a complete schema — non-empty
+// Name and Desc, non-nil Parameters, and a consistent canonical
 // name across alias entries. Catches drift like "tool renamed but
 // registry not updated", "param added but schema not updated",
 // "tool registered with empty description", and "alias points to
@@ -146,24 +139,20 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Schema-level checks per entry.
 	for i, name := range names {
-		info, err := tools[i].Info(context.Background())
-		if err != nil {
-			t.Errorf("tools[%d] (registry name %q).Info: %v", i, name, err)
-			continue
+		meta := tools[i].ToolMeta()
+		if meta.Name == "" {
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Name is empty", i, name)
 		}
-		if info.Name == "" {
-			t.Errorf("tools[%d] (registry name %q).Info().Name is empty", i, name)
+		if meta.Description == "" {
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Description is empty", i, name)
 		}
-		if info.Desc == "" {
-			t.Errorf("tools[%d] (registry name %q).Info().Desc is empty", i, name)
-		}
-		if info.ParamsOneOf == nil {
-			t.Errorf("tools[%d] (registry name %q).Info().ParamsOneOf is nil", i, name)
+		if meta.Parameters == nil {
+			t.Errorf("tools[%d] (registry name %q).ToolMeta().Parameters is nil", i, name)
 		}
 	}
 
 	// Alias consistency: execute_sql and exesql must surface the
-	// same canonical Info().Name; same for retrieval/search_my_dataset/
+	// same canonical ToolMeta().Name; same for retrieval/search_my_dataset/
 	// search_my_dateset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
@@ -185,21 +174,15 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			continue
 		}
 		idx := indexOf(names, name)
-		info, err := tools[idx].Info(context.Background())
-		if err != nil {
-			continue
-		}
-		if info.Name != canonical {
-			t.Errorf("registry name %q: Info().Name = %q, want %q (alias must surface canonical name)",
-				name, info.Name, canonical)
+		meta := tools[idx].ToolMeta()
+		if meta.Name != canonical {
+			t.Errorf("registry name %q: ToolMeta().Name = %q, want %q (alias must surface canonical name)",
+				name, meta.Name, canonical)
 		}
 	}
 }
 
 // indexOf returns the index of s in xs, or -1 if not present.
-// Tiny helper to keep the alias loop above free of a slice lookup
-// closure; the test's names slice is <30 items so linear scan is
-// fine.
 func indexOf(xs []string, s string) int {
 	for i, x := range xs {
 		if x == s {

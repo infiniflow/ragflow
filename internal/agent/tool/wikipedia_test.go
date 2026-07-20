@@ -177,19 +177,16 @@ func (t *hostSwapRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.inner.RoundTrip(r2)
 }
 
-func TestWikipedia_Info(t *testing.T) {
+func TestWikipedia_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewWikipediaTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "wikipedia_search" {
+		t.Errorf("Name = %q, want wikipedia_search", meta.Name)
 	}
-	if info.Name != "wikipedia_search" {
-		t.Errorf("Name = %q, want wikipedia_search", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Wikipedia") {
-		t.Errorf("Desc = %q, want to mention Wikipedia", info.Desc)
+	if !strings.Contains(meta.Description, "Wikipedia") {
+		t.Errorf("Description = %q, want to mention Wikipedia", meta.Description)
 	}
 }
 

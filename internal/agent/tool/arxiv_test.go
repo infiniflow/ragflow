@@ -127,22 +127,20 @@ func TestArxiv_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewArxivTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "arxiv_search" {
+		t.Errorf("Name = %q, want arxiv_search", meta.Name)
 	}
-	if info.Name != "arxiv_search" {
-		t.Errorf("Name = %q, want arxiv_search", info.Name)
+	if !strings.Contains(meta.Description, "arXiv") {
+		t.Errorf("Desc = %q, want to mention arXiv", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "arXiv") {
-		t.Errorf("Desc = %q, want to mention arXiv", info.Desc)
+	paramsJSON, _ := json.Marshal(meta.Parameters)
+	params := string(paramsJSON)
+	if !strings.Contains(params, `"query"`) {
+		t.Errorf("schema must expose query: %s", params)
 	}
-	params, err := json.Marshal(info.ParamsOneOf)
-	if err != nil {
-		t.Fatalf("marshal params: %v", err)
-	}
-	if strings.Contains(string(params), "top_n") || strings.Contains(string(params), "sort_by") || strings.Contains(string(params), "max_results") {
-		t.Errorf("schema must only expose query: %s", params)
+	if strings.Contains(params, `"top_n"`) {
+		t.Errorf("schema must not expose node config top_n: %s", params)
 	}
 }
 

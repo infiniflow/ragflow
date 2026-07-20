@@ -17,8 +17,6 @@ import (
 	"errors"
 	"slices"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 // stubInvoker is a programmable ChatInvoker used by these tests.
@@ -73,7 +71,7 @@ func TestLLM_Invoke_HappyPath(t *testing.T) {
 	if stub.captured == nil || stub.captured.ModelName != "echo-model" {
 		t.Errorf("ModelName not propagated: %+v", stub.captured)
 	}
-	if len(stub.captured.Messages) != 1 || stub.captured.Messages[0].Role != schema.User || stub.captured.Messages[0].Content != "hi" {
+	if len(stub.captured.Messages) != 1 || stub.captured.Messages[0].Role != RoleUser || stub.captured.Messages[0].Content != "hi" {
 		t.Errorf("messages not built correctly: %+v", stub.captured.Messages)
 	}
 }
@@ -117,10 +115,10 @@ func TestLLM_Invoke_SystemAndUser(t *testing.T) {
 	if got := len(stub.captured.Messages); got != 2 {
 		t.Fatalf("messages=%d, want 2", got)
 	}
-	if stub.captured.Messages[0].Role != schema.System || stub.captured.Messages[0].Content != "you are helpful" {
+	if stub.captured.Messages[0].Role != RoleSystem || stub.captured.Messages[0].Content != "you are helpful" {
 		t.Errorf("system msg wrong: %+v", stub.captured.Messages[0])
 	}
-	if stub.captured.Messages[1].Role != schema.User || stub.captured.Messages[1].Content != "say hi" {
+	if stub.captured.Messages[1].Role != RoleUser || stub.captured.Messages[1].Content != "say hi" {
 		t.Errorf("user msg wrong: %+v", stub.captured.Messages[1])
 	}
 }

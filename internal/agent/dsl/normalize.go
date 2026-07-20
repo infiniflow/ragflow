@@ -705,6 +705,13 @@ func foldLegacyLoopVariants(dsl map[string]any) {
 		merged := mergeDownstream(toStringSlice(parentComp["downstream"]), childDS)
 		merged = removeFromSlice(merged, childID)
 		parentComp["downstream"] = stringsToAny(merged)
+
+		// Rewrite upstream references: every remaining component that
+		// mentions the child ID in its upstream field must be updated.
+		// If the parent ID is already present, just remove the child
+		// reference; otherwise replace child ID with parent ID.
+		rewriteUpstream(rawComps, childID, parentID)
+
 		// Also append to the parent graph node's downstream, if we
 		// have a graph. This keeps the React-Flow edges in sync with
 		// the topology map.
@@ -871,4 +878,63 @@ func removeFromSlice(s []string, drop string) []string {
 // control node that should be folded away.
 func isLegacyChildName(name string) bool {
 	return name == componentNameLoopItem || name == componentNameIterationItem
+}
+
+// rewriteUpstream rewrites every component in rawComps that references
+// childID in its upstream field. If the parentID is already present the
+// child reference is removed; otherwise it is replaced with parentID.
+func rewriteUpstream(rawComps map[string]any, childID, parentID string) {
+	for _, raw := range rawComps {
+		comp, _ := raw.(map[string]any)
+		if comp == nil {
+			continue
+		}
+		// Try flat key first, then nested obj.
+		rewriteOneUpstream(comp, "upstream", childID, parentID)
+		if obj, ok := comp["obj"].(map[string]any); ok {
+			rewriteOneUpstream(obj, "upstream", childID, parentID)
+		}
+	}
+}
+
+func rewriteOneUpstream(holder map[string]any, key, childID, parentID string) {
+	rawUp, _ := holder[key].([]any)
+	if len(rawUp) == 0 {
+		return
+	}
+	// Build replacement list.
+	out := make([]any, 0, len(rawUp))
+	for _, u := range rawUp {
+		s, _ := u.(string)
+		if s != childID {
+			out = append(out, u)
+			continue
+		}
+		// Child reference found. If parentID already in the list,
+		// just skip this one; otherwise insert parentID.
+		alreadyHasParent := false
+		for _, ou := range out {
+			if os, ok := ou.(string); ok && os == parentID {
+				alreadyHasParent = true
+				break
+			}
+		}
+		if !alreadyHasParent {
+			out = append(out, parentID)
+			// Also check remaining rawUp (not yet processed) for
+			// existing parent reference to avoid duplication.
+			for _, rem := range rawUp {
+				if rs, ok := rem.(string); ok && rs == parentID {
+					alreadyHasParent = true
+					break
+				}
+			}
+			if alreadyHasParent {
+				// Remove the just-added parentID — it's already
+				// coming later in rawUp.
+				out = out[:len(out)-1]
+			}
+		}
+	}
+	holder[key] = out
 }

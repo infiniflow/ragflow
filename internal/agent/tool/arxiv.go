@@ -32,9 +32,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -140,19 +137,64 @@ func NewArxivToolWithParams(h *HTTPHelper, topN int, sortBy string) *ArxivTool {
 	return &ArxivTool{helper: h, defaults: arxivParams{TopN: topN, SortBy: sortBy}}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (a *ArxivTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: arxivToolName,
-		Desc: arxivToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (a *ArxivTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        arxivToolName,
+		Description: arxivToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Required:    true,
 			},
-		}),
-	}, nil
+			"max_results": {
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5.",
+				Required:    false,
+			},
+			"start_date": {
+				Type:        ParamTypeString,
+				Description: "Filter results by start date (YYYYMMDD format).",
+				Required:    false,
+			},
+			"end_date": {
+				Type:        ParamTypeString,
+				Description: "Filter results by end date (YYYYMMDD format).",
+				Required:    false,
+			},
+			"authors": {
+				Type:        ParamTypeString,
+				Description: "Filter results by author name(s).",
+				Required:    false,
+			},
+			"journal": {
+				Type:        ParamTypeString,
+				Description: "Filter results by journal name.",
+				Required:    false,
+			},
+			"categories": {
+				Type:        ParamTypeString,
+				Description: "Filter results by arXiv categories (e.g., cs.AI, math.ST).",
+				Required:    false,
+			},
+			"id_list": {
+				Type:        ParamTypeString,
+				Description: "Comma-separated list of arXiv IDs to retrieve.",
+				Required:    false,
+			},
+			"sort_by": {
+				Type:        ParamTypeString,
+				Description: "Sort results by field: 'relevance', 'lastUpdatedDate', or 'submittedDate'.",
+				Required:    false,
+			},
+			"sort_order": {
+				Type:        ParamTypeString,
+				Description: "Sort order: 'ascending' or 'descending'.",
+				Required:    false,
+			},
+		},
+	}
 }
 
 func (a *ArxivTool) ComponentSpec() ComponentSpec {
@@ -250,7 +292,7 @@ func normalizeArxivWhitespace(s string) string {
 }
 
 // InvokableRun performs the ArXiv search.
-func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p arxivParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return arxivErrJSON(fmt.Errorf("arxiv: parse arguments: %w", err)),

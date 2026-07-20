@@ -139,19 +139,16 @@ func TestGoogle_RequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestGoogle_InfoAndInputForm(t *testing.T) {
+func TestGoogle_ToolMetaAndInputForm(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "google_search" {
+		t.Errorf("Name = %q, want google_search", meta.Name)
 	}
-	if info.Name != "google_search" {
-		t.Errorf("Name = %q, want google_search", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Google") {
-		t.Errorf("Desc = %q, want to mention Google", info.Desc)
+	if !strings.Contains(meta.Description, "Google") {
+		t.Errorf("Desc = %q, want to mention Google", meta.Description)
 	}
 	form := tool.InputForm()
 	if _, ok := form["q"]; !ok {

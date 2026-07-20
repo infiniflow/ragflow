@@ -28,9 +28,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 )
@@ -216,59 +213,59 @@ func newTavilyExtractTool(h *HTTPHelper, envKey func() string, defaults tavilyEx
 // mutate it via package-var assignment.
 func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
 
-// Info returns the tool's metadata for the chat model.
-func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyToolName,
-		Desc: tavilyToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (t *TavilyTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        tavilyToolName,
+		Description: tavilyToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"topic": {
-				Type:     schema.String,
-				Desc:     `Search topic: "general" (default) or "news".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Search topic: "general" (default) or "news".`,
+				Required:    false,
 			},
 			"include_domains": {
-				Type:     schema.Array,
-				Desc:     "Domains that search results must include.",
-				Required: false,
+				Type:        ParamTypeArray,
+				Description: "Domains that search results must include.",
+				Required:    false,
 			},
 			"exclude_domains": {
-				Type:     schema.Array,
-				Desc:     "Domains that search results must exclude.",
-				Required: false,
+				Type:        ParamTypeArray,
+				Description: "Domains that search results must exclude.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
-// Info returns the Tavily Extract tool metadata for the chat model.
-func (t *TavilyExtractTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyExtractToolName,
-		Desc: "Extract web page content from one or more specified URLs using Tavily Extract.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the Tavily Extract tool metadata for the chat model.
+func (t *TavilyExtractTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        tavilyExtractToolName,
+		Description: "Extract web page content from one or more specified URLs using Tavily Extract.",
+		Parameters: map[string]ParameterInfo{
 			"urls": {
-				Type:     schema.Array,
-				Desc:     "The URLs to extract content from.",
-				Required: true,
+				Type:        ParamTypeArray,
+				Description: "The URLs to extract content from.",
+				Required:    true,
 			},
 			"extract_depth": {
-				Type:     schema.String,
-				Desc:     `Extraction depth: "basic" (default) or "advanced".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Extraction depth: "basic" (default) or "advanced".`,
+				Required:    false,
 			},
 			"format": {
-				Type:     schema.String,
-				Desc:     `Output format: "markdown" (default) or "text".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Output format: "markdown" (default) or "text".`,
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // tavilyEndpoint is the Tavily /search URL. Exposed as a package var so
@@ -282,7 +279,7 @@ var tavilyExtractEndpoint = "https://api.tavily.com/extract"
 
 // InvokableRun performs the Tavily search. The api_key may come from the
 // argument or the TAVILY_API_KEY env var.
-func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p tavilyParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return tavilyErrJSON(fmt.Errorf("tavily: parse arguments: %w", err)),
@@ -508,7 +505,7 @@ func truncateTavilyRunes(value string, limit int) string {
 
 // InvokableRun performs the Tavily Extract request. The api_key may come from
 // the argument or the TAVILY_API_KEY env var.
-func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var runtimeParams tavilyExtractParams
 	if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
 		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: parse arguments: %w", err)),

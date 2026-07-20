@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
@@ -94,7 +92,7 @@ type RetrievalTool struct {
 	defaults retrievalArgs
 }
 
-// NewRetrievalTool returns a RetrievalTool implementing eino's
+// NewRetrievalTool returns a RetrievalTool implementing the tool.Tool interface.
 // tool.InvokableTool interface.
 func NewRetrievalTool() *RetrievalTool {
 	return NewRetrievalToolWithDefaults(retrievalArgs{})
@@ -110,26 +108,61 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python RetrievalParam ToolMeta (plan, field alignment).
-func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: retrievalToolName,
-		Desc: retrievalToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// the Python RetrievalParam ToolMeta (plan , 字段对齐).
+func (r *RetrievalTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        retrievalToolName,
+		Description: retrievalToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
+				Required:    true,
 			},
-		}),
-	}, nil
+			"dataset_ids": {
+				Type:        ParamTypeArray,
+				Description: "Optional list of dataset IDs to restrict the search to.",
+				Required:    false,
+			},
+			"kb_ids": {
+				Type:        ParamTypeArray,
+				Description: "Optional list of knowledge base IDs to restrict the search to.",
+				Required:    false,
+			},
+			"top_n": {
+				Type:        ParamTypeInteger,
+				Description: "Number of top chunks to return. Defaults to 8 if omitted.",
+				Required:    false,
+			},
+			"top_k": {
+				Type:        ParamTypeInteger,
+				Description: "Maximum candidate chunks retrieved before final top_n trimming.",
+				Required:    false,
+			},
+			"keywords_similarity_weight": {
+				Type:        ParamTypeNumber,
+				Description: "Keyword similarity weight in [0,1]; vector similarity weight is 1 - this value.",
+				Required:    false,
+			},
+			"use_kg": {
+				Type:        ParamTypeBoolean,
+				Description: "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
+				Required:    false,
+			},
+			"similarity_threshold": {
+				Type:        ParamTypeNumber,
+				Description: "Minimum similarity threshold for dataset retrieval.",
+				Required:    false,
+			},
+		},
+	}
 }
 
 // InvokableRun executes the tool. It validates the input and
 // dispatches to the registered RetrievalService. When no
 // service is registered, the call surfaces
 // ErrRetrievalServiceMissing.
-func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args retrievalArgs
 	if argumentsInJSON != "" {
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -181,7 +214,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		zap.Int("chunks_count", len(chunks)),
 	)
 	// Map the chunks into the result envelope. The retrievalResult
-	// type carries the eino-tool envelope shape (chunkPayload, not
+	// type carries the tool envelope shape (chunkPayload, not
 	// RetrievalChunk), so we translate.
 	payload := make([]chunkPayload, 0, len(chunks))
 	for _, c := range chunks {

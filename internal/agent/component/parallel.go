@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Package component — Parallel component (T3, plan §2.11.3 row 9).
@@ -55,9 +55,9 @@ import (
 const componentNameParallel = "Parallel"
 
 // ParallelComponent is the canvas-level parallel parent. The runtime
-// parallel driver lives in workflowx.AddParallelNode, not in this type.
-// The component exists for registry / factory / introspection only —
-// Invoke is a no-op that returns an empty map.
+// parallel driver lives in harness graph's NewParallelNodeFunc,
+// not in this type. The component exists for registry / factory /
+// introspection only — Invoke is a no-op that returns an empty map.
 type ParallelComponent struct {
 	param ParallelParam
 }
@@ -146,8 +146,8 @@ func (c *ParallelComponent) Outputs() map[string]string {
 // registration); under the canvas engine, this method is never called.
 //
 // The returned map is empty. State writes from this method would be
-// silently dropped by the eino graph, because ParallelComponent is not
-// registered as an eino node when the macro expansion fires.
+// silently dropped by the graph, because ParallelComponent is not
+// registered as a harness node when the macro expansion fires.
 func (c *ParallelComponent) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
 }
@@ -167,8 +167,8 @@ func (c *ParallelComponent) Stream(ctx context.Context, inputs map[string]any) (
 // init registers ParallelComponent with the orchestrator-owned registry.
 //
 // ParallelComponent.Invoke is a no-op; the runtime parallel driver lives
-// in workflowx.AddParallelNode and is installed by canvas.BuildWorkflow
-// when it sees a Parallel cpn in the DSL.
+// in harness graph's NewParallelNodeFunc and is installed by
+// canvas.BuildWorkflow when it sees a Parallel cpn in the DSL.
 //
 // The former IterationItem component is NOT registered — the per-item
 // execution formerly handled by that component is now subsumed by the

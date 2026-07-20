@@ -18,8 +18,6 @@ package component
 
 import (
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 // TestAgent_GetInputForm_UsesPromptReferences verifies the Agent input form
@@ -103,5 +101,5 @@ func TestAgentMetaParam_FieldsRoundTrip(t *testing.T) {
 		t.Errorf("round-trip lost fields: %+v", q)
 	}
 	// Ensure schema package is referenced (avoids unused import).
-	_ = schema.User
+	_ = RoleUser
 }

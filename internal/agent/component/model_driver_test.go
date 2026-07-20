@@ -1,12 +1,9 @@
 package component
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/entity/models"
 )
@@ -30,16 +27,12 @@ func TestNewChatModelDriverPreservesProviderChatSuffix(t *testing.T) {
 	}
 	apiKey := "test-key"
 	modelName := "qwen-flash"
-	chatModel := models.NewEinoChatModel(
-		models.NewChatModel(driver, &modelName, &models.APIConfig{ApiKey: &apiKey}),
-		nil,
-	)
-	response, err := chatModel.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	resp, err := driver.ChatWithMessages(modelName, []models.Message{{Role: "user", Content: "hi"}}, &models.APIConfig{ApiKey: &apiKey}, &models.ChatConfig{}, nil)
 	if err != nil {
-		t.Fatalf("Generate: %v", err)
+		t.Fatalf("ChatWithMessages: %v", err)
 	}
-	if response.Content != "ok" {
-		t.Errorf("content = %q, want ok", response.Content)
+	if resp.Answer == nil || *resp.Answer != "ok" {
+		t.Errorf("answer = %v, want ok", resp.Answer)
 	}
 	if got := <-requestPath; got != "/compatible-mode/v1/chat/completions" {
 		t.Errorf("request path = %q, want /compatible-mode/v1/chat/completions", got)

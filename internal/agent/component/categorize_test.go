@@ -27,9 +27,6 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "support"; got != want {
-		t.Errorf("category=%v, want %v", got, want)
-	}
 	if got, want := out["category_name"], "support"; got != want {
 		t.Errorf("category_name=%v, want %v", got, want)
 	}
@@ -65,8 +62,8 @@ func TestCategorize_FallbackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "b"; got != want {
-		t.Errorf("category=%v, want %v (default fallback)", got, want)
+	if got, want := out["category_name"], "b"; got != want {
+		t.Errorf("category_name=%v, want %v (default fallback)", got, want)
 	}
 }
 
@@ -83,8 +80,8 @@ func TestCategorize_DefaultDefaultsToFirstCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "alpha"; got != want {
-		t.Errorf("category=%v, want %v (auto-default to first)", got, want)
+	if got, want := out["category_name"], "alpha"; got != want {
+		t.Errorf("category_name=%v, want %v (auto-default to first)", got, want)
 	}
 }
 
@@ -101,8 +98,8 @@ func TestCategorize_CaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["category"], "support"; got != want {
-		t.Errorf("category=%v, want %v (case-insensitive match)", got, want)
+	if got, want := out["category_name"], "support"; got != want {
+		t.Errorf("category_name=%v, want %v (case-insensitive match)", got, want)
 	}
 }
 

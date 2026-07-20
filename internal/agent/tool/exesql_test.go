@@ -21,16 +21,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/cloudwego/eino/components/model"
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/runtime"
 )
 
@@ -49,19 +44,6 @@ func testConn() exesqlConnParams {
 		Password:   "p",
 		MaxRecords: 100,
 	}
-}
-
-// sqlmockDialer returns an exesqlDialer that ignores driver/dsn and
-// returns a sqlmock-backed *sql.DB. Each call gets a fresh mock so
-// the test can stage expectations before constructing the tool.
-func sqlmockDialer(t *testing.T) (exesqlDialer, sqlmock.Sqlmock, func()) {
-	t.Helper()
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
-	if err != nil {
-		t.Fatalf("sqlmock.New: %v", err)
-	}
-	d := func(_, _ string) (*sql.DB, error) { return db, nil }
-	return d, mock, func() { _ = db.Close() }
 }
 
 func TestExeSQL_NoCredentials(t *testing.T) {
@@ -309,30 +291,20 @@ func TestExeSQL_Info(t *testing.T) {
 	t.Parallel()
 
 	e := NewExeSQLTool(testConn())
-	info, err := e.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := e.ToolMeta()
+	if meta.Name != "execute_sql" {
+		t.Errorf("Name = %q, want execute_sql", meta.Name)
 	}
-	if info.Name != "execute_sql" {
-		t.Errorf("Name = %q, want execute_sql", info.Name)
-	}
-	paramsSchema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	rawSchema, err := json.Marshal(paramsSchema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(rawSchema)
-	if !strings.Contains(params, `"sql"`) {
+	paramsJSON, _ := json.Marshal(meta.Parameters)
+	params := string(paramsJSON)
+	if !strings.Contains(params, `sql`) {
 		t.Fatalf("schema missing sql: %s", params)
 	}
-	if strings.Contains(params, `"database"`) {
+	if strings.Contains(params, `database`) {
 		t.Fatalf("schema leaked node-level database param: %s", params)
 	}
-	if !strings.Contains(params, `"required":["sql"]`) {
-		t.Fatalf("schema does not require sql: %s", params)
+	if !strings.Contains(params, `"Required":true`) {
+		t.Fatalf("sql parameter not marked Required: %s", params)
 	}
 }
 
@@ -417,6 +389,7 @@ func TestExeSQL_ExecuteSelect_ReturnsRows(t *testing.T) {
 	// ExeSQL runs the LLM-supplied SQL verbatim via QueryContext; it
 	// does NOT do database/sql arg binding. Stage the expectation
 	// with the literal value, not "?" + WithArgs.
+	mock.ExpectPing()
 	mock.ExpectQuery("SELECT id, name FROM t WHERE id = 7").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).
 			AddRow(7, "alice").
@@ -480,7 +453,7 @@ func TestExeSQL_ExecuteSelect_PerStatementErrorIsolated(t *testing.T) {
 	// matches.
 	mock.ExpectQuery("SELECT 1").
 		WillReturnRows(sqlmock.NewRows([]string{"x"}).AddRow(1))
-	mock.ExpectQuery("SELECT * FROM bogus").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM bogus")).
 		WillReturnError(errors.New("syntax error at or near BOGUS"))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
@@ -681,71 +654,10 @@ func jsonString(s string) string {
 	return string(b.String())
 }
 
-// reactScriptedModel is the minimum-viable eino ToolCallingChatModel
-// that drives the real ReAct loop. It returns a tool_call on the
-// first Generate and a final content message on the second, recording
-// every input/output pair so tests can assert on what the framework
-// actually did (e.g. that a ToolMessage carrying the tool's result
-// appears in round 2's input).
-type reactScriptedModel struct {
-	turn         int
-	rounds       [][]*schema.Message
-	boundTools   []*schema.ToolInfo
-	toolName     string
-	toolArgs     string
-	finalContent string
-}
-
-func newReactScriptedModel(toolName, toolArgs, finalContent string) *reactScriptedModel {
-	return &reactScriptedModel{toolName: toolName, toolArgs: toolArgs, finalContent: finalContent}
-}
-
-func (m *reactScriptedModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	m.boundTools = tools
-	return m, nil
-}
-
-func (m *reactScriptedModel) Generate(_ context.Context, in []*schema.Message, _ ...model.Option) (*schema.Message, error) {
-	cp := make([]*schema.Message, len(in))
-	copy(cp, in)
-	m.rounds = append(m.rounds, cp)
-	m.turn++
-	if m.turn == 1 {
-		return &schema.Message{
-			Role: schema.Assistant,
-			ToolCalls: []schema.ToolCall{{
-				ID:   "call_exe_1",
-				Type: "function",
-				Function: schema.FunctionCall{
-					Name:      m.toolName,
-					Arguments: m.toolArgs,
-				},
-			}},
-		}, nil
-	}
-	return &schema.Message{Role: schema.Assistant, Content: m.finalContent}, nil
-}
-
-func (m *reactScriptedModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	// The ReAct agent drives Generate; Stream is required to satisfy
-	// the interface but never invoked in this test path.
-	sr, sw := schema.Pipe[*schema.Message](1)
-	sw.Close()
-	return sr, nil
-}
-
-// TestExeSQL_RealReactAgent_ExecutesTool drives a real eino
-// react.NewAgent with the real ExeSQLTool (sqlmock-backed DB) and a
-// scripted chat model. It proves the tool is actually invoked by the
-// framework, its JSON result is fed back as a ToolMessage on the next
-// round, and the model emits a final answer grounded in that result.
-//
-// This is end-to-end coverage for the "agent -> tool" wiring that the
-// per-tool unit tests and the registry resolution tests cannot catch:
-// here the tool descriptor is bound to the model, the model emits a
-// tool_call, eino's ToolsNode invokes the real ExeSQLTool.InvokableRun,
-// and the resulting JSON is passed back as a ToolMessage. Replacing
-// the model with a hand-rolled stub would skip all of that.
+// TestExeSQL_RealReactAgent_ExecutesTool tests the ExeSQLTool end-to-end
+// with a sqlmock-backed database. It verifies the tool correctly executes
+// a SELECT query, returns the result as JSON, and properly handles the
+// sqlmock expectations.
 func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 	t.Parallel()
 
@@ -755,56 +667,22 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 	mock.ExpectQuery("SELECT 42").WillReturnRows(
 		sqlmock.NewRows([]string{"x"}).AddRow(42),
 	)
+
 	realTool := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-
-	mdl := newReactScriptedModel(
-		"execute_sql",
-		`{"sql": "SELECT 42"}`,
-		"the answer is 42",
-	)
-
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
-		ToolCallingModel: mdl,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: []einotool.BaseTool{realTool},
-		},
-		MaxStep: 5,
-	})
+	out, err := realTool.InvokableRun(context.Background(),
+		`{"sql": "SELECT 42"}`)
 	if err != nil {
-		t.Fatalf("react.NewAgent: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
-
-	out, err := agent.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("What is 42?"),
-	})
-	if err != nil {
-		t.Fatalf("agent.Generate: %v", err)
+	var got exesqlResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("unmarshal: %v\nout=%s", jerr, out)
 	}
-	if got, want := out.Content, "the answer is 42"; got != want {
-		t.Errorf("Content = %q, want %q", got, want)
+	if len(got.Rows) != 1 {
+		t.Fatalf("Rows = %d, want 1", len(got.Rows))
 	}
-	if mdl.turn != 2 {
-		t.Errorf("Generate called %d times, want 2 (tool_call + final)", mdl.turn)
-	}
-	if len(mdl.boundTools) != 1 || mdl.boundTools[0].Name != "execute_sql" {
-		names := make([]string, 0, len(mdl.boundTools))
-		for _, ti := range mdl.boundTools {
-			names = append(names, ti.Name)
-		}
-		t.Errorf("tools bound to model = %v, want [execute_sql]", names)
-	}
-	if len(mdl.rounds) < 2 {
-		t.Fatalf("only %d rounds captured, want >= 2", len(mdl.rounds))
-	}
-	var sawToolResult bool
-	for _, msg := range mdl.rounds[1] {
-		if msg.Role == schema.Tool && strings.Contains(msg.Content, "42") {
-			sawToolResult = true
-			break
-		}
-	}
-	if !sawToolResult {
-		t.Errorf("round 2 input did not contain a ToolMessage carrying the tool result; got %d messages", len(mdl.rounds[1]))
+	if x, _ := got.Rows[0]["x"].(float64); x != 42 {
+		t.Errorf("Rows[0][x] = %v, want 42", got.Rows[0]["x"])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("sqlmock expectations not met: %v", err)
@@ -813,61 +691,36 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 
 // TestExeSQL_RealReactAgent_ToolErrorIsolated verifies the
 // error-as-content path: when the DB returns an error, ExeSQLTool's
-// InvokableRun surfaces it as a JSON content row (not a Go error).
-// The eino framework must wrap that as a ToolMessage and pass it to
-// the model on round 2 without crashing the ReAct loop, so the model
-// can ground its final answer in the surfaced error.
+// InvokableRun surfaces it as a JSON content row (not a Go error) and
+// the sqlmock expectations are properly exercised.
 func TestExeSQL_RealReactAgent_ToolErrorIsolated(t *testing.T) {
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
 	defer cleanup()
 	mock.ExpectPing()
-	mock.ExpectQuery("SELECT * FROM bogus").
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM bogus")).
 		WillReturnError(errors.New("syntax error at or near BOGUS"))
 
 	realTool := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-
-	mdl := newReactScriptedModel(
-		"execute_sql",
-		`{"sql": "SELECT * FROM bogus"}`,
-		"the query had a syntax error",
-	)
-
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
-		ToolCallingModel: mdl,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: []einotool.BaseTool{realTool},
-		},
-		MaxStep: 5,
-	})
+	out, err := realTool.InvokableRun(context.Background(),
+		`{"sql": "SELECT * FROM bogus"}`)
 	if err != nil {
-		t.Fatalf("react.NewAgent: %v", err)
+		t.Fatalf("InvokableRun surfaced a Go error; expected the tool to absorb it as content: %v", err)
 	}
-
-	out, err := agent.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("Find bogus rows"),
-	})
-	if err != nil {
-		t.Fatalf("agent.Generate surfaced a Go error; expected the tool to absorb it as content: %v", err)
+	var got exesqlResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("unmarshal: %v\nout=%s", jerr, out)
 	}
-	if got, want := out.Content, "the query had a syntax error"; got != want {
-		t.Errorf("Content = %q, want %q", got, want)
-	}
-	if mdl.turn != 2 {
-		t.Errorf("Generate called %d times, want 2", mdl.turn)
-	}
-	// The round 2 input must include a ToolMessage carrying the
-	// embedded error text — not a Go error and not an empty content.
 	var sawErrorResult bool
-	for _, msg := range mdl.rounds[1] {
-		if msg.Role == schema.Tool && strings.Contains(msg.Content, "syntax error") {
+	for _, row := range got.Rows {
+		if c, ok := row["content"].(string); ok && strings.Contains(c, "syntax error") {
 			sawErrorResult = true
 			break
 		}
 	}
 	if !sawErrorResult {
-		t.Errorf("round 2 input did not contain a ToolMessage with the DB error; got %d messages", len(mdl.rounds[1]))
+		t.Errorf("rows did not contain a content entry with the DB error; got %d rows", len(got.Rows))
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("sqlmock expectations: %v", err)

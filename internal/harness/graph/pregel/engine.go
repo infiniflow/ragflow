@@ -4,6 +4,7 @@ package pregel
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -17,7 +18,7 @@ import (
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
-	"ragflow/internal/harness/graph/errors"
+	gerrors "ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
 )
@@ -48,7 +49,6 @@ type Engine struct {
 	versionsSeen        map[string]map[string]int
 	cache               Cache
 	backgroundExec      *BackgroundExecutor
-	callbacks           *CallbackManager     // lifecycle callbacks (event recording, metrics)
 	deferredCheckpoints []deferredCheckpoint // for DurabilityExit mode
 }
 
@@ -174,15 +174,6 @@ func WithBackgroundExecutor(exec *BackgroundExecutor) EngineOption {
 	}
 }
 
-// WithCallbacks sets the callback manager for the engine.
-// Callbacks are dispatched during graph execution (run start/end, step start/end,
-// node start/end, checkpoint save/load, interrupt/resume).
-func WithCallbacks(cb *CallbackManager) EngineOption {
-	return func(e *Engine) {
-		e.callbacks = cb
-	}
-}
-
 // ExecuteResult represents the result of graph execution.
 type ExecuteResult struct {
 	// Final state of the graph.
@@ -225,39 +216,9 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 			}
 		})
 
-		// Resolve thread ID early (before deferred cleanup uses it).
-		threadID := e.getThreadID()
-
-		// reportRunEnd is defined before the deferred cleanup block so the
-		// defer can capture it by closure.
-		reportRunEnd := func(err error) {
-			if e.callbacks == nil {
-				return
-			}
-			gName := "state_graph"
-			if e.graph != nil {
-				nodes := e.graph.GetNodes()
-				for name := range nodes {
-					gName = name
-					break
-				}
-			}
-			e.callbacks.RunEnd(context.Background(), gName, threadID, err)
-		}
-
-		// Deferred cleanup: dispatch RunEnd, close streamManager,
-		// wait for forward goroutine, then close outputCh.
-		var exitErr error // captured for RunEnd callback dispatch
+		// Deferred cleanup: close streamManager first (unblocks forward goroutine),
+		// then wait for forward goroutine to exit, then close outputCh.
 		defer func() {
-			// Read from errCh to get the exit error for RunEnd dispatch.
-			// errCh is still open here (close(errCh) runs after this defer).
-			select {
-			case exitErr = <-errCh:
-				reportRunEnd(exitErr)
-				errCh <- exitErr // put back for the caller
-			default:
-				reportRunEnd(nil)
-			}
 			streamManager.Close()
 			fwWg.Wait()
 			close(outputCh)
@@ -296,7 +257,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 		}
 
 		// Get thread ID for checkpointing
-		// threadID already resolved above (before deferred cleanup).
+		threadID := e.getThreadID()
 
 		// Load checkpoint when one exists for this thread_id, even when
 		// input is non-nil (resume from a previous run).  The canvas
@@ -381,14 +342,6 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 				if cp, err := checkpoint.FromMap(cpData); err == nil {
 					e.currentCheckpoint = cp
 				}
-				// Dispatch CheckpointLoad callback.
-				if e.callbacks != nil {
-					cpID := ""
-					if cpid, _ := cpData["checkpoint_id"].(string); cpid != "" {
-						cpID = cpid
-					}
-					e.callbacks.CheckpointLoad(ctx, threadID, cpID, 0)
-				}
 			}
 		}
 		// Apply input only when no checkpoint was loaded.
@@ -441,18 +394,6 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 			lastState = input
 		}
 
-		// Dispatch RunStart callback.
-		if e.callbacks != nil {
-			gName := "state_graph"
-			if e.graph != nil {
-				nodes := e.graph.GetNodes()
-				for name := range nodes {
-					gName = name
-					break
-				}
-			}
-			e.callbacks.RunStart(ctx, gName, threadID)
-		}
 		for {
 			// Check context cancellation at each superstep.
 			select {
@@ -464,13 +405,8 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 
 			// Check recursion limit
 			if step >= e.recursionLimit {
-				errCh <- &errors.GraphRecursionError{Limit: e.recursionLimit}
+				errCh <- &gerrors.GraphRecursionError{Limit: e.recursionLimit}
 				return
-			}
-
-			// Dispatch StepStart callback.
-			if e.callbacks != nil {
-				e.callbacks.StepStart(ctx, step, 0) // taskCount filled after prepareNextTasks
 			}
 
 			// Emit checkpoint event via stream manager
@@ -514,12 +450,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 				}
 				streamManager.EmitInterrupt(step, interruptNames)
 
-				// Dispatch Interrupt callback.
-				if e.callbacks != nil {
-					e.callbacks.Interrupt(ctx, interruptNames, step)
-				}
-
-				errCh <- &errors.GraphInterrupt{}
+				errCh <- &gerrors.GraphInterrupt{}
 				return
 			}
 
@@ -534,7 +465,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 			allFailed := len(results) > 0
 			var interruptTaskNames []string
 			for _, result := range results {
-				if errors.IsGraphInterrupt(result.Err) {
+				if gerrors.IsGraphInterrupt(result.Err) {
 					interruptTaskNames = append(interruptTaskNames, result.Name)
 					continue
 				}
@@ -572,7 +503,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 					}
 					// Extract sub-state from GraphInterrupt value.
 					for _, r := range results {
-						if gi, ok := r.Err.(*errors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
+						if gi, ok := r.Err.(*gerrors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
 							if intr, ok := gi.Interrupts[0].(*types.Interrupt); ok && intr.Value != nil {
 								if b, e := json.Marshal(intr.Value); e == nil {
 									cpPayload["__sub_state__"] = b
@@ -589,35 +520,31 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 					}
 				}
 				streamManager.EmitInterrupt(step, interruptTaskNames)
-				// Dispatch Interrupt callback.
-				if e.callbacks != nil {
-					e.callbacks.Interrupt(ctx, interruptTaskNames, step)
-				}
 				// Preserve the first interrupted task's GraphInterrupt value
 				// (with Interrupts populated) instead of creating a bare one,
 				// so MustExtractInterruptContexts can extract the original
 				// UserFillUp spec / tips / cpn_id from it.
 				for _, r := range results {
-					if gi, ok := r.Err.(*errors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
+					if gi, ok := r.Err.(*gerrors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
 						errCh <- gi
 						return
 					}
 				}
-				errCh <- &errors.GraphInterrupt{}
+				errCh <- &gerrors.GraphInterrupt{}
 				return
 			}
 			// If every task in this step failed, the graph cannot make progress.
 			// Terminate immediately rather than infinitely re-scheduling the
 			// same failing nodes (e.g. a panicking node caught by recover()).
 			if allFailed {
-				var why string
+				var allErrs []error
 				for _, r := range results {
-					why += fmt.Sprintf(" %s=%T(%v)", r.Name, r.Err, r.Err)
+					allErrs = append(allErrs, r.Err)
 				}
 				common.Debug("allFailed",
 					zap.Int("step", step),
-					zap.String("results", why))
-				errCh <- fmt.Errorf("all %d tasks failed in step %d: %s", len(results), step, why)
+					zap.Errors("errors", allErrs))
+				errCh <- fmt.Errorf("all %d tasks failed in step %d: %w", len(results), step, stderrors.Join(allErrs...))
 				return
 			}
 
@@ -645,10 +572,6 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 						errCh <- fmt.Errorf("failed to save checkpoint: %w", err)
 						return
 					}
-					// Dispatch CheckpointSave callback.
-					if e.callbacks != nil {
-						e.callbacks.CheckpointSave(ctx, threadID, checkpointID, step)
-					}
 				case types.DurabilityAsync:
 					// Asynchronous save - don't block next step
 					go func(cp map[string]any, cpID string, s int) {
@@ -661,10 +584,6 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 					// Defer save until exit - accumulate checkpoints in memory
 					// Will be saved in final state
 					e.deferCheckpoint(threadID, checkpointID, step, checkpoint)
-					// Dispatch CheckpointSave callback (deferred save still counts as saved).
-					if e.callbacks != nil {
-						e.callbacks.CheckpointSave(ctx, threadID, checkpointID, step)
-					}
 				default:
 					// Default to sync behavior
 					if err := e.saveCheckpoint(ctx, threadID, checkpointID, step, checkpoint); err != nil {
@@ -677,16 +596,8 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 			// Check for after-node interrupts. The checkpoint above already
 			// captures this step's output.
 			if e.shouldInterruptAfter(results) {
-				if e.callbacks != nil {
-					e.callbacks.Interrupt(ctx, []string{"after_node"}, step)
-				}
-				errCh <- &errors.GraphInterrupt{}
+				errCh <- &gerrors.GraphInterrupt{}
 				return
-			}
-
-			// Dispatch StepEnd callback.
-			if e.callbacks != nil {
-				e.callbacks.StepEnd(ctx, step, nil)
 			}
 
 			step++
@@ -758,7 +669,7 @@ func (e *Engine) prepareNextTasksWithMode(
 
 		node := e.getNode(entryPoint)
 		if node == nil {
-			return nil, nil, &errors.NodeNotFoundError{NodeName: entryPoint}
+			return nil, nil, &gerrors.NodeNotFoundError{NodeName: entryPoint}
 		}
 
 		// Pass node Triggers as task Channels so the first task reads from
@@ -1263,7 +1174,7 @@ func (e *Engine) executeTask(
 			}
 		}
 		// Check for interrupt
-		if errors.IsGraphInterrupt(err) {
+		if gerrors.IsGraphInterrupt(err) {
 			return &TaskResult{
 				Name: task.Name,
 				Err:  err,
@@ -1356,7 +1267,7 @@ func (e *Engine) readTaskInput(registry *channels.Registry, task *Task) (any, er
 		if ch, ok := registry.Get(channelName); ok {
 			value, err := ch.Get()
 			if err != nil {
-				if _, isEmpty := err.(*errors.EmptyChannelError); !isEmpty {
+				if _, isEmpty := err.(*gerrors.EmptyChannelError); !isEmpty {
 					return nil, err
 				}
 				// Empty channels are OK

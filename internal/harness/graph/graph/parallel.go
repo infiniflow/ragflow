@@ -34,7 +34,9 @@ import (
 type ParallelOption func(*parallelOptions)
 
 type parallelOptions struct {
-	maxConcurrency int
+	maxConcurrency      int
+	checkpointIDBuilder func(nodeKey string, idx int) string
+	enableSubCheckpoint bool
 }
 
 // WithParallelMaxConcurrency caps the number of concurrent sub-graph
@@ -47,8 +49,30 @@ func WithParallelMaxConcurrency(maxConcurrency int) ParallelOption {
 	}
 }
 
+// WithParallelCheckpointIDBuilder sets a custom function for building
+// per-item checkpoint thread IDs. The builder receives the node key and
+// the 0-based item index. Default format is "parallel:<key>:item:<idx>".
+func WithParallelCheckpointIDBuilder(builder func(nodeKey string, idx int) string) ParallelOption {
+	return func(o *parallelOptions) {
+		if builder != nil {
+			o.checkpointIDBuilder = builder
+		}
+	}
+}
+
+// WithParallelEnableSubCheckpoint controls whether per-item checkpoints
+// are stored. Default true. When disabled, sub-graph checkpoint state
+// is not preserved across interrupt/resume cycles.
+func WithParallelEnableSubCheckpoint(enable bool) ParallelOption {
+	return func(o *parallelOptions) {
+		o.enableSubCheckpoint = enable
+	}
+}
+
 func getParallelOptions(opts []ParallelOption) *parallelOptions {
-	o := &parallelOptions{}
+	o := &parallelOptions{
+		enableSubCheckpoint: true,
+	}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -87,7 +111,7 @@ type parallelItemResult struct {
 // sub is the already-compiled sub-graph to invoke per item.
 func NewParallelNodeFunc(
 	key string,
-	sub *compiledGraph,
+	sub types.CompiledGraph,
 	opts ...ParallelOption,
 ) (types.NodeFunc, error) {
 	if key == "" {
@@ -97,23 +121,26 @@ func NewParallelNodeFunc(
 		return nil, fmt.Errorf("graph: parallel sub-graph is nil")
 	}
 	options := getParallelOptions(opts)
+	if options.checkpointIDBuilder == nil {
+		options.checkpointIDBuilder = func(nodeKey string, idx int) string {
+			return fmt.Sprintf("parallel:%s:item:%d", nodeKey, idx)
+		}
+	}
 
 	nodeFunc := func(ctx context.Context, state interface{}) (interface{}, error) {
 		items, ok := state.([]interface{})
 		if !ok {
-			// If the state is a map with the relevant key, try to extract.
 			m, mapOk := state.(map[string]interface{})
 			if !mapOk {
 				return nil, fmt.Errorf("graph: parallel node expects []interface{} input, got %T", state)
 			}
-			// Try '__input__' or 'items' key.
 			if raw, found := m["__input__"]; found {
 				items, ok = raw.([]interface{})
-				if !ok {
-					items, ok = raw.([]interface{})
-				}
 			}
 			if raw, found := m["items"]; found && !ok {
+				items, _ = raw.([]interface{})
+			}
+			if raw, found := m["__root__"]; found && !ok {
 				items, _ = raw.([]interface{})
 			}
 			if items == nil {
@@ -129,44 +156,58 @@ func NewParallelNodeFunc(
 func runParallel(
 	ctx context.Context,
 	key string,
-	sub *compiledGraph,
+	sub types.CompiledGraph,
 	items []interface{},
 	options *parallelOptions,
 ) (interface{}, error) {
-	// Check for resume.
 	prev, isResume := loadParallelSnapshot(ctx)
 
 	effectiveItems := items
-	totalCount := len(effectiveItems)
-	outputs := make([]interface{}, totalCount)
-	indicesToProcess := make([]int, totalCount)
-	for i := range effectiveItems {
-		indicesToProcess[i] = i
-	}
-	bridgeState := newItemCheckpointStore(nil)
+	var totalCount int
+	outputs := make([]interface{}, 0)
+	indicesToProcess := make([]int, 0)
+	var bridgeState *itemCheckpointStore
 
 	if isResume && prev != nil {
+		if len(prev.OriginalInputsJSON) > 0 {
+			var restored []interface{}
+			if err := json.Unmarshal(prev.OriginalInputsJSON, &restored); err == nil {
+				effectiveItems = restored
+			}
+		}
 		totalCount = prev.TotalCount
 		outputs = make([]interface{}, totalCount)
-		// Replay completed results.
 		for idx, v := range prev.CompletedResults {
 			if idx >= 0 && idx < totalCount {
 				outputs[idx] = v
 			}
 		}
-		// Only re-process interrupted indices.
 		indicesToProcess = append([]int(nil), prev.InterruptedIndices...)
-		bridgeState = newItemCheckpointStore(prev.ItemCheckpoints)
+		if options.enableSubCheckpoint {
+			bridgeState = newItemCheckpointStore(prev.ItemCheckpoints)
+		} else {
+			bridgeState = newItemCheckpointStore(nil)
+		}
+	} else {
+		totalCount = len(effectiveItems)
+		outputs = make([]interface{}, totalCount)
+		indicesToProcess = make([]int, totalCount)
+		for i := range effectiveItems {
+			indicesToProcess[i] = i
+		}
+		if options.enableSubCheckpoint {
+			bridgeState = newItemCheckpointStore(nil)
+		} else {
+			bridgeState = newItemCheckpointStore(nil)
+		}
 	}
 
 	if len(indicesToProcess) == 0 {
 		return outputs, nil
 	}
 
-	// Fan-out.
 	results := fanOutItems(ctx, key, sub, effectiveItems, indicesToProcess, options, bridgeState)
 
-	// Collect results.
 	var normalErr error
 	hasInterrupt := false
 	completedResults := make(map[int]any)
@@ -192,6 +233,14 @@ func runParallel(
 	}
 
 	if hasInterrupt {
+		if isResume && prev != nil {
+			for idx, v := range prev.CompletedResults {
+				if _, exists := completedResults[idx]; !exists {
+					completedResults[idx] = v
+				}
+			}
+		}
+
 		inputsJSON, jErr := json.Marshal(effectiveItems)
 		if jErr != nil {
 			return nil, fmt.Errorf("graph: parallel marshal inputs: %w", jErr)
@@ -207,12 +256,15 @@ func runParallel(
 			CompletedResults:   completedResults,
 			InterruptedIndices: pending,
 			TotalCount:         totalCount,
-			ItemCheckpoints:    bridgeState.snapshot(),
 		}
-		// Pass state directly — the checkpoint engine serializes
-		// interrupt values when persisting. Avoid double-serialization
-		// by not marshalling here.
-		_, interruptErr := interrupt.Interrupt(ctx, state)
+		if options.enableSubCheckpoint {
+			state.ItemCheckpoints = bridgeState.snapshot()
+		}
+		stateJSON, jErr2 := json.Marshal(state)
+		if jErr2 != nil {
+			return nil, fmt.Errorf("graph: parallel marshal state: %w", jErr2)
+		}
+		_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
 		return nil, interruptErr
 	}
 
@@ -223,7 +275,7 @@ func runParallel(
 func fanOutItems(
 	ctx context.Context,
 	key string,
-	sub *compiledGraph,
+	sub types.CompiledGraph,
 	items []interface{},
 	indices []int,
 	options *parallelOptions,
@@ -236,12 +288,16 @@ func fanOutItems(
 	}
 
 	runOne := func(idx int) {
-		itemCheckpointID := fmt.Sprintf("parallel:%s:item:%d", key, idx)
+		itemCheckpointID := options.checkpointIDBuilder(key, idx)
 		cfg := &types.RunnableConfig{Configurable: make(map[string]interface{})}
 		cfg.Configurable["thread_id"] = itemCheckpointID
 
-		// Attach bridge state so the sub-graph's checkpointer can find it.
-		itemCtx := withItemCheckpointCtx(ctx, bridgeState)
+		var itemCtx context.Context
+		if options.enableSubCheckpoint {
+			itemCtx = withItemCheckpointCtx(ctx, bridgeState)
+		} else {
+			itemCtx = ctx
+		}
 
 		var out interface{}
 		var err error
@@ -277,7 +333,6 @@ func fanOutItems(
 		wg.Add(1)
 		idx := idx
 		if i == 0 {
-			// First item runs on main goroutine.
 			runOne(idx)
 			wg.Done()
 			continue

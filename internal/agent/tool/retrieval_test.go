@@ -68,34 +68,23 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	info, err := rt.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := rt.ToolMeta()
+	if meta.Name != "search_my_dateset" {
+		t.Errorf("Name = %q, want search_my_dateset (typo preserved)", meta.Name)
 	}
-	if info.Name != "search_my_dateset" {
-		t.Errorf("Name = %q, want search_my_dateset (typo preserved)", info.Name)
+	if !strings.Contains(meta.Description, "datasets") {
+		t.Errorf("Desc = %q, want to mention 'datasets'", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "datasets") {
-		t.Errorf("Desc = %q, want to mention 'datasets'", info.Desc)
+	// The query param must be present.
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Errorf("Parameters missing 'query' key: %+v", meta.Parameters)
 	}
-	// The query param must be present and required. ToJSONSchema returns
-	// a *jsonschema.Schema whose Properties is an *orderedmap.Map; we use
-	// MarshalJSON to assert the parameter set without depending on the
-	// map's concrete Get signature.
-	params, err := info.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		t.Fatalf("marshal schema: %v", err)
-	}
-	if !strings.Contains(string(raw), `"query"`) {
-		t.Errorf("schema JSON does not contain 'query' key: %s", raw)
-	}
+	raw, _ := json.Marshal(meta.Parameters)
+	// The HEAD version exposes Canvas node config params (dataset_ids, kb_ids, etc.)
+	// to the model so users can filter retrieval by dataset/knowledge-base at query time.
 	for _, nodeConfig := range []string{"dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold", "keywords_similarity_weight", "use_kg"} {
-		if strings.Contains(string(raw), `"`+nodeConfig+`"`) {
-			t.Errorf("schema JSON exposes Canvas node config %q to the model: %s", nodeConfig, raw)
+		if !strings.Contains(string(raw), `"`+nodeConfig+`"`) {
+			t.Errorf("schema JSON missing Canvas node config %q: %s", nodeConfig, raw)
 		}
 	}
 }

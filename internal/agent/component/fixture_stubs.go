@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Package component contains e2e fixture stubs used directly by tests.
@@ -38,9 +38,12 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
 )
 
 // ----- Retrieval -----
@@ -325,7 +328,7 @@ const componentNameAnswer = "Answer"
 // AnswerStub is a fixture stub for the Answer component. Answer
 // is the agent's "wait for user" node (it pairs with ExeSQL or
 // Message in conversational flows). The real implementation
-// pauses the run and resumes on user input via the eino
+// pauses the run and resumes on user input via the
 // interrupt path (see canvas/interrupt_resume.go); the stub
 // returns an empty answer immediately so the e2e flow can
 // complete.
@@ -487,9 +490,17 @@ func (it *IterationItemStub) Outputs() map[string]string {
 // Each Register call panics on a duplicate (the registry enforces
 // uniqueness), so accidental double-registration in a later refactor
 // surfaces as a panic at init time, not as a silent override.
+// codeExecComponentDelegate is the real CodeExec component wrapper.
+// It is defined in universe_a_wrappers.go — the stub type is no longer needed.
+// The legacy Stub type has been replaced by the real wrapper in
+// universe_a_wrappers.go; this comment marks the cleanup boundary.
+
 func init() {
-	// Retrieval still requires its specialized adapter. The stub remains a
-	// direct test constructor for the "no service wired" path.
+	// Primary registration: Retrieval and ExeSQL go through the
+	// Universe A delegation wrappers in universe_a_wrappers.go
+	// (real tool plumbing). The stubs remain available for
+	// unit tests that want to assert the "no service wired" path
+	// via a direct constructor.
 	Register(componentNameRetrieval, newRetrievalComponent)
 	// The agent canvas uses both a PascalCase "SearchMyDataset"
 	// and the original snake_case typo "search_my_dateset"; an
@@ -508,4 +519,68 @@ func init() {
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
+}
+
+// ---- Canvas-facing tool wrappers (harness Component delegate) ----
+
+func newBGPTComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "BGPT", inner: agenttool.NewBGPTTool()}, nil
+}
+
+func newWikipediaComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "Wikipedia", inner: agenttool.NewWikipediaTool()}, nil
+}
+
+func newDuckDuckGoComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "DuckDuckGo", inner: agenttool.NewDuckDuckGoTool()}, nil
+}
+
+func newGoogleComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "Google", inner: agenttool.NewGoogleTool()}, nil
+}
+
+func newTavilyExtractComponent(_ map[string]any) (Component, error) {
+	return &simpleToolDelegate{name: "TavilyExtract", inner: agenttool.NewTavilyExtractTool()}, nil
+}
+
+// simpleToolDelegate wraps an agenttool.Tool as a Component.
+type simpleToolDelegate struct {
+	name  string
+	inner agenttool.Tool
+}
+
+func (d *simpleToolDelegate) Name() string { return d.name }
+
+func (d *simpleToolDelegate) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	argsJSON, _ := json.Marshal(inputs)
+	out, err := d.inner.InvokableRun(ctx, string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("canvas: %s: %w", d.name, err)
+	}
+	return parseToolEnvelope(out), nil
+}
+
+func (d *simpleToolDelegate) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func (d *simpleToolDelegate) Inputs() map[string]string { return nil }
+func (d *simpleToolDelegate) Outputs() map[string]string {
+	return map[string]string{
+		"formalized_content": "Formatted content for downstream prompts.",
+		"json":               "Raw JSON result list.",
+	}
+}
+func (d *simpleToolDelegate) Parallelism() int { return 1 }
+func (d *simpleToolDelegate) GetInputForm() map[string]any {
+	form := map[string]any{"query": map[string]any{"type": "line", "name": "Query"}}
+	// DuckDuckGo has a channel selector.
+	if d.name == "DuckDuckGo" {
+		form["channel"] = map[string]any{"type": "str", "name": "Channel", "value": "general"}
+	}
+	// TavilyExtract has a urls field.
+	if strings.Contains(d.name, "TavilyExtract") {
+		form["urls"] = map[string]any{"type": "line", "name": "URLs"}
+	}
+	return form
 }

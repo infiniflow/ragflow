@@ -58,12 +58,9 @@ func TestBGPT_RequestAndRawResults(t *testing.T) {
 func TestBGPT_InfoAndNodeDefaults(t *testing.T) {
 	t.Parallel()
 
-	info, err := NewBGPTTool().Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
-	}
-	if info.Name != "bgpt_search" {
-		t.Fatalf("Info.Name = %q", info.Name)
+	meta := NewBGPTTool().ToolMeta()
+	if meta.Name != "bgpt_search" {
+		t.Fatalf("Meta.Name = %q", meta.Name)
 	}
 	built, err := BuildByName("bgpt", map[string]any{
 		"api_key":   "stored",

@@ -93,22 +93,22 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		Title:  sptr("Test Agent"),
 	})
 
-	// Insert 2 versions with staggered timestamps
-	now := time.Now()
-	db.Create(&entity.UserCanvasVersion{
-		ID:           "v2",
-		UserCanvasID: "canvas-1",
-		Title:        sptr("v2"),
-		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.UnixMilli()),
-		},
-	})
+	// Insert 2 versions with staggered timestamps.
+	// v2 has a more recent create_time so create_time DESC puts it first.
 	db.Create(&entity.UserCanvasVersion{
 		ID:           "v1",
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v1"),
 		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+			CreateTime: ptr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()),
+		},
+	})
+	db.Create(&entity.UserCanvasVersion{
+		ID:           "v2",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("v2"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC).UnixMilli()),
 		},
 	})
 
@@ -821,42 +821,49 @@ func TestRunAgent_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DefaultBranchNonStreaming covers the
-// scenario where `stream` is omitted from the request body. When
-// `stream` is absent, the handler must return a plain JSON response
-// (non-streaming), matching the Python contract where
-// `req.get("stream", False)` defaults to non-streaming.
-func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
+// TestAgentChatCompletions_DefaultBranchNonStream covers the
+// default (stream=false) branch: the handler must invoke the canvas
+// runner and return a JSON envelope matching the Python API contract.
+func TestAgentChatCompletions_DefaultBranchNonStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","query":"hello"}`))
+		strings.NewReader(`{"agent_id":"a1","query":"hello","session_id":"sess-2"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
 		{Type: "message", MessageID: "msg-2", TaskID: "task-2", SessionID: "sess-2", Data: `{"content":"hello back","reference":[]}`},
-		{Type: "done", Data: ""},
+		{Type: "done", SessionID: "sess-2", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
 	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
-		t.Errorf("Content-Type = %q, want application/json (default branch must not stream)", got)
+		t.Errorf("Content-Type = %q, want application/json (default branch must return JSON)", got)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, `"code":0`) {
-		t.Errorf("body should contain success code, got %q", body)
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v, body=%s", err, w.Body.String())
 	}
-	if !strings.Contains(body, `"event":"message"`) ||
-		!strings.Contains(body, `"message_id":"msg-2"`) ||
-		!strings.Contains(body, `"hello back"`) {
-		t.Errorf("body should contain agent event with content in data, got %q", body)
+	if code, _ := resp["code"].(float64); code != 0 {
+		t.Errorf("code = %v, want 0", resp["code"])
 	}
-	if strings.Contains(body, "data:[DONE]") {
-		t.Errorf("body should not contain [DONE] terminator in non-streaming mode, got %q", body)
+	data, _ := resp["data"].(map[string]any)
+	if data == nil {
+		t.Fatalf("data is nil, response=%s", w.Body.String())
+	}
+	if sid, _ := data["session_id"].(string); sid != "sess-2" {
+		t.Errorf("session_id = %q, want sess-2", sid)
+	}
+	innerData, _ := data["data"].(map[string]any)
+	if innerData == nil {
+		t.Fatalf("inner data is nil, response=%s", w.Body.String())
+	}
+	if content, _ := innerData["content"].(string); content != "hello back" {
+		t.Errorf("content = %q, want hello back", content)
 	}
 }
 
@@ -969,12 +976,12 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T)
 
 	var resp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	data, _ := resp["data"].(map[string]interface{})
-	if data == nil {
-		t.Fatalf("response should contain 'data', got keys: %v", resp)
-	}
-	if _, ok := data["choices"]; !ok {
-		t.Errorf("response data should contain 'choices', got keys: %v", data)
+	if data, ok := resp["data"].(map[string]interface{}); ok {
+		if _, ok := data["choices"]; !ok {
+			t.Errorf("response data should contain 'choices', got keys: %v", data)
+		}
+	} else {
+		t.Errorf("response should contain 'data' envelope, got keys: %v", resp)
 	}
 }
 

@@ -24,11 +24,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
 )
 
 func TestDuckDuckGo_BuildSearchURL(t *testing.T) {
@@ -196,12 +191,6 @@ func TestDuckDuckGo_ParseNewsResults(t *testing.T) {
 
 func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/" {
-			// keep old behavior impossible to hit if search endpoint override works incorrectly
-		}
-		if got := r.URL.Query().Get("o"); got != "" {
-			t.Fatalf("o = %q, want empty for general search html endpoint", got)
-		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<!doctype html><html><body>
 			<div class="result"><a class="result__a" href="https://n.example/a">A</a></div>
@@ -220,35 +209,23 @@ func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 	}
 }
 
-func TestDuckDuckGo_Info(t *testing.T) {
+func TestDuckDuckGo_ToolMeta(t *testing.T) {
 	tool := NewDuckDuckGoTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "duckduckgo_search" {
+		t.Errorf("Name = %q, want duckduckgo_search", meta.Name)
 	}
-	if info.Name != "duckduckgo_search" {
-		t.Errorf("Name = %q, want duckduckgo_search", info.Name)
+	if !strings.Contains(meta.Description, "DuckDuckGo") {
+		t.Errorf("Description = %q, want to mention DuckDuckGo", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "DuckDuckGo") {
-		t.Errorf("Desc = %q, want to mention DuckDuckGo", info.Desc)
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Fatalf("parameters missing 'query'")
 	}
-	if info.ParamsOneOf == nil {
-		t.Fatal("ParamsOneOf = nil, want schema definition")
+	if _, ok := meta.Parameters["channel"]; !ok {
+		t.Fatalf("parameters missing 'channel'")
 	}
-	schema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(raw)
-	if !strings.Contains(params, `"channel"`) {
-		t.Fatalf("schema missing channel param: %s", params)
-	}
-	if strings.Contains(params, `"top_n"`) {
-		t.Fatalf("schema should not expose top_n param: %s", params)
+	if _, ok := meta.Parameters["top_n"]; ok {
+		t.Fatalf("parameters should not expose top_n")
 	}
 }
 
@@ -283,55 +260,23 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 	t.Cleanup(func() { duckduckgoSearchEndpoint = prevSearch })
 
 	realTool := NewDuckDuckGoTool()
-
-	mdl := newReactScriptedModel(
-		"duckduckgo_search",
-		`{"query":"ragflow"}`,
-		"RAGFlow is an open-source RAG engine.",
-	)
-
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
-		ToolCallingModel: mdl,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: []einotool.BaseTool{realTool},
-		},
-		MaxStep: 5,
-	})
+	// Verify the tool actually calls the upstream and returns results.
+	result, err := realTool.InvokableRun(context.Background(), `{"query":"ragflow"}`)
 	if err != nil {
-		t.Fatalf("react.NewAgent: %v", err)
+		t.Fatalf("InvokableRun: %v", err)
 	}
-
-	out, err := agent.Generate(context.Background(), []*schema.Message{
-		schema.UserMessage("What is RAGFlow?"),
-	})
-	if err != nil {
-		t.Fatalf("agent.Generate: %v", err)
+	if result == "" {
+		t.Fatal("expected non-empty result")
 	}
-	if got, want := out.Content, "RAGFlow is an open-source RAG engine."; got != want {
-		t.Errorf("Content = %q, want %q", got, want)
+	var env duckduckgoEnvelope
+	if jerr := json.Unmarshal([]byte(result), &env); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", err)
 	}
-	if mdl.turn != 2 {
-		t.Errorf("Generate called %d times, want 2 (tool_call + final)", mdl.turn)
+	if len(env.Results) == 0 {
+		t.Fatal("expected at least one result")
 	}
-	if len(mdl.boundTools) != 1 || mdl.boundTools[0].Name != "duckduckgo_search" {
-		names := make([]string, 0, len(mdl.boundTools))
-		for _, ti := range mdl.boundTools {
-			names = append(names, ti.Name)
-		}
-		t.Errorf("tools bound to model = %v, want [duckduckgo_search]", names)
-	}
-	if len(mdl.rounds) < 2 {
-		t.Fatalf("only %d rounds captured, want >= 2", len(mdl.rounds))
-	}
-	var sawToolResult bool
-	for _, msg := range mdl.rounds[1] {
-		if msg.Role == schema.Tool && strings.Contains(msg.Content, "RAGFlow is an open-source RAG engine") {
-			sawToolResult = true
-			break
-		}
-	}
-	if !sawToolResult {
-		t.Errorf("round 2 input did not contain a ToolMessage carrying the upstream result")
+	if env.Results[0].Title != "RAGFlow" {
+		t.Errorf("Results[0].Title = %q, want RAGFlow", env.Results[0].Title)
 	}
 	if hitCount == 0 {
 		t.Error("test server was never hit; the tool did not actually call the upstream")

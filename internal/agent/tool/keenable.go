@@ -28,9 +28,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/common"
 )
 
@@ -185,30 +182,28 @@ func resolveKeenableBaseURL(raw string) (string, error) {
 	}
 }
 
-// Info returns the tool's metadata for the chat model. The description
-// is the short prose above; the parameter schema lists the model-emitted
-// fields with sane defaults documented inline.
-func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: keenableToolName,
-		Desc: keenableToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (k *KeenableTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        keenableToolName,
+		Description: keenableToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
+				Required:    true,
 			},
 			"site": {
-				Type:     schema.String,
-				Desc:     "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun performs the Keenable search.
-func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var runtimeParams keenableParams
 	if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
 		return keenableErrJSON(fmt.Errorf("keenable: parse arguments: %w", err)),

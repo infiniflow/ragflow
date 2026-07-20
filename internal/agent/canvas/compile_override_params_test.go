@@ -60,7 +60,7 @@ func TestCompile_OverrideParams(t *testing.T) {
 	}
 
 	ctx := WithComponentFactory(context.Background(), factory)
-	if _, err := Compile(ctx, dsl, WithOverrideParams(override)); err != nil {
+	if _, err := Compile(ctx, dsl, WithSetupOverrides(override)); err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 

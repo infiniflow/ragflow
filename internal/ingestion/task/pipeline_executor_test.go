@@ -433,7 +433,12 @@ func (r *recordingProgressSink) OnComponentProgress(ev pipelinepkg.ProgressEvent
 type sinkPassthroughStage struct{}
 
 func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
-	return inputs, nil
+	out := make(map[string]any, len(inputs)+1)
+	for k, v := range inputs {
+		out[k] = v
+	}
+	out["output_format"] = "chunks"
+	return out, nil
 }
 
 // TestPipelineExecutorRunPipelineWithDSLForwardsSink verifies the sink set via

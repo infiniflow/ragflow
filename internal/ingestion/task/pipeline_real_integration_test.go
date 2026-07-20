@@ -622,6 +622,7 @@ func mustSeedTaskRealPipelineDocumentBytes(
 		ID:     tenantID,
 		LLMID:  "gpt-4",
 		Status: taskStrPtr("1"),
+		OCRID:  taskStrPtr("ocr-1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}

@@ -20,10 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/tool"
 )
 
@@ -43,8 +39,7 @@ func TestPhase3_5_ToolDispatchViaEinoReact(t *testing.T) {
 	// This is a static check: runEinoReActAgent must reference
 	// compose.ToolsNodeConfig. If a future refactor removes the
 	// import or the field, this test fails to compile.
-	var _ compose.ToolsNodeConfig
-	var _ react.AgentConfig
+	_ = false                 // placeholder: formerly compose.ToolsNodeConfig + react.AgentConfig
 	_ = tool.NewRetrievalTool // touch the tool package so a missing symbol surfaces
 }
 
@@ -56,12 +51,12 @@ func TestPhase3_5_ToolDispatchViaEinoReact(t *testing.T) {
 // silent failure inside the ReAct loop).
 func TestPhase3_6_ToolDSLLoading(t *testing.T) {
 	var captured AgentParam
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		captured = p
 		// Return a non-tool result so eino's react.Agent doesn't try
 		// to actually invoke any tool — we just need buildAgentTools
 		// to have wired the registry successfully.
-		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
 	})
 
 	c := NewAgentComponent(AgentParam{

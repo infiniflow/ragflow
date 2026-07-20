@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 package pipeline
@@ -28,10 +28,9 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
+	"ragflow/internal/harness/graph/types"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
-
-	"github.com/cloudwego/eino/compose"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -203,10 +202,21 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 	return out
 }
 
-// defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
+// defaultCheckpointTTL is the expiry applied to the checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
 var defaultCheckpointTTL = 24 * time.Hour
+
+// pipelineConfig builds a RunnableConfig with the checkpoint thread_id set
+// in the Configurable map (where the Pregel engine reads it — see
+// Engine.getThreadID). The ThreadID field is not used by the engine.
+func pipelineConfig(cpID string) *types.RunnableConfig {
+	return &types.RunnableConfig{
+		Configurable: map[string]interface{}{
+			"thread_id": cpID,
+		},
+	}
+}
 
 // Run executes the full ingestion graph described by the canonical DSL.
 // There is no pipeline-layer partial resume entry point: execution always
@@ -255,13 +265,12 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 		compileOpts = append(compileOpts,
 			canvas.WithCheckPointStore(store),
 			canvas.WithCheckPointID(p.taskID),
-			canvas.WithInterruptAfterNonTerminalCpn(),
 		)
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
-	// setups at compile time (higher priority; see canvas.WithOverrideParams).
+	// setups at compile time (higher priority; see canvas.WithSetupOverrides).
 	if override_params != nil {
-		compileOpts = append(compileOpts, canvas.WithOverrideParams(override_params))
+		compileOpts = append(compileOpts, canvas.WithSetupOverrides(override_params))
 	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
@@ -337,7 +346,8 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 // runPlain executes a single Invoke with no checkpoint/resume. Used when no
 // checkpoint store is available; progress is still recorded via the sink.
 func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
-	out, err := compiled.Workflow.Invoke(runCtx, current)
+	runCfg := pipelineConfig(compiled.CheckPointID)
+	out, err := compiled.Graph.Invoke(runCtx, current, runCfg)
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
@@ -356,78 +366,42 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 	return finalizeResult(current, out, runState), nil
 }
 
-// runResumable drives the graph with eino's interrupt-after-node + resume
-// loop (plan §8 step 3). Every non-terminal-node pause is auto-resumed with
-// nil data (ingestion resume needs no user input). The loop's TOP reads any
-// persisted interrupt id — from the RunTracker (cross-process crash
-// recovery) or an in-process fallback — and resumes; the BOTTOM only persists
-// the id, never inline-resumes (avoids double-resuming one ctx, plan §4.2
-// 建议2).
+// runResumable drives the graph with a checkpoint store. Since the harness
+// engine's durability checkpoint saves after every node, a single Invoke
+// is sufficient — crash recovery loads the latest state from the durable
+// checkpoint. No interrupt-after-node resume loop is used (the harness
+// engine does not persist completed_tasks in durability checkpoints).
 func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, store canvas.CheckPointStore, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
 	cpID := compiled.CheckPointID
-	var localInterruptID string // in-process resume fallback when tracker is nil
-	invokeInput := current
-
-	const maxResumeRounds = 1000
-	for round := 0; round < maxResumeRounds; round++ {
-		// TOP: recover the pending interrupt (crash recovery or in-process).
-		resumeID := ""
+	runCfg := pipelineConfig(cpID)
+	out, invokeErr := compiled.Graph.Invoke(runCtx, current, runCfg)
+	if invokeErr == nil {
 		if tracker != nil {
-			if id, ok, _ := tracker.GetInterruptID(ctx, cpID); ok && id != "" {
-				resumeID = id
-			}
+			_ = tracker.ClearInterruptID(ctx, cpID)
+			_ = tracker.MarkSucceeded(ctx, cpID)
 		}
-		if resumeID == "" {
-			resumeID = localInterruptID
+		if store != nil {
+			_ = store.Delete(ctx, cpID)
 		}
-		if resumeID != "" {
-			runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
-			invokeInput = nil // resume restores the graph input from checkpoint
-		}
-
-		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
-		if invokeErr == nil {
-			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
-				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
-			}
-			if store != nil {
-				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
-			}
-			return finalizeResult(current, out, runState), nil
-		}
-
-		// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
-		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			p.cleanupCheckpoint(ctx, store, tracker, cpID)
-			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
-			}
-			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
-		}
-
-		if !canvas.IsInterruptError(invokeErr) {
-			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
-			}
-			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
-		}
-
-		// Paused at a non-terminal node: persist for crash recovery, then
-		// resume on the next loop iteration's TOP.
-		ctxs := canvas.ExtractInterruptContexts(invokeErr)
-		id := canvas.FirstInterruptID(ctxs)
-		localInterruptID = id
-		if tracker != nil {
-			if err := tracker.AttachInterrupt(ctx, cpID, id); err != nil {
-				common.Error(fmt.Sprintf("pipeline: AttachInterrupt for task %s failed: %v", p.taskID, err), err)
-			}
-		}
+		return finalizeResult(current, out, runState), nil
 	}
-	return current, fmt.Errorf("pipeline: run exceeded max resume rounds (%d) for task %s", maxResumeRounds, p.taskID)
+
+	// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		p.cleanupCheckpoint(ctx, store, tracker, cpID)
+		if tracker != nil {
+			_ = tracker.MarkCancelled(ctx, cpID)
+		}
+		return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
+	}
+
+	if tracker != nil {
+		_ = tracker.MarkFailed(ctx, cpID, invokeErr.Error())
+	}
+	return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 }
 
-// cleanupCheckpoint wipes the eino checkpoint payload and the persisted
+// cleanupCheckpoint wipes the checkpoint payload and the persisted
 // interrupt id (plan §4.3.b cancelled path).
 func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPointStore, tracker *canvas.RunTracker, cpID string) {
 	if store != nil {
@@ -442,12 +416,13 @@ func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPoin
 
 // finalizeResult merges the graph output into the input map and attaches the
 // canvas state snapshot — the shared success payload for both run paths.
-func finalizeResult(current, out map[string]any, runState *canvas.CanvasState) map[string]any {
-	if out == nil {
+func finalizeResult(current map[string]any, out interface{}, runState *canvas.CanvasState) map[string]any {
+	outMap, _ := out.(map[string]any)
+	if outMap == nil {
 		current["state"] = runState.Snapshot()
 		return current
 	}
-	merged := mergeInto(current, out)
+	merged := mergeInto(current, outMap)
 	merged["state"] = runState.Snapshot()
 	return merged
 }

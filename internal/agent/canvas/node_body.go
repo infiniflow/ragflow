@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // node_body.go — per-node lambda body construction.
@@ -33,19 +33,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
-// nodeBodyFn is the plain function shape compose.InvokableLambda accepts.
-// We avoid a named type alias because compose.InvokableLambda's generic
-// inference only accepts the underlying func literal type, not a named
-// alias on top of it.
-type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, error)
+// nodeBodyFn is the plain function shape for a canvas node body.
+// It matches types.NodeFunc = func(ctx, any) (any, error) so it
+// can be passed directly to sg.AddNode.
+type nodeBodyFn = func(ctx context.Context, in any) (any, error)
 
 // buildNodeBody returns the lambda body for a single canvas node.
 //
@@ -55,7 +56,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //     DSL v1 sentinels like "ExitLoop" land here.
 //  2. name is "UserFillUp" (case-insensitive) → UserFillUpNodeBody.
 //     This route takes precedence over the regular factory path so
-//     the eino interrupt semantics replace the legacy
+//     the interrupt semantics replace the legacy
 //     UserFillUpComponent.Invoke body. UserFillUpNodeBody calls
 //     compose.Interrupt on first execution and reads the resume
 //     payload via compose.GetResumeContext on subsequent runs.
@@ -74,37 +75,38 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
-// ctxKeyOverrideParams carries the run-level override map into
-// BuildWorkflow so a component's params can be merged with it
+// ctxKeyOverrideParams carries the run-level setups override map into
+// BuildWorkflow so a component's `params["setups"]` can be merged with it
 // at compile time. The map is keyed by cpnID; each component only sees the
 // entry for its own id (an arbitrary string-keyed map). It mirrors the ctx
 // plumbing used for the per-run component factory
 // (componentFactoryFromContext): the override is threaded through
 // canvas.Compile → BuildWorkflow → buildNodeBody without the canvas
 // package ever importing the ingestion layer.
-const ctxKeyOverrideParams ctxKey = "canvas_override_params"
+type ctxKey string
 
-// withOverrideParams attaches a run-level override map to ctx. It is
+const ctxKeySetupOverrides ctxKey = "canvas_setup_overrides"
+
+// withSetupOverrides attaches a run-level setups override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
 // straight through.
-func withOverrideParams(ctx context.Context, m map[string]any) context.Context {
+func withSetupOverrides(ctx context.Context, m map[string]any) context.Context {
 	if m == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, ctxKeyOverrideParams, m)
+	return context.WithValue(ctx, ctxKeySetupOverrides, m)
 }
 
-func overrideParamsFromContext(ctx context.Context) map[string]any {
-	m, _ := ctx.Value(ctxKeyOverrideParams).(map[string]any)
+func setupOverridesFromContext(ctx context.Context) map[string]any {
+	m, _ := ctx.Value(ctxKeySetupOverrides).(map[string]any)
 	return m
 }
 
 // applyOverrideParams returns a clone of params with the per-component
-// override (already resolved for this cpnID by the caller) merged into
-// params. The override wins on top-level key collisions. The original
-// params map is never mutated — the merge result is a fresh map —
-// because the params come from the shared *Canvas and a per-run override
-// must not leak into the next Run on the same Pipeline.
+// override map merged at the top level. The override wins on top-level key
+// collisions. The original params map is never mutated — the merge result
+// is a fresh map — because the params come from the shared *Canvas and a
+// per-run override must not leak into the next Run on the same Pipeline.
 func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
@@ -119,8 +121,25 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	return out
 }
 
+// mergeSetups merges a component-level setups map (base) with a run-level
+// override map. The maps are arbitrary string-keyed maps; when the same
+// top-level key exists in both, the override value wins (a full replacement
+// of that entry). The merge is shallow: only the top-level key-value pairs
+// are considered. (The Parser component happens to use file-type keys such
+// as "pdf"/"docx" as one example, but that is not required by this merge.)
+func mergeSetups(base, override map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, ov := range override {
+		merged[k] = ov
+	}
+	return merged
+}
+
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
-	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
+	if overrides := setupOverridesFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
 		if cpnOverride, ok := overrides[cpnID].(map[string]any); ok && len(cpnOverride) > 0 {
@@ -130,7 +149,7 @@ func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]an
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
 	}
-	// UserFillUp routes to the eino interrupt-based node body
+	// UserFillUp routes to the harness interrupt-based node body
 	// regardless of whether the legacy UserFillUpComponent is
 	// registered. The component's Invoke path renders tips / fields
 	// but never emits an interrupt signal — it was the missing
@@ -157,6 +176,9 @@ func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]an
 		// ComponentBase.Name() would have returned.
 		return realComponentBody(cpnID, name, comp), nil
 	}
+	common.Debug("buildNodeBody: no factory, using placeholder",
+		zap.String("cpn_id", cpnID),
+		zap.String("name", name))
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
@@ -179,9 +201,10 @@ func resolveComponentFactory(ctx context.Context) runtime.ComponentFactory {
 }
 
 func legacyNoOpBody(cpnID string) nodeBodyFn {
-	return func(_ context.Context, in map[string]any) (map[string]any, error) {
-		out := make(map[string]any, len(in)+2)
-		for k, v := range in {
+	return func(_ context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
+		out := make(map[string]any, len(inMap)+2)
+		for k, v := range inMap {
 			out[k] = v
 		}
 		out["__cpn_id__"] = cpnID
@@ -238,8 +261,9 @@ func componentTimeout() time.Duration {
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		timeout := resolveTimeoutFromContext(ctx, componentClass)
+	return func(ctx context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
+		timeout := resolveTimeout(componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
@@ -247,7 +271,7 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(cctx, in)
+				return comp.Invoke(cctx, inMap)
 			})
 			return e
 		})
@@ -264,6 +288,14 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		if out == nil {
 			out = make(map[string]any, 1)
 		}
+		outputKeys := make([]string, 0, len(out))
+		for k := range out {
+			outputKeys = append(outputKeys, k)
+		}
+		common.Debug("invoke ok",
+			zap.String("cpn_id", cpnID),
+			zap.String("class", componentClass),
+			zap.Strings("keys", outputKeys))
 		out["__cpn_id__"] = cpnID
 		return out, nil
 	}
@@ -274,8 +306,9 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 // the __cpn_id__ tag) so canvas unit tests can exercise topology
 // wiring without depending on any real component implementation.
 func placeholderBody(cpnID string) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		out, err := placeholderLambda(ctx, in)
+	return func(ctx context.Context, in any) (any, error) {
+		inMap, _ := in.(map[string]any)
+		out, err := placeholderLambda(ctx, inMap)
 		if err != nil {
 			return nil, err
 		}
@@ -285,9 +318,9 @@ func placeholderBody(cpnID string) nodeBodyFn {
 }
 
 // withStateBracket wraps body so that it performs the same pre/post
-// state work as the outer-graph's eino StatePreHandler / StatePostHandler
+// state work as the outer-graph's StatePreHandler / StatePostHandler
 // pair, but reads the state from the request context (attached via
-// runtime.WithState) instead of an eino-managed graph-local state.
+// runtime.WithState) instead of a harness-managed channel state.
 //
 // This is the path used by the Loop sub-graph: its nodes do not have
 // access to the outer graph's WithGenLocalState, but they do inherit
@@ -300,49 +333,40 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body directly), the wrapper degrades to a plain invocation:
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
-func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
-	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		originalIn := in
+func withStateBracket(body nodeBodyFn) nodeBodyFn {
+	return func(ctx context.Context, in any) (any, error) {
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		inMap, _ := in.(map[string]any)
 		if state != nil {
-			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
-			if in == nil {
-				in = map[string]any{}
+			if inMap == nil {
+				inMap = map[string]any{}
 			}
 			snapshot := state.Snapshot()
-			wrapped := make(map[string]any, len(in)+1)
-			for k, v := range in {
+			wrapped := make(map[string]any, len(inMap)+1)
+			for k, v := range inMap {
 				wrapped[k] = v
 			}
 			wrapped["state"] = snapshot
-			in = wrapped
+			inMap = wrapped
 		}
-		out, err := body(ctx, in)
+		out, err := body(ctx, inMap)
 		if err != nil {
-			if state != nil {
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
-			}
 			return nil, err
 		}
-		if state == nil {
+		outMap, ok := out.(map[string]any)
+		if !ok || state == nil || outMap == nil {
 			return out, nil
 		}
-		if out == nil {
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
-			return out, nil
+		cpnID, _ := outMap["__cpn_id__"].(string)
+		if cpnID == "" {
+			return outMap, nil
 		}
-		outputCpnID, _ := out["__cpn_id__"].(string)
-		if outputCpnID == "" {
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
-			return out, nil
-		}
-		for k, v := range out {
+		for k, v := range outMap {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
-			state.SetVar(outputCpnID, k, v)
+			state.SetVar(cpnID, k, v)
 		}
-		nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
-		return out, nil
+		return outMap, nil
 	}
 }

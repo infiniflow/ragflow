@@ -31,8 +31,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	xhtml "golang.org/x/net/html"
 
 	"ragflow/internal/tokenizer"
@@ -113,23 +111,24 @@ func newDuckDuckGoTool(h *HTTPHelper, defaults duckduckgoParams) *DuckDuckGoTool
 	return &DuckDuckGoTool{helper: h, defaults: defaults}
 }
 
-func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: duckduckgoToolName,
-		Desc: duckduckgoToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (d *DuckDuckGoTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        duckduckgoToolName,
+		Description: duckduckgoToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query.",
+				Required:    true,
 			},
 			"channel": {
-				Type:     schema.String,
-				Desc:     "Search channel: general or news. Defaults to general.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Search channel: general or news. Defaults to general.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func (d *DuckDuckGoTool) ComponentSpec() ComponentSpec {
@@ -194,7 +193,9 @@ func buildDuckDuckGoNewsBootstrapURL(query string) string {
 	return duckduckgoNewsBootstrapEndpoint + "?" + q.Encode()
 }
 
-func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+// InvokableRun performs the DuckDuckGo search. It auto-detects the
+// channel (general HTML search or news JSON API) from the params.
+func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p duckduckgoParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse arguments: %w", err)),

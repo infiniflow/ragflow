@@ -1,101 +1,59 @@
 // Package component — Agent (T1).
 //
-// Multi-turn ReAct agent powered by eino's flow/agent/react package.
-// Uses the RAGFlow model layer (models.EinoChatModel) as a
-// ToolCallingChatModel, delegating the ReAct loop to eino's
+// Multi-turn ReAct agent powered by harness's flow/agent/react package.
+// Uses getDefaultChatInvoker for LLM calls.
+// ToolCallingChatModel, using harness's
 // production-grade implementation.
 //
 // Public outputs (content / tool_calls / artifacts) match the
-// plan-specified shape. The agent now wires AgentParam.Tools into
-// eino's native react.AgentConfig.ToolsConfig; when no tools are
-// configured the ReAct loop naturally degenerates to one model call.
+// plan-specified shape.
 package component
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
-
+	"go.uber.org/zap"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
-	"ragflow/internal/entity/models"
-
-	"go.uber.org/zap"
 )
-
-// agentLLMIDPattern matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviours here via the in-function split below.
-
-// agentProviderLastSegmentSplit takes a composite llm_id and
-// returns (bareModelName, providerName, true) — or ("", "", false)
-// when no `@<provider>` suffix exists. The bare model name is
-// always `parts[0]` (the FIRST `@`-delimited segment); the
-// provider is `parts[1]` for the 2-part shape and `parts[2]` for
-// the 3+ shape. Any middle `@<seg>` segments (the "instance" in
-// Python's split_model_name) are intentionally dropped — the Go
-// drivers and the tenant_llm lookup both key on the bare model
-// name + factory, not on the instance.
-//
-// Mirrors Python's split_model_name at
-// api/db/joint_services/tenant_model_service.py:163-178:
-//   - "model"                     → ("model", "",       false)
-//   - "model@provider"            → ("model", "provider", true)
-//   - "model@instance@provider"   → ("model", "provider", true)
-//   - 4+ parts                    → ("parts[0]", "parts[2]", true) —
-//     the trailing segment wins, anything between instance and
-//     provider is dropped (Python uses parts[2] unconditionally).
-func agentProviderLastSegmentSplit(s string) (modelName, providerName string, hasProvider bool) {
-	return splitCompositeLLMID(s)
-}
 
 // AgentComponent is a multi-turn ReAct agent.
 type AgentComponent struct {
 	param AgentParam
 }
 
-// AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
 	ModelID               string
 	SystemPrompt          string
 	UserPrompt            string
 	Thinking              string
 	TopP                  *float64
-	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	Tools                 []string                  // Agent-visible tool names resolved into BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
 	MaxRounds             int
-	OptimizeMultiTurn     bool // when true (default), multi-turn history is condensed via full_question LLM call
-	OptimizeHistoryWindow int  // number of history turns to include in the optimization prompt (default 3)
-	// Meta is the OpenAI-style function-call schema the Agent exposes
-	// when it is itself called as a tool by a parent component. Mirrors
-	// Python's `meta: ToolMeta` field — describes the Agent's own
-	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
-	// Cite enables post-stream citation grounding. When true,
-	// the Agent reads the chunks recorded in
-	// state.Retrieval["chunks"] (populated by the Retrieval tool),
-	// renders prompts.CitationPlusPrompt, and makes a second LLM
-	// call to insert [ID:N] tags into the final content. Mirrors
-	// Python's `_generate_with_citation` flow.
-	Cite    bool
-	Driver  string
-	APIKey  string
-	BaseURL string
+	OptimizeMultiTurn     bool
+	OptimizeHistoryWindow int
+	Meta                  AgentMeta
+	Cite                  bool
+	Driver                string
+	APIKey                string
+	BaseURL               string
+	// SubAgents holds parsed sub-agent tool definitions. Populated from
+	// the DSL's `tools` parameter (config objects) at component creation
+	// time and from `inputs["tools"]` at invocation time. Each entry maps
+	// a sanitized function name (LLM-visible) to the raw config map.
+	SubAgents map[string]map[string]any
+	// StreamFinal enables progressive streaming for the final answer via
+	// StreamContentStreaming. Only true for the top-level agent, so
+	// sub-agents never send IsThink:false events that would close the
+	// parent's thinking section prematurely.
+	StreamFinal bool
 }
 
 const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
@@ -121,9 +79,9 @@ type AgentMetaParam struct {
 
 // AgentOutput mirrors the outputs map (per plan §2.11.3 row 8):
 //
-//	"content"     string
-//	"tool_calls"  []map[string]any  (one entry per tool call observed)
-//	"artifacts"   []map[string]any  (collected from tool responses — empty in P0)
+//	"content"   string
+//	"tool_calls" []map[string]any (one entry per tool call observed)
+//	"artifacts"  []map[string]any (collected from tool responses — empty in P0)
 type AgentOutput struct {
 	Content   string
 	ToolCalls []map[string]any
@@ -131,122 +89,343 @@ type AgentOutput struct {
 }
 
 // agentRunner is the package-level ReAct runner. The production value
-// delegates to eino's flow/agent/react. Tests replace it with a function
-// that returns canned *schema.Message values.
-var agentRunner = runEinoReActAgent
+// that returns canned *ComponentMessage values.
+var agentRunner = agentReActRunner
 
-// runEinoReActAgent creates an eino react agent and runs it against the
-// model built from p.
-func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(ctx, p)
-	if err != nil {
-		return nil, fmt.Errorf("build model: %w", err)
+// agentReActRunner calls the model and returns the response.
+// Uses streaming LLM for progressive output throughout the entire ReAct loop.
+// The loop terminates naturally when the LLM returns no tool_calls (i.e. it
+// decides the task is complete). Every content and reasoning chunk is
+// forwarded to progCh in real time, matching Python's streaming behavior.
+func agentReActRunner(ctx context.Context, p AgentParam) (*ComponentMessage, error) {
+	msgs := make([]ComponentMessage, 0, 2)
+	if p.SystemPrompt != "" {
+		msgs = append(msgs, NewSystemMessage(p.SystemPrompt))
 	}
-	tools, err := buildAgentTools(p)
-	if err != nil {
-		return nil, fmt.Errorf("build tools: %w", err)
-	}
+	msgs = append(msgs, NewUserMessage(p.UserPrompt))
 
-	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: tools,
-		},
-		MessageModifier: func(ctx context.Context, msgs []*schema.Message) []*schema.Message {
-			if p.SystemPrompt != "" {
-				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
-			}
-			return msgs
-		},
-		MaxStep: p.MaxRounds,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create react agent: %w", err)
-	}
+	progCh := runtime.ProgressChFromCtx(ctx)
 
-	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
-	opt, future := react.WithMessageFuture()
-	ctx = setArtifactCollector(ctx, future)
-	stream, err := agent.Stream(ctx, input, opt)
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-	emitDone := emitAgentModelStreams(ctx, future)
-
-	chunks := make([]*schema.Message, 0)
-	for {
-		chunk, err := stream.Recv()
-		if err == io.EOF {
-			break
+	// Build tool definitions + sub-agent definitions.
+	toolDefs := buildToolDefs(p)
+	toolByName := make(map[string]agenttool.Tool, len(p.Tools))
+	for _, name := range p.Tools {
+		var params map[string]any
+		if p.ToolParams != nil {
+			params = p.ToolParams[name]
 		}
+		t, err := agenttool.BuildByName(name, params)
 		if err != nil {
-			return nil, err
-		}
-		if chunk == nil {
 			continue
 		}
-		chunks = append(chunks, chunk)
+		toolByName[t.ToolMeta().Name] = t
 	}
-	if emitErr := <-emitDone; emitErr != nil {
-		return nil, emitErr
+
+	maxRounds := p.MaxRounds
+	if maxRounds <= 0 {
+		maxRounds = 3
 	}
-	if len(chunks) == 0 {
-		return &schema.Message{Role: schema.Assistant}, nil
+	maxRounds += 2 // extra room for final answer after all sub-agents
+
+	common.Info("agentReAct starting", zap.Int("maxRounds", maxRounds), zap.Int("tools", len(toolDefs)), zap.Int("subAgents", len(p.SubAgents)), zap.String("model", p.ModelID))
+
+	for round := 0; round < maxRounds; round++ {
+		common.Info("agentReAct round", zap.Int("round", round), zap.Int("msgs", len(msgs)))
+
+		resp, err := StreamingInvoke(ctx, ChatInvokeRequest{
+			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey,
+			BaseURL: p.BaseURL, Messages: msgs, TopP: p.TopP, Tools: toolDefs,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("component: Agent round %d: %w", round, err)
+		}
+
+		// Execute tool calls (sub-agents or regular tools).
+		if len(resp.ToolCalls) > 0 {
+			if progCh != nil {
+				// Send initial model reasoning (reasoning_content) to
+				// the thinking section BEFORE the tool-call markers so
+				// the front-end shows the model's thought process first.
+				if resp.ReasonContent != "" {
+					progCh <- runtime.ProgEvent{Text: resp.ReasonContent + "\n\n", IsThink: true}
+				}
+				// Tool-call markers for the thinking section.
+				for _, tc := range resp.ToolCalls {
+					progCh <- runtime.ProgEvent{Text: "\n\n**Calling " + tc.FuncName + "...**\n\n", IsThink: true}
+				}
+			}
+			// Build assistant message with tool_calls array.
+			compTCs := make([]ComponentToolCall, 0, len(resp.ToolCalls))
+			for _, tc := range resp.ToolCalls {
+				compTCs = append(compTCs, ComponentToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: ComponentFunctionCall{
+						Name:      tc.FuncName,
+						Arguments: tc.Arguments,
+					},
+				})
+			}
+			assistantMsg := ComponentMessage{
+				Role:      RoleAssistant,
+				Content:   resp.Content,
+				ToolCalls: compTCs,
+			}
+			msgs = append(msgs, assistantMsg)
+			for idx, tc := range resp.ToolCalls {
+				if subCfg, isSub := p.SubAgents[tc.FuncName]; isSub {
+					if progCh != nil {
+						// Log panel: sub-agent started.
+						progCh <- runtime.ProgEvent{
+							IsNodeEvent: true, NodeEventType: "started",
+							NodeCPNID: tc.FuncName, NodeDisplayName: tc.FuncName, NodeClassName: "Agent",
+						}
+					}
+					result := runSubAgent(ctx, subCfg, p, tc.Arguments)
+					if progCh != nil {
+						// Text marker for the thinking section.
+						progCh <- runtime.ProgEvent{Text: "\n\n**" + tc.FuncName + " returned.**\n\n", IsThink: true}
+						progCh <- runtime.ProgEvent{Text: result, IsThink: true}
+						// Log panel: sub-agent finished with its inputs, outputs, and Thoughts.
+						inputs := parseSubAgentInputs(tc.Arguments)
+						outputs := map[string]any{"content": result}
+						progCh <- runtime.ProgEvent{
+							IsNodeEvent: true, NodeEventType: "finished",
+							NodeCPNID: tc.FuncName, NodeDisplayName: tc.FuncName, NodeClassName: "Agent",
+							Thoughts:    result,
+							NodeInputs:  inputs,
+							NodeOutputs: outputs,
+						}
+					}
+					// Use the tool call's ID — required by OpenAI API format.
+					tcID := tc.ID
+					if tcID == "" {
+						tcID = fmt.Sprintf("call_%d", idx)
+					}
+					msgs = append(msgs, ComponentMessage{Role: "tool", Content: result, ToolCallID: tcID})
+					continue
+				}
+				tool, exists := toolByName[tc.FuncName]
+				if !exists {
+					msgs = append(msgs, ComponentMessage{
+						Role: "tool", Content: fmt.Sprintf(`{"_ERROR": "unknown tool %q"}`, tc.FuncName),
+					})
+					continue
+				}
+				result, tErr := tool.InvokableRun(ctx, tc.Arguments)
+				if tErr != nil {
+					result = fmt.Sprintf(`{"_ERROR": %q}`, tErr.Error())
+				}
+				tcID := tc.ID
+				if tcID == "" {
+					tcID = fmt.Sprintf("call_%d", idx)
+				}
+				msgs = append(msgs, ComponentMessage{Role: "tool", Content: result, ToolCallID: tcID})
+			}
+			continue // next round — tool calls will be retried with tool results in history
+		}
+
+		// No tool calls → final answer.
+		//
+		// Content source: some models (DeepSeek R1 / V4) put the
+		// final answer in "reasoning_content" when "content" is
+		// empty.  Fall back to ReasonContent to capture both cases.
+		content := resp.Content
+		if content == "" {
+			content = resp.ReasonContent
+		}
+		if content != "" {
+			if progCh != nil && p.StreamFinal {
+				// Stream the final answer progressively by
+				// sending resp.Content as word-level chunks to
+				// progCh.  This avoids a *second* API call
+				// (StreamContentStreaming) whose message history
+				// contains tool results that require tool_call_id
+				// — the model driver serialisation drops those.
+				streamContentToProgCh(content, progCh)
+			}
+			return &ComponentMessage{Role: RoleAssistant, Content: content}, nil
+		}
 	}
-	msg, err := schema.ConcatMessages(chunks)
-	if err != nil {
-		return nil, err
-	}
-	return msg, nil
+
+	return &ComponentMessage{Role: RoleAssistant, Content: "Agent reached max rounds."}, nil
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
-	done := make(chan error, 1)
-	go func() {
-		var firstErr error
-		iter := future.GetMessageStreams()
-		for {
-			msgStream, hasNext, err := iter.Next()
-			if err != nil {
-				firstErr = err
-				break
-			}
-			if !hasNext {
-				break
-			}
-			if msgStream == nil {
-				continue
-			}
-			for {
-				msg, err := msgStream.Recv()
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				if err != nil {
-					if firstErr == nil {
-						firstErr = err
-					}
-					break
-				}
-				if msg == nil {
-					continue
-				}
-				if msg.Role != "" && msg.Role != schema.Assistant {
-					continue
-				}
-				if msg.Content == "" && msg.ReasoningContent == "" {
-					continue
-				}
-				if runtime.AgentMessageEventsEmitted(ctx) {
-					continue
-				}
-				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
-			}
-			msgStream.Close()
+// parseSubAgentInputs converts the tool-call argument JSON into a
+// map for the node_finished log panel entry.  Returns a minimal
+// map on parse failure so the panel still shows something.
+func parseSubAgentInputs(argsJSON string) map[string]any {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &parsed); err != nil || len(parsed) == 0 {
+		return map[string]any{"arguments": argsJSON}
+	}
+	return parsed
+}
+
+// streamContentToProgCh sends content to progCh as a single IsThink:false
+// event that closes the thinking section and displays the answer in the
+// main output area.  This replaces the abandoned StreamContentStreaming
+// path (a second LLM call whose tool-result messages lacked tool_call_id
+// fields).
+func streamContentToProgCh(content string, progCh chan<- runtime.ProgEvent) {
+	if content == "" {
+		return
+	}
+	progCh <- runtime.ProgEvent{Text: content, IsThink: false}
+}
+
+// sanitizeFnName converts a display name to a valid OpenAI function name
+// (only [a-zA-Z0-9_-] characters; spaces become underscores).
+func sanitizeFnName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else if r == ' ' {
+			b.WriteRune('_')
 		}
-		done <- firstErr
-	}()
+	}
+	if b.Len() == 0 {
+		return "agent_tool"
+	}
+	return b.String()
+}
+
+// parseSubAgentConfigs extracts sub-agent tool definitions from the DSL's
+// `tools` field (an array of {component_name, id, name, params} objects).
+// Returns a map keyed by sanitized function name → raw config object.
+// Returns nil when tools is nil or empty, or contains no sub-agent objects.
+func parseSubAgentConfigs(toolsRaw any) map[string]map[string]any {
+	arr, ok := toolsRaw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]map[string]any)
+	for _, item := range arr {
+		cfg, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		// Only process entries that look like sub-agent configs
+		// (have component_name, id, name, and nested params).
+		if _, ok := cfg["component_name"].(string); !ok {
+			continue
+		}
+		if _, ok := cfg["id"].(string); !ok {
+			continue
+		}
+		name, ok := cfg["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		if _, ok := cfg["params"].(map[string]any); !ok {
+			continue
+		}
+		fn := sanitizeFnName(name)
+		out[fn] = cfg
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// buildToolDefs converts string tool names AND sub-agent configs into
+// OpenAI-compatible tool definition maps. Returns nil when nothing is
+// configured or all tools/sub-agents are unsupported/skipped.
+func buildToolDefs(p AgentParam) []map[string]any {
+	if len(p.Tools) == 0 && len(p.SubAgents) == 0 {
+		return nil
+	}
+	var defs []map[string]any
+
+	// Phase 1: string tool names from p.Tools.
+	for _, name := range p.Tools {
+		var params map[string]any
+		if p.ToolParams != nil {
+			params = p.ToolParams[name]
+		}
+		t, err := agenttool.BuildByName(name, params)
+		if err != nil {
+			continue
+		}
+		meta := t.ToolMeta()
+		props := make(map[string]any)
+		reqd := make([]string, 0)
+		for pn, pi := range meta.Parameters {
+			f := map[string]any{"type": pi.Type, "description": pi.Description}
+			if pi.Enum != nil {
+				f["enum"] = pi.Enum
+			}
+			props[pn] = f
+			if pi.Required {
+				reqd = append(reqd, pn)
+			}
+		}
+		schema := map[string]any{"type": "object", "properties": props}
+		if len(reqd) > 0 {
+			schema["required"] = reqd
+		}
+		defs = append(defs, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        meta.Name,
+				"description": meta.Description,
+				"parameters":  schema,
+			},
+		})
+	}
+
+	// Phase 2: sub-agent configs from p.SubAgents.
+	// Tool parameters MUST match Python's Agent.get_meta() shape:
+	// {user_prompt, reasoning, context} — the model expects these specific
+	// parameter names and descriptions to understand how to delegate tasks.
+	for fn, cfg := range p.SubAgents {
+		paramsRaw, _ := cfg["params"].(map[string]any)
+		desc := ""
+		if paramsRaw != nil {
+			desc, _ = paramsRaw["description"].(string)
+		}
+		if desc == "" {
+			if n, _ := cfg["name"].(string); n != "" {
+				desc = "Execute agent: " + n
+			} else {
+				desc = "Execute a sub-agent"
+			}
+		}
+		defs = append(defs, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        fn,
+				"description": desc,
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"user_prompt": map[string]any{
+							"type":        "string",
+							"description": "The task or query to send to this agent",
+						},
+						"reasoning": map[string]any{
+							"type":        "string",
+							"description": "Supervisor's reasoning for choosing this agent",
+						},
+						"context": map[string]any{
+							"type":        "string",
+							"description": "All relevant background information from prior research steps",
+						},
+					},
+					"required": []string{"user_prompt", "reasoning", "context"},
+				},
+			},
+		})
+	}
+	return defs
+}
+
+func emitAgentModelStreams(ctx context.Context, _ any) <-chan error {
+	done := make(chan error, 1)
+	close(done)
 	return done
 }
 
@@ -258,8 +437,8 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 //
 // When the LLM call fails or there are no tool calls, the function
 // returns ("", nil) and the caller skips appending to history.
-func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (string, error) {
-	calls := extractToolCalls(msg)
+func addToolCallMemory(ctx context.Context, p AgentParam, msg *ComponentMessage) (string, error) {
+	calls := extractToolCallsSimple(msg)
 	if len(calls) == 0 {
 		return "", nil
 	}
@@ -279,9 +458,9 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: system},
-			{Role: schema.User, Content: user},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: system},
+			{Role: RoleUser, Content: user},
 		},
 		TopP: p.TopP,
 	})
@@ -318,9 +497,9 @@ func applyCitationGrounding(ctx context.Context, p AgentParam, content string, c
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: systemPrompt},
-			{Role: schema.User, Content: content},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: systemPrompt},
+			{Role: RoleUser, Content: content},
 		},
 		TopP: p.TopP,
 	})
@@ -367,7 +546,7 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 // returns a flat field-definition map keyed by input name.
 //
 // Today the sub-tool input forms are aggregated via an optional
-// `InputForm() map[string]any` method on the eino tool (when tools
+// `InputForm() map[string]any` method on the tool (when tools
 // implement it); tools that don't expose a structured input form
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
@@ -376,13 +555,9 @@ func (c *AgentComponent) GetInputForm() map[string]any {
 	if err != nil {
 		return out
 	}
-	ctx := context.Background()
 	for _, t := range tools {
-		info, ierr := t.Info(ctx)
-		name := ""
-		if ierr == nil && info != nil {
-			name = info.Name
-		}
+		meta := t.ToolMeta()
+		name := meta.Name
 		if name == "" {
 			continue
 		}
@@ -486,9 +661,9 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: system},
-			{Role: schema.User, Content: user},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: system},
+			{Role: RoleUser, Content: user},
 		},
 		TopP: p.TopP,
 	})
@@ -498,15 +673,12 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 	return strings.TrimSpace(resp.Content), nil
 }
 
-func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
-	return agenttool.BuildAll(p.Tools, p.ToolParams)
-}
-
 // NewAgentComponent builds an AgentComponent from raw params.
 func NewAgentComponent(p AgentParam) *AgentComponent {
 	if p.MaxRounds <= 0 {
 		p.MaxRounds = 3
 	}
+	p.StreamFinal = true
 	return &AgentComponent{param: p}
 }
 
@@ -520,52 +692,55 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
-	hasRuntimeUserPrompt := false
-	if v, ok := stringFrom(inputs, "user_prompt"); ok {
-		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
+	if p.ModelID == "" {
+		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
-
+	// Resolve chat model ref (model ID → driver + credentials).
 	var err error
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
-		state = s
+	// Resolve {{cpn_id@var}} template references in system and user
+	// prompts against the canvas state. This MUST run BEFORE the
+	// user_prompt fallback — otherwise template refs like {{begin@query}}
+	// would be overwritten by the fallback text and never resolved.
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
-			}
 		}
 		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
 			p.UserPrompt = resolved
 			if rerr != nil {
-				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
+				common.Warn("Agent: resolve user_prompt", zap.Error(rerr))
 			}
 		}
 	}
-	if hasRuntimeUserPrompt {
-		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
-	} else if shouldFallbackToSysQuery(p.UserPrompt) && strings.TrimSpace(p.SystemPrompt) == "" && state != nil {
-		if query, ok := stringFromState(state, "query"); ok {
-			p.UserPrompt = query
+
+	// After template resolution: if user_prompt is still empty, try to
+	// read the Begin node's "query" output directly from canvas state.
+	// If that's also empty, fall back to system_prompt (so the model
+	// still sees the instructions), and finally to a generic placeholder.
+	if p.UserPrompt == "" {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if raw, rErr := state.GetVar("begin@query"); rErr == nil {
+				if q, ok := raw.(string); ok && q != "" {
+					p.UserPrompt = q
+				}
+			}
 		}
 	}
-
-	if p.ModelID == "" {
-		return nil, &ParamError{Field: "model_id", Reason: "required"}
+	if p.UserPrompt == "" && p.SystemPrompt != "" {
+		p.UserPrompt = p.SystemPrompt
 	}
+	if p.UserPrompt == "" {
+		p.UserPrompt = "Please process the instructions above."
+	}
+	// Validate AFTER fallback: both prompts may be empty before
+	// begin@query resolution runs (lines above).
 	if p.UserPrompt == "" && p.SystemPrompt == "" {
 		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
-	}
-	// v1 fixtures sometimes ship only a system prompt. Fall back to
-	// using the system text as the user message so the underlying
-	// chat call still has something to send to the model.
-	if p.UserPrompt == "" {
-		p.UserPrompt = p.SystemPrompt
 	}
 
 	// Multi-turn conversation optimization. When the canvas state
@@ -575,21 +750,29 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// what the Agent runner actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.History); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
 	}
 
+	// Runtime prompt formatting: when the sub-agent tool call provides
+	// reasoning/context alongside the user_prompt, prepend a structured
+	// preamble.  Mirrors Python's upstream behavior and the eino agent's
+	// formatAgentRuntimePrompt.
+	if hasNonEmptyString(inputs, "reasoning") || hasNonEmptyString(inputs, "context") {
+		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
+	}
+
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
-	// the canvas state's Memory. Conversation History is reserved for
-	// actual user/assistant turns maintained by the canvas service.
+	// the canvas state's History so downstream turns (history
+	// window) see the prior tool usage as prior assistant turns.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
-				state.AppendMemory(p.UserPrompt, msg.Content, summary)
+				state.AppendMemory(p.UserPrompt, "", summary)
 			}
 		}
 	}
@@ -636,12 +819,12 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			}
 		}
 	}
-	artifacts := collectArtifactsFromToolCalls(ctx, msg)
+	artifacts := emptyArtifactList()
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
+		"tool_calls": extractToolCallsSimple(msg),
 		"thinking":   thinking,
-		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
@@ -672,19 +855,16 @@ func (c *AgentComponent) Stream(ctx context.Context, inputs map[string]any) (<-c
 // Inputs returns parameter metadata for tooling.
 func (c *AgentComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":                "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
-		"system_prompt":           "Optional system prompt",
-		"user_prompt":             "User prompt; supports {{cpn_id@param}} references",
-		"top_p":                   "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
-		"tools":                   "List of tool names to make available to the ReAct agent.",
-		"tool_params":             "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
-		"max_rounds":              "Maximum ReAct rounds (default 3).",
-		"optimize_multi_turn":     "When true (default), multi-turn history is condensed via full_question LLM call.",
-		"optimize_history_window": "Number of history turns to include in the optimization prompt (default 3).",
-		"driver":                  "Provider driver name",
-		"api_key":                 "Override API key for this call.",
-		"base_url":                "Override the driver default endpoint URL.",
-		"cite":                    "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
+		"model_id":      "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
+		"system_prompt": "Optional system prompt",
+		"user_prompt":   "User prompt; supports {{cpn_id@param}} references",
+		"top_p":         "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
+		"tools":         "List of tool names to make available to the ReAct agent.",
+		"tool_params":   "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
+		"max_rounds":    "Maximum ReAct rounds (default 3).",
+		"driver":        "Provider driver name",
+		"api_key":       "Override API key for this call.",
+		"cite":          "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
 	}
 }
 
@@ -699,68 +879,9 @@ func (c *AgentComponent) Outputs() map[string]string {
 	}
 }
 
-// buildAgentChatModel constructs an EinoChatModel from AgentParam by
-// resolving the driver through the RAGFlow provider manager.
-func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatModel, error) {
-	driver := p.Driver
-	modelID := p.ModelID
-
-	// When the Agent DSL omits `driver`, derive it from the composite
-	// llm_id format. The RAGFlow DSL stores the model identifier as
-	// "<model>@<instance>@<provider>" (mirrors Python's
-	// split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178 and the
-	// Go-side SplitModelNameAndFactory at
-	// internal/service/tenant.go:168). Two-part
-	// "<model>@<provider>" and bare "<model>" are also accepted —
-	// bare means no driver known, which falls through to the dummy
-	// driver below. The trailing "@<provider>" suffix must also be
-	// stripped from the model id before passing to the driver — the
-	// upstream APIs (ZhipuAI, OpenAI, …) do not accept composite
-	// names and would 400 on the "@<provider>" tail.
-	if driver == "" && modelID != "" {
-		if bareModelName, providerName, ok := splitCompositeLLMID(modelID); ok {
-			driver = providerName
-			modelID = bareModelName
-		}
-	}
-	if driver == "" {
-		driver = "dummy"
-	}
-	d, err := newChatModelDriver(driver, p.BaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("no driver for %q", driver)
-	}
-	apiKey := p.APIKey
-	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &modelID, cfg)
-	// ChatConfig construction is conditional on TopP being set, unlike
-	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
-	// pass-through). The asymmetry is intentional: AgentParam has no
-	// Temperature/MaxTokens yet, so building a zero-config ChatConfig
-	// would be dead weight. When AgentParam grows Temperature/
-	// MaxTokens, switch to always-build.
-	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
-		chatCfg = &models.ChatConfig{TopP: p.TopP}
-		switch p.Thinking {
-		case "enabled":
-			t := true
-			chatCfg.Thinking = &t
-		case "disabled":
-			f := false
-			chatCfg.Thinking = &f
-		}
-		if runtime.HasAgentMessageEmitter(ctx) {
-			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
-				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
-			}
-		}
-	}
-	return models.NewEinoChatModel(cm, chatCfg), nil
+// buildAgentTools resolves tool names into tool instances.
+func buildAgentTools(p AgentParam) ([]agenttool.Tool, error) {
+	return agenttool.BuildAll(p.Tools, p.ToolParams)
 }
 
 // artifactEntry is the shape of a single tool-returned artifact
@@ -770,139 +891,28 @@ type artifactEntry struct {
 	URL  string `json:"url"`
 }
 
-// artifactCollectorKey is the context key used to stash the
-// MessageFuture from react.WithMessageFuture() so the AgentComponent
-// can collect artifacts after the ReAct loop finishes. The collector
-// is created per-invocation in runEinoReActAgent.
-type artifactCollectorKey struct{}
-
-// setArtifactCollector registers the MessageFuture for this agent run
-// in the context. It is called from runEinoReActAgent after
-// react.WithMessageFuture() returns a future.
-func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
-	return context.WithValue(ctx, artifactCollectorKey{}, future)
-}
-
-// getArtifactCollector retrieves the MessageFuture registered for the
-// current agent run. Returns nil when no collector was registered
-// (e.g., tests that stub agentRunner).
-func getArtifactCollector(ctx context.Context) react.MessageFuture {
-	v := ctx.Value(artifactCollectorKey{})
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(react.MessageFuture); ok {
-		return f
-	}
-	return nil
-}
-
-// collectArtifactsFromToolCalls drains the MessageFuture stored in
-// ctx (if any) and extracts artifact entries from every tool response
-// message that carries a `_ARTIFACTS` payload in its Extra field.
-// The final message is ignored because it is an assistant message and
-// does not contain tool results. Returns a de-duplicated list ordered
-// by first appearance.
+// collectArtifactsFromToolCalls extracts artifact entries from a
+// the final message — the tool-response state lives inside the agent
+// runtime and is not directly accessible. So this v1 returns an empty
+// slice; the wiring lives in a follow-up that hoists the state
+// into a place AgentComponent can read.
 //
-// The expected payload shape in each tool response is:
+// When the tool response state becomes accessible (a future phase),
+// the entry point to wire it is here: scan the conversation
+// messages for entries whose `Extra["_ARTIFACTS"]` carries the
+// per-tool artifact metadata, decode the JSON, and append to the
+// returned slice. The shape expected from each tool is:
 //
-//	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
-func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
-	future := getArtifactCollector(ctx)
-	if future == nil {
-		return nil
-	}
-
-	seen := make(map[string]struct{})
-	var out []artifactEntry
-
-	iter := future.GetMessages()
-	for {
-		msg, ok, err := iter.Next()
-		if err != nil {
-			common.Debug("agent: artifact collection iterator error", zap.Error(err))
-			break
-		}
-		if !ok {
-			break
-		}
-		if msg == nil || msg.Role != schema.Tool {
-			continue
-		}
-		rawArtifacts := extractArtifactsFromToolMessage(msg)
-		for _, a := range rawArtifacts {
-			if a.URL == "" || a.Name == "" {
-				continue
-			}
-			if _, exists := seen[a.URL]; exists {
-				continue
-			}
-			seen[a.URL] = struct{}{}
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-// extractArtifactsFromToolMessage parses the JSON payload of a tool
-// response message and returns the `_ARTIFACTS` list. The payload is
-// read from msg.Content when it is non-empty; otherwise the first text
-// element of msg.UserInputMultiContent is used. This matches the eino
-// tool contract where tool results are delivered as a string.
-func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
-	payload := msg.Content
-	if payload == "" && len(msg.UserInputMultiContent) > 0 {
-		payload = toolMessageTextContent(msg)
-	}
-	if payload == "" {
-		return nil
-	}
-
-	var envelope map[string]any
-	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
-		return nil
-	}
-
-	raw, ok := envelope["_ARTIFACTS"].([]any)
-	if !ok {
-		return nil
-	}
-
-	out := make([]artifactEntry, 0, len(raw))
-	for _, item := range raw {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := m["name"].(string)
-		url, _ := m["url"].(string)
-		if name == "" || url == "" {
-			continue
-		}
-		out = append(out, artifactEntry{Name: name, URL: url})
-	}
-	return out
-}
-
-// toolMessageTextContent returns the first text content part of a tool
-// message, or an empty string if no text part is found.
-func toolMessageTextContent(msg *schema.Message) string {
-	for i := range msg.UserInputMultiContent {
-		part := &msg.UserInputMultiContent[i]
-		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
-			return part.Text
-		}
-	}
-	return ""
-}
+//	{ "name": "report.pdf", "url": "https://..." }
+func collectArtifactsFromToolCalls(_ *ComponentMessage) []artifactEntry { return nil }
 
 // formatArtifactMarkdown renders a slice of artifacts as markdown
 // links, omitting URLs already present in the existing text (Python's
 // `_collect_tool_artifact_markdown` does the same de-duplication).
 //
 // Format:
-//   - image URL  → ![name](url)
-//   - other URL  → [Download name](url)
+//   - image URL → ![name](url)
+//   - other URL → [Download name](url)
 //
 // Returns the empty string when no artifacts are present, so callers
 // can safely concatenate without guarding.
@@ -930,22 +940,27 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 	return sb.String()
 }
 
-// extractToolCalls converts eino ToolCalls from a message into the
-// output map format.
-func extractToolCalls(msg *schema.Message) []map[string]any {
+func extractToolCallsSimple(msg *ComponentMessage) []map[string]any {
 	if msg == nil || len(msg.ToolCalls) == 0 {
 		return nil
 	}
-	calls := make([]map[string]any, 0, len(msg.ToolCalls))
+	out := make([]map[string]any, 0, len(msg.ToolCalls))
 	for _, tc := range msg.ToolCalls {
-		calls = append(calls, map[string]any{
-			"id":        tc.ID,
-			"type":      tc.Type,
-			"name":      tc.Function.Name,
-			"arguments": tc.Function.Arguments,
+		out = append(out, map[string]any{
+			"id":   tc.ID,
+			"type": tc.Type,
+			"name": tc.Function.Name,
+			"function": map[string]any{
+				"name":      tc.Function.Name,
+				"arguments": tc.Function.Arguments,
+			},
 		})
 	}
-	return calls
+	return out
+}
+
+func emptyArtifactList() []artifactEntry {
+	return nil
 }
 
 // promptMessagesFromParams extracts the Python DSL `prompts` list into
@@ -1087,14 +1102,17 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Tools = tools
 		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
+	if sa := parseSubAgentConfigs(inputs["tools"]); sa != nil {
+		if p.SubAgents == nil {
+			p.SubAgents = sa
+		} else {
+			for k, v := range sa {
+				p.SubAgents[k] = v
+			}
+		}
+	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
 		p.ToolParams = mergeToolParams(p.ToolParams, v)
-	}
-	if v, ok := boolFrom(inputs, "optimize_multi_turn"); ok {
-		p.OptimizeMultiTurn = v
-	}
-	if v, ok := intFrom(inputs, "optimize_history_window"); ok {
-		p.OptimizeHistoryWindow = v
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
@@ -1245,6 +1263,84 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 	return out, true
 }
 
+// runSubAgent executes a sub-agent by building an AgentParam from the
+// sub-agent config and calling agentReActRunner. Calls agentReActRunner
+// directly (not through NewAgentComponent.Invoke) to avoid the init cycle
+// agentRunner → agentReActRunner → runSubAgent → Invoke → agentRunner.
+func runSubAgent(ctx context.Context, cfg map[string]any, parentParam AgentParam, argsJSON string) string {
+	paramsRaw, _ := cfg["params"].(map[string]any)
+	if paramsRaw == nil {
+		return `{"_ERROR": "sub-agent: missing params"}`
+	}
+	subParam := AgentParam{}
+	if v, ok := stringFrom(paramsRaw, "llm_id"); ok {
+		subParam.ModelID = v
+	} else if v, ok := stringFrom(paramsRaw, "model_id"); ok {
+		subParam.ModelID = v
+	}
+	// Only inherit parent provider credentials when the sub-agent does
+	// NOT specify its own model — otherwise use the sub-agent's own
+	// provider chain (scheduler.go / service will resolve it).
+	if subParam.ModelID == "" {
+		subParam.Driver = parentParam.Driver
+		subParam.APIKey = parentParam.APIKey
+		subParam.BaseURL = parentParam.BaseURL
+	}
+	if v, ok := stringFrom(paramsRaw, "sys_prompt"); ok {
+		subParam.SystemPrompt = v
+	} else if v, ok := stringFrom(paramsRaw, "system_prompt"); ok {
+		subParam.SystemPrompt = v
+	}
+	if v, ok := intFrom(paramsRaw, "max_rounds"); ok {
+		subParam.MaxRounds = v
+	}
+	if v, ok := sliceFrom(paramsRaw, "tools"); ok {
+		subParam.Tools = v
+	}
+
+	// User prompt: parse from argsJSON. Tool calling parameters are now
+	// {user_prompt, reasoning, context} matching Python's Agent meta.
+	var toolArgs struct {
+		UserPrompt string `json:"user_prompt"`
+		Reasoning  string `json:"reasoning"`
+		Context    string `json:"context"`
+		Input      string `json:"input"` // backward compat
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &toolArgs); err == nil {
+		// New format: user_prompt from the tool call.
+		if toolArgs.UserPrompt != "" {
+			subParam.UserPrompt = toolArgs.UserPrompt
+		} else if toolArgs.Input != "" {
+			// Old format fallback.
+			if promptsRaw, ok := paramsRaw["prompts"].([]any); ok && len(promptsRaw) > 0 {
+				if first, ok := promptsRaw[0].(map[string]any); ok {
+					if content, _ := first["content"].(string); content != "" {
+						subParam.UserPrompt = strings.ReplaceAll(content, "{sys.query}", toolArgs.Input)
+					}
+				}
+			}
+			if subParam.UserPrompt == "" {
+				subParam.UserPrompt = toolArgs.Input
+			}
+		}
+	}
+	if subParam.UserPrompt == "" {
+		subParam.UserPrompt = parentParam.UserPrompt
+	}
+	if subParam.ModelID == "" {
+		subParam.ModelID = parentParam.ModelID
+	}
+
+	msg, err := agentReActRunner(ctx, subParam)
+	if err != nil {
+		return fmt.Sprintf(`{"_ERROR": "sub-agent: %s"}`, err.Error())
+	}
+	if msg == nil {
+		return `{"_ERROR": "sub-agent: nil response"}`
+	}
+	return msg.Content
+}
+
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
@@ -1274,6 +1370,7 @@ func init() {
 			p.Tools = tools
 			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
 		}
+		p.SubAgents = parseSubAgentConfigs(params["tools"])
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
 			p.ToolParams = mergeToolParams(p.ToolParams, v)
 		}

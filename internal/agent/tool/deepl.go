@@ -23,9 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const deeplToolName = "deepl"
@@ -88,33 +85,33 @@ func NewDeepLToolWith(h *HTTPHelper) *DeepLTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (d *DeepLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: deeplToolName,
-		Desc: deeplToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (d *DeepLTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        deeplToolName,
+		Description: deeplToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"api_key": {
-				Type:     schema.String,
-				Desc:     "DeepL API authentication key. Free keys end in ':fx'.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "DeepL API authentication key. Free keys end in ':fx'.",
+				Required:    true,
 			},
 			"text": {
-				Type:     schema.String,
-				Desc:     "Text to translate.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Text to translate.",
+				Required:    true,
 			},
 			"source_lang": {
-				Type:     schema.String,
-				Desc:     `Source language code (e.g. "EN", "DE"). Defaults to "EN".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Source language code (e.g. "EN", "DE"). Defaults to "EN".`,
+				Required:    false,
 			},
 			"target_lang": {
-				Type:     schema.String,
-				Desc:     `Target language code (e.g. "ZH", "EN-US"). Defaults to "ZH".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `Target language code (e.g. "ZH", "EN-US"). Defaults to "ZH".`,
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildDeepLFormBody composes the application/x-www-form-urlencoded
@@ -133,7 +130,7 @@ func buildDeepLFormBody(text, sourceLang, targetLang string) string {
 }
 
 // InvokableRun performs the DeepL translation.
-func (d *DeepLTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (d *DeepLTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p deeplParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return deeplErrJSON(fmt.Errorf("deepl: parse arguments: %w", err)),

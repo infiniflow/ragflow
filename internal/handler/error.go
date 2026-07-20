@@ -29,6 +29,13 @@ import (
 
 // jsonInternalError logs the original error while returning a generic message
 // to avoid exposing internal implementation details in API responses.
+// jsonError writes an error response with the given code and message.
+func jsonError(c *gin.Context, code common.ErrorCode, msg string) {
+	common.ErrorWithCode(c, code, msg)
+}
+
+// jsonInternalError logs the original error while returning a generic message
+// to avoid exposing internal implementation details in API responses.
 func jsonInternalError(c *gin.Context, err error) {
 	common.Warn("handler internal error",
 		zap.Error(err),

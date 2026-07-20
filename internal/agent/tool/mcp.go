@@ -17,7 +17,7 @@
 // Package tool — MCP (Model Context Protocol) wrapper.
 //
 // Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
-// an eino BaseTool so it can be invoked from inside the Agent's
+// as a tool.Tool so it can be invoked from inside the Agent's
 // ReAct loop. The MCP tool list is fetched via utility/mcpclient
 // (which currently only implements tools/list discovery; tools/call
 // invocation is the next step on the MCP client).
@@ -30,14 +30,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	mcpclient "ragflow/internal/utility"
 )
 
 // MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
-// eino InvokableTool. The wire format matches what eino's react.Agent
+// Adapter for MCP tools.
 // expects: a ToolInfo with name/description/params, and an
 // InvokableRun that accepts a JSON arguments string and returns a
 // string result.
@@ -93,33 +90,33 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 // Name returns the underlying MCP tool name.
 func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 
-// Info returns eino-compatible tool metadata. InputSchema is
+// ToolMeta returns the tool metadata.
 // translated from the MCP tool's JSON Schema.
-func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
-	// eino's schema.ParameterInfo shape: name → description.
+func (m *MCPToolAdapter) ToolMeta() ToolMeta {
+	// ParameterInfo shape: name → description.
 	// We translate the MCP tool's inputSchema.properties into a
 	// best-effort ParameterInfo map. For tools without a JSON schema
-	// the params map is empty — eino falls back to free-form args.
-	params := make(map[string]*schema.ParameterInfo, len(m.mcpTool.InputSchema))
+	// When empty, the tool accepts free-form string args.
+	params := make(map[string]ParameterInfo, len(m.mcpTool.InputSchema))
 	for name := range m.mcpTool.InputSchema {
-		params[name] = &schema.ParameterInfo{
-			Type:     schema.String, // conservative default
-			Desc:     fmt.Sprintf("MCP tool parameter: %s", name),
-			Required: false, // MCP doesn't surface required; we err permissive
+		params[name] = ParameterInfo{
+			Type:        ParamTypeString, // conservative default
+			Description: fmt.Sprintf("MCP tool parameter: %s", name),
+			Required:    false, // MCP doesn't surface required; we err permissive
 		}
 	}
-	return &schema.ToolInfo{
+	return ToolMeta{
 		Name:        m.mcpTool.Name,
-		Desc:        m.mcpTool.Description,
-		ParamsOneOf: schema.NewParamsOneOfByParams(params),
-	}, nil
+		Description: m.mcpTool.Description,
+		Parameters:  params,
+	}
 }
 
-// InvokableRun is the eino entry point. When the adapter was
+// Run is the tool entry point.
 // built with a server URL, dispatch through mcpclient.CallTool.
 // Legacy adapters (no URL) keep the "not yet wired" sentinel
 // so existing tests that pin the error message don't break.
-func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	if m.serverURL == "" {
 		return "", fmt.Errorf("mcp tool %q: tools/call not yet implemented in mcpclient; arguments were: %s",
 			m.mcpTool.Name, argumentsInJSON)
@@ -166,11 +163,11 @@ func (m *MCPToolAdapter) Close() {
 }
 
 // BuildMCPToolAdapters wraps a slice of mcpclient.Tool descriptors as
-// eino InvokableTool. Returned slice is suitable for handing to
+// Adapter for MCP tools.
 // agenttool.NewRetrieverTool / NewMCPToolAdapter paths or directly to
 // the Agent's tool list.
-func BuildMCPToolAdapters(tools []mcpclient.Tool) []tool.InvokableTool {
-	out := make([]tool.InvokableTool, 0, len(tools))
+func BuildMCPToolAdapters(tools []mcpclient.Tool) []Tool {
+	out := make([]Tool, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, NewMCPToolAdapter(t))
 	}
@@ -178,7 +175,7 @@ func BuildMCPToolAdapters(tools []mcpclient.Tool) []tool.InvokableTool {
 }
 
 // marshalArguments is a helper for the future tools/call
-// implementation. The argumentsInJSON string from eino is
+// The argumentsInJSON string is
 // round-tripped through json.RawMessage before being passed to the
 // MCP server so the server's expected payload structure is preserved.
 func marshalArguments(argumentsInJSON string) (json.RawMessage, error) {

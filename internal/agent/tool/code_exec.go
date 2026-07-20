@@ -24,8 +24,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
@@ -87,37 +85,37 @@ type codeExecResult struct {
 // non-empty code and returns a structured "not-yet-wired" error.
 type CodeExecTool struct{}
 
-// NewCodeExecTool returns a CodeExecTool implementing eino's
+// NewCodeExecTool returns a CodeExecTool implementing the tool.Tool interface.
 // tool.InvokableTool interface.
 func NewCodeExecTool() *CodeExecTool {
 	return &CodeExecTool{}
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python CodeExecParam ToolMeta (plan, field alignment).
-func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: codeExecToolName,
-		Desc: codeExecToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// the Python CodeExecParam ToolMeta (plan , 字段对齐).
+func (c *CodeExecTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        codeExecToolName,
+		Description: codeExecToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"language": {
-				Type:     schema.String,
-				Desc:     "The programming language of the code. Allowed: 'python' (or 'python3'), 'javascript' (or 'nodejs').",
-				Enum:     []string{"python", "python3", "javascript", "nodejs"},
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The programming language of the code. Allowed: 'python' (or 'python3'), 'javascript' (or 'nodejs').",
+				Enum:        []string{"python", "python3", "javascript", "nodejs"},
+				Required:    true,
 			},
 			"code": {
-				Type:     schema.String,
-				Desc:     "The code to execute. Must define a `main` function (Python) or export `main` (JavaScript).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The code to execute. Must define a `main` function (Python) or export `main` (JavaScript).",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun validates the inputs and dispatches to the
 // registered sandbox client via SetSandboxClient.
-func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args codeExecArgs
 	if argumentsInJSON == "" {
 		return codeExecStubResult("arguments are required"), errors.New("code_exec: empty arguments")
@@ -169,7 +167,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 }
 
 // codeExecResultJSON serializes a SandboxResponse into the envelope
-// the eino tool contract returns. Field mapping mirrors the Python
+// The output keys mirror the Python implementation.
 // tool's `code_exec.py:385-490` `_process_execution_result`:
 //
 //   - Stdout / Stderr / ExitCode: stream directly through.

@@ -47,13 +47,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/zap"
 
-	_ "ragflow/internal/agent/component"
+	cmp "ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -342,6 +345,47 @@ func main() {
 	// Initialize database
 	if err = dao.InitDB(arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	// Wire model locator so Agent/LLM components can resolve model IDs
+	// (like "qwen-max@Tongyi-Qianwen") to driver name, API key, and
+	// base URL from the user's tenant configuration.
+	{
+		svc := service.NewModelProviderService()
+		cmp.SetModelLocator(func(tenantID, modelID string) (string, string, string, string, error) {
+			chatModel, err := svc.GetChatModel(tenantID, modelID)
+			if err != nil {
+				// Fall back to the tenant's default chat model.
+				common.Logger.Warn("model locator: cannot resolve, trying default", zap.String("model_id", modelID), zap.String("tenant", tenantID), zap.Error(err))
+				tenantSvc := service.NewTenantService()
+				defaultModel, err := tenantSvc.GetDefaultModelName(tenantID, entity.ModelTypeChat)
+				if err != nil {
+					return "", "", "", "", fmt.Errorf("no default chat model for tenant %q: %w", tenantID, err)
+				}
+				chatModel, err = svc.GetChatModel(tenantID, defaultModel)
+				if err != nil {
+					return "", "", "", "", fmt.Errorf("default chat model %q also failed: %w", defaultModel, err)
+				}
+				modelID = defaultModel
+			}
+			apiKey := ""
+			if chatModel.APIConfig != nil && chatModel.APIConfig.ApiKey != nil {
+				apiKey = *chatModel.APIConfig.ApiKey
+			}
+			resolvedName := ""
+			if chatModel.ModelName != nil {
+				resolvedName = *chatModel.ModelName
+			}
+			// Leave baseURL empty when not overridden — the driver
+			// picks up the provider's default URL from dao below.
+			common.Logger.Info("model locator resolved",
+				zap.String("raw", modelID),
+				zap.String("driver", chatModel.ModelDriver.Name()),
+				zap.String("resolved_name", resolvedName),
+				zap.Bool("has_api_key", apiKey != ""))
+			return chatModel.ModelDriver.Name(), resolvedName, apiKey, "", nil
+		})
+		common.Info("Model locator installed for Agent/LLM components")
 	}
 
 	// Initialize doc engine
@@ -694,7 +738,6 @@ func startServer(config *server.Config) {
 	chatChannelService := service.NewChatChannelService()
 	langfuseService := service.NewLangfuseService()
 	chatSessionService := service.NewChatSessionService()
-	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
 	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
@@ -725,7 +768,6 @@ func startServer(config *server.Config) {
 	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	langfuseHandler := handler.NewLangfuseHandler(langfuseService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
-	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
@@ -811,6 +853,9 @@ func startServer(config *server.Config) {
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 	pipelineHandler := handler.NewPipelineHandler()
 
+	openaiChatSvc := service.NewOpenAIChatService()
+	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatSvc)
+
 	// Initialize router
 	r := router.NewRouter(authHandler,
 		userHandler,
@@ -844,7 +889,7 @@ func startServer(config *server.Config) {
 		componentsHandler,
 		pipelineHandler)
 
-	// Create Gin enginegit diff
+	// Create Gin engine
 
 	ginEngine := gin.New()
 
@@ -942,40 +987,47 @@ func startServer(config *server.Config) {
 // requiring Redis to be up.
 type agentRunOptions struct {
 	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
+	stateSerializer canvas.CanvasStateSerializer
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions installs the Redis-backed run infrastructure
-// when Redis is available. The Redis client is the one already
-// initialized at the top of main; the TTL is a conservative 24h for
-// both the checkpoint store and the run tracker. On any error
-// (Redis down at boot, constructor panic, nil-Redis fallback) we
-// log and return a zero-value struct — the agent service falls back
+// buildAgentRunOptions installs the NATS-backed checkpoint store.
+// The NATS KV bucket is used for checkpoint persistence; the run tracker
+// remains Redis-backed for now. On any error (NATS down, config missing)
+// we log and return a zero-value struct — the agent service falls back
 // to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
-		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
-		return out
+
+	// Create a NATS-backed CheckPointStore.
+	natsCfg := server.GetConfig().Nats
+	if natsCfg.Host == "" || natsCfg.Port == 0 {
+		common.Info("agent: nats not configured; checkpoint store in in-memory mode")
+	} else {
+		nc, err := nats.Connect(fmt.Sprintf("nats://%s:%d", natsCfg.Host, natsCfg.Port))
+		if err != nil {
+			common.Info("agent: nats connect failed; checkpoint store in in-memory mode", zap.Error(err))
+		} else {
+			js, err := jetstream.New(nc)
+			if err != nil {
+				nc.Close()
+				common.Info("agent: nats JetStream initialization failed; checkpoint store in in-memory mode", zap.Error(err))
+			} else {
+				cp, err := canvas.NewNATSCheckPointStore(js, "ragflow_checkpoints")
+				if err != nil {
+					nc.Close()
+					common.Info("agent: nats KV bucket creation failed; checkpoint store in in-memory mode", zap.Error(err))
+				} else {
+					out.checkpointStore = cp
+					common.Info("agent: nats-backed checkpoint store installed (bucket=ragflow_checkpoints)")
+				}
+			}
+		}
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
-	out.checkpointStore = cp
-	// stateSerializer is intentionally left nil. eino's default
-	// InternalSerializer (used when no compose.WithSerializer is
-	// passed at compile time) already knows how to round-trip
-	// runtime.CanvasState because the runtime package registers
-	// it via compose.RegisterSerializableType[CanvasState] in
-	// init(). Overriding with RAGFlow's plain-JSON
-	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
-	// bytes the InternalSerializer cannot decode on the resume
-	// pass — the UserFillUp two-node pattern surfaces this as
-	// "load checkpoint from store fail: cannot unmarshal object
-	// into Go struct field checkpoint.Channels of type
-	// compose.channel". Rely on eino's default instead.
+	// stateSerializer is intentionally left nil as described above.
+	// Run tracker remains Redis-backed when available.
 	rt := canvas.NewRunTracker(24 * time.Hour)
 	out.runTracker = rt
-	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
 	return out
 }
 
