@@ -1168,7 +1168,7 @@ export default {
       modelType: 'モデルタイプ',
       modelTypeMessage: 'モデルタイプを入力してください！',
       addLlmBaseUrl: 'ベースURL',
-      baseUrlNameMessage: 'ベースURLを入力してください！',
+      baseUrlNameMessage: 'ベースURLを入力してください',
 
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
@@ -1191,13 +1191,13 @@ export default {
       endpointIDMessage: 'モデルのModel IDを入力してください',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'ARK_API_KEYを入力してください',
-      bedrockModelNameMessage: 'モデル名を入力してください！',
+      bedrockModelNameMessage: 'モデル名を入力してください',
       addBedrockEngineAK: 'アクセスキー',
       bedrockAKMessage: 'アクセスキーを入力してください',
       addBedrockSK: 'シークレットキー',
       bedrockSKMessage: 'シークレットキーを入力してください',
       bedrockRegion: 'AWSリージョン',
-      bedrockRegionMessage: '選択してください！',
+      bedrockRegionMessage: '選択してください',
       'us-east-1': '米国東部（バージニア北部）',
       'us-west-2': '米国西部（オレゴン）',
       'ap-southeast-1': 'アジア太平洋（シンガポール）',
@@ -1272,7 +1272,7 @@ export default {
         '選択したモデルタイプがツール呼び出しに対応している場合、このモデルによるツール呼び出しを許可します。',
       deleteModel: 'モデルを削除',
       bedrockCredentialsHint:
-        'ヒント: AWS IAM認証を使用する場合は、Access Key / Secret Keyを空欄のままにしてください。',
+        'ヒント: AWS IAM認証を使用する場合は、ACCESS KEY / SECRET KEYを空欄のままにしてください。',
       awsAuthModeAccessKeySecret: 'アクセスキー',
       awsAuthModeIamRole: 'IAMロール',
       awsAuthModeAssumeRole: 'ロールの引き受け',
@@ -1579,9 +1579,9 @@ export default {
       restApiRequestDelayTip:
         '連続するページリクエストの間の待機時間です（秒単位）。APIのレート制限を回避するのに役立ちます。無効にする場合は0を指定してください。',
       restApiValidationApiKeyRequired:
-        'Auth TypeがAPI Key (Header)の場合、APIキーは必須です。',
+        'Auth TypeがAPI KEY (Header)の場合、APIキーは必須です。',
       restApiValidationApiKeyHeaderNameRequired:
-        'Auth TypeがAPI Key (Header)の場合、APIキーのヘッダー名は必須です。',
+        'Auth TypeがAPI KEY (Header)の場合、APIキーのヘッダー名は必須です。',
       restApiValidationBearerTokenRequired:
         'Auth TypeがBearer Tokenの場合、Bearerトークンは必須です。',
       restApiValidationBasicUsernameRequired:

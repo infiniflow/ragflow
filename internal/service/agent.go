@@ -1414,7 +1414,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-			return nil, fmt.Errorf("canvas invoke: %w: %w", ErrAgentStorageError, err)
+			return nil, fmt.Errorf("canvas invoke: %w", err)
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).

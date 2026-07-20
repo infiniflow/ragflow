@@ -57,7 +57,7 @@ dependencies = [
     "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.0",
+    "infinity-sdk==0.7.2",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.60.1",

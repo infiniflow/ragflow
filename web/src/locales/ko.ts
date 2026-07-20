@@ -1448,9 +1448,9 @@ export default {
       restApiRequestDelayTip:
         '연속 페이지 요청 사이의 지연 시간(초). API의 속도 제한을 피하는 데 도움이 됩니다. 비활성화하려면 0으로 설정하세요.',
       restApiValidationApiKeyRequired:
-        '인증 유형이 API Key (Header)일 때 API 키가 필요합니다.',
+        '인증 유형이 API KEY (Header)일 때 API 키가 필요합니다.',
       restApiValidationApiKeyHeaderNameRequired:
-        '인증 유형이 API Key (Header)일 때 API 키 헤더 이름이 필요합니다.',
+        '인증 유형이 API KEY (Header)일 때 API 키 헤더 이름이 필요합니다.',
       restApiValidationBearerTokenRequired:
         '인증 유형이 Bearer Token일 때 Bearer 토큰이 필요합니다.',
       restApiValidationBasicUsernameRequired:
@@ -1513,12 +1513,12 @@ export default {
       addedModels: '추가된 모델',
       modelsToBeAdded: '추가할 모델',
       addTheModel: '추가',
-      apiKey: 'API-Key',
+      apiKey: 'API KEY',
       apiKeyMessage: 'API 키를 입력해 주세요',
       apiKeyTip: '해당 LLM 공급업체에 등록하여 API 키를 얻을 수 있습니다.',
       showMoreModels: '모델 보기',
       hideModels: '모델 숨기기',
-      baseUrl: 'Base-Url',
+      baseUrl: 'BASE URL',
       baseUrlTip:
         'API 키가 OpenAI에서 발급된 경우 무시하세요. 다른 중간 제공업체는 API 키와 함께 이 기본 URL을 제공합니다.',
       tongyiBaseUrlTip:
@@ -1667,15 +1667,15 @@ export default {
       SparkAPIPasswordMessage: 'APIPassword를 입력해 주세요',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'APP ID를 입력해 주세요',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'APISecret을 입력해 주세요',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'API SECRET을 입력해 주세요',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'APIKey를 입력해 주세요',
       yiyanModelNameMessage: '모델 이름을 입력해 주세요',
       addyiyanAK: 'yiyan API KEY',
       yiyanAKMessage: 'API KEY를 입력해 주세요',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Secret KEY를 입력해 주세요',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'SECRET KEY를 입력해 주세요',
       FishAudioModelNameMessage: '음성 합성 모델에 이름을 지정해 주세요',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: 'API KEY를 입력해 주세요',
@@ -2807,7 +2807,7 @@ Important structured information may include: names, dates, locations, events, k
         bodyTemplate: '본문 템플릿',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api key',
+        apiKey: 'API KEY',
         queryParameters: '쿼리 파라미터',
         headerParameters: '헤더 파라미터',
         requestBodyParameters: '요청 본문 파라미터',

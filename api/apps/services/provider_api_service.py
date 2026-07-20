@@ -717,11 +717,13 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     continue
                 mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
 
+                temperature = 1 if llm["llm_name"] in ("kimi-k3", "kimi-k2.7-code") else 0.9
+
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
                         None,
                         [{"role": "user", "content": "Hi"}],
-                        {"temperature": 0.9},
+                        {"temperature": temperature},
                     ):
                         if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
                             return True

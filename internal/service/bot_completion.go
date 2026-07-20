@@ -354,6 +354,14 @@ func (s *BotService) ChatbotCompletion(
 		if err = s.api4ConversationDAO.Create(session); err != nil {
 			return nil, common.CodeServerError, err
 		}
+
+		// Mirror python async_iframe_completion
+		// (conversation_service.py:324-334): a request without a
+		// session_id is the share page's opening handshake — the
+		// front-end sends an empty question only to obtain a session.
+		// Persist the prologue-seeded session and stream the prologue
+		// back WITHOUT invoking the pipeline; running the model here
+		// would fabricate a reply to a message the user never sent.
 		out := make(chan ChatbotSSEFrame, 2)
 		go func() {
 			defer close(out)

@@ -172,7 +172,7 @@ export function AsyncTreeSelect({
               <div
                 className={cn(
                   'flex justify-between items-center hover:bg-accent py-0.5 px-1 rounded-md',
-                  { 'bg-cyan-50': value === x.id },
+                  { 'bg-bg-card': value === x.id },
                 )}
               >
                 <span className="flex-1">{x.title}</span>

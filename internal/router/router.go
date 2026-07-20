@@ -190,17 +190,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
 		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
 
-		// For EE
-		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
-		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
-		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
-		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
-		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
-		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
-		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
-		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
-		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
-
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 
@@ -218,6 +207,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
