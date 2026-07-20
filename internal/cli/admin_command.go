@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/url"
 	"ragflow/internal/common"
+	"strconv"
 )
 
 // PingServer pings the server to check if it's alive
@@ -2548,6 +2549,37 @@ func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error
 	}
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s default models", userName))
+}
+
+// AdminListUserLogsCommand list user operation logs
+func (c *CLI) AdminListUserLogsCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	days, ok := cmd.Params["days"].(int)
+	if !ok {
+		return nil, fmt.Errorf("days not provided")
+	}
+
+	q := url.Values{}
+	q.Set("user_name", userName)
+	q.Set("days", strconv.Itoa(days))
+
+	baseUrl := fmt.Sprintf("/admin/logs?%s", q.Encode())
+
+	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user %s logs: %w", userName, err)
+	}
+
+	return HandleCommonResponse(resp, fmt.Sprintf("list user %s logs", userName))
 }
 
 func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
