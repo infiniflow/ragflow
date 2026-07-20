@@ -190,8 +190,9 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         "qa",
         "table",
         "tag",
+        "resume",
     ],
-    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
 )
 def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk_method):
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_chunk_{chunk_method}"})
@@ -1129,8 +1130,9 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
         ("qa", "qa"),
         ("table", "table"),
         ("tag", "tag"),
+        ("resume", "resume"),
     ],
-    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
 )
 def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
     res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
