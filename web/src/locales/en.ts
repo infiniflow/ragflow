@@ -1845,8 +1845,8 @@ Example: Virtual Hosted Style`,
       modelNameMessage: 'Please input your model name!',
       modelType: 'Model type',
       modelTypeMessage: 'Please input your model type!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Please input your base url!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Please input your base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
