@@ -912,7 +912,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         raptor: 'RAPTOR',
       },
       representationUnsupported: '暂不支持该表征类型。',
-      representationEmpty: '暂无表征模板。',
+      representationEmpty: '暂无Artifact模板。',
       enable: '启用',
       disable: '禁用',
       delete: '删除',

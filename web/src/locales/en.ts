@@ -1011,7 +1011,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       representationUnsupported:
         'This representation type is not supported yet.',
-      representationEmpty: 'No representation templates available.',
+      representationEmpty: 'No artifact templates available.',
       enable: 'Enable',
       disable: 'Disable',
       delete: 'Delete',
