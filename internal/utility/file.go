@@ -399,6 +399,18 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 	return contentType, ext
 }
 
+// FormatContentDisposition builds a Content-Disposition value with an ASCII
+// filename fallback and an RFC 5987 UTF-8 filename* parameter.
+func FormatContentDisposition(disposition, filename string) string {
+	base := filepath.Base(filename)
+	if base == "" || base == "." {
+		return disposition
+	}
+	safe := SanitizeContentDispositionFilename(base)
+	encoded := url.PathEscape(base)
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, safe, encoded)
+}
+
 // SetPreviewFileResponseHeaders sets response headers for inline file
 // preview. For force-attachment types (HTML, SVG, XML) it falls back to
 // attachment disposition with nosniff. Mirrors Python file_response.py:
@@ -408,11 +420,14 @@ func SetPreviewFileResponseHeaders(h http.Header, contentType, ext, filename str
 		h.Set("Content-Type", contentType)
 	}
 	if ShouldForceAttachment(ext, contentType) {
-		h.Set("Content-Disposition", "attachment")
 		h.Set("X-Content-Type-Options", "nosniff")
-	} else {
-		safe := SanitizeContentDispositionFilename(filename)
-		h.Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, safe))
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
+	} else if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("inline", filename))
 	}
 }
 
@@ -425,11 +440,18 @@ func SetDownloadFileResponseHeaders(h http.Header, contentType, ext, filename st
 	}
 	if ShouldForceAttachment(ext, contentType) {
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Content-Disposition", "attachment")
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
 		return
 	}
-	safe := SanitizeContentDispositionFilename(filename)
-	h.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safe))
+	if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+	} else {
+		h.Set("Content-Disposition", "attachment")
+	}
 }
 
 // AgentAttachmentPreviewPath builds the preview URL path for an agent

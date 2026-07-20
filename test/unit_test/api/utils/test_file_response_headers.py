@@ -24,14 +24,14 @@ def test_apply_preview_sets_inline_for_pdf():
     response = _DummyResponse()
     module.apply_preview_file_response_headers(response, "application/pdf", "pdf", "report.pdf")
     assert response.headers["Content-Type"] == "application/pdf"
-    assert response.headers["Content-Disposition"] == 'inline; filename="report.pdf"'
+    assert response.headers["Content-Disposition"] == 'inline; filename="report.pdf"; filename*=UTF-8\'\'report.pdf'
 
 
 @pytest.mark.p2
 def test_apply_preview_forces_attachment_for_html():
     response = _DummyResponse()
     module.apply_preview_file_response_headers(response, "text/html", "html", "page.html")
-    assert response.headers["Content-Disposition"] == "attachment"
+    assert response.headers["Content-Disposition"] == 'attachment; filename="page.html"; filename*=UTF-8\'\'page.html'
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
@@ -39,7 +39,14 @@ def test_apply_preview_forces_attachment_for_html():
 def test_apply_download_sets_attachment_for_pdf():
     response = _DummyResponse()
     module.apply_download_file_response_headers(response, "application/pdf", "pdf", "report.pdf")
-    assert response.headers["Content-Disposition"] == 'attachment; filename="report.pdf"'
+    assert response.headers["Content-Disposition"] == 'attachment; filename="report.pdf"; filename*=UTF-8\'\'report.pdf'
+
+
+@pytest.mark.p2
+def test_apply_download_sets_utf8_filename_for_chinese():
+    response = _DummyResponse()
+    module.apply_download_file_response_headers(response, "application/pdf", "pdf", "报告.pdf")
+    assert response.headers["Content-Disposition"] == 'attachment; filename="pdf"; filename*=UTF-8\'\'%E6%8A%A5%E5%91%8A.pdf'
 
 
 @pytest.mark.p2
