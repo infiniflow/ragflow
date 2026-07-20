@@ -16,16 +16,17 @@ import (
 )
 
 func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !d.Accessible(strings.TrimSpace(datasetID), tenantID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
-	}
-
-	kb, err := d.kbDAO.GetByID(strings.TrimSpace(datasetID))
+	datasetID = strings.TrimSpace(datasetID)
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Dataset not found")
 		}
 		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	if !d.Accessible(datasetID, tenantID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
 	connectorsProvided := req.Connectors != nil
