@@ -75,6 +75,11 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 	protected.GET("/license", r.handler.ShowLicense)
 
+	// Token statistics
+	protected.GET("/stats/token", r.handler.GetTokenStats)
+	protected.GET("/stats/token/users", r.handler.GetTokenUsersStats)
+	protected.GET("/stats/token/summary", r.handler.GetTokenStatsSummary)
+
 	// Stats data info
 	protected.GET("/users/:username/activity", r.handler.ShowUserActivity)
 	protected.GET("/users/:username/dataset", r.handler.ShowUserDatasetSummary)

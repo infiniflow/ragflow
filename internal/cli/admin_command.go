@@ -1793,9 +1793,9 @@ func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
 		q.Set("to", toTime)
 	}
 
-	url := fmt.Sprintf("/admin/stats/token/users?%s", q.Encode())
+	baseURL := fmt.Sprintf("/admin/stats/token/users?%s", q.Encode())
 
-	resp, err := c.AdminServerClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.AdminServerClient.Request("GET", baseURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats: %w", err)
 	}
