@@ -316,6 +316,8 @@ class SyncLogsService(CommonService):
             cls.model.status == TaskStatus.SCHEDULE,
             cls.model.task_type == task_type,
         )
+        if task_type == ConnectorTaskType.SYNC:
+            query = query.where((Connector.refresh_freq > 0) | (cls.model.from_beginning == "1"))
 
         database_type = os.getenv("DB_TYPE", "mysql")
         if "postgres" in database_type.lower():
