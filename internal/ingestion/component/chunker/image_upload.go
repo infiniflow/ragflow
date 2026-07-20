@@ -111,8 +111,12 @@ func uploadChunkImage(ctx context.Context, ck map[string]any, up component.Image
 // is responsible for decoding the bytes, writing img_id/id, and dropping the
 // raw image field. The process-wide semaphore bounds concurrent uploads.
 func uploadOneImage(ctx context.Context, up component.ImageUploader, kbID, chunkID string, data []byte) (string, error) {
-	imageUploadSem <- struct{}{}
-	defer func() { <-imageUploadSem }()
+	select {
+	case imageUploadSem <- struct{}{}:
+		defer func() { <-imageUploadSem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 	return up(ctx, kbID, chunkID, data)
 }
 
