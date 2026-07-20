@@ -1168,7 +1168,7 @@ export default {
       modelType: 'モデルタイプ',
       modelTypeMessage: 'モデルタイプを入力してください！',
       addLlmBaseUrl: 'ベースURL',
-      baseUrlNameMessage: 'ベースURLを入力してください！',
+      baseUrlNameMessage: 'ベースURLを入力してください',
 
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
