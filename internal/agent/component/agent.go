@@ -720,7 +720,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 
 	// After template resolution: if user_prompt is still empty, try to
 	// read the Begin node's "query" output directly from canvas state.
-	// Do NOT fall back to system_prompt.
+	// If that's also empty, fall back to system_prompt (so the model
+	// still sees the instructions), and finally to a generic placeholder.
 	if p.UserPrompt == "" {
 		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 			if raw, rErr := state.GetVar("begin@query"); rErr == nil {
@@ -730,7 +731,9 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			}
 		}
 	}
-	// Still empty → use a minimal placeholder.
+	if p.UserPrompt == "" && p.SystemPrompt != "" {
+		p.UserPrompt = p.SystemPrompt
+	}
 	if p.UserPrompt == "" {
 		p.UserPrompt = "Please process the instructions above."
 	}
@@ -769,10 +772,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
-				state.History = append(state.History, map[string]any{
-					"role":    "assistant",
-					"content": summary,
-				})
+				state.AppendMemory(p.UserPrompt, "", summary)
 			}
 		}
 	}

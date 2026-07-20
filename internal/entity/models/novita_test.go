@@ -268,7 +268,7 @@ func TestNovitaChatPureText(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"meta-llama/llama-3.3-70b-instruct",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestNovitaChatExtractsThinkTags(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"qwen/qwen3-30b-a3b-fp8",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestNovitaChatExtractsReasoningContentField(t *testing.T) {
 	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
 		"deepseek/deepseek-v3.1",
 		[]Message{{Role: "user", Content: "2+2?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
 	err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
 		"deepseek/deepseek-v3.1",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -424,7 +424,7 @@ func TestNovitaChatPropagatesEnableThinking(t *testing.T) {
 				"qwen/qwen3-30b-a3b-fp8",
 				[]Message{{Role: "user", Content: "x"}},
 				&APIConfig{ApiKey: &apiKey},
-				&ChatConfig{Thinking: &thinking})
+				&ChatConfig{Thinking: &thinking}, nil)
 			if err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
@@ -452,7 +452,7 @@ func TestNovitaChatOmitsEnableThinkingWhenUnset(t *testing.T) {
 	_, err := newNovitaForTest(srv.URL).ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{}) // no Thinking
+		&ChatConfig{}, nil) // no Thinking
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -481,6 +481,7 @@ func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking},
+		nil,
 		func(*string, *string) error { return nil })
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -492,7 +493,7 @@ func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
 
 func TestNovitaChatRequiresAPIKey(t *testing.T) {
 	_, err := newNovitaForTest("http://unused").ChatWithMessages("m",
-		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("got %v", err)
 	}
@@ -501,7 +502,7 @@ func TestNovitaChatRequiresAPIKey(t *testing.T) {
 func TestNovitaChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newNovitaForTest("http://unused").ChatWithMessages("m", nil,
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("got %v", err)
 	}
@@ -517,7 +518,7 @@ func TestNovitaChatRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newNovitaForTest(srv.URL).ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("got %v", err)
 	}
@@ -547,7 +548,7 @@ func TestNovitaStreamSplitsThinkTags(t *testing.T) {
 	err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
 		"qwen/qwen3-30b-a3b-fp8",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -589,7 +590,7 @@ func TestNovitaStreamPureContent(t *testing.T) {
 	var sawDone bool
 	err := newNovitaForTest(srv.URL).ChatStreamlyWithSender("meta-llama/llama-3.3-70b-instruct",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -616,7 +617,7 @@ func TestNovitaStreamRequiresSender(t *testing.T) {
 	apiKey := "test-key"
 	err := newNovitaForTest("http://unused").ChatStreamlyWithSender("m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("got %v", err)
 	}
@@ -629,6 +630,7 @@ func TestNovitaStreamRejectsExplicitFalse(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("got %v", err)
@@ -690,7 +692,7 @@ func TestNovitaRerankHappyPathReordersByIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "baai/bge-reranker-v2-m3"
-	resp, err := newNovitaForTest(srv.URL).Rerank(&model, "what is rag", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newNovitaForTest(srv.URL).Rerank(&model, "what is rag", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -716,7 +718,7 @@ func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "baai/bge-reranker-v2-m3"
-	if _, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}); err != nil {
+	if _, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil); err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
 }
@@ -724,7 +726,7 @@ func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
 func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
 	apiKey := "test-key"
 	model := "x"
-	resp, err := newNovitaForTest("http://unused").Rerank(&model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newNovitaForTest("http://unused").Rerank(&model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty docs, got %v", err)
 	}
@@ -735,7 +737,7 @@ func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
 
 func TestNovitaRerankRequiresApiKey(t *testing.T) {
 	model := "x"
-	_, err := newNovitaForTest("http://unused").Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	_, err := newNovitaForTest("http://unused").Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("got %v", err)
 	}
@@ -743,7 +745,7 @@ func TestNovitaRerankRequiresApiKey(t *testing.T) {
 
 func TestNovitaRerankRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newNovitaForTest("http://unused").Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newNovitaForTest("http://unused").Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("got %v", err)
 	}
@@ -757,7 +759,7 @@ func TestNovitaRerankRejectsOutOfRangeIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("got %v", err)
 	}
@@ -771,7 +773,7 @@ func TestNovitaRerankRejectsDuplicateIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("got %v", err)
 	}
@@ -786,7 +788,7 @@ func TestNovitaRerankSurfacesHTTPError(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Novita rerank API error") {
 		t.Errorf("got %v", err)
 	}
@@ -799,7 +801,7 @@ func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
 		map[string]string{"default": "http://unused"},
 		URLSuffix{Chat: "openai/v1/chat/completions"},
 	)
-	_, err := driver.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := driver.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
 		t.Errorf("got %v", err)
 	}
@@ -819,13 +821,13 @@ func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := "x"
 	apiKey := "test-key"
 	v := newNovitaForTest("http://unused")
-	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := v.AudioSpeech(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.AudioSpeech(&m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }
@@ -854,7 +856,7 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 			invoke: func(n *NovitaModel, apiKey string) error {
 				_, err := n.ChatWithMessages("m",
 					[]Message{{Role: "user", Content: "x"}},
-					&APIConfig{ApiKey: &apiKey}, nil)
+					&APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			respBody: `{"choices":[{"message":{"content":"ok"}}]}`,
@@ -878,7 +880,7 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 			invoke: func(n *NovitaModel, apiKey string) error {
 				return n.ChatStreamlyWithSender("m",
 					[]Message{{Role: "user", Content: "x"}},
-					&APIConfig{ApiKey: &apiKey}, nil,
+					&APIConfig{ApiKey: &apiKey}, nil, nil,
 					func(*string, *string) error { return nil })
 			},
 			respBody: `data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}` + "\n" +

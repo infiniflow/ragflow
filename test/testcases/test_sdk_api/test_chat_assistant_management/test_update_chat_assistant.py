@@ -22,7 +22,7 @@ from utils.file_utils import create_image_file
 
 
 class TestChatAssistantUpdate:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_rejects_non_dict(self, add_chat_assistants_func):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
@@ -31,7 +31,7 @@ class TestChatAssistantUpdate:
             chat_assistant.update.__wrapped__(chat_assistant, "bad")
         assert "`update_message` must be a dict" in str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_raises_on_nonzero_response(self, add_chat_assistants_func, monkeypatch):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
@@ -46,7 +46,7 @@ class TestChatAssistantUpdate:
             chat_assistant.update({"name": "error-case"})
         assert "boom" in str(exception_info.value)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_update_uses_patch_for_partial_payload(self, add_chat_assistants_func, monkeypatch):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]

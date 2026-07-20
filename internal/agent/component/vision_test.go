@@ -22,16 +22,6 @@ import (
 	"testing"
 )
 
-// TestToEinoMessages_PreservesMultiContent guards against the
-// regression where toEinoMessages dropped MultiContent at the
-// LLM-component → chat-invoker boundary. Without this guard, vision
-// inputs would pass the component-level test (which asserts on
-// ChatInvokeRequest.Messages, the value slice) but be silently stripped
-// before reaching the eino chat model layer.
-
-// TestToEinoMessages_EmptyMultiContent verifies the no-images path
-// produces a clean *ComponentMessage (no nil slice leak).
-
 // TestExtractDataImages_NoMatches: text without data URIs returns empty.
 func TestExtractDataImages_NoMatches(t *testing.T) {
 	got := extractDataImages([]string{
@@ -127,10 +117,6 @@ func TestExtractDataImages_RegexEdgeCases(t *testing.T) {
 	}
 }
 
-// TestToEinoMessages_URLPointerIsolation verifies that mutating the
-// URL string in the cloned message does NOT affect the source — guards
-// against the shallow-copy footgun surfaced by code review.
-
 // TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage: backward
 // compat — when no images, the function returns the same shape as
 // buildMessages (User message has plain Content, no MultiContent).
@@ -177,11 +163,8 @@ func TestBuildMessagesWithImages_WithImages_UsesMultiContent(t *testing.T) {
 	if user.MultiContent[1].Type != "image_url" {
 		t.Errorf("part[1] type=%v, want image_url", user.MultiContent[1].Type)
 	}
-	if user.MultiContent[1].ImageURL == "" {
-		t.Fatal("part[1] ImageURL is empty")
-	}
 	if user.MultiContent[1].ImageURL != uri {
-		t.Errorf("part[1] URL=%q, want %q", user.MultiContent[1].ImageURL, uri)
+		t.Errorf("part[1] ImageURL=%q, want %q", user.MultiContent[1].ImageURL, uri)
 	}
 }
 
@@ -212,8 +195,9 @@ func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 	if len(user.MultiContent) != 2 {
 		t.Fatalf("expected 2 parts in MultiContent, got %d", len(user.MultiContent))
 	}
-	if user.MultiContent[1].ImageURL == "" || user.MultiContent[1].ImageURL != uri {
-		t.Errorf("image not forwarded to invoker; got %+v", user.MultiContent[1])
+	if user.MultiContent[1].ImageURL != uri {
+		t.Errorf("image not forwarded to invoker; got ImageURL=%q, want %q",
+			user.MultiContent[1].ImageURL, uri)
 	}
 }
 
@@ -268,8 +252,8 @@ func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 	if len(user.MultiContent) != 2 {
 		t.Fatalf("expected 2 parts, got %d", len(user.MultiContent))
 	}
-	if user.MultiContent[1].ImageURL == "" || user.MultiContent[1].ImageURL != uri {
-		t.Errorf("image not extracted from single-string visual_files; got %+v",
-			user.MultiContent[1])
+	if user.MultiContent[1].ImageURL != uri {
+		t.Errorf("image not extracted from single-string visual_files; got ImageURL=%q, want %q",
+			user.MultiContent[1].ImageURL, uri)
 	}
 }

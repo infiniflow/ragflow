@@ -207,7 +207,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := model.ChatStreamlyWithSender("gemini-2.5-flash", messages, tc.apiConfig, nil, func(*string, *string) error {
+			err := model.ChatStreamlyWithSender("gemini-2.5-flash", messages, tc.apiConfig, nil, nil, func(*string, *string) error {
 				t.Errorf("sender should not be called without an API key")
 				return nil
 			})
@@ -226,7 +226,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 	apiKey := "test-api-key"
 	messages := []Message{{Role: "user", Content: "hello"}}
 
-	response, err := model.ChatWithMessages("", messages, &APIConfig{ApiKey: &apiKey}, nil)
+	response, err := model.ChatWithMessages("", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil {
 		t.Fatal("expected a model name error")
 	}
@@ -237,7 +237,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected no response, got %v", response)
 	}
 
-	err = model.ChatStreamlyWithSender("", messages, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error {
+	err = model.ChatStreamlyWithSender("", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error {
 		t.Errorf("sender should not be called without a model name")
 		return nil
 	})
@@ -248,7 +248,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected model name error, got %v", err)
 	}
 
-	err = model.ChatStreamlyWithSender("gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	err = model.ChatStreamlyWithSender("gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected a sender error")
 	}
@@ -329,8 +329,8 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	pages := []googleModelPage{
-		{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
-		{items: []DSModel{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
 	}
 	var pageTokens []string
 
@@ -374,7 +374,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
-			return googleModelPage{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
+			return googleModelPage{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
 		}
 		return googleModelPage{}, pageErr
 	})

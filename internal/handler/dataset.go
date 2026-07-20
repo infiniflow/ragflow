@@ -30,11 +30,12 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService       *service.DatasetService
+	datasetsService       *dataset.DatasetService
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
@@ -55,7 +56,7 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
+func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,
@@ -200,10 +201,23 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	var req service.UpdateDatasetRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+
+	var req service.UpdateDatasetRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+
+	// Detect an explicitly provided parser_config key (even {} or null) so it is not
+	// rejected as "No properties were modified", mirroring the Python contract.
+	var providedFields map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &providedFields); err == nil {
+		_, req.ParserConfigProvided = providedFields["parser_config"]
 	}
 
 	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)

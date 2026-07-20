@@ -79,6 +79,14 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 	if _, ok := meta.Parameters["query"]; !ok {
 		t.Errorf("Parameters missing 'query' key: %+v", meta.Parameters)
 	}
+	raw, _ := json.Marshal(meta.Parameters)
+	// The HEAD version exposes Canvas node config params (dataset_ids, kb_ids, etc.)
+	// to the model so users can filter retrieval by dataset/knowledge-base at query time.
+	for _, nodeConfig := range []string{"dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold", "keywords_similarity_weight", "use_kg"} {
+		if !strings.Contains(string(raw), `"`+nodeConfig+`"`) {
+			t.Errorf("schema JSON missing Canvas node config %q: %s", nodeConfig, raw)
+		}
+	}
 }
 
 func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {

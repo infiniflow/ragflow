@@ -273,10 +273,12 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 					}
 				}
 			}
+			// PUA / unmapped-glyph garbage: genuine noise, re-OCR regardless of script.
 			if totalCnt > 0 && float64(garbledCnt)/float64(totalCnt) >= 0.5 {
 				tb.Text = ""
-			}
-			if tb.Text != "" && util.IsGarbledByFontEncoding(boxChars[i], 5) {
+			} else if tb.Text != "" && util.OcrCanRepresent(tb.Text) && util.IsGarbledByFontEncoding(boxChars[i], 5) {
+				// Font-encoding garbling, but skipped for a script the recogniser
+				// cannot spell -- OCR would only produce garbage.
 				tb.Text = ""
 			}
 		}

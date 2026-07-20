@@ -103,21 +103,21 @@ func setupOverridesFromContext(ctx context.Context) map[string]any {
 }
 
 // applyOverrideParams returns a clone of params with the per-component
-// setups override (already resolved for this cpnID by the caller) merged
-// into params["setups"]. The override wins on top-level key collisions. The
-// original params map is never mutated — the merge result is a fresh map —
-// because the params come from the shared *Canvas and a per-run override
-// must not leak into the next Run on the same Pipeline.
+// override map merged at the top level. The override wins on top-level key
+// collisions. The original params map is never mutated — the merge result
+// is a fresh map — because the params come from the shared *Canvas and a
+// per-run override must not leak into the next Run on the same Pipeline.
 func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
 	}
-	out := make(map[string]any, len(params)+1)
+	out := make(map[string]any, len(params)+len(cpnOverride))
 	for k, v := range params {
 		out[k] = v
 	}
-	base, _ := out["setups"].(map[string]any)
-	out["setups"] = mergeSetups(base, cpnOverride)
+	for k, v := range cpnOverride {
+		out[k] = v
+	}
 	return out
 }
 

@@ -28,3 +28,23 @@ func withState(ctx context.Context, s *CanvasState) context.Context {
 func GetStateFromContext[S any](ctx context.Context) (S, *sync.Mutex, error) {
 	return runtime.GetStateFromContext[S](ctx)
 }
+
+// RunMeta holds run-level metadata such as lifecycle event channels.
+type RunMeta struct {
+	Events chan RunEvent
+}
+
+type runMetaKey struct{}
+
+// WithRunMeta attaches RunMeta to ctx.
+func WithRunMeta(ctx context.Context, meta *RunMeta) context.Context {
+	return context.WithValue(ctx, runMetaKey{}, meta)
+}
+
+// GetRunMeta extracts RunMeta from ctx, returning nil when absent.
+func GetRunMeta(ctx context.Context) *RunMeta {
+	if meta, ok := ctx.Value(runMetaKey{}).(*RunMeta); ok {
+		return meta
+	}
+	return nil
+}

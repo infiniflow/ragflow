@@ -49,20 +49,28 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "audio": {
-                                "output_format": "text",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "wav",
-                                    "mp3",
-                                    "aac",
-                                    "flac",
-                                    "ogg"
-                                ]
-                            }
+                        "audio": {
+                            "output_format": "text",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "aac",
+                                "aiff",
+                                "ape",
+                                "au",
+                                "da",
+                                "flac",
+                                "midi",
+                                "mp3",
+                                "ogg",
+                                "oggvorbis",
+                                "realaudio",
+                                "vqf",
+                                "wav",
+                                "wave",
+                                "wma"
+                            ]
                         }
                     }
                 },
@@ -72,7 +80,7 @@
             },
             "TokenChunker:BlueSkiesLaugh": {
                 "downstream": [
-                    "Tokenizer:KindEyesWatch"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "OneChunker",
@@ -104,8 +112,31 @@
                     }
                 },
                 "upstream": [
-                    "TokenChunker:BlueSkiesLaugh"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TokenChunker:BlueSkiesLaugh"
+                ],
+                "downstream": [
+                    "Tokenizer:KindEyesWatch"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "",
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "auto_keywords": 0,
+                        "auto_questions": 0,
+                        "llm_id": ""
+                    }
+                }
             }
         },
         "globals": {
@@ -128,11 +159,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TokenChunker:BlueSkiesLaughstart-Tokenizer:KindEyesWatchend",
+                    "id": "xy-edge__TokenChunker:BlueSkiesLaughstart-Extractor:AutoExtractDefaultend",
                     "source": "TokenChunker:BlueSkiesLaugh",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:KindEyesWatchend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:KindEyesWatch",
                     "targetHandle": "end"
@@ -259,6 +294,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

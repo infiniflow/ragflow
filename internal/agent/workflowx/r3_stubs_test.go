@@ -30,13 +30,6 @@ func (s *inMemoryStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-type LoopOption func(any)
-
-func WithLoopMaxIterations(int) LoopOption { return func(any) {} }
-func WithLoopCheckpointIDBuilder(func(string, int) string) LoopOption {
-	return func(any) {}
-}
-
 // fakeEinoNode provides the methods the test file's compiled eino
 // graph nodes expose (AddInput / End). The tests will skip at runtime.
 type fakeEinoNode struct{ name string }
@@ -44,9 +37,6 @@ type fakeEinoNode struct{ name string }
 func (f *fakeEinoNode) AddInput(...string) {}
 func (f *fakeEinoNode) End() *fakeEinoNode { return f }
 
-func AddLoopNode(context.Context, any, string, any, interface{}, ...LoopOption) (*fakeEinoNode, error) {
-	return &fakeEinoNode{name: "loop"}, nil
-}
 func AddParallelNode(context.Context, any, string, any) (*fakeEinoNode, error) {
 	return &fakeEinoNode{name: "parallel"}, nil
 }

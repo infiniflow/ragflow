@@ -180,14 +180,17 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		text = fallbackMessageText(inputs)
 	}
 
-	resolved, err := runtime.ResolveTemplate(text, state)
-	if err != nil {
-		return nil, fmt.Errorf("Message: %w", err)
-	}
+	// Message renders values for display, so keep Python's tolerant behavior:
+	// missing references become empty strings and structured values use JSON.
+	// Parameter-binding components continue to use the strict resolver.
+	resolved := runtime.ResolveTemplateForDisplay(text, state)
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
 	downloads := ExtractDownloads(resolved)
+	if downloads == nil {
+		downloads = make([]DownloadInfo, 0)
+	}
 	if len(downloads) > 0 && downloadInfoString(resolved) {
 		resolved = ""
 	}
@@ -213,10 +216,18 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 			Text:   resolved,
 		})
 	}
+	if rendered != "" {
+		if !runtime.EmitCanvasMessage(ctx, rendered) {
+			runtime.EmitAgentMessage(ctx, rendered, "")
+		}
+	}
 
-	out := map[string]any{"content": rendered}
-	if len(downloads) > 0 {
-		out["downloads"] = downloads
+	// Python's Message output schema always contains downloads, including an
+	// empty list. Keeping the key is also important for the full terminal
+	// output recorded in Canvas history between conversation turns.
+	out := map[string]any{
+		"content":   rendered,
+		"downloads": downloads,
 	}
 
 	// auto_play TTS dispatch. The audio bytes are returned under

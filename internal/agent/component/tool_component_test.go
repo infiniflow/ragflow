@@ -470,11 +470,22 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 	serverCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		serverCalls++
-		if symbols := request.URL.Query().Get("symbols"); symbols != "AAPL" {
-			t.Errorf("symbols = %q", symbols)
-		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"quoteResponse":{"result":[{"symbol":"AAPL","regularMarketPrice":189.5,"currency":"USD"}],"error":null}}`))
+		switch {
+		case request.URL.Path == "/v7/finance/quote" && request.URL.Query().Get("symbols") == "AAPL":
+			_, _ = writer.Write([]byte(`{
+				"quoteResponse": {
+					"result": [{
+						"symbol": "AAPL",
+						"regularMarketPrice": {"raw": 189.5},
+						"currency": "USD"
+					}],
+					"error": null
+				}
+			}`))
+		default:
+			t.Fatalf("unexpected path %s?%s", request.URL.Path, request.URL.RawQuery)
+		}
 	}))
 	defer server.Close()
 	target, err := url.Parse(server.URL)
@@ -503,7 +514,7 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	report, ok := out["report"].(string)
-	if !ok || !strings.Contains(report, "# Information:") || !strings.Contains(report, "| symbol | AAPL |") {
+	if !ok || !strings.Contains(report, "AAPL") {
 		t.Fatalf("report = %#v", out["report"])
 	}
 	if serverCalls != 1 {

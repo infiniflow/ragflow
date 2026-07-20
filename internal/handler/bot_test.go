@@ -492,6 +492,29 @@ func TestAgentbotCompletion_ResumesSession(t *testing.T) {
 	}
 }
 
+func TestAgentbotCompletion_BindsFileDescriptors(t *testing.T) {
+	var capturedReq service.AgentbotCompletionRequest
+	stub := &stubBotService{
+		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+			capturedReq = req
+			ch := make(chan canvas.RunEvent)
+			close(ch)
+			return ch, common.CodeSuccess, nil
+		},
+	}
+	r := botTestEngine(stub)
+	_ = doJSON(r, http.MethodPost, "/api/v1/agentbots/a1/completions", `{
+		"question":"hi",
+		"files":[{"id":"upload-1","name":"notes.txt","mime_type":"text/plain","created_by":"user-1"}]
+	}`)
+	if len(capturedReq.Files) != 1 {
+		t.Fatalf("files = %#v, want one descriptor", capturedReq.Files)
+	}
+	if capturedReq.Files[0]["id"] != "upload-1" || capturedReq.Files[0]["created_by"] != "user-1" {
+		t.Fatalf("file descriptor = %#v", capturedReq.Files[0])
+	}
+}
+
 // ----- AgentbotInputs tests (criteria 21, 22, 23) -----
 
 // TestAgentbotInputs_OK covers criterion 21.

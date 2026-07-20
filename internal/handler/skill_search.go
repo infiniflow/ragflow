@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -35,12 +36,13 @@ type SkillSearchHandler struct {
 	docEngine      engine.DocEngine
 }
 
-// NewSkillSearchHandler creates a new skill search handler
-func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
+// NewSkillSearchHandler creates a new skill search handler.
+// spaceRemover is the document remover used by the skill space service for file deletion.
+func NewSkillSearchHandler(docEngine engine.DocEngine, spaceRemover file.DocRemover) *SkillSearchHandler {
 	return &SkillSearchHandler{
 		searchService:  service.NewSkillSearchService(),
 		indexerService: service.NewSkillIndexerService(),
-		spaceService:   service.NewSkillSpaceService(),
+		spaceService:   service.NewSkillSpaceService(spaceRemover),
 		docEngine:      docEngine,
 	}
 }

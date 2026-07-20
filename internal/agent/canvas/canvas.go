@@ -48,6 +48,7 @@ type Canvas struct {
 	Components map[string]CanvasComponent `json:"components"`
 	Path       []string                   `json:"path"`
 	History    []map[string]any           `json:"history,omitempty"`
+	Memory     []map[string]any           `json:"memory,omitempty"`
 	Retrieval  map[string]any             `json:"retrieval,omitempty"`
 	Globals    map[string]any             `json:"globals,omitempty"`
 	// NodeParents preserves the front-end graph's grouping metadata

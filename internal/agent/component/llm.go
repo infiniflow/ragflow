@@ -309,7 +309,7 @@ func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeReques
 	for i, m := range req.Messages {
 		ragMsgs[i] = models.Message{Role: m.Role, Content: m.Content}
 	}
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, ragMsgs, cm.APIConfig, chatCfg)
+	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -622,7 +622,7 @@ func StreamContentStreaming(ctx context.Context, req ChatInvokeRequest, onChunk 
 	}
 
 	var fullContent strings.Builder
-	err = cm.ModelDriver.ChatStreamlyWithSender(req.ModelName, ragMsgs, cm.APIConfig, chatCfg, func(content *string, reason *string) error {
+	err = cm.ModelDriver.ChatStreamlyWithSender(req.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil, func(content *string, reason *string) error {
 		if content != nil && *content != "" {
 			if *content == "[DONE]" {
 				return nil
@@ -708,7 +708,11 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			msgs = prependHistory(msgs, state.History, p.MessageHistoryWindowSize)
+			history := state.SnapshotPriorHistory()
+			if len(history) == 0 {
+				history = state.History
+			}
+			msgs = prependHistory(msgs, history, p.MessageHistoryWindowSize)
 		}
 	}
 	inv := getDefaultChatInvoker()
@@ -1317,4 +1321,37 @@ func cleanFormattedAnswer(ans string) string {
 	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
 	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
 	return ans
+}
+
+// newChatModelDriver resolves a provider driver by name and optionally
+// overrides the base URL. Returns a ModelDriver ready for invocation.
+func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
+	pm := models.GetProviderManager()
+	if pm != nil {
+		provider := pm.FindProvider(driver)
+		if provider != nil && provider.ModelDriver != nil {
+			modelDriver := provider.ModelDriver
+			if strings.TrimSpace(override) != "" {
+				modelDriver = modelDriver.NewInstance(
+					map[string]string{
+						"default": strings.TrimRight(override, "/"),
+					},
+				)
+				if modelDriver == nil {
+					return nil, fmt.Errorf("provider does not support a custom base_url")
+				}
+			}
+			return modelDriver, nil
+		}
+	}
+
+	// Dummy is an explicit test/development driver and has no provider config.
+	if strings.EqualFold(driver, "dummy") {
+		baseURL := map[string]string(nil)
+		if strings.TrimSpace(override) != "" {
+			baseURL = map[string]string{"default": strings.TrimRight(override, "/")}
+		}
+		return models.NewDummyModel(baseURL, models.URLSuffix{Chat: "chat/completions"}), nil
+	}
+	return nil, fmt.Errorf("provider is not configured")
 }
