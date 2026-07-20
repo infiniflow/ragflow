@@ -218,7 +218,7 @@ async def _store_knn(
         scoring = []
         for r in rows:
             stored = r.get(vf)
-            if stored and len(stored) == len(vec):
+            if _vector_len(stored) > 0 and _vector_len(stored) == _vector_len(vec):
                 sim = sum(a * b for a, b in zip(stored, vec))
                 scoring.append((sim, r))
         scoring.sort(key=lambda x: -x[0])
@@ -280,7 +280,7 @@ async def _embed(embd_mdl, text: str) -> list[float]:
     """Encode a single text string and return its embedding vector."""
     global _EMBED_DIM
     vecs = await _encode(embd_mdl, [text])
-    if vecs and len(vecs[0]) > 0:
+    if vecs and _vector_len(vecs[0]) > 0:
         dim = len(vecs[0])
         if _EMBED_DIM is None:
             _EMBED_DIM = dim
@@ -288,9 +288,20 @@ async def _embed(embd_mdl, text: str) -> list[float]:
     return []
 
 
-def _cosine_sim(a: list[float], b: list[float]) -> float:
+def _vector_len(vec) -> int:
+    if vec is None:
+        return 0
+    try:
+        return len(vec)
+    except TypeError:
+        return 0
+
+
+def _cosine_sim(a, b) -> float:
     """Compute cosine similarity between two vectors."""
-    if not a or not b or len(a) != len(b):
+    a_len = _vector_len(a)
+    b_len = _vector_len(b)
+    if a_len == 0 or b_len == 0 or a_len != b_len:
         return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     na = sum(x * x for x in a) ** 0.5
@@ -322,7 +333,7 @@ def _make_nav_doc_row(
         "compile_kwd": _COMPILE_KWD,
         "knowledge_graph_kwd": "entity",
         "type_kwd": "nav_doc",
-        "name": doc_id,
+        "name": f"{parent_kwd}_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}",
         "parent_kwd": parent_kwd,
         "depth_int": depth_int,
         "available_int": 0,
@@ -332,7 +343,7 @@ def _make_nav_doc_row(
     ltks = _tokenize(summary)
     row["content_ltks"] = ltks
     row["content_sm_ltks"] = _fine_tokenize(ltks)
-    if embedding:
+    if _vector_len(embedding) > 0:
         dim = len(embedding)
         row[_vec_field(dim)] = embedding
     return row
@@ -368,7 +379,7 @@ def _make_nav_cluster_row(
     ltks = _tokenize(description)
     row["content_ltks"] = ltks
     row["content_sm_ltks"] = _fine_tokenize(ltks)
-    if embedding:
+    if _vector_len(embedding) > 0:
         dim = len(embedding)
         row[_vec_field(dim)] = embedding
     return row
@@ -425,7 +436,7 @@ async def _find_best_cluster(
     best_parent = best.get("parent_kwd", "")
     # compute actual similarity to root
     stored = best.get(_vec_field(vec_dim))
-    sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+    sim = _cosine_sim(doc_embedding, stored)
 
     # Step 2: recursively descend into children
     while sim >= _RECURSE_THRESHOLD:
@@ -440,7 +451,7 @@ async def _find_best_cluster(
             break
         child = children[0]
         stored = child.get(_vec_field(vec_dim))
-        child_sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+        child_sim = _cosine_sim(doc_embedding, stored)
         if child_sim < _RECURSE_THRESHOLD:
             break
         best_name = child.get("name", best_name)
@@ -582,7 +593,7 @@ async def upsert_dataset_nav_doc(
                 # Re-compute embedding for the new summary
                 if embd_mdl and new_desc != old_desc:
                     new_emb = await _embed(embd_mdl, new_desc)
-                    if new_emb:
+                    if _vector_len(new_emb) > 0:
                         cluster_row[_vec_field(len(new_emb))] = new_emb
                 await _store_upsert(tenant_id, kb_id, cluster_row)
 
@@ -620,7 +631,7 @@ async def upsert_dataset_nav_doc(
             if parent_row:
                 depth_of_parent = parent_row.get("depth_int", 1)
             new_depth = depth_of_parent + 1
-            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
+            new_name = f"{parent_for_new}_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
             new_desc = await _llm_create_summary(chat_mdl, [summary])
             new_cluster = _make_nav_cluster_row(
                 kb_id,
@@ -631,7 +642,7 @@ async def upsert_dataset_nav_doc(
                 [doc_id],
                 doc_embedding,
             )
-            if embd_mdl and doc_embedding:
+            if embd_mdl and _vector_len(doc_embedding) > 0:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
             await _store_upsert(tenant_id, kb_id, new_cluster)
 
@@ -647,7 +658,7 @@ async def upsert_dataset_nav_doc(
             await _store_upsert(tenant_id, kb_id, nav_doc_row)
         else:
             # ── Create root-level new cluster ──
-            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
+            new_name = f"root_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
             new_desc = await _llm_create_summary(chat_mdl, [summary])
             new_cluster = _make_nav_cluster_row(
                 kb_id,
@@ -658,7 +669,7 @@ async def upsert_dataset_nav_doc(
                 [doc_id],
                 doc_embedding,
             )
-            if embd_mdl and doc_embedding:
+            if embd_mdl and _vector_len(doc_embedding) > 0:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
             await _store_upsert(tenant_id, kb_id, new_cluster)
 
@@ -963,11 +974,11 @@ async def search_dataset_nav(
         except Exception:
             logging.exception("search_dataset_nav: embed failed for kb=%s", kb_id)
             vec = []
-        if vec:
+        if _vector_len(vec) > 0:
             try:
                 rows = await _store_knn(tenant_id, kb_id, vec, len(vec), condition, top_k=top_k)
                 vf = _vec_field(len(vec))
-                rows_with_scores = [(r, _cosine_sim(vec, r.get(vf) or [])) for r in rows]
+                rows_with_scores = [(r, _cosine_sim(vec, r.get(vf))) for r in rows]
             except Exception:
                 logging.exception("search_dataset_nav: knn failed for kb=%s", kb_id)
                 rows_with_scores = []

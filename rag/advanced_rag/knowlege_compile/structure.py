@@ -45,6 +45,7 @@ _ES_DEDUP_LLM_CONCURRENCY = 16
 _ES_DEDUP_LLM_BATCH_SIZE = 16
 _ES_DEDUP_EMBED_BATCH_SIZE = 64
 _ES_DEDUP_INSERT_BATCH_SIZE = 256
+_STRUCT_INVALID_SENTINELS = {"-1"}
 
 
 class LLMCallPool:
@@ -319,6 +320,26 @@ def _struct_entity_id_field(parser_config: dict) -> str:
     return "name"
 
 
+def _struct_is_invalid_sentinel(value) -> bool:
+    return isinstance(value, str) and value.strip() in _STRUCT_INVALID_SENTINELS
+
+
+def _struct_is_invalid_entity_payload(payload: dict, parser_config: dict) -> bool:
+    id_field = _struct_entity_id_field(parser_config)
+    for key in (id_field, "name", "text", "term", "title"):
+        if _struct_is_invalid_sentinel(payload.get(key)):
+            return True
+    return False
+
+
+def _struct_is_invalid_relation_payload(payload: dict, parser_config: dict) -> bool:
+    src_field, target_field = _struct_relation_member_fields(parser_config)
+    for key in (src_field, target_field, "source", "src", "from", "target", "tgt", "to"):
+        if key and _struct_is_invalid_sentinel(payload.get(key)):
+            return True
+    return False
+
+
 def _struct_unwrap_items(res) -> list:
     if res is None:
         return []
@@ -337,7 +358,11 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
 
     user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
     node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
-    nodes = _struct_unwrap_items(node_res)
+    nodes = [
+        node
+        for node in _struct_unwrap_items(node_res)
+        if not _struct_is_invalid_entity_payload(node, parser_config)
+    ]
 
     id_field = _struct_entity_id_field(parser_config)
     known_keys = []
@@ -355,7 +380,11 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
 
     edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
     edge_res = await gen_json(edge_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
-    edges = _struct_unwrap_items(edge_res)
+    edges = [
+        edge
+        for edge in _struct_unwrap_items(edge_res)
+        if not _struct_is_invalid_relation_payload(edge, parser_config)
+    ]
 
     return nodes, edges
 
@@ -395,7 +424,7 @@ def _struct_load_payload(doc: dict) -> dict:
 def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) -> dict | None:
     name = payload.get("name") or payload.get("text") or payload.get("term") or payload.get("title")
     name = str(name).strip() if name is not None else ""
-    if not name:
+    if not name or _struct_is_invalid_sentinel(name):
         return None
     typ = payload.get("type") or "other"
     typ = str(typ).strip() if typ is not None else "other"
@@ -424,7 +453,7 @@ def _struct_graph_relation(payload: dict) -> dict | None:
     tgt = payload.get("target") or payload.get("tgt") or payload.get("to")
     src = str(src).strip() if src is not None else ""
     tgt = str(tgt).strip() if tgt is not None else ""
-    if not src or not tgt:
+    if not src or not tgt or _struct_is_invalid_sentinel(src) or _struct_is_invalid_sentinel(tgt):
         return None
     typ = payload.get("type") or "related"
     return {

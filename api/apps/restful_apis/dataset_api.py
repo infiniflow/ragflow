@@ -854,6 +854,51 @@ async def list_dataset_nav_children(tenant_id, dataset_id, name):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/nav", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_dataset_nav(tenant_id, dataset_id):
+    """Delete the entire dataset navigation tree.
+
+    DELETE /api/v1/datasets/<dataset_id>/nav
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_nav(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/nav/<path:name>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_dataset_nav_node(tenant_id, dataset_id, name):
+    """Delete one navigation node and its whole subtree.
+
+    DELETE /api/v1/datasets/<dataset_id>/nav/<name>
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_nav_node(
+            dataset_id,
+            tenant_id,
+            name,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/skills/<path:skill_kwd>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

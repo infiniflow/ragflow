@@ -46,6 +46,7 @@ from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
     compile_structure_from_text,
     merge_compiled_structures,
+    rebuild_structure_graph_json,
 )
 
 
@@ -141,6 +142,103 @@ def split_tree_templates(
         else:
             non_tree_templates.append((tid, cfg))
     return tree_templates, non_tree_templates
+
+
+def _is_page_index_template(parser_cfg: dict) -> bool:
+    kind = (parser_cfg or {}).get("kind")
+    if not isinstance(kind, str):
+        return False
+    return kind.strip().lower().replace("-", "_") in {"page_index", "pageindex"}
+
+
+def _page_index_graph_summary(graph: dict, limit: int = 80) -> str:
+    entities = graph.get("entities") if isinstance(graph, dict) else None
+    if not isinstance(entities, list):
+        return ""
+
+    lines: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name") or "").strip()
+        description = str(entity.get("discription") or entity.get("description") or "").strip()
+        text = f"{name}: {description}".strip(": ").strip()
+        if text:
+            lines.append(text)
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+async def _upsert_dataset_nav_from_page_index(
+    *,
+    active_templates: list[tuple[str, dict]],
+    chat_mdl_by_tid: dict[str, LLMBundle],
+    embedding_model: LLMBundle,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable[..., None],
+    cancel_check: Callable[[], bool],
+) -> None:
+    page_index_templates = [
+        (template_id, parser_cfg)
+        for template_id, parser_cfg in active_templates
+        if _is_page_index_template(parser_cfg)
+    ]
+    if not page_index_templates:
+        return
+
+    summaries: list[str] = []
+    chat_mdl = None
+    for template_id, _ in page_index_templates:
+        if cancel_check():
+            raise TaskCanceledException("Task was cancelled before dataset navigation update")
+        try:
+            graph = await rebuild_structure_graph_json(
+                tenant_id,
+                kb_id,
+                doc_id,
+                "timeline",
+                compilation_template_id=template_id,
+            )
+        except Exception:
+            logging.exception(
+                "page_index: failed to rebuild graph summary for dataset_nav doc %s template %s",
+                doc_id,
+                template_id,
+            )
+            continue
+
+        summary = _page_index_graph_summary(graph)
+        if summary:
+            summaries.append(summary)
+            chat_mdl = chat_mdl or chat_mdl_by_tid.get(template_id)
+
+    if not summaries:
+        logging.info("page_index: no dataset_nav summary for doc %s", doc_id)
+        return
+
+    if cancel_check():
+        raise TaskCanceledException("Task was cancelled before dataset navigation upsert")
+    try:
+        from rag.advanced_rag.knowlege_compile.dataset_nav import (
+            upsert_dataset_nav_doc,
+        )
+
+        progress_cb(msg=f"page_index: updating dataset navigation for doc {doc_id} ...")
+        await upsert_dataset_nav_doc(
+            tenant_id,
+            kb_id,
+            doc_id,
+            "\n\n".join(summaries),
+            embd_mdl=embedding_model,
+            chat_mdl=chat_mdl,
+        )
+    except TaskCanceledException:
+        raise
+    except Exception:
+        logging.exception("page_index: dataset_nav upsert failed for doc %s", doc_id)
 
 
 # ----- non-tree compilation core -------------------------------------
@@ -371,6 +469,17 @@ async def run_structure_compile_over_batches(
             raise
         finally:
             flush_tasks.clear()
+
+    await _upsert_dataset_nav_from_page_index(
+        active_templates=active_templates,
+        chat_mdl_by_tid=chat_mdl_by_tid,
+        embedding_model=embedding_model,
+        tenant_id=tenant_id,
+        kb_id=kb_id,
+        doc_id=doc_id,
+        progress_cb=progress_cb,
+        cancel_check=cancel_check,
+    )
 
     for idx, (template_id, parser_cfg) in enumerate(active_templates):
         if cancel_check():

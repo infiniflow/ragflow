@@ -2133,6 +2133,99 @@ async def list_nav_children(dataset_id: str, tenant_id: str, name: str, page: in
     return await _nav_search(dataset_id, tenant_id, condition, page, page_size)
 
 
+async def delete_nav(dataset_id: str, tenant_id: str):
+    """Delete the entire dataset navigation tree for a dataset.
+
+    Returns ``(True, {"deleted": <n>})``; succeeds with ``0`` when there is no
+    index yet.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_NAV_COMPILE_KWD]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_nav: docStore delete failed for kb=%s", dataset_id)
+        return False, "Failed to delete the navigation tree."
+
+    return True, {"deleted": int(deleted or 0)}
+
+
+async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
+    """Delete one navigation node (identified by ``name``) and its whole subtree.
+
+    Children reference their parent by ``name`` (``parent_kwd``), so removing a
+    cluster without its descendants would leave them orphaned in the tree view.
+    We therefore walk the subtree top-down and delete every node in it.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return True, {"deleted": 0}
+    name = name.strip()
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    # Collect the node plus every descendant, level by level via parent_kwd.
+    names: set[str] = {name}
+    frontier: list[str] = [name]
+    for _ in range(64):  # depth guard against a malformed (cyclic) tree
+        if not frontier:
+            break
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=["name"],
+                highlight_fields=[],
+                condition={"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=10000,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["name"]) or {}
+        except Exception:
+            logging.exception("delete_nav_node: subtree scan failed for kb=%s name=%s", dataset_id, name)
+            break
+        nxt: list[str] = []
+        for row in rows.values():
+            child = row.get("name")
+            if isinstance(child, str) and child and child not in names:
+                names.add(child)
+                nxt.append(child)
+        frontier = nxt
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_NAV_COMPILE_KWD], "name": list(names)},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_nav_node: docStore delete failed for kb=%s name=%s", dataset_id, name)
+        return False, "Failed to delete the navigation node."
+
+    return True, {"deleted": int(deleted or 0)}
+
+
 async def update_wiki_page(
     dataset_id: str,
     tenant_id: str,
