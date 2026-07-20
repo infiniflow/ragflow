@@ -338,6 +338,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "high"
 					break
+				case "xhigh":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "xhigh"
+					break
 				default:
 					return fmt.Errorf("invalid effort level")
 				}
