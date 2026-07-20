@@ -351,6 +351,8 @@ export const initialTitleChunkerValues = {
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
+  auto_keywords: 0,
+  auto_questions: 0,
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
