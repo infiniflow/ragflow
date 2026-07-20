@@ -38,25 +38,27 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
 
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
-	GetDocumentByID(id string) (*service.DocumentResponse, error)
-	UpdateDocument(id string, req *service.UpdateDocumentRequest) error
+	GetDocumentByID(id string) (*document.DocumentResponse, error)
+	UpdateDocument(id string, req *document.UpdateDocumentRequest) error
 	DeleteDocument(id string) error
 	DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error)
-	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	ListDocuments(page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error)
 	GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
 	GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error)
-	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	GetThumbnails(userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(imageID string) ([]byte, error)
 	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
@@ -64,35 +66,41 @@ type documentServiceIface interface {
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
-	GetDocumentArtifact(filename, userID string) (*service.ArtifactResponse, error)
-	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
+	GetDocumentArtifact(filename, userID string) (*document.ArtifactResponse, error)
+	GetDocumentPreview(docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
-	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
-	UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error)
-	BatchUpdateDocumentMetadatas(datasetID string, selector *service.DocumentMetadataSelector, updates []service.DocumentMetadataUpdate, deletes []service.DocumentMetadataDelete) (*service.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error)
-	UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
-	UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
+	DownloadDocument(datasetID, docID string) (*document.DownloadDocumentResp, error)
+	UpdateDatasetDocument(userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	BatchUpdateDocumentMetadatas(datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
-	Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error)
+	Ingest(userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
+}
+
+// fileUploadIface defines the FileService upload methods used by DocumentHandler.
+type fileUploadIface interface {
+	UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
 type DocumentHandler struct {
 	documentService documentServiceIface
-	datasetService  *service.DatasetService
+	datasetService  *dataset.DatasetService
+	fileService     fileUploadIface
 }
 
 // NewDocumentHandler create document handler
-func NewDocumentHandler(documentService documentServiceIface, datasetService *service.DatasetService) *DocumentHandler {
+func NewDocumentHandler(documentService documentServiceIface, datasetService *dataset.DatasetService, fileService fileUploadIface) *DocumentHandler {
 	return &DocumentHandler{
 		documentService: documentService,
 		datasetService:  datasetService,
+		fileService:     fileService,
 	}
 }
 
@@ -219,9 +227,9 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 	artifact, err := h.documentService.GetDocumentArtifact(filename, user.ID)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrArtifactInvalidFilename),
-			errors.Is(err, service.ErrArtifactInvalidFileType),
-			errors.Is(err, service.ErrArtifactNotFound):
+		case errors.Is(err, document.ErrArtifactInvalidFilename),
+			errors.Is(err, document.ErrArtifactInvalidFileType),
+			errors.Is(err, document.ErrArtifactNotFound):
 			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 
 		default:
@@ -272,7 +280,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "document ID"
-// @Param request body service.UpdateDocumentRequest true "update info"
+// @Param request body document.UpdateDocumentRequest true "update info"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
@@ -300,7 +308,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	var req service.UpdateDocumentRequest
+	var req document.UpdateDocumentRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -1230,7 +1238,7 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body service.IngestDocumentRequest true "ingestion info"
+// @Param request body document.IngestDocumentRequest true "ingestion info"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/ingest [post]
 func (h *DocumentHandler) Ingest(c *gin.Context) {
@@ -1246,7 +1254,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 		return
 	}
 
-	var req service.IngestDocumentRequest
+	var req document.IngestDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -1577,7 +1585,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 	for key := range raw {
 		present[key] = true
 	}
-	var req service.UpdateDatasetDocumentRequest
+	var req document.UpdateDatasetDocumentRequest
 	if err = json.Unmarshal(body, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
@@ -1621,7 +1629,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	if rawURL != "" {
-		data, code, err := h.documentService.UploadDocumentInfoByURL(user.ID, rawURL)
+		data, code, err := h.fileService.UploadDocumentInfoByURL(user.ID, rawURL)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -1630,7 +1638,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.documentService.UploadDocumentInfos(user.ID, fileHeaders)
+	data, code, err := h.fileService.UploadDocumentInfos(user.ID, fileHeaders)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1646,9 +1654,9 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 }
 
 type documentMetadataBatchRequest struct {
-	Selector *service.DocumentMetadataSelector `json:"selector"`
-	Updates  []service.DocumentMetadataUpdate  `json:"updates"`
-	Deletes  []service.DocumentMetadataDelete  `json:"deletes"`
+	Selector *document.DocumentMetadataSelector `json:"selector"`
+	Updates  []document.DocumentMetadataUpdate  `json:"updates"`
+	Deletes  []document.DocumentMetadataDelete  `json:"deletes"`
 }
 
 func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
@@ -1682,13 +1690,13 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	if req.Selector == nil {
-		req.Selector = &service.DocumentMetadataSelector{}
+		req.Selector = &document.DocumentMetadataSelector{}
 	}
 	if req.Updates == nil {
-		req.Updates = []service.DocumentMetadataUpdate{}
+		req.Updates = []document.DocumentMetadataUpdate{}
 	}
 	if req.Deletes == nil {
-		req.Deletes = []service.DocumentMetadataDelete{}
+		req.Deletes = []document.DocumentMetadataDelete{}
 	}
 
 	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(datasetID, req.Selector, req.Updates, req.Deletes)
