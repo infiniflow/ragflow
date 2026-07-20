@@ -6,15 +6,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-
-	"go.uber.org/zap"
 )
 
 // UploadLocalDocuments stores each uploaded file in object storage and inserts a
@@ -313,7 +310,7 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
 	}
-	parserID := selectUploadParser(utility.FileType(filetype), filename, kb.ParserID)
+	parserID := kb.ParserID
 	if kb.PipelineID != nil {
 		parserID = "" // canvas pipeline mode — parser_id not applicable
 	}
@@ -338,19 +335,6 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		hash := contentHashHex(blob)
 		doc.ContentHash = &hash
 	}
-
-	// When the document's builtin parser_id differs from the KB's (e.g. visual→picture,
-	// aural→audio), re-resolve component_params defaults from the document's own DSL
-	// template so cpnIDs and param keys match the pipeline that will actually execute.
-	if kb.PipelineID == nil && parserID != kb.ParserID {
-		if cp, err := service.ResolveComponentParamsDefaults(parserID, nil); err != nil {
-			common.Warn("newDatasetDocument: resolve component_params defaults",
-				zap.String("parserID", parserID), zap.Error(err))
-		} else if cp != nil {
-			doc.ParserConfig = cp
-		}
-	}
-
 	return doc
 }
 
