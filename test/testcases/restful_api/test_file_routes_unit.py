@@ -180,7 +180,9 @@ def _load_file_api_module(monkeypatch):
 
     web_utils_mod = ModuleType("api.utils.web_utils")
     web_utils_mod.CONTENT_TYPE_MAP = {"txt": "text/plain"}
-    web_utils_mod.apply_safe_file_response_headers = lambda response, content_type, ext: response.headers.update({"content_type": content_type, "ext": ext})
+    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update(
+        {"content_type": content_type, "ext": ext, "filename": filename}
+    )
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     common_pkg = ModuleType("common")
@@ -329,6 +331,7 @@ def test_download_falls_back_to_document_storage(monkeypatch):
     assert res.data == b"fallback-blob"
     assert res.headers["content_type"] == "text/plain"
     assert res.headers["ext"] == "txt"
+    assert res.headers["filename"] == "doc.txt"
 
 
 @pytest.mark.p2
