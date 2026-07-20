@@ -291,7 +291,7 @@ func (dao *KnowledgebaseDAO) Accessible(datasetID, userID string) bool {
 
 	var count int64
 	err = DB.Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ?", kb.TenantID, userID).
+		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
 		Count(&count).Error
 
 	if err != nil {
