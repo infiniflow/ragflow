@@ -73,5 +73,7 @@ def test_due_sync_query_filters_disabled_connectors_before_materialization(monke
     assert SyncLogsService._list_due_tasks_for_freq(ConnectorTaskType.SYNC, "refresh_freq") == []
 
     frequency_filter = next(condition for conditions in where_calls for condition in conditions if getattr(condition, "op", None) == "OR")
-    assert (frequency_filter.lhs.lhs, frequency_filter.lhs.op, frequency_filter.lhs.rhs) == (Connector.refresh_freq, ">", 0)
-    assert (frequency_filter.rhs.lhs, frequency_filter.rhs.op, frequency_filter.rhs.rhs) == (SyncLogs.from_beginning, "=", "1")
+    assert frequency_filter.lhs.lhs is Connector.refresh_freq
+    assert (frequency_filter.lhs.op, frequency_filter.lhs.rhs) == (">", 0)
+    assert frequency_filter.rhs.lhs is SyncLogs.from_beginning
+    assert (frequency_filter.rhs.op, frequency_filter.rhs.rhs) == ("=", "1")
