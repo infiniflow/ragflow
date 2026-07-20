@@ -70,6 +70,11 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/system/license", r.handler.ShowSystemLicense)
 	protected.PUT("/system/license/config", r.handler.UpdateSystemLicenseConfig)
 
+	protected.GET("/fingerprint", r.handler.GetFingerprint)
+	protected.POST("/license", r.handler.SetLicense)
+	protected.POST("/license/config", r.handler.UpdateLicenseConfig)
+	protected.GET("/license", r.handler.ShowLicense)
+
 	// Stats data info
 	protected.GET("/users/:username/activity", r.handler.ShowUserActivity)
 	protected.GET("/users/:username/dataset", r.handler.ShowUserDatasetSummary)

@@ -127,13 +127,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 
-			// Fingerprint
-			protected.GET("/fingerprint", r.handler.GetFingerprint)
-			// License
-			protected.POST("/license", r.handler.SetLicense)
-			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
-			protected.GET("/license", r.handler.ShowLicense)
-
 			RegisterEERouter(protected, r)
 		}
 	}
