@@ -409,7 +409,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 							}
 						}
 					} else {
-						accumulatedToolCalls[idx] = CloneMap(tcMap)
+						accumulatedToolCalls[idx] = cloneMap(tcMap)
 					}
 				}
 			}

@@ -391,7 +391,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 						}
 					}
 				} else {
-					accumulatedToolCalls[idx] = CloneMap(tcMap)
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
 				}
 			}
 		}

@@ -275,7 +275,7 @@ func accumulateToolCallDeltas(delta map[string]interface{}, accumulatedToolCalls
 		idx := int(idxF)
 		existing, hasExisting := accumulatedToolCalls[idx]
 		if !hasExisting {
-			accumulatedToolCalls[idx] = CloneMap(toolCall)
+			accumulatedToolCalls[idx] = cloneMap(toolCall)
 			continue
 		}
 		appendStringField(existing, toolCall, "id")
@@ -316,7 +316,7 @@ func mergeToolCallFunction(existing, delta map[string]interface{}) {
 }
 
 // CloneMap returns a shallow copy of m.
-func CloneMap(m map[string]interface{}) map[string]interface{} {
+func cloneMap(m map[string]interface{}) map[string]interface{} {
 	cp := make(map[string]interface{}, len(m))
 	for k, v := range m {
 		cp[k] = v
