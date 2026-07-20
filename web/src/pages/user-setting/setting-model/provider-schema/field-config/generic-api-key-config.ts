@@ -77,13 +77,16 @@ export const GenericApiKeyConfig: ProviderConfig = {
     apiKey: values.api_key,
     baseUrl: values.base_url,
   }),
-  submitTransform: (values) => ({
-    instance_name: values.instance_name,
-    api_key: values.api_key,
-    api_base: values.base_url || '',
-    group_id: values.group_id,
-    max_tokens: 0,
-  }),
+  submitTransform: (values) => {
+    const apiKey = values.group_id
+      ? { api_key: values.api_key ?? '', group_id: values.group_id }
+      : (values.api_key ?? '');
+    return {
+      instance_name: values.instance_name,
+      api_key: apiKey,
+      api_base: values.base_url || '',
+    };
+  },
 };
 
 /**
