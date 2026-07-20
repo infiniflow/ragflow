@@ -46,6 +46,9 @@ const (
 
 // validateParserID validates parser_id against the built-in pipeline registry.
 func validateParserID(chunkMethod string) error {
+	if chunkMethod == "knowledge_graph" {
+		return nil
+	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
 		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
@@ -95,23 +98,32 @@ func validateDatasetAvatar(avatar string) error {
 	return nil
 }
 
-func validateDatasetEmbeddingModel(embeddingModel string) error {
-	if embeddingModel == "" {
-		return errors.New("Embedding model identifier is required")
+func isHexID(s string) bool {
+	if len(s) != 32 {
+		return false
 	}
-	if !strings.Contains(embeddingModel, "@") {
-		return nil
-	}
-	parts := strings.Split(embeddingModel, "@")
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			return errors.New("Both model_name and provider must be non-empty strings")
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
 		}
 	}
-	if len(parts) < 2 {
+	return true
+}
+
+func validateDatasetEmbeddingModel(embeddingModel string) error {
+	if isHexID(embeddingModel) {
+		return nil
+	}
+
+	if !strings.Contains(embeddingModel, "@") {
 		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
 	}
-	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
+
+	parts := strings.SplitN(embeddingModel, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return errors.New("Both model_name and provider must be non-empty strings")
+	}
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 		return errors.New("Both model_name and provider must be non-empty strings")
 	}
 	return nil
@@ -212,10 +224,8 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	if !provided {
 		return "", false, nil
 	}
-	if embdID != "" {
-		if err := validateDatasetEmbeddingModel(embdID); err != nil {
-			return "", true, err
-		}
+	if err := validateDatasetEmbeddingModel(embdID); err != nil {
+		return "", true, err
 	}
 	return embdID, true, nil
 }

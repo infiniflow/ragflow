@@ -89,8 +89,16 @@ func TestValidateDatasetEmbeddingModel_Empty(t *testing.T) {
 }
 
 func TestValidateDatasetEmbeddingModel_NameOnlyNoProvider(t *testing.T) {
-	if err := validateDatasetEmbeddingModel("BAAI/bge-large-zh-v1.5"); err != nil {
-		t.Fatalf("expected nil for name without @, got %v", err)
+	// A bare model name without @provider (and not a 32-char hex model ID) is
+	// rejected, mirroring the Python contract.
+	if err := validateDatasetEmbeddingModel("BAAI/bge-large-zh-v1.5"); err == nil {
+		t.Fatal("expected error for name without @provider")
+	}
+}
+
+func TestValidateDatasetEmbeddingModel_HexModelID(t *testing.T) {
+	if err := validateDatasetEmbeddingModel("aabbccdd11223344aabbccdd11223344"); err != nil {
+		t.Fatalf("expected nil for 32-char hex model ID, got %v", err)
 	}
 }
 
