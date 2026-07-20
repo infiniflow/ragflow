@@ -8,7 +8,7 @@ import (
 )
 
 // ============================================
-// 第一部分：findTableAnchors 的测试
+// Part 1: findTableAnchors tests
 // ============================================
 
 func TestFindTableAnchors_SingleTable(t *testing.T) {
@@ -121,7 +121,7 @@ func TestFindTableAnchors_DifferentPage(t *testing.T) {
 }
 
 // ============================================
-// 第二部分：buildTableHTMLs 的测试
+// Part 2: buildTableHTMLs tests
 // ============================================
 
 func TestBuildTableHTMLs_SingleTable(t *testing.T) {
@@ -182,7 +182,7 @@ func TestBuildTableHTMLs_WithTableBoxes(t *testing.T) {
 }
 
 // ============================================
-// 第三部分：insertTableBoxes 的测试
+// Part 3: insertTableBoxes tests
 // ============================================
 
 func TestInsertTableBoxes_Basic(t *testing.T) {
@@ -306,7 +306,7 @@ func TestInsertTableBoxes_EmptyHTML(t *testing.T) {
 }
 
 // ============================================
-// 第四部分：集成测试 - 验证重构后功能保持一致
+// Part 4: Integration tests - verify refactored behavior remains consistent
 // ============================================
 
 func TestExtractTableAndReplace_Integration(t *testing.T) {
@@ -380,7 +380,7 @@ func TestExtractTableAndReplace_ZeroBoxesWithTables(t *testing.T) {
 }
 
 // ============================================
-// 第五部分：FilterBoxesByRemoveSet 单元测试
+// Part 5: FilterBoxesByRemoveSet unit tests
 // ============================================
 
 func TestFilterBoxesByRemoveSet_EmptyRemoveSet(t *testing.T) {
@@ -427,25 +427,25 @@ func TestFilterBoxesByRemoveSet_EmptyInput(t *testing.T) {
 }
 
 func TestFilterBoxesByRemoveSet_Preallocation(t *testing.T) {
-	// 验证容量预分配是否合理
+	// Verify that capacity pre-allocation is reasonable
 	boxes := make([]pdf.TextBox, 100)
 	removeSet := map[int]bool{}
 	for i := 0; i < 30; i++ {
-		removeSet[i] = true // 标记 30 个要移除
+		removeSet[i] = true // Mark 30 entries for removal
 	}
 
 	result := FilterBoxesByRemoveSet(boxes, removeSet)
 	if len(result) != 70 {
 		t.Errorf("expected 70 boxes, got %d", len(result))
 	}
-	// 验证容量至少为 70
+	// Verify capacity is at least 70
 	if cap(result) < 70 {
 		t.Errorf("expected capacity >= 70, got %d", cap(result))
 	}
 }
 
 // ============================================
-// 第六部分：createTableBoxFromItem 单元测试
+// Part 6: createTableBoxFromItem unit tests
 // ============================================
 
 func TestCreateTableBoxFromItem_Basic(t *testing.T) {
@@ -475,7 +475,7 @@ func TestCreateTableBoxFromItem_Basic(t *testing.T) {
 }
 
 func TestCreateTableBoxFromItem_FallbackToPosition(t *testing.T) {
-	// Region 字段为空时，使用 Position 的坐标
+	// When Region fields are empty, use the Position coordinates
 	table := &pdf.TableItem{
 		Positions: []pdf.Position{{
 			PageNumbers: []int{2},
@@ -493,7 +493,7 @@ func TestCreateTableBoxFromItem_FallbackToPosition(t *testing.T) {
 }
 
 func TestCreateTableBoxFromItem_EmptyPositions(t *testing.T) {
-	// 没有 Positions 时也能工作
+	// Also works when Positions is empty
 	table := &pdf.TableItem{
 		RegionLeft:   10,
 		RegionRight:  100,
@@ -508,7 +508,7 @@ func TestCreateTableBoxFromItem_EmptyPositions(t *testing.T) {
 }
 
 // ============================================
-// 第七部分：handleImageOnlyPDFs 单元测试
+// Part 7: handleImageOnlyPDFs unit tests
 // ============================================
 
 func TestHandleImageOnlyPDFs_EmptyTables(t *testing.T) {
@@ -520,7 +520,7 @@ func TestHandleImageOnlyPDFs_EmptyTables(t *testing.T) {
 
 func TestHandleImageOnlyPDFs_EmptyCells(t *testing.T) {
 	tables := []pdf.TableItem{
-		{Cells: []pdf.TSRCell{}}, // 没有 cell 的 table
+		{Cells: []pdf.TSRCell{}}, // Table with no cells
 	}
 	result := handleImageOnlyPDFs(tables)
 	if len(result) != 0 {
@@ -563,7 +563,7 @@ func TestHandleImageOnlyPDFs_MultipleTables(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "table1"}},
 		},
 		{
-			// 没有 cell 的 table，应该被跳过
+			// Table with no cells, should be skipped
 			Cells: []pdf.TSRCell{},
 		},
 		{
@@ -581,7 +581,7 @@ func TestHandleImageOnlyPDFs_MultipleTables(t *testing.T) {
 }
 
 // ============================================
-// 阶段 2: buildAndSortAnchors 和 processTablesWithReplacements
+// Phase 2: buildAndSortAnchors and processTablesWithReplacements
 // ============================================
 
 func TestBuildAndSortAnchors(t *testing.T) {
@@ -608,7 +608,7 @@ func TestBuildAndSortAnchors(t *testing.T) {
 }
 
 // ============================================
-// 第八部分：ConsolidateFigures 子函数的单元测试
+// Part 8: ConsolidateFigures subfunction unit tests
 // ============================================
 
 func TestMarkDataSourceBoxesForRemoval(t *testing.T) {
@@ -617,7 +617,7 @@ func TestMarkDataSourceBoxesForRemoval(t *testing.T) {
 		{Text: "资料来源：abc", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
 		{Text: "图表来源 def", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
 		{Text: "正常图片内容", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
-		{Text: "数据来源: 不应该移除", LayoutType: pdf.LayoutTypeText, PageNumber: 0}, // 不是 figure 类型
+		{Text: "数据来源: 不应该移除", LayoutType: pdf.LayoutTypeText, PageNumber: 0}, // Not a figure type
 	}
 
 	removeSet := markDataSourceBoxesForRemoval(boxes)
@@ -637,7 +637,7 @@ func TestGroupFigureBoxes(t *testing.T) {
 		{Text: "fig1-part1", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-0"},
 		{Text: "fig1-part2", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-0"},
 		{Text: "fig2", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-1"},
-		{Text: "fig3", LayoutType: pdf.LayoutTypeFigure, PageNumber: 1, LayoutNo: "fig-0"}, // 不同页面
+		{Text: "fig3", LayoutType: pdf.LayoutTypeFigure, PageNumber: 1, LayoutNo: "fig-0"}, // Different page
 		{Text: "text", LayoutType: pdf.LayoutTypeText, PageNumber: 0},
 	}
 	removeSet := map[int]bool{}
@@ -647,7 +647,7 @@ func TestGroupFigureBoxes(t *testing.T) {
 		t.Errorf("expected 3 groups, got %d", len(groups))
 	}
 
-	// 验证组的内容
+	// Verify the group's contents
 	key1 := figKey{page: 0, ln: "fig-0"}
 	if len(groups[key1]) != 2 {
 		t.Errorf("expected 2 boxes in fig-0 group, got %d", len(groups[key1]))
@@ -679,7 +679,7 @@ func TestMergeFigureGroups(t *testing.T) {
 
 	mergeFigureGroups(boxes, groups, removeSet)
 
-	// 验证合并后的结果
+	// Verify the merged result
 	if boxes[0].Text != "part1\npart2" {
 		t.Errorf("expected merged text, got %q", boxes[0].Text)
 	}
@@ -706,12 +706,12 @@ func TestConsolidateFigures_Integration(t *testing.T) {
 
 	result := ConsolidateFigures(boxes)
 
-	// 验证结果
-	if len(result) != 2 { // 合并后的 figure + normal text
+	// Verify result
+	if len(result) != 2 { // Merged figure + normal text
 		t.Errorf("expected 2 boxes, got %d", len(result))
 	}
 
-	// 检查 figure 是否正确合并
+	// Check that figures are correctly merged
 	var figureFound bool
 	for _, b := range result {
 		if b.LayoutType == pdf.LayoutTypeFigure {

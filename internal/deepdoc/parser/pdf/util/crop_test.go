@@ -245,6 +245,33 @@ func TestMapRotatedPointToOriginal(t *testing.T) {
 	}
 }
 
+func TestMapRotatedRectToOriginal_NormalizesBounds(t *testing.T) {
+	tests := []struct {
+		name           string
+		angle          int
+		wantX0, wantY0 float64
+		wantX1, wantY1 float64
+	}{
+		{name: "zero", angle: 0, wantX0: 10, wantY0: 20, wantX1: 60, wantY1: 80},
+		{name: "ninety", angle: 90, wantX0: 20, wantY0: 39, wantX1: 80, wantY1: 89},
+		{name: "one-eighty", angle: 180, wantX0: 139, wantY0: 19, wantX1: 189, wantY1: 79},
+		{name: "two-seventy", angle: 270, wantX0: 119, wantY0: 10, wantX1: 179, wantY1: 60},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotX0, gotY0, gotX1, gotY1 := MapRotatedRectToOriginal(10, 20, 60, 80, tt.angle, 200, 100)
+			if gotX0 != tt.wantX0 || gotY0 != tt.wantY0 || gotX1 != tt.wantX1 || gotY1 != tt.wantY1 {
+				t.Errorf("got (%.0f,%.0f,%.0f,%.0f), want (%.0f,%.0f,%.0f,%.0f)",
+					gotX0, gotY0, gotX1, gotY1, tt.wantX0, tt.wantY0, tt.wantX1, tt.wantY1)
+			}
+			if gotX0 > gotX1 || gotY0 > gotY1 {
+				t.Fatalf("mapped rectangle is inverted: (%.0f,%.0f,%.0f,%.0f)", gotX0, gotY0, gotX1, gotY1)
+			}
+		})
+	}
+}
+
 func colorEqual(a, b color.Color) bool {
 	ar, ag, ab, aa := a.RGBA()
 	br, bg, bb, ba := b.RGBA()
@@ -313,7 +340,7 @@ func TestCropSectionByDLA(t *testing.T) {
 	// DLA regions in pixel space (216 DPI).
 	// Figure region at (30, 60, 270, 420) — a large area covering most of the image.
 	// Text region at (10, 400, 100, 440) — a small text box near the bottom.
-	dlaDebug := []pdf.DLAPageRegions{{
+	dlaRegions := []pdf.DLAPageRegions{{
 		Page: 0,
 		Regions: []pdf.DLARegion{
 			{X0: 10, Y0: 400, X1: 100, Y1: 440, Label: "text"},
@@ -334,7 +361,7 @@ func TestCropSectionByDLA(t *testing.T) {
 		LayoutType: "figure",
 	}
 
-	result := CropSectionByDLA(sec, dlaDebug, pageImages)
+	result := CropSectionByDLA(sec, dlaRegions, pageImages)
 	if result == "" {
 		t.Fatal("expected non-empty result for figure overlapping DLA region")
 	}
@@ -352,12 +379,14 @@ func TestCropSectionByDLA(t *testing.T) {
 	}
 }
 
-// TestCropSectionByDLA_NoMatch returns empty when no DLA region overlaps.
+// TestCropSectionByDLA_NoMatch falls back to the section bbox crop (matching
+// Python cropout's ii-is-None branch) when no figure/equation DLA region
+// overlaps — it does NOT return "".
 func TestCropSectionByDLA_NoMatch(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(300, 450, color.RGBA{255, 0, 0, 255}),
 	}
-	dlaDebug := []pdf.DLAPageRegions{{
+	dlaRegions := []pdf.DLAPageRegions{{
 		Page: 0,
 		Regions: []pdf.DLARegion{
 			{X0: 10, Y0: 10, X1: 100, Y1: 50, Label: "title"},
@@ -365,6 +394,7 @@ func TestCropSectionByDLA_NoMatch(t *testing.T) {
 		},
 	}}
 	// pdf.Section whose bbox doesn't overlap any figure/equation DLA region.
+	// PDF points → pixels at scale 3: (20,20,50,50) → (60,60,150,150) ≈ 90x90.
 	sec := pdf.Section{
 		Positions: []pdf.Position{{
 			PageNumbers: []int{0},
@@ -372,9 +402,50 @@ func TestCropSectionByDLA_NoMatch(t *testing.T) {
 		}},
 		LayoutType: "figure",
 	}
-	result := CropSectionByDLA(sec, dlaDebug, pageImages)
-	if result != "" {
-		t.Errorf("expected empty result when no figure/equation DLA region found, got length %d", len(result))
+	result := CropSectionByDLA(sec, dlaRegions, pageImages)
+	if result == "" {
+		t.Fatal("expected bbox fallback crop when no figure/equation DLA region found")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(result)
+	img := decodePNG(t, decoded)
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	t.Logf("cropSectionByDLA fallback result: %dx%d", w, h)
+	if w < 80 || h < 80 {
+		t.Errorf("unexpected fallback crop size %dx%d, want ~90x90 (bbox based)", w, h)
+	}
+}
+
+// TestCropSectionByDLA_MultiPage verifies that a section spanning two pages is
+// cropped per page and vertically concatenated (matching cropout's multi-page
+// branch), rather than returning only the first page.
+func TestCropSectionByDLA_MultiPage(t *testing.T) {
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(300, 450, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(300, 450, color.RGBA{0, 255, 0, 255}),
+	}
+	dlaRegions := []pdf.DLAPageRegions{
+		{Page: 0, Regions: []pdf.DLARegion{{X0: 30, Y0: 60, X1: 270, Y1: 420, Label: "figure"}}},
+		{Page: 1, Regions: []pdf.DLARegion{{X0: 30, Y0: 60, X1: 270, Y1: 420, Label: "figure"}}},
+	}
+	// Section bbox covers both pages (PDF points, 72 DPI).
+	sec := pdf.Section{
+		Positions: []pdf.Position{{
+			PageNumbers: []int{0, 1},
+			Left:        20, Right: 50, Top: 100, Bottom: 200,
+		}},
+		LayoutType: "figure",
+	}
+	result := CropSectionByDLA(sec, dlaRegions, pageImages)
+	if result == "" {
+		t.Fatal("expected non-empty multi-page crop")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(result)
+	img := decodePNG(t, decoded)
+	h := img.Bounds().Dy()
+	t.Logf("cropSectionByDLA multi-page result: %dx%d", img.Bounds().Dx(), h)
+	// Concatenation of two ~360px tall crops (+ 6px gap) must exceed one page.
+	if h <= 450 {
+		t.Errorf("multi-page crop height %d should exceed a single page (450)", h)
 	}
 }
 

@@ -241,12 +241,12 @@ func buildSubWorkflow(
 		if name == "" {
 			return nil, fmt.Errorf("canvas: loop %q member %q has empty component_name", loopID, cpnID)
 		}
-		body, err := buildNodeBody(cpnID, name, c.Components[cpnID].Obj.Params)
+		body, err := buildNodeBody(ctx, cpnID, name, c.Components[cpnID].Obj.Params)
 		if err != nil {
 			return nil, err
 		}
 		nodes[cpnID] = sub.AddLambdaNode(cpnID,
-			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(body)),
+			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(cpnID, name, body)),
 			compose.WithNodeName(cpnID),
 		)
 	}

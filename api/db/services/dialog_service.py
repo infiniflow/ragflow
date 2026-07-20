@@ -19,6 +19,7 @@ import re
 import time
 import uuid
 from copy import deepcopy
+from rag.advanced_rag.agentic_rag import RAGTools
 
 logger = logging.getLogger(__name__)
 from datetime import datetime
@@ -31,7 +32,7 @@ from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
@@ -39,7 +40,7 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, resolve_model_type, get_model_config_by_id
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
@@ -293,11 +294,25 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     image_files = []
 
     if dialog.llm_id:
-        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "chat" in llm_types:
-            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
+                else:
+                    model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
+            except LookupError:
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+                else:
+                    model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
         else:
-            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+            if "chat" in llm_types:
+                model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+            else:
+                model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -344,26 +359,38 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
 def get_models(dialog, trace_context=None, langfuse_session_id=None):
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
-    embedding_list = list(set([kb.embd_id for kb in kbs]))
-    if len(embedding_list) > 1:
-        raise Exception("**ERROR**: Knowledge bases use different embedding models.")
+    err = validate_dataset_embedding_models(kbs)
+    if err:
+        raise Exception(err)
 
-    if embedding_list:
+    if kbs and kbs[0].embd_id:
         embd_owner_tenant_id = kbs[0].tenant_id
-        embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_model_config = resolve_model_config(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
         embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
         if not embd_mdl:
-            raise LookupError("Embedding model(%s) not found" % embedding_list[0])
+            raise LookupError("Embedding model(%s) not found" % kbs[0].embd_id)
 
     if dialog.llm_id:
-        chat_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                chat_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
+            except LookupError:
+                chat_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            chat_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        if dialog.tenant_rerank_id:
+            try:
+                rerank_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.RERANK, dialog.tenant_rerank_id)
+            except LookupError:
+                rerank_model_config = resolve_model_config(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        else:
+            rerank_model_config = resolve_model_config(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
         rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.prompt_config.get("tts"):
@@ -555,11 +582,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
     if dialog.llm_id:
-        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "chat" in llm_types:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        if dialog.tenant_llm_id:
+            try:
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    llm_model_config = get_model_config_by_id(dialog.tenant_id, LLMType.CHAT, dialog.tenant_llm_id)
+                else:
+                    llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
+            except LookupError:
+                llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+                if "chat" in llm_types:
+                    llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+                else:
+                    llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
         else:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+            llm_types = resolve_model_type(dialog.tenant_id, dialog.llm_id)
+            if "chat" in llm_types:
+                llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+            else:
+                llm_model_config = resolve_model_config(dialog.tenant_id, LLMType.VISION, dialog.llm_id)
     else:
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -675,14 +716,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.debug("Proceeding with retrieval")
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
-        if prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
+        # replaced by extension of reasoning: 0, 1, 2
+        if False:  # prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
                 partial(
                     retriever.retrieval,
-                    embd_mdl = embd_mdl,
-                    tenant_ids = tenant_ids,
+                    embd_mdl=embd_mdl,
+                    tenant_ids=tenant_ids,
                     kb_ids=dialog.kb_ids,
                     page=1,
                     page_size=dialog.top_n,
@@ -1643,12 +1685,12 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
     embd_owner_tenant_id = kbs[0].tenant_id
-    embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_model_config = resolve_model_config(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
     embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
-    chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, chat_llm_name)
+    chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = resolve_model_config(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -1754,16 +1796,16 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         return {"error": "No KB selected"}
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     embd_owner_tenant_id = kbs[0].tenant_id
-    embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_model_config = resolve_model_config(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
     embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, chat_id)
+        chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = resolve_model_config(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
     if meta_data_filter:
@@ -1795,3 +1837,177 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
     return mind_map.output
+
+
+async def rag_agent(dialog, messages, stream=True, **kwargs):
+    logging.debug("Begin rag_agent")
+    assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    prompt_config = dialog.prompt_config
+    if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
+        async for ans in async_chat(dialog, messages, stream, **kwargs):
+            yield ans
+        return
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    tenant_ids = list(set([kb.tenant_id for kb in kbs]))
+    # "reasoning" arrives as "1".."4" mapping to the ordered THINKING_MODES
+    # (low, medium, high, ultra); fall back to "medium" on anything else.
+    from rag.advanced_rag.harness.config import THINKING_MODES
+
+    _mode_labels = list(THINKING_MODES.keys())
+    try:
+        _n = int(str(kwargs.get("reasoning")).strip())
+        thinking_mode = _mode_labels[_n - 1] if 1 <= _n <= len(_mode_labels) else "medium"
+    except (TypeError, ValueError):
+        thinking_mode = "medium"
+
+    rag_tools = RAGTools(
+        tenant_ids,
+        chat_mdl,
+        embed_mdl=embd_mdl,
+        kb_ids=dialog.kb_ids,
+        tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None,
+        do_refer=False,
+        thinking_mode=thinking_mode,
+    )
+
+    async def decorate_answer(answer):
+        nonlocal rag_tools, messages
+
+        refs = []
+        ans = answer.split("</think>")
+        think = ""
+        if len(ans) == 2:
+            think = ans[0] + "</think>"
+            answer = ans[1]
+
+        idx = set([])
+        normalized_answer = normalize_arabic_digits(answer) or ""
+        for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
+            i = int(match.group(1))
+            if i < len(rag_tools.kbinfos["chunks"]):
+                idx.add(i)
+
+        answer, idx = repair_bad_citation_formats(answer, rag_tools.kbinfos, idx)
+
+        doc_ids = set()
+        for citation in idx:
+            try:
+                chunk_index = int(citation)
+            except (TypeError, ValueError):
+                if citation:
+                    doc_ids.add(str(citation))
+                continue
+            if 0 <= chunk_index < len(rag_tools.kbinfos["chunks"]):
+                doc_id = rag_tools.kbinfos["chunks"][chunk_index].get("doc_id")
+                if doc_id:
+                    doc_ids.add(doc_id)
+
+        recall_docs = [d for d in rag_tools.kbinfos["doc_aggs"] if d["doc_id"] in doc_ids]
+        if not recall_docs:
+            recall_docs = rag_tools.kbinfos["doc_aggs"]
+        rag_tools.kbinfos["doc_aggs"] = recall_docs
+
+        refs = deepcopy(rag_tools.kbinfos) if doc_ids else []
+        for c in refs.get("chunks", []) if isinstance(refs, dict) else []:
+            if c.get("vector"):
+                del c["vector"]
+
+        if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+
+        return {"answer": think + answer, "reference": refs, "prompt": "", "created_at": time.time()}
+
+    # The agentic-search graph composes the final cited answer itself, so we
+    # stream its tokens straight to the client instead of relaying a tool
+    # result through a second outer-LLM pass.
+
+    chat_mdl.bind_tools(None, rag_tools.tools)
+    # `rag` composes the full cited answer itself, so treat it as terminal: once
+    # the model calls it, stream its result and stop — otherwise the model would
+    # have to relay the (citation-bearing) answer through another round, which
+    # small models mangle or drop, so the client receives nothing.
+    if getattr(chat_mdl, "mdl", None) is not None:
+        chat_mdl.mdl.terminal_tools = {"rag"}
+    gen_conf = dialog.llm_setting
+    if stream:
+        # Surface the agentic pipeline's bracket-tagged progress logs to the
+        # client as <think> content, interleaved with the real token stream.
+        from rag.advanced_rag.think_log import install_think_log_handler, set_think_log_sink, reset_think_log_sink
+
+        install_think_log_handler()
+        event_queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _log_sink(msg):
+            try:
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("log", msg))
+            except RuntimeError:
+                pass
+
+        async def _drive_stream():
+            try:
+                stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), messages, gen_conf)
+                async for kind, value, state in _stream_with_think_delta(stream_iter):
+                    event_queue.put_nowait(("stream", kind, value, state))
+            except Exception:
+                logging.exception("rag_agent: agentic stream failed")
+            finally:
+                event_queue.put_nowait(("stream_done",))
+
+        token = set_think_log_sink(_log_sink)
+        drive = asyncio.create_task(_drive_stream())
+        last_state = None
+        log_think_open = False
+        try:
+            while True:
+                item = await event_queue.get()
+                if item[0] == "log":
+                    if not log_think_open:
+                        yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                        log_think_open = True
+                    yield {"answer": item[1] + "\n", "reference": {}, "audio_binary": None, "final": False}
+                    continue
+                if item[0] == "stream_done":
+                    break
+                _, kind, value, state = item
+                if state is not None:
+                    last_state = state
+                # A real stream event follows the logs -> close the log think block.
+                if log_think_open:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    log_think_open = False
+                if kind == "marker":
+                    flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
+                    continue
+                yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+            if log_think_open:
+                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                log_think_open = False
+        finally:
+            reset_think_log_sink(token)
+            if not drive.done():
+                drive.cancel()
+            try:
+                await drive
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logging.exception("rag_agent: drive task error")
+
+        full_answer = last_state.full_text if last_state else ""
+        if full_answer:
+            final = await decorate_answer(_extract_visible_answer(full_answer))
+            final["final"] = True
+            final["audio_binary"] = None
+            yield final
+    else:
+        answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), messages, gen_conf)
+        user_content = messages[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        res = await decorate_answer(answer)
+        res["audio_binary"] = tts(tts_mdl, answer)
+        yield res
+    return

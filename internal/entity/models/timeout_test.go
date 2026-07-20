@@ -90,6 +90,7 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+		nil,
 		func(c *string, _ *string) error {
 			if c != nil && *c != "[DONE]" {
 				got.WriteString(*c)
@@ -132,7 +133,7 @@ func TestNonStreamHonorsShortDeadline(t *testing.T) {
 			"llama-3.3-70b-versatile",
 			[]Message{{Role: "user", Content: "hi"}},
 			&APIConfig{ApiKey: &apiKey},
-			nil,
+			nil, nil,
 		)
 		done <- err
 	}()

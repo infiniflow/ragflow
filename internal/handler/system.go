@@ -105,7 +105,7 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -168,12 +168,12 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "pkg_name and level are required")
+		common.ErrorWithCode(c, common.CodeDataError, "pkg_name and level are required")
 		return
 	}
 
 	if err := common.SetLevel(req.Level); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "Invalid log level: "+req.Level)
+		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
 		return
 	}
 
@@ -188,7 +188,7 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 func (h *SystemHandler) ListVariables(c *gin.Context) {
 	variables, err := h.systemService.ListAllVariables()
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -206,22 +206,22 @@ type SetVariableHTTPRequest struct {
 func (h *SystemHandler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		common.ErrorWithCode(c, 400, "Var value is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
 		return
 	}
 
 	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -233,17 +233,17 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if varName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	variable, err := h.systemService.ShowVariable(varName)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -254,9 +254,15 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
 	common.SuccessWithData(c, environments, "SUCCESS")
+}
+
+// Language returns the backend runtime language so the front end can
+// choose the appropriate code path (Go vs Python).
+func (h *SystemHandler) Language(c *gin.Context) {
+	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
 }

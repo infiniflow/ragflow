@@ -214,8 +214,8 @@ def _load_chunk_module(monkeypatch):
         EMBEDDING = SimpleNamespace(value="embedding")
         CHAT = SimpleNamespace(value="chat")
         RERANK = SimpleNamespace(value="rerank")
-        SPEECH2TEXT = SimpleNamespace(value="speech2text")
-        IMAGE2TEXT = SimpleNamespace(value="image2text")
+        ASR = SimpleNamespace(value="asr")
+        VISION = SimpleNamespace(value="vision")
         TTS = SimpleNamespace(value="tts")
         OCR = SimpleNamespace(value="ocr")
 
@@ -310,6 +310,7 @@ def _load_chunk_module(monkeypatch):
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_by_id = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
+    tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {"llm_name": "chat", "model_type": "chat"}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -345,7 +346,7 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_tenant_embd_id(_doc_id):
-            return 1
+            return "tm-embd-1"
 
         @staticmethod
         def decrement_chunk_num(*args):
@@ -377,7 +378,7 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_by_id(_kb_id):
-            return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id=2, tenant_llm_id=1)
+            return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
@@ -451,9 +452,9 @@ def _load_chunk_module(monkeypatch):
         def get_by_id(tenant_id):
             return True, SimpleNamespace(
                 llm_id="gpt-3.5-turbo",
-                tenant_llm_id=1,
+                tenant_llm_id="tm-llm-1",
                 embd_id="text-embedding-ada-002",
-                tenant_embd_id=2,
+                tenant_embd_id="tm-embd-2",
                 asr_id="whisper-1",
                 img2txt_id="gpt-4-vision-preview",
                 rerank_id="bge-reranker",

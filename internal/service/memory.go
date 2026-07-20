@@ -20,10 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -343,23 +343,20 @@ type ListMemoryResponse struct {
 //	req := &CreateMemoryRequest{Name: "MyMemory", MemoryType: []string{"semantic"}, EmbdID: "embd1", LLMID: "llm1"}
 //	resp, err := service.CreateMemory("tenant123", req)
 func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) (*CreateMemoryResponse, error) {
-	// Ensure tenant model IDs are populated for LLM and embedding model parameters
-	// This automatically fills tenant_llm_id and tenant_embd_id based on llm_id and embd_id
-	tenantLLMService := NewTenantLLMService()
-	params := map[string]interface{}{
-		"llm_id":  req.LLMID,
-		"embd_id": req.EmbdID,
+	modelProvider := NewModelProviderService()
+	if req.LLMID != "" && req.TenantLLMID == nil {
+		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
+		if err != nil {
+			return nil, err
+		}
+		req.TenantLLMID = &tenantLLMID
 	}
-	params = tenantLLMService.EnsureTenantModelIDForParams(tenantID, params)
-
-	// Update request with tenant model IDs from the processed params
-	if tenantLLMID, ok := params["tenant_llm_id"].(int64); ok {
-		tenantLLMIDStr := strconv.FormatInt(tenantLLMID, 10)
-		req.TenantLLMID = &tenantLLMIDStr
-	}
-	if tenantEmbdID, ok := params["tenant_embd_id"].(int64); ok {
-		tenantEmbdIDStr := strconv.FormatInt(tenantEmbdID, 10)
-		req.TenantEmbdID = &tenantEmbdIDStr
+	if req.EmbdID != "" && req.TenantEmbdID == nil {
+		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		if err != nil {
+			return nil, err
+		}
+		req.TenantEmbdID = &tenantEmbdID
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
@@ -396,7 +393,7 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
-	newID := common.GenerateUUID()
+	newID := utility.GenerateUUID()
 
 	memory := &entity.Memory{
 		ID:               newID,
@@ -413,16 +410,12 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		SystemPrompt:     &systemPrompt,
 	}
 
-	// Convert tenant model IDs from string to int64 for database
+	// Attach tenant model IDs (string form) to memory
 	if req.TenantEmbdID != nil {
-		if embdID, err := strconv.ParseInt(*req.TenantEmbdID, 10, 64); err == nil {
-			memory.TenantEmbdID = &embdID
-		}
+		memory.TenantEmbdID = req.TenantEmbdID
 	}
 	if req.TenantLLMID != nil {
-		if llmID, err := strconv.ParseInt(*req.TenantLLMID, 10, 64); err == nil {
-			memory.TenantLLMID = &llmID
-		}
+		memory.TenantLLMID = req.TenantLLMID
 	}
 	if err := s.memoryDAO.Create(memory); err != nil {
 		return nil, errors.New("could not create new memory")
@@ -455,19 +448,26 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
 
+	currentMemory, err := s.memoryDAO.GetByID(memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("memory '%s' not found", memoryID)
+	}
+
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
 		if err := common.ValidateName(memoryName); err != nil {
 			return nil, err
 		}
-		memoryName, err := common.DuplicateName(func(name string, tid string) bool {
-			existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
-			return len(existing) > 0
-		}, memoryName, tenantID)
-		if err != nil {
-			return nil, err
+		if memoryName != strings.TrimSpace(currentMemory.Name) {
+			memoryName, err := common.DuplicateName(func(name string, tid string) bool {
+				existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
+				return len(existing) > 0
+			}, memoryName, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			updateDict["name"] = memoryName
 		}
-		updateDict["name"] = memoryName
 	}
 
 	if req.Permissions != nil {
@@ -487,15 +487,11 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	if req.TenantLLMID != nil {
-		if llmID, err := strconv.ParseInt(*req.TenantLLMID, 10, 64); err == nil {
-			updateDict["tenant_llm_id"] = llmID
-		}
+		updateDict["tenant_llm_id"] = *req.TenantLLMID
 	}
 
 	if req.TenantEmbdID != nil {
-		if embdID, err := strconv.ParseInt(*req.TenantEmbdID, 10, 64); err == nil {
-			updateDict["tenant_embd_id"] = embdID
-		}
+		updateDict["tenant_embd_id"] = *req.TenantEmbdID
 	}
 
 	if req.MemoryType != nil && len(req.MemoryType) > 0 {
@@ -559,11 +555,6 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		}
 	}
 
-	currentMemory, err := s.memoryDAO.GetByID(memoryID)
-	if err != nil {
-		return nil, fmt.Errorf("memory '%s' not found", memoryID)
-	}
-
 	if len(updateDict) == 0 {
 		return formatRetDataFromMemory(currentMemory), nil
 	}
@@ -599,11 +590,11 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 				filteredUpdateDict[field] = value
 			}
 		case "tenant_llm_id":
-			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != value.(int64) {
+			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != fmt.Sprint(value) {
 				filteredUpdateDict[field] = value
 			}
 		case "tenant_embd_id":
-			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != value.(int64) {
+			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != fmt.Sprint(value) {
 				filteredUpdateDict[field] = value
 			}
 		case "memory_type":
@@ -670,15 +661,20 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		return formatRetDataFromMemory(currentMemory), nil
 	}
 
-	memorySize := currentMemory.MemorySize
 	notAllowedUpdate := []string{}
 	for _, f := range []string{"tenant_embd_id", "embd_id", "memory_type"} {
-		if _, ok := updateDict[f]; ok && memorySize > 0 {
+		if _, ok := updateDict[f]; ok {
 			notAllowedUpdate = append(notAllowedUpdate, f)
 		}
 	}
 	if len(notAllowedUpdate) > 0 {
-		return nil, fmt.Errorf("can't update %v when memory isn't empty", notAllowedUpdate)
+		messages, err := s.listMemoryMessages(context.Background(), currentMemory, []string{}, "", 1, 1)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check memory messages: %w", err)
+		}
+		if total, ok := messages["total_count"].(int64); ok && total > 0 {
+			return nil, fmt.Errorf("can't update %v when memory isn't empty", notAllowedUpdate)
+		}
 	}
 
 	if _, ok := updateDict["memory_type"]; ok {
@@ -1209,7 +1205,7 @@ func memoryMessageSelectFields() []string {
 }
 
 func memoryIndexName(tenantID string) string {
-	prefix := strings.TrimSpace(os.Getenv("ES_INDEX_PREFIX"))
+	prefix := strings.TrimSpace(common.GetEnv(common.EnvESIndexPrefix))
 	if prefix == "" {
 		return fmt.Sprintf("memory_%s", tenantID)
 	}
@@ -1262,12 +1258,12 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}

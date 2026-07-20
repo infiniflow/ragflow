@@ -2,16 +2,17 @@ package pdf
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	"log/slog"
+	"math"
 	"sync"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
+	"ragflow/internal/utility"
 )
 
 // Parser is the core PDF text/layout extraction pipeline.
@@ -19,16 +20,45 @@ import (
 // Stateless after construction — safe to reuse across documents.
 type Parser struct {
 	Config pdf.ParserConfig
+	// deepInfOnce lazily initializes deepInf exactly once, so a Parser shared
+	// across goroutines does not race on the DeepDoc inference slot channel.
+	deepInfOnce sync.Once
+	// deepInf bounds concurrent DeepDoc (deepdoc) inference calls. Created
+	// on first use via limiters(); see parser_concurrency.go.
+	deepInf *deepInfLimiter
 }
 
-// pageResult holds per-page output from extractPages.
+// pageResult holds per-page worker-local artifacts produced by
+// processAllPagesParallel. The struct is keyed by page number in a
+// map so worker completion order does not affect collection order;
+// final assembly sorts by page number before merging into ParseResult.
+//
+// Fatal vs recoverable policy:
+//   - RenderPageToImage failure → recoverable: page may still produce
+//     boxes from charsToBoxes fallback. The Err field carries the
+//     render error for logging visibility.
+//   - OCR detect/recognize failure → recoverable: page falls back to
+//     embedded chars; Err carries the underlying failure if any.
+//   - DLA/TSR failure → recoverable: page produces no tables for that
+//     page; tables remain empty in the worker artifact.
+//   - Worker-pool orchestration bugs → fatal: panic surfaces immediately.
 type pageResult struct {
-	pg       int
-	ocrBoxes []pdf.TextBox
-	chars    []pdf.TextChar
-	ocrUsed  bool
-	pageImg  image.Image
-	err      error
+	PageNumber  int
+	Boxes       []pdf.TextBox
+	Chars       []pdf.TextChar
+	MedianH     float64
+	MedianW     float64
+	IsEnglish   bool
+	IsScanNoise bool
+	OCRUsed     bool
+	// PageHeight and PageWidth record the PDF-point dimensions of the
+	// winning page render (pixel dimensions divided by the per-page
+	// zoom). They are used by buildLayout without needing a zoom map.
+	PageHeight float64
+	PageWidth  float64
+	Tables     []pdf.TableItem
+	DLARegions []pdf.DLAPageRegions
+	Err        error
 }
 
 // New creates a new Parser with the given config.
@@ -58,36 +88,9 @@ func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 // ParseRaw is the internal entry point: runs the core pipeline on an
 // already-opened engine. Exported for tests that inject mock engines.
 func (p *Parser) ParseRaw(ctx context.Context, engine pdf.PDFEngine, docAnalyzer pdf.DocAnalyzer) (*pdf.ParseResult, error) {
-	tb := NewTableBuilderFor(docAnalyzer)
-
-	_, fromPage, toPage, err := p.normalizePageRange(engine)
-	if err != nil {
-		return nil, fmt.Errorf("page count: %w", err)
-	}
-	if toPage < fromPage {
-		return &pdf.ParseResult{PageImages: make(map[int]image.Image)}, nil
-	}
-
-	totalPages := toPage - fromPage + 1
-	batchSize := p.getBatchSize()
-
-	prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise := p.prescanPages(ctx, engine, fromPage, toPage, totalPages)
 	outlines := p.extractOutlines(engine)
 
-	if totalPages <= batchSize {
-		result, err := p.processPages(ctx, engine, fromPage, toPage,
-			prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise,
-			docAnalyzer, tb)
-		if err != nil {
-			return nil, err
-		}
-		result.Outlines = outlines
-		return result, nil
-	}
-
-	result, err := p.processLargeDocument(ctx, engine, fromPage, toPage, batchSize,
-		prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise,
-		docAnalyzer, tb)
+	result, err := p.processPages(ctx, engine, docAnalyzer)
 	if err != nil {
 		return nil, err
 	}
@@ -97,59 +100,12 @@ func (p *Parser) ParseRaw(ctx context.Context, engine pdf.PDFEngine, docAnalyzer
 
 // ── ParseRaw helper functions ───────────────────────────────────────────────
 
-// normalizePageRange normalizes the page range based on config and actual page count.
-func (p *Parser) normalizePageRange(engine pdf.PDFEngine) (pageCount, fromPage, toPage int, err error) {
-	pageCount, err = engine.PageCount()
-	if err != nil {
-		return 0, 0, 0, err
+func documentPages(pageCount int) []int {
+	pages := make([]int, pageCount)
+	for pg := range pages {
+		pages[pg] = pg
 	}
-	fromPage = p.Config.FromPage
-	if fromPage < 0 {
-		fromPage = 0
-	} else if fromPage >= pageCount {
-		fromPage = pageCount - 1
-	}
-	toPage = p.Config.ToPage
-	if toPage < 0 || toPage >= pageCount {
-		toPage = pageCount - 1
-	}
-	if toPage < fromPage {
-		toPage = fromPage
-	}
-	return pageCount, fromPage, toPage, nil
-}
-
-// getBatchSize returns the batch size, defaulting to 50 if <= 0.
-func (p *Parser) getBatchSize() int {
-	batchSize := p.Config.BatchSize
-	if batchSize <= 0 {
-		batchSize = 50
-	}
-	return batchSize
-}
-
-// prescanPages extracts chars from all pages and computes median heights/widths.
-func (p *Parser) prescanPages(ctx context.Context, engine pdf.PDFEngine, fromPage, toPage, totalPages int) (
-	map[int][]pdf.TextChar, map[int]float64, map[int]float64, bool, bool,
-) {
-	prescanChars := make(map[int][]pdf.TextChar)
-	prescanMedianH := make(map[int]float64)
-	prescanMedianW := make(map[int]float64)
-
-	for pg := fromPage; pg <= toPage; pg++ {
-		chars, extractErr := engine.ExtractChars(pg)
-		if extractErr != nil {
-			slog.Warn("prescan: ExtractChars failed", "page", pg, "err", extractErr)
-			chars = nil
-		}
-		prescanChars[pg] = chars
-		prescanMedianH[pg] = util.MedianCharHeight(chars)
-		prescanMedianW[pg] = util.MedianCharWidth(chars)
-	}
-
-	isEnglish := util.DetectEnglish(prescanChars, totalPages, nil)
-	scanNoise := util.IsScanNoise(util.FullTextFromChars(prescanChars))
-	return prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise
+	return pages
 }
 
 // extractOutlines extracts the PDF outlines, returning nil on error.
@@ -162,180 +118,179 @@ func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 	return outlines
 }
 
-// processLargeDocument processes a large document in batches.
-func (p *Parser) processLargeDocument(ctx context.Context, engine pdf.PDFEngine, fromPage, toPage, batchSize int,
-	prescanChars map[int][]pdf.TextChar, prescanMedianH, prescanMedianW map[int]float64,
-	isEnglish, scanNoise bool, docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
-) (*pdf.ParseResult, error) {
-	slog.Info("batched processing", "pages", toPage-fromPage+1, "batchSize", batchSize)
-	result := &pdf.ParseResult{PageImages: make(map[int]image.Image)}
+// ── Page worker pool ─────────────────────────────────────────────────────────
 
-	for start := fromPage; start <= toPage; start += batchSize {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cancelled at batch starting page %d: %w", start, err)
-		}
-		end := min(start+batchSize-1, toPage)
-
-		batchChars := make(map[int][]pdf.TextChar, end-start+1)
-		batchMH := make(map[int]float64, end-start+1)
-		batchMW := make(map[int]float64, end-start+1)
-		for pg := start; pg <= end; pg++ {
-			batchChars[pg] = prescanChars[pg]
-			batchMH[pg] = prescanMedianH[pg]
-			batchMW[pg] = prescanMedianW[pg]
-		}
-
-		batch, err := p.processPages(ctx, engine, start, end,
-			batchChars, batchMH, batchMW, isEnglish, scanNoise,
-			docAnalyzer, tb)
-		if err != nil {
-			return nil, err
-		}
-
-		p.mergeBatchResults(result, batch)
-	}
-	return result, nil
-}
-
-// mergeBatchResults merges the batch result into the main result.
-func (p *Parser) mergeBatchResults(result, batch *pdf.ParseResult) {
-	result.Sections = append(result.Sections, batch.Sections...)
-	result.Tables = append(result.Tables, batch.Tables...)
-	if result.PageImages == nil {
-		result.PageImages = make(map[int]image.Image)
-	}
-	for pg, img := range batch.PageImages {
-		result.PageImages[pg] = img
-	}
-	result.Metrics.BoxesInitial += batch.Metrics.BoxesInitial
-	result.Metrics.BoxesTextMerge += batch.Metrics.BoxesTextMerge
-	result.Metrics.BoxesVertMerge += batch.Metrics.BoxesVertMerge
-	result.Metrics.BoxesFinal += batch.Metrics.BoxesFinal
-	result.Metrics.TablesCount += batch.Metrics.TablesCount
-}
-
-// ── extractPages helper functions ───────────────────────────────────────────
-
-func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
-	fromPage, toPage int,
-	prescanChars map[int][]pdf.TextChar,
-	medianHeights, medianWidths map[int]float64,
-	pageImages map[int]image.Image,
-	docAnalyzer pdf.DocAnalyzer,
-) ([]pdf.TextBox, map[int][]pdf.TextChar, bool, error) {
-	pageCount := toPage - fromPage + 1
-	results := make([]pageResult, pageCount)
-
-	sem, wg := p.setupPageConcurrency()
-
-	for i := 0; i < pageCount; i++ {
-		pg := fromPage + i
-		chars := prescanChars[pg]
-
-		if len(chars) > 0 && !util.IsGarbledPage(chars) {
-			if err := ctx.Err(); err != nil {
-				results[i] = pageResult{pg: pg, err: fmt.Errorf("cancelled before sync page %d: %w", pg, err)}
-				continue
-			}
-			results[i] = p.processPageSync(ctx, engine, pg, chars, pageImages, docAnalyzer)
-			continue
-		}
-
-		wg.Add(1)
-		go func(i, pg int, chars []pdf.TextChar) {
-			defer wg.Done()
-			results[i] = p.processPageAsync(ctx, engine, pg, chars, sem, docAnalyzer)
-		}(i, pg, chars)
-	}
-	wg.Wait()
-	return p.collectPageResults(results, pageImages, medianHeights, medianWidths)
-}
-
-// setupPageConcurrency sets up the concurrency primitives for page processing.
-func (p *Parser) setupPageConcurrency() (chan struct{}, *sync.WaitGroup) {
-	maxConc := p.Config.MaxOCRConcurrency
-	if maxConc <= 0 {
-		maxConc = 1
-	}
-	return make(chan struct{}, maxConc), &sync.WaitGroup{}
-}
-
-// processPageSync processes a page synchronously (normal pages with non-garbled chars).
-func (p *Parser) processPageSync(ctx context.Context, engine pdf.PDFEngine, pg int, chars []pdf.TextChar,
-	pageImages map[int]image.Image, docAnalyzer pdf.DocAnalyzer,
+// processPage executes a single page through the unified page-local path.
+// Both clean and garbled/empty pages flow through this function; the OCR
+// strategy is selected page-locally based on character quality. Worker
+// artifacts are returned in pageResult for the global assembly phase.
+//
+// Zoom retry is per-page: if the default zoom produces no boxes and
+// conditions allow (Zoom < 9, !SkipOCR, render succeeded), the page is
+// re-rendered at Config.Zoom × DlaScale and OCR/DLA are re-run. This
+// replaces the old document-wide retryZoom pass and ensures only pages
+// that actually need a higher zoom pay the memory cost.
+//
+// Cancellation: workers honor ctx.Err() before issuing expensive work.
+// Page-local OCR detection / recognition failures are recoverable; the
+// page falls back to charsToBoxes. RenderPageToImage failure is also
+// recoverable — the page may still emit chars-derived boxes.
+func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
+	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
 ) pageResult {
-	pageImg, renderErr := RenderPageToImage(engine, pg)
-	if renderErr == nil && pageImg != nil {
-		pageImages[pg] = pageImg
-	} else if renderErr != nil {
-		slog.Warn("processPageSync: RenderPageToImage failed", "page", pg, "err", renderErr)
+	chars, extractErr := engine.ExtractChars(pg)
+	if extractErr != nil {
+		slog.Warn("processPage: ExtractChars failed", "page", pg, "err", extractErr)
+		chars = nil
 	}
+	medianH := util.MedianCharHeight(chars)
+	medianW := util.MedianCharWidth(chars)
+	isEnglish := util.DetectEnglishPage(chars, nil)
+	isScanNoise := util.IsScanNoise(util.FullTextFromChars(map[int][]pdf.TextChar{pg: chars}))
 
-	ocrBoxes, updatedChars, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, docAnalyzer, false)
-	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: updatedChars, ocrUsed: ocrUsed}
-}
-
-// processPageAsync processes a page asynchronously (garbled pages or scan pages).
-func (p *Parser) processPageAsync(ctx context.Context, engine pdf.PDFEngine, pg int, chars []pdf.TextChar,
-	sem chan struct{}, docAnalyzer pdf.DocAnalyzer,
-) pageResult {
-	select {
-	case <-ctx.Done():
-		return pageResult{pg: pg, err: ctx.Err()}
-	case sem <- struct{}{}:
-	}
-	defer func() { <-sem }()
-
-	pageImg, err := RenderPageToImage(engine, pg)
-	if err != nil {
-		return pageResult{pg: pg, err: err}
-	}
 	if err := ctx.Err(); err != nil {
-		return pageResult{pg: pg, err: err}
+		return pageResult{
+			PageNumber:  pg,
+			Chars:       chars,
+			MedianH:     medianH,
+			MedianW:     medianW,
+			IsEnglish:   isEnglish,
+			IsScanNoise: isScanNoise,
+			Err:         err,
+		}
 	}
 
-	ocrBoxes, updatedChars, ocrUsed := p.processPageBoxes(ctx, pageImg, chars, pg, nil, docAnalyzer, true)
-	return pageResult{pg: pg, ocrBoxes: ocrBoxes, chars: updatedChars, ocrUsed: ocrUsed, pageImg: pageImg}
+	// First pass: render at the default DLA DPI (216 DPI).
+	pageImg, renderErr := p.renderPageToImage(ctx, engine, pg)
+	pageZoom := pdf.DlaScale
+	var ocrBoxes []pdf.TextBox
+	var updatedChars []pdf.TextChar
+	var ocrUsed bool
+	var annotated []pdf.TextBox
+	var pageTables []pdf.TableItem
+	var dlaRegions []pdf.DLAPageRegions
+
+	if pageImg != nil && renderErr == nil {
+		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer)
+		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
+			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
+	}
+
+	if renderErr != nil {
+		slog.Warn("processPage: RenderPageToImage failed", "page", pg, "err", renderErr)
+	}
+
+	// Per-page zoom retry: if no boxes were produced at the default zoom
+	// and conditions allow, re-render at a higher zoom and re-run OCR/DLA.
+	if len(annotated) == 0 && p.Config.Zoom >= 1.0 && !p.Config.SkipOCR && renderErr == nil {
+		// Cap the retry zoom so a large Config.Zoom cannot drive the retry
+		// render to an unsafe DPI and spike memory on large pages.
+		const maxRetryZoom = 9.0
+		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
+		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
+		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
+		if retryRenderErr == nil && retryImg != nil {
+			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer)
+			annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
+				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom)
+			pageImg = retryImg
+			pageZoom = retryZoom
+		} else if retryRenderErr != nil {
+			slog.Warn("processPage: retry-zoom render failed", "page", pg, "err", retryRenderErr)
+		}
+	}
+
+	// Compute PDF-point page dimensions from the winning render so
+	// buildLayout can use them without needing a per-page zoom map.
+	var pageHeight, pageWidth float64
+	if pageImg != nil && pageZoom > 0 {
+		pageHeight = float64(pageImg.Bounds().Dy()) / pageZoom
+		pageWidth = float64(pageImg.Bounds().Dx()) / pageZoom
+	}
+
+	return pageResult{
+		PageNumber:  pg,
+		Boxes:       annotated,
+		Chars:       updatedChars,
+		MedianH:     medianH,
+		MedianW:     medianW,
+		IsEnglish:   isEnglish,
+		IsScanNoise: isScanNoise,
+		OCRUsed:     ocrUsed,
+		PageHeight:  pageHeight,
+		PageWidth:   pageWidth,
+		Tables:      pageTables,
+		DLARegions:  dlaRegions,
+		Err:         renderErr,
+	}
 }
 
-// processPageBoxes processes OCR box extraction for a page, shared between sync and async paths.
-// Returns (ocrBoxes, updatedChars, ocrUsed). The updatedChars includes synthetic OCR
-// chars appended when OCR detect+recognize succeeds — callers must use the returned
-// chars slice, not the original, to get correct median/layout calculations.
+// processPageBoxes picks the OCR strategy for a single page based on
+// character quality. There is no async/sync split: the decision is
+// page-local and the OCR call path is selected here.
+//
+//   - Clean embedded chars (count > 0 and not garbled):
+//     use ocrMergeChars, which detect-merges chars into boxes and falls
+//     back to single-image OCR recognize for empty boxes.
+//   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR,
+//     then fall back to ocrMergeChars if detect succeeds but recognize
+//     produced no useful output. Synthetic chars are appended to support
+//     subsequent median calculations.
+//
+// updatedChars includes synthetic OCR chars when detect+recognize was
+// used; callers must use the returned slice instead of the original.
+// processPageBoxes builds the page's text boxes — line/word-level, NOT
+// per-rune — either from embedded chars or via OCR, chosen by page quality.
+//
+// Parameters:
+//   - pageImg: the page bitmap rendered at the DLA DPI (216 by default),
+//     consumed by OCR detection/recognition.
+//   - chars: per-glyph characters from ExtractChars (0-based page pg); the
+//     finest-grained text unit. nil when the page has no embedded text.
+//   - pg: page number (0-based), stamped onto every produced box.
+//   - renderErr: non-nil skips OCR entirely and falls back to chars.
+//   - isScanNoise: true marks a scanned/noisy page → prefer full OCR
+//     detect+recognize over the embedded-char merge path.
+//   - docAnalyzer: the DLA/OCR/Tensor backend (DeepDOC model) used for
+//     detection and recognition.
+//
+// Returns:
+//   - ocrBoxes: line/word-level []pdf.TextBox in PDF-point space; this is
+//     the granularity fed into enrichOnePageWithDeepDoc as pageBoxes
+//     (one box per line or per column-subline, never per rune).
+//   - updatedChars: chars, possibly augmented with synthetic OCR-derived
+//     glyphs so downstream median-height/width stats stay meaningful.
+//   - bool: whether OCR was actually used to produce ocrBoxes.
 func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, pg int,
-	renderErr error, docAnalyzer pdf.DocAnalyzer, isAsync bool,
+	renderErr error, isScanNoise bool, docAnalyzer pdf.DocAnalyzer,
 ) ([]pdf.TextBox, []pdf.TextChar, bool) {
 	var ocrBoxes []pdf.TextBox
 	ocrUsed := false
 
-	if !p.Config.SkipOCR {
-		if isAsync {
+	if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
+		hasCleanChars := len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars)
+		if hasCleanChars {
+			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
+			ocrUsed = ocrBoxes != nil
+		} else {
 			label := "scan page"
-			if len(chars) > 0 {
+			if len(chars) > 0 && !isScanNoise {
 				label = "garbled page"
 			}
-			ocrBoxes = ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label)
-			if ocrBoxes != nil {
+			ocrBoxes = p.ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label)
+			ocrUsed = ocrBoxes != nil
+			if ocrUsed {
+				// Synthetic OCR chars feed downstream median calculations.
 				for j := range ocrBoxes {
 					for _, r := range ocrBoxes[j].Text {
 						chars = append(chars, pdf.TextChar{Text: string(r), PageNumber: pg})
 						break
 					}
 				}
-				ocrUsed = true
-			}
-			if !ocrUsed && len(chars) > 0 {
-				ocrBoxes = ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
-				if ocrBoxes != nil {
-					ocrUsed = true
-				}
-			}
-		} else {
-			if renderErr == nil && pageImg != nil {
-				ocrBoxes = ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
-				if ocrBoxes != nil {
-					ocrUsed = true
-				}
+			} else if len(chars) > 0 {
+				// Detect failed but chars exist: try the merge path.
+				ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
+				ocrUsed = ocrBoxes != nil
 			}
 		}
 	}
@@ -349,270 +304,220 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	return ocrBoxes, chars, ocrUsed
 }
 
-// collectPageResults collects and merges the per-page results.
-func (p *Parser) collectPageResults(results []pageResult, pageImages map[int]image.Image,
-	medianHeights, medianWidths map[int]float64,
-) ([]pdf.TextBox, map[int][]pdf.TextChar, bool, error) {
-	var boxes []pdf.TextBox
-	pageChars := make(map[int][]pdf.TextChar)
-	ocrUsedAny := false
-	var errs []error
+// runPageWorkers executes pages through the single process-wide worker
+// pool (parserPageWorkerPool). Page concurrency is bounded by that pool's
+// worker count — there is no per-Parser parallelism knob; callers tune
+// throughput via SetPageWorkerPoolSize. Each page produces one pageResult
+// stored by page number so worker completion order does not affect
+// collection order. Workers record the first page-level error for caller
+// visibility, while context cancellation still stops new dispatch and lets
+// in-flight work observe ctx.Err().
+//
+// Pages are returned sorted by page number so callers can stream them
+// directly into downstream assembly without re-sorting.
+func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
+	pages []int,
+	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
+) ([]*pageResult, error) {
+	if len(pages) == 0 {
+		return nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	for _, r := range results {
-		if r.err != nil {
-			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
-			errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
-			continue
-		}
-		if r.ocrUsed {
-			boxes = append(boxes, r.ocrBoxes...)
-			ocrUsedAny = true
-		} else if len(r.ocrBoxes) > 0 {
-			boxes = append(boxes, r.ocrBoxes...)
-		}
-		if r.pageImg != nil {
-			pageImages[r.pg] = r.pageImg
-		}
-		pageChars[r.pg] = r.chars
-		if r.ocrUsed {
-			medianHeights[r.pg] = util.MedianCharHeight(r.chars)
-			medianWidths[r.pg] = util.MedianCharWidth(r.chars)
+	resultMap := make(map[int]*pageResult, len(pages))
+	var firstErr error
+	recordErr := func(e error) {
+		if e != nil && firstErr == nil {
+			firstErr = e
 		}
 	}
-	return boxes, pageChars, ocrUsedAny, errors.Join(errs...)
+
+	type pageTaskResult = utility.WorkerPoolResult[pageTask, pageResult]
+	resultCh := make(chan pageTaskResult, len(pages))
+
+	submitted := 0
+	for _, pg := range pages {
+		task := pageTask{
+			parser:      p,
+			engine:      engine,
+			pageNumber:  pg,
+			docAnalyzer: docAnalyzer,
+			tb:          tb,
+		}
+		if err := parserPageWorkerPool().SubmitTo(ctx, task, resultCh); err != nil {
+			recordErr(err)
+			break
+		}
+		submitted++
+	}
+
+	for i := 0; i < submitted; i++ {
+		taskResult := <-resultCh
+		r := taskResult.Value
+		r.PageNumber = taskResult.Input.pageNumber
+		if taskResult.Err != nil && r.Err == nil {
+			r.Err = taskResult.Err
+		}
+		if r.Err != nil {
+			recordErr(r.Err)
+		}
+		resultMap[r.PageNumber] = &r
+	}
+
+	results := make([]*pageResult, 0, len(pages))
+	for _, pg := range pages {
+		if r, ok := resultMap[pg]; ok {
+			results = append(results, r)
+		}
+	}
+	return results, firstErr
 }
 
 // ── Internal pipeline steps ────────────────────────────────────────────────
 
-func (p *Parser) retryScanNoise(ctx context.Context, engine pdf.PDFEngine,
-	fromPage, toPage int,
-	pageImages map[int]image.Image,
-	pageChars map[int][]pdf.TextChar,
-	medianHeights, medianWidths map[int]float64,
-	ocrUsedAny bool,
-	docAnalyzer pdf.DocAnalyzer,
-) ([]pdf.TextBox, map[int][]pdf.TextChar, bool) {
-	slog.Warn("scan noise: OCR retry", "from", fromPage, "to", toPage)
+// runAssembly merges per-page worker artifacts into the final document-wide
+// state. Document-wide layout, table merge/replace, cross-page figures, and
+// metrics aggregation happen here so page workers never mutate shared state.
+// pageResults are expected to be sorted by page number.
+func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult) (*pdf.ParseResult, error) {
+	result := &pdf.ParseResult{
+		PageHeight: make(map[int]float64),
+		PageWidth:  make(map[int]float64),
+	}
+
 	var boxes []pdf.TextBox
-	for pg := fromPage; pg <= toPage; pg++ {
-		img := pageImages[pg]
-		if img == nil {
-			var err error
-			img, err = RenderPageToImage(engine, pg)
-			if err != nil {
-				slog.Warn("scan noise: page render failed", "page", pg, "err", err)
-				continue
-			}
-			pageImages[pg] = img
-		}
-		ocrBoxes := ocrDetectAndRecognize(ctx, img, docAnalyzer, pg, "scan page")
-		if ocrBoxes == nil {
-			slog.Warn("scan noise: page OCR empty", "page", pg)
+	pageChars := make(map[int][]pdf.TextChar)
+	medianHeights := make(map[int]float64, len(pageResults))
+	medianWidths := make(map[int]float64, len(pageResults))
+	pageEnglish := make(map[int]bool, len(pageResults))
+
+	for _, r := range pageResults {
+		if r == nil {
 			continue
 		}
-		boxes = append(boxes, ocrBoxes...)
-		var chars []pdf.TextChar
-		for _, b := range ocrBoxes {
-			for _, r := range b.Text {
-				chars = append(chars, pdf.TextChar{Text: string(r), Top: b.Top, Bottom: b.Bottom, PageNumber: pg})
-				break
-			}
+		if r.Err != nil {
+			slog.Warn("page worker failed", "page", r.PageNumber, "err", r.Err)
 		}
-		pageChars[pg] = chars
-		medianHeights[pg] = util.MedianCharHeight(chars)
-		medianWidths[pg] = util.MedianCharWidth(chars)
-	}
-	slog.Debug("scan noise OCR retry complete", "pages", toPage-fromPage+1, "boxes", len(boxes))
-	return boxes, pageChars, true
-}
-
-func (p *Parser) retryZoom(ctx context.Context, engine pdf.PDFEngine,
-	fromPage, toPage int,
-	pageImages map[int]image.Image,
-	boxes []pdf.TextBox, ocrUsedAny bool,
-	docAnalyzer pdf.DocAnalyzer,
-) ([]pdf.TextBox, bool) {
-	retryZoomVal := p.Config.Zoom * pdf.DlaScale
-	retryDPI := retryZoomVal * 72
-	slog.Info("zoom retry: re-rendering", "oldZoom", p.Config.Zoom, "newZoom", retryZoomVal)
-	for pg := fromPage; pg <= toPage; pg++ {
-		img, err := engine.RenderPageImage(pg, retryDPI)
-		if err != nil {
-			slog.Warn("zoom retry: render failed", "page", pg, "err", err)
-			continue
+		// Store per-page PDF-point dimensions for buildLayout.
+		if r.PageHeight > 0 {
+			result.PageHeight[r.PageNumber] = r.PageHeight
 		}
-		pageImages[pg] = img
-		if retryDPI != pdf.DlaDPI {
-			if dlaImg, dlaErr := engine.RenderPageImage(pg, pdf.DlaDPI); dlaErr == nil {
-				pageImages[pg] = dlaImg
-			}
+		if r.PageWidth > 0 {
+			result.PageWidth[r.PageNumber] = r.PageWidth
 		}
-		ocrBoxes := ocrDetectAndRecognize(ctx, img, docAnalyzer, pg, "zoom retry")
-		if ocrBoxes == nil {
-			continue
+		// Worker Boxes already carry DLA/TSR annotations (worker-local
+		// write-back happened inside processPage). Concatenate in page
+		// order to rebuild the document-wide boxes slice.
+		boxes = append(boxes, r.Boxes...)
+		pageChars[r.PageNumber] = r.Chars
+		medianHeights[r.PageNumber] = r.MedianH
+		medianWidths[r.PageNumber] = r.MedianW
+		pageEnglish[r.PageNumber] = r.IsEnglish
+		if r.OCRUsed {
+			medianHeights[r.PageNumber] = util.MedianCharHeight(r.Chars)
+			medianWidths[r.PageNumber] = util.MedianCharWidth(r.Chars)
+			pageEnglish[r.PageNumber] = util.DetectEnglishPage(r.Chars, nil)
 		}
-		scaleFactor := retryZoomVal / p.Config.Zoom
-		for i := range ocrBoxes {
-			ocrBoxes[i].X0 /= scaleFactor
-			ocrBoxes[i].X1 /= scaleFactor
-			ocrBoxes[i].Top /= scaleFactor
-			ocrBoxes[i].Bottom /= scaleFactor
+		// Tables and DLARegions are accumulated across pages in order.
+		if len(r.Tables) > 0 {
+			result.Tables = append(result.Tables, r.Tables...)
 		}
-		boxes = append(boxes, ocrBoxes...)
-		ocrUsedAny = true
-	}
-	return boxes, ocrUsedAny
-}
-
-func (p *Parser) buildLayout(ctx context.Context,
-	result *pdf.ParseResult, engine pdf.PDFEngine,
-	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
-	medianHeights, medianWidths map[int]float64,
-	fromPage, toPage int, ocrUsedAny bool, isEnglish bool,
-	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
-) error {
-	result.Metrics.BoxesInitial = len(boxes)
-
-	result.Tables = p.enrichWithDeepDoc(ctx, result, engine, boxes, result.PageImages, docAnalyzer, tb)
-	result.Metrics.TablesCount = len(result.Tables)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	boxes = lyt.AssignColumn(boxes, p.Config.Zoom)
-	boxes = lyt.TextMerge(boxes, medianHeights, p.Config.Zoom)
-	result.Metrics.BoxesTextMerge = len(boxes)
-
-	lyt.SortByPageThenY(boxes, p.Config.SortByTop)
-
-	if ocrUsedAny {
-		isEnglish = util.DetectEnglish(pageChars, toPage-fromPage+1, nil)
-	}
-	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, isEnglish)
-	result.Metrics.BoxesVertMerge = len(boxes)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	boxes = tbl.ExtractTableAndReplace(boxes, result.Tables)
-	boxes = tbl.ConsolidateFigures(boxes)
-
-	pageHeights := make(map[int]float64, len(result.PageImages))
-	for pg, img := range result.PageImages {
-		pageHeights[pg] = float64(img.Bounds().Dy()) / p.Config.Zoom
-	}
-	result.Sections = lyt.BoxesToSections(boxes, pageHeights)
-	result.Metrics.BoxesFinal = len(result.Sections)
-	result.Sections = tbl.MergeCaptions(result.Sections, result.Figures())
-	return nil
-}
-
-func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine,
-	fromPage, toPage int,
-	prescanChars map[int][]pdf.TextChar,
-	medianHeights, medianWidths map[int]float64,
-	isEnglish, isScanNoiseDoc bool,
-	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
-) (*pdf.ParseResult, error) {
-	result := &pdf.ParseResult{PageImages: make(map[int]image.Image)}
-
-	boxes, pageChars, ocrUsedAny, ocrErr := p.extractPages(ctx, engine,
-		fromPage, toPage, prescanChars,
-		medianHeights, medianWidths, result.PageImages, docAnalyzer)
-	if ocrErr != nil {
-		slog.Warn("extractPages: some pages failed OCR", "err", ocrErr)
-	}
-
-	if isScanNoiseDoc {
-		boxes, pageChars, ocrUsedAny = p.retryScanNoise(ctx, engine,
-			fromPage, toPage, result.PageImages,
-			pageChars, medianHeights, medianWidths, ocrUsedAny, docAnalyzer)
-	}
-
-	if len(boxes) == 0 && p.Config.Zoom < 9 && !p.Config.SkipOCR {
-		boxes, ocrUsedAny = p.retryZoom(ctx, engine, fromPage, toPage,
-			result.PageImages, boxes, ocrUsedAny, docAnalyzer)
+		if len(r.DLARegions) > 0 {
+			result.DLARegions = append(result.DLARegions, r.DLARegions...)
+		}
 	}
 
 	if len(boxes) == 0 {
 		return result, nil
 	}
 
-	if err := p.buildLayout(ctx, result, engine, boxes, pageChars,
-		medianHeights, medianWidths, fromPage, toPage, ocrUsedAny, isEnglish,
-		docAnalyzer, tb); err != nil {
+	if err := p.buildLayout(ctx, result, boxes, pageChars,
+		medianHeights, medianWidths, pageEnglish); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
-	p.fillSectionImages(result)
 	return result, nil
 }
 
-func (p *Parser) fillSectionImages(result *pdf.ParseResult) {
-	if len(result.PageImages) == 0 {
-		return
+// buildLayout consumes the assembled boxes + page-level artifacts and runs
+// the global layout/table/figure pipeline. It is the only step that runs
+// AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, table
+// merge, figure consolidation, BoxesToSections, and caption merge.
+func (p *Parser) buildLayout(ctx context.Context,
+	result *pdf.ParseResult,
+	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
+	medianHeights, medianWidths map[int]float64,
+	pageEnglish map[int]bool,
+) error {
+	result.Metrics.BoxesInitial = len(boxes)
+
+	boxes = lyt.AssignColumn(boxes)
+	boxes = lyt.TextMerge(boxes, medianHeights)
+	result.Metrics.BoxesTextMerge = len(boxes)
+
+	// Preserve column-major content order while NaiveVerticalMerge promotes a
+	// page-leading title isolated in its own column.
+	boxes = lyt.FinalReadingOrderMerge(boxes)
+
+	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, pageEnglish)
+	result.Metrics.BoxesVertMerge = len(boxes)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	tableImgByRegion := make(map[string]string, len(result.Tables))
-	for _, tbl := range result.Tables {
-		if tbl.ImageB64 == "" {
-			continue
-		}
-		pg := 0
-		if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
-			pg = tbl.Positions[0].PageNumbers[0]
-		}
-		key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f",
-			pg, tbl.RegionLeft, tbl.RegionRight, tbl.RegionTop, tbl.RegionBottom)
-		tableImgByRegion[key] = tbl.ImageB64
+
+	if len(result.Tables) > 0 {
+		result.Tables = tbl.MergeTablesAcrossPages(result.Tables, nil)
 	}
-	for i := range result.Sections {
-		if result.Sections[i].LayoutType == pdf.LayoutTypeTable {
-			if img, ok := matchTableImage(&result.Sections[i], tableImgByRegion); ok {
-				result.Sections[i].Image = img
-				continue
-			}
-		}
-		if result.Sections[i].LayoutType == pdf.LayoutTypeFigure && len(result.Sections[i].Positions) > 0 {
-			if dlaImg := util.CropSectionByDLA(result.Sections[i], result.DLADebug, result.PageImages); dlaImg != "" {
-				result.Sections[i].Image = dlaImg
-				continue
-			}
-		}
-		img := util.CropSectionImage(result.Sections[i].PositionTag, result.PageImages, p.Config.Zoom)
-		result.Sections[i].Image = img
-		if img == "" && result.Sections[i].Text != "" {
-			tag := result.Sections[i].PositionTag
-			slog.Warn("cropSectionImage empty for non-empty section",
-				"section", i, "posTag", tag[:min(80, len(tag))])
-		}
-	}
+
+	boxes = tbl.ExtractTableAndReplace(boxes, result.Tables)
+	result.Metrics.TablesCount = len(result.Tables)
+	boxes = tbl.ConsolidateFigures(boxes)
+
+	// PageHeight is already in PDF-point space — computed in processPage.
+	result.Sections = lyt.BoxesToSections(boxes, result.PageHeight)
+	result.Metrics.BoxesFinal = len(result.Sections)
+	result.Sections = tbl.MergeCaptions(result.Sections, result.Figures())
+	return nil
 }
 
-// matchTableImage looks up a pre-rendered table image for a section.
-// Uses Positions if available; falls back to TableItem Region boundaries.
-func matchTableImage(sec *pdf.Section, tableImgByRegion map[string]string) (string, bool) {
-	pg := 0
-	if len(sec.Positions) > 0 {
-		pos := sec.Positions[0]
-		if len(pos.PageNumbers) > 0 {
-			pg = pos.PageNumbers[0]
-		}
-		key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f", pg, pos.Left, pos.Right, pos.Top, pos.Bottom)
-		if img, ok := tableImgByRegion[key]; ok {
-			return img, true
-		}
-		return "", false
+// processPages drives the page worker pool and the global assembly step.
+// Page-local work (including per-page zoom retry) happens inside processPage;
+// document-wide work happens in assembleDocument.
+func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnalyzer pdf.DocAnalyzer) (*pdf.ParseResult, error) {
+	pageCount, err := engine.PageCount()
+	if err != nil {
+		return nil, fmt.Errorf("page count: %w", err)
 	}
-	if sec.TableItem != nil {
-		if len(sec.TableItem.Positions) > 0 && len(sec.TableItem.Positions[0].PageNumbers) > 0 {
-			pg = sec.TableItem.Positions[0].PageNumbers[0]
-		}
-		key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f", pg,
-			sec.TableItem.RegionLeft, sec.TableItem.RegionRight,
-			sec.TableItem.RegionTop, sec.TableItem.RegionBottom)
-		if img, ok := tableImgByRegion[key]; ok {
-			return img, true
-		}
+	if pageCount == 0 {
+		return &pdf.ParseResult{
+			PageHeight: make(map[int]float64),
+			PageWidth:  make(map[int]float64),
+		}, nil
 	}
-	return "", false
-}
 
+	tb := NewTableBuilderFor(docAnalyzer)
+	pages := documentPages(pageCount)
+
+	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
+	if pageErr != nil {
+		slog.Warn("runPageWorkers: some pages failed", "err", pageErr)
+	}
+
+	result, err := p.assembleDocument(ctx, pages, pageResults)
+	if err != nil {
+		return nil, err
+	}
+	// Preserve a hard failure from the page workers (e.g. context
+	// cancellation) — assembleDocument may still succeed on an empty
+	// result, which would otherwise swallow the error.
+	if pageErr != nil {
+		return result, pageErr
+	}
+	// Carry the engine on the result so the JSON/markdown serialization
+	// step can crop section images on demand, then release it. This also
+	// fixes the previous engine leak (the engine was discarded here and
+	// re-created unnecessarily downstream).
+	result.Engine = engine
+	return result, nil
+}

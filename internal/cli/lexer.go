@@ -227,6 +227,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAPI, Value: ident}
 	case "ADD":
 		return Token{Type: TokenAdd, Value: ident}
+	case "LIVE":
+		return Token{Type: TokenLive, Value: ident}
+	case "HEALTH":
+		return Token{Type: TokenHealth, Value: ident}
 	case "HOST":
 		return Token{Type: TokenHost, Value: ident}
 	case "DELETE":
@@ -335,6 +339,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenMax, Value: ident}
 	case "STORE":
 		return Token{Type: TokenStore, Value: ident}
+	case "ENGINE":
+		return Token{Type: TokenEngine, Value: ident}
 	case "STREAM":
 		return Token{Type: TokenStream, Value: ident}
 	case "LS":
@@ -491,6 +497,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenIngestors, Value: ident}
 	case "INGESTION":
 		return Token{Type: TokenIngestion, Value: ident}
+	case "CACHE":
+		return Token{Type: TokenCache, Value: ident}
 	case "MQ":
 		return Token{Type: TokenMQ, Value: ident}
 	case "PUBLISH":

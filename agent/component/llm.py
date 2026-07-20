@@ -25,7 +25,7 @@ from functools import partial
 from common.constants import LLMType
 from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
@@ -70,7 +70,7 @@ class LLMParam(ComponentParamBase):
 
         if int(self.max_tokens) > 0 and get_attr("maxTokensEnabled"):
             conf["max_tokens"] = int(self.max_tokens)
-        if float(self.temperature) > 0 and get_attr("temperatureEnabled"):
+        if float(self.temperature) >= 0 and get_attr("temperatureEnabled"):
             conf["temperature"] = float(self.temperature)
         if float(self.top_p) > 0 and get_attr("topPEnabled"):
             conf["top_p"] = float(self.top_p)
@@ -88,9 +88,9 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
-        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
         self.imgs = []
 
@@ -318,14 +318,14 @@ class LLM(ComponentBase):
             len(sys_file_imgs),
             max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
         )
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
-        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
-            model_type = LLMType.IMAGE2TEXT.value
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
+        if self.imgs and LLMType.VISION.value in model_types:
+            model_type = LLMType.VISION.value
         elif LLMType.CHAT.value in model_types:
             model_type = LLMType.CHAT.value
         else:
             model_type = model_types[0]
-        model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         if self.imgs:
             self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
 

@@ -19,6 +19,7 @@ package elasticsearch
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,6 +60,7 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   10,
 			ResponseHeaderTimeout: 30 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		},
 	})
 	if err != nil {
@@ -101,6 +103,11 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 // GetType returns the engine type
 func (e *elasticsearchEngine) GetType() string {
 	return "elasticsearch"
+}
+
+// SupportsPageRank returns true because Elasticsearch supports pagerank.
+func (e *elasticsearchEngine) SupportsPageRank() bool {
+	return true
 }
 
 // Ping health check

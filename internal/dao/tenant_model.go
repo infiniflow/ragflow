@@ -102,9 +102,11 @@ func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(provid
 	return models, nil
 }
 
-func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID, modelType, modelName string) (*entity.TenantModel, error) {
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID string, modelType int, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type = ? AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
+	// Use bitwise AND to match Python's bin_and(model_type) > 0 pattern.
+	// A model_type value of 0 (unknown type) matches no row.
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type & ? > 0 AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +121,31 @@ func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.T
 		return nil, err
 	}
 	return models, nil
+}
+
+// DeleteByIDs deletes all models whose id is in the given list.
+// Mirrors Python's TenantModelService.delete_by_ids.
+func (dao *TenantModelDAO) DeleteByIDs(ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("id IN ?", ids).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+// UpdateByID updates a tenant model's model_type and extra by primary key.
+// Mirrors Python's TenantModelService.update_model.
+func (dao *TenantModelDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.TenantModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteByInstanceIDs deletes all models whose instance_id is in the given list.
+func (dao *TenantModelDAO) DeleteByInstanceIDs(instanceIDs []string) (int64, error) {
+	if len(instanceIDs) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("instance_id IN ?", instanceIDs).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
 }
 
 // GetModelsByProviderIDsAndInstanceIDs returns TenantModel rows whose

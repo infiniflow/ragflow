@@ -18,20 +18,22 @@ import json
 import os
 import re
 
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
-from common.constants import PAGERANK_FLD
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id
+from common.constants import PAGERANK_FLD, LLMType
 from common import settings
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
+from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common.misc_utils import thread_pool_exec
+from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
 _VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
 
@@ -328,6 +330,11 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
         if not ok:
             return False, err
+        ok, _ = TenantModelService.get_by_id(req["embd_id"])
+        if ok:
+            req["tenant_embd_id"] = req["embd_id"]
+        else:
+            req["tenant_embd_id"] = resolve_model_id(tenant_id, LLMType.EMBEDDING, req["embd_id"])
 
     if "pagerank" in req and req["pagerank"] != kb.pagerank:
         if os.environ.get("DOC_ENGINE", "elasticsearch") == "infinity":
@@ -403,10 +410,25 @@ def list_datasets(tenant_id: str, args: dict):
     kbs, total = KnowledgebaseService.get_list(tenant_ids, tenant_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
+
+    ips_arg = args.get("include_parsing_status", False)
+    if isinstance(ips_arg, str):
+        include_parsing_status = ips_arg.lower() not in ("false", "0", "")
+    elif isinstance(ips_arg, bool):
+        include_parsing_status = ips_arg
+    else:
+        include_parsing_status = bool(ips_arg)
+
+    status_by_kb = {}
+    if include_parsing_status and kbs:
+        status_by_kb = DocumentService.get_parsing_status_by_kb_ids([kb["id"] for kb in kbs])
+
     response_data_list = []
     for kb in kbs:
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
+        if status_by_kb:
+            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
         response_data_list.append(remap_dictionary_keys(kb))
     return True, {"data": response_data_list, "total": total}
 
@@ -867,46 +889,6 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     return True, {}
 
 
-def run_embedding(dataset_id: str, tenant_id: str):
-    """
-    Run embedding for all documents in a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    documents, _ = DocumentService.get_by_kb_id(
-        kb_id=dataset_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    if not documents:
-        return False, f"No documents in Dataset {dataset_id}"
-
-    kb_table_num_map = {}
-    for doc in documents:
-        doc["tenant_id"] = tenant_id
-        DocumentService.run(tenant_id, doc, kb_table_num_map)
-
-    return True, {"scheduled_count": len(documents)}
-
-
 def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
     """
     Rename a tag in a dataset.
@@ -1011,7 +993,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1045,15 +1027,15 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
     if kb.embd_id:
-        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    rerank_id = req.get("rerank_id") or search_config.get("rerank_id")
     if rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
+        rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
     if search_config.get("keyword", req.get("keyword", False)):
@@ -1167,8 +1149,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         except Exception as e:
             if "not_found_exception" in repr(e) or "index_not_found_exception" in repr(e):
                 logging.info(
-                    "sample_random_chunks_with_vectors: index %s not yet created for tenant %s; "
-                    "returning empty sample set",
+                    "sample_random_chunks_with_vectors: index %s not yet created for tenant %s; returning empty sample set",
                     index_nm,
                     tenant_id,
                 )
@@ -1244,7 +1225,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     if not ok:
         return False, err
 
-    embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, embd_id)
+    embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     n = int(req.get("check_num", 5))
@@ -1327,7 +1308,7 @@ async def search_datasets(tenant_id: str, req: dict):
     :param req: search request containing dataset_ids and other params
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, split_model_name
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -1365,10 +1346,9 @@ async def search_datasets(tenant_id: str, req: dict):
     if not kbs:
         return False, "Datasets not found!"
 
-    # All datasets must use the same embedding model
-    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
-    if len(embd_nms) != 1:
-        return False, "Datasets use different embedding models."
+    err = validate_dataset_embedding_models(kbs)
+    if err:
+        return False, err
 
     if doc_ids is not None and not isinstance(doc_ids, list):
         return False, "`doc_ids` should be a list"
@@ -1402,7 +1382,7 @@ async def search_datasets(tenant_id: str, req: dict):
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1437,16 +1417,18 @@ async def search_datasets(tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
+
+    embd_mdl = None
     if kb.embd_id:
-        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    rerank_id = req.get("rerank_id") or search_config.get("rerank_id")
     if rerank_id:
-        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
+        rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
     if search_config.get("keyword", req.get("keyword", False)):
@@ -1496,11 +1478,10 @@ async def search_datasets(tenant_id: str, req: dict):
 # with ``compile_kwd="artifact_page"`` written by TaskHandler's
 # ``_persist_wiki_pages_to_es``. The schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
-#   entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
+#   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids
 # ---------------------------------------------------------------------------
 
-_WIKI_COMPILE_KWD = "artifact_page"
 _SKILL_COMPILE_KWD = "skill"
 _SKILL_ALL_COMPILE_KWD = "skill_all"
 
@@ -1546,7 +1527,7 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
         res = settings.docStoreConn.search(
             select_fields=["id"],
             highlight_fields=[],
-            condition={"compile_kwd": [_WIKI_COMPILE_KWD]},
+            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
             match_expressions=[],
             order_by=OrderByExpr(),
             offset=0,
@@ -1568,6 +1549,7 @@ async def list_wiki_pages(
     page: int = 1,
     page_size: int = 200,
     page_type: str | None = None,
+    topic: str | None = None,
 ):
     """List artifact pages for the left-hand 2-column list.
 
@@ -1589,10 +1571,14 @@ async def list_wiki_pages(
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
+    page_type = page_type.strip() if isinstance(page_type, str) else page_type
+    topic = topic.strip() if isinstance(topic, str) else topic
 
-    condition: dict = {"compile_kwd": [_WIKI_COMPILE_KWD]}
+    condition: dict = {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}
     if page_type:
         condition["page_type_kwd"] = [page_type]
+    if topic:
+        condition["topic_kwd"] = [topic]
 
     order_by = OrderByExpr()
     try:
@@ -1609,6 +1595,7 @@ async def list_wiki_pages(
         "slug_kwd",
         "title_kwd",
         "page_type_kwd",
+        "topic_kwd",
         "outlinks_int",
         "summary_with_weight",
     ]
@@ -1640,11 +1627,105 @@ async def list_wiki_pages(
                 "slug": slug,
                 "title": row.get("title_kwd") or slug,
                 "page_type": row.get("page_type_kwd") or "concept",
+                "topic": row.get("topic_kwd") or "",
                 "summary": row.get("summary_with_weight") or "",
             }
         )
 
     return True, {"total": int(total or 0), "items": items}
+
+
+async def list_wiki_topics(
+    dataset_id: str,
+    tenant_id: str,
+    page: int = 1,
+    page_size: int = 200,
+):
+    """List wiki topics for the dataset Artifact tab."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 200), 1000))
+    offset = (page - 1) * page_size
+
+    try:
+        agg_res = settings.docStoreConn.search(
+            select_fields=["id"],
+            highlight_fields=[],
+            condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["concept", "entity"]},
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=0,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+            agg_fields=["topic_kwd"],
+        )
+        buckets = settings.docStoreConn.get_aggregation(agg_res, "topic_kwd")
+    except Exception:
+        logging.exception("list_wiki_topics: docStore aggregation failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    counts = {t: int(c) for t, c in (buckets or []) if isinstance(t, str) and t and int(c or 0) > 0}
+    if not counts:
+        return True, {"total": 0, "items": []}
+
+    # Resolve display metadata (title/slug) from the topic landing pages; fall
+    # back to the raw topic name when a topic has no ``page_type="topic"`` row.
+    meta: dict[str, dict] = {}
+    try:
+        meta_fields = ["topic_kwd", "title_kwd", "slug_kwd"]
+        _BATCH = 1000
+        _offset = 0
+        while True:
+            meta_res = settings.docStoreConn.search(
+                select_fields=meta_fields,
+                highlight_fields=[],
+                condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["topic"]},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=_offset,
+                limit=_BATCH,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(meta_res, meta_fields) or {}
+            if not rows:
+                break
+            for row in rows.values():
+                t = row.get("topic_kwd")
+                if isinstance(t, str) and t:
+                    meta[t] = {"title": row.get("title_kwd") or t, "slug": row.get("slug_kwd") or t}
+            _offset += _BATCH
+    except Exception:
+        logging.exception("list_wiki_topics: topic metadata lookup failed for kb=%s", dataset_id)
+
+    # Rank topics by page count (descending), then title for a stable order.
+    ranked = sorted(
+        (
+            {
+                "topic": t,
+                "title": (meta.get(t) or {}).get("title") or t,
+                "slug": (meta.get(t) or {}).get("slug") or t,
+                "page_count": c,
+            }
+            for t, c in counts.items()
+        ),
+        key=lambda x: (-x["page_count"], x["title"].lower()),
+    )
+
+    total = len(ranked)
+    items = ranked[offset : offset + page_size]
+    return True, {"total": total, "items": items}
 
 
 async def get_wiki_page(
@@ -1679,6 +1760,7 @@ async def get_wiki_page(
         "slug_kwd",
         "title_kwd",
         "page_type_kwd",
+        "topic_kwd",
         "content_with_weight",
         "summary_with_weight",
         "entity_names_kwd",
@@ -1692,7 +1774,7 @@ async def get_wiki_page(
             select_fields=select_fields,
             highlight_fields=[],
             condition={
-                "compile_kwd": [_WIKI_COMPILE_KWD],
+                "compile_kwd": [WIKI_PAGE_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -1722,6 +1804,7 @@ async def get_wiki_page(
         "slug": row.get("slug_kwd") or full_slug,
         "title": row.get("title_kwd") or full_slug,
         "page_type": row.get("page_type_kwd") or page_type,
+        "topic": row.get("topic_kwd") or "",
         "content_md_rendered": content_md,
         "summary": summary,
         "entity_names": row.get("entity_names_kwd") or [],
@@ -1942,7 +2025,7 @@ async def update_wiki_page(
             select_fields=["id", "content_with_weight"],
             highlight_fields=[],
             condition={
-                "compile_kwd": [_WIKI_COMPILE_KWD],
+                "compile_kwd": [WIKI_PAGE_COMPILE_KWD],
                 "page_type_kwd": [page_type],
                 "slug_kwd": [full_slug],
             },
@@ -2031,7 +2114,7 @@ async def update_wiki_page(
 # :meth:`FileCommitService.get_page_commit_detail`.
 
 
-# All six row types the artifact pipeline writes. Listed in dependency
+# All seven row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
 # that downstream phases would silently reuse. ``artifact_page_graph``
 # is the materialized canvas graph derived from the refined pages —
@@ -2042,6 +2125,7 @@ _WIKI_COMPILE_KWDS = (
     "artifact_compilation_plan",
     "artifact_page_draft",
     "artifact_page",
+    "artifact_page_topic",
     "artifact_entity",
     "artifact_relation",
 )
@@ -2470,11 +2554,11 @@ async def get_wiki_graph(
 async def clear_wiki(dataset_id: str, tenant_id: str):
     """Wipe every artifact-related row from ES for this KB.
 
-    Touches all five ``compile_kwd`` row types the artifact pipeline writes
-    (MAP extracts, REDUCE results, PLAN output, page drafts, and the
-    searchable artifact_page rows). After this completes the next "Artifact"
-    run starts from a clean slate — no resume cache to short-circuit MAP, no
-    prior pages to reconcile against in PLAN.
+    Touches all artifact ``compile_kwd`` row types the artifact pipeline writes
+    (MAP extracts, REDUCE results, PLAN output, drafts, pages, topics, and graph
+    rows). After this completes the next "Artifact" run starts from a clean
+    slate: no resume cache to short-circuit MAP, no prior pages to reconcile
+    against in PLAN.
 
     Returns ``(True, {"deleted": {kwd: count_or_True}})`` on success or
     ``(False, str)`` on auth failure.

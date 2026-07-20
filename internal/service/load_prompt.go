@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"ragflow/internal/utility"
 )
 
 var (
@@ -55,38 +57,11 @@ var thinkBlockRE = regexp.MustCompile(`^[\s\S]*</think>`)
 var jsonFenceRE = regexp.MustCompile("```json\\n|```\\n*$")
 
 func init() {
-	// Strategy 1: Check working directory first (most reliable during development/tests)
-	cwd, err := os.Getwd()
-	if err == nil {
-		// Check if CWD has rag/prompts directly
-		if _, err := os.Stat(filepath.Join(cwd, "rag", "prompts")); err == nil {
-			promptsBaseDir = cwd
-			return
-		}
-		// Walk up from CWD looking for rag/prompts
-		dir := cwd
-		for dir != "/" && dir != "" {
-			if _, err := os.Stat(filepath.Join(dir, "rag", "prompts")); err == nil {
-				promptsBaseDir = dir
-				return
-			}
-			dir = filepath.Dir(dir)
-		}
+	root := utility.GetProjectRoot()
+	if _, err := os.Stat(filepath.Join(root, "rag", "prompts")); err == nil {
+		promptsBaseDir = root
+		return
 	}
-
-	// Strategy 2: Walk up from executable (for production Docker where binary is in /ragflow/bin/)
-	exe, err := os.Executable()
-	if err == nil {
-		dir := filepath.Dir(exe)
-		for dir != "/" && dir != "" {
-			if _, err := os.Stat(filepath.Join(dir, "rag", "prompts")); err == nil {
-				promptsBaseDir = dir
-				return
-			}
-			dir = filepath.Dir(dir)
-		}
-	}
-
 	// Final fallback
 	promptsBaseDir = "/ragflow"
 }

@@ -63,6 +63,18 @@ redis:
 nats:
   host: ${NATS_HOST:-0.0.0.0}
   port: ${NATS_PORT:-4222}
+clickhouse:
+  host: '${CLICKHOUSE_HOST:-clickhouse}'
+  port: ${CLICKHOUSE_TCP_PORT:-9000}
+  user: '${CLICKHOUSE_USER:-ragflow}'
+  password: '${CLICKHOUSE_PASSWORD:-infini_rag_flow}'
+  database: '${CLICKHOUSE_DATABASE:-ragflow}'
+otel:
+  host: ${OTEL_HOST:-0.0.0.0}
+  port: ${OTEL_PORT:-4318}
+  secure: false
+  sample_ratio: 1.0
+  stdout: false
 task_executor:
   message_queue_type: 'nats'
 file_syncer:
@@ -111,6 +123,10 @@ user_default_llm:
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
 #   cloud: 'public'  # Azure cloud: 'public', 'china', 'government', or 'germany'
+# gcs:
+#   bucket: '${GCS_BUCKET:-ragflow}'
+#   prefix_path: '${GCS_PREFIX_PATH:-}'
+#   endpoint_url: '${GCS_ENDPOINT:-}'
 # The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
 # opendal:
 #   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.

@@ -55,8 +55,8 @@ func TestTenantModelDAODeleteByModelIDAndScopeDeletesOnlyMatchingModel(t *testin
 	db := setupTenantModelDAOTestDB(t)
 	useTenantModelDAOTestDB(t, db)
 
-	seedTenantModel(t, db, &entity.TenantModel{ID: "model-delete", ModelName: "m", ModelType: "chat", ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
-	seedTenantModel(t, db, &entity.TenantModel{ID: "model-keep", ModelName: "m", ModelType: "chat", ProviderID: "provider-1", InstanceID: "instance-2", Status: "active"})
+	seedTenantModel(t, db, &entity.TenantModel{ID: "model-delete", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
+	seedTenantModel(t, db, &entity.TenantModel{ID: "model-keep", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-2", Status: "active"})
 
 	rows, err := NewTenantModelDAO().DeleteByModelIDAndProviderIDAndInstanceID("model-delete", "provider-1", "instance-1")
 	if err != nil {
@@ -85,7 +85,7 @@ func TestTenantModelDAOUpdateStatusByIDAndScope(t *testing.T) {
 	db := setupTenantModelDAOTestDB(t)
 	useTenantModelDAOTestDB(t, db)
 
-	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status", ModelName: "m", ModelType: "chat", ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
+	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 
 	rows, err := NewTenantModelDAO().UpdateStatusByIDAndScope("model-status", "provider-1", "instance-1", "inactive")
 	if err != nil {

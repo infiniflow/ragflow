@@ -62,7 +62,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -76,7 +75,7 @@ import (
 // selfManagedDefaultEndpoint is the canonical executor_manager
 // endpoint baked into the Python side. Operators override via
 // SANDBOX_EXECUTOR_MANAGER_URL.
-const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
+const selfManagedDefaultEndpoint = "http://localhost:9385"
 
 // SelfManagedProvider is the Go port of
 // `agent/sandbox/providers/self_managed.py::SelfManagedProvider`.
@@ -119,12 +118,12 @@ func newSelfManagedProviderFromEnv() *SelfManagedProvider {
 // env vars, mirroring the admin-panel settings JSON shape.
 func selfManagedConfigFromEnv() map[string]any {
 	return map[string]any{
-		"EXECUTOR_MANAGER_URL":         os.Getenv("SANDBOX_EXECUTOR_MANAGER_URL"),
-		"EXECUTOR_MANAGER_TIMEOUT":     os.Getenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT"),
-		"EXECUTOR_MANAGER_POOL_SIZE":   os.Getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE"),
-		"EXECUTOR_MANAGER_MAX_RETRIES": os.Getenv("SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES"),
-		"BASE_PYTHON_IMAGE":            os.Getenv("SANDBOX_BASE_PYTHON_IMAGE"),
-		"BASE_NODEJS_IMAGE":            os.Getenv("SANDBOX_BASE_NODEJS_IMAGE"),
+		"EXECUTOR_MANAGER_URL":         common.GetEnv(common.EnvSandboxExecutorManagerURL),
+		"EXECUTOR_MANAGER_TIMEOUT":     common.GetEnv(common.EnvSandboxExecutorManagerTimeout),
+		"EXECUTOR_MANAGER_POOL_SIZE":   common.GetEnv(common.EnvSandboxExecutorManagerPoolSize),
+		"EXECUTOR_MANAGER_MAX_RETRIES": common.GetEnv(common.EnvSandboxExecutorManagerMaxRetries),
+		"BASE_PYTHON_IMAGE":            common.GetEnv(common.EnvSandboxBasePythonImage),
+		"BASE_NODEJS_IMAGE":            common.GetEnv(common.EnvSandboxBaseNodeJSImage),
 	}
 }
 

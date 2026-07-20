@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -65,7 +66,7 @@ type agentFileService interface {
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
-	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
 }
 
 // documentAccessChecker is the minimal surface RerunAgent needs
@@ -104,7 +105,7 @@ func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandle
 
 // NewAgentHandler create agent handler
 
-func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
+func NewAgentHandler(agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
 		chatRunner:   agentService,
@@ -130,7 +131,7 @@ func NewAgentHandler(agentService *service.AgentService, fileService *service.Fi
 func (h *AgentHandler) ListAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -241,7 +242,7 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	var req service.CreateAgentRequest
@@ -252,7 +253,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	req.UserID = user.ID
 	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -355,7 +356,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 // @Router /api/v1/agents/templates [get]
 func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -393,7 +394,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userInput := readUserInput(c)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
@@ -402,7 +403,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	doneSent := false
 	for ev := range events {
+		if ev.Type == "done" {
+			doneSent = true
+		}
 		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 			common.Debug("agent run: client disconnected",
 				zap.String("canvas_id", canvasID),
@@ -410,6 +415,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 				zap.Error(err),
 			)
 			return
+		}
+	}
+	if !doneSent {
+		if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
+			common.Debug("agent run: failed to write [DONE]",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
 		}
 	}
 }
@@ -712,7 +726,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		IncludeDSL: includeDSL,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, resp.Data, "success")
@@ -743,7 +757,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		DSL:     body.DSL,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -760,7 +774,7 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	sessionID := c.Param("session_id")
 	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -782,7 +796,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	if sessionID != "" {
 		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
 		if err != nil {
-			common.ErrorWithCode(c, int(code), err.Error())
+			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
 		common.SuccessWithData(c, ok, "success")
@@ -800,7 +814,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	}
 	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -808,15 +822,17 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
 //
-// Runs the canvas against `agent_id` and streams the result as SSE.
+// Runs the canvas against `agent_id`. Mirrors the Python contract in
+// api/db/services/canvas_service.py:313 (`completion()`) and
+// api/apps/restful_apis/agent_api.py:1440-1676.
 //
-// Behaviour matches the Python reference at
-// api/db/services/canvas_service.py:313 (`completion()`):
-//
-//   - Non-openai path: always streams SSE — one `data: {...}\n\n` frame per
-//     canvas RunEvent, terminated by `data: [DONE]\n\n`. The `stream` field
-//     is ignored on this path because Python's `completion()` always yields
-//     SSE frames regardless of the flag.
+//   - When `stream` is true: streams SSE — one `data: {...}\n\n` frame per
+//     canvas RunEvent, terminated by `data:[DONE]\n\n`.
+//   - When `stream` is omitted or false (default, matches the Python
+//     agent_chat_completion contract where `req.get("stream", False)`
+//     defaults to non-streaming): collects all canvas events and returns a
+//     plain JSON response with `data.content` set to the concatenated
+//     message content (matching Python's final_ans["data"]["content"]).
 //   - Openai-compatible path: requires `messages` (a non-empty list with at
 //     least one user message is needed to derive the question). The full
 //     OpenAI wire framing (delta + reference + token counts — see
@@ -833,6 +849,7 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
+	Files        []map[string]interface{} `json:"files"`
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -989,7 +1006,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}, userInputMeta(userInput)...)...,
 	)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
@@ -1004,62 +1021,170 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	// SSE wire format is the flat Python agent-canvas envelope:
-	// {event,message_id,task_id,session_id,created_at,data}. One
-	// frame is emitted per canvas event through service.WriteChatbotRunEvent.
-	// The channel close is signalled by `data: [DONE]\n\n`. We do NOT
-	// emit an SSE `event:` line — the front-end's use-send-message.ts
-	// parser feeds each `data:` line directly into JSON.parse and
-	// expects the event type in the JSON object's top-level `event`
-	// field.
-	emitted := false
-	for ev := range events {
-		emitted = true
-		common.Debug("agent chat completions: streaming event",
+	if req.Stream {
+		// SSE streaming: one `data: {...}\n\n` frame per canvas RunEvent,
+		// terminated by `data:[DONE]\n\n`. We do NOT emit an SSE `event:`
+		// line — the front-end's use-send-message.ts parser feeds each
+		// `data:` line directly into JSON.parse and expects the event type
+		// in the JSON object's top-level `event` field.
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+		emitted := false
+		doneSent := false
+		for ev := range events {
+			emitted = true
+			if ev.Type == "done" {
+				doneSent = true
+			}
+			common.Debug("agent chat completions: streaming event",
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.String("event_type", ev.Type),
+				zap.String("message_id", ev.MessageID),
+				zap.String("task_id", ev.TaskID),
+			)
+			if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+				common.Debug("agent chat completions: client disconnected",
+					zap.String("agent_id", req.AgentID),
+					zap.Error(err),
+				)
+				return
+			}
+		}
+		if !emitted {
+			// Canvas produced no events (e.g. empty query). Echo the
+			// session_id so the client can resume the conversation
+			// (fixes #15169). The [DONE] terminator must be emitted
+			// after this branch because the canvas never sends a
+			// "done" event on this path.
+			common.Info("empty agent output - returning session_id",
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+			)
+			event := canvas.RunEvent{
+				Type:      "",
+				Data:      "{}",
+				CreatedAt: time.Now().Unix(),
+				SessionID: req.SessionID,
+			}
+			_ = service.WriteChatbotRunEvent(c.Writer, event)
+		}
+		if !doneSent {
+			if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
+				common.Debug("agent chat completions: failed to write [DONE]",
+					zap.Error(err),
+				)
+			}
+		}
+		common.Debug("agent chat completions: stream closed",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
-			zap.String("event_type", ev.Type),
-			zap.String("message_id", ev.MessageID),
-			zap.String("task_id", ev.TaskID),
 		)
-		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
-			common.Debug("agent chat completions: client disconnected",
-				zap.String("agent_id", req.AgentID),
-				zap.Error(err),
-			)
-			return
+		return
+	}
+
+	// Non-streaming: collect all canvas events, accumulate message
+	// content and reference, then return a plain JSON response matching
+	// Python's get_result(data=final_ans) contract (agent_api.py:1616-1676).
+	var fullContent string
+	reference := map[string]any{}
+	structuredOutput := map[string]any{}
+	var runUsage any
+	var finalAns *canvas.RunEvent
+	hasEvents := false
+	for ev := range events {
+		hasEvents = true
+		var evData map[string]any
+		if err := json.Unmarshal([]byte(ev.Data), &evData); err == nil {
+			if ev.Type == "message" {
+				if c, ok := evData["content"].(string); ok {
+					fullContent += c
+				}
+			}
+			if ref, _ := evData["reference"].(map[string]any); ref != nil {
+				for k, v := range ref {
+					reference[k] = v
+				}
+			}
+			// #4: collect structured_output from node_finished events
+			// (Python: agent_api.py:1628-1633).
+			if ev.Type == "node_finished" {
+				if outputs, ok := evData["outputs"].(map[string]any); ok {
+					if structured, ok := outputs["structured"]; ok {
+						if componentID, ok := evData["component_id"].(string); ok {
+							structuredOutput[componentID] = structured
+						}
+					}
+				}
+			}
+			// #5: capture run_usage from workflow_finished events
+			// (Python: agent_api.py:1641-1644).
+			if ev.Type == "workflow_finished" {
+				if u := evData["usage"]; u != nil {
+					runUsage = u
+				}
+			}
+		}
+
+		// Python final_ans selection: prefer "message_end" event,
+		// skip "workflow_finished" (set by canvas as the last event
+		// but should not be the final answer), use "user_inputs" as
+		// fallback.
+		if ev.Type == "message_end" {
+			copy := ev
+			finalAns = &copy
+		}
+		if ev.Type == "workflow_finished" {
+			continue
+		}
+		if finalAns == nil {
+			copy := ev
+			finalAns = &copy
 		}
 	}
-	if !emitted {
+
+	if !hasEvents || finalAns == nil {
 		// Canvas produced no events (e.g. empty query). Echo the
 		// session_id so the client can resume the conversation
-		// (fixes #15169). The [DONE] terminator must be emitted
-		// here explicitly because the canvas never sends a
-		// "done" event on this path.
+		// (fixes #15169). Python returns get_result(data={"session_id": session_id}).
 		common.Info("empty agent output - returning session_id",
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
 		)
-		event := canvas.RunEvent{
-			Type:      "",
-			Data:      "{}",
-			CreatedAt: time.Now().Unix(),
-			SessionID: req.SessionID,
-		}
-		_ = service.WriteChatbotRunEvent(c.Writer, event)
-		if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
-			common.Debug("agent chat completions: failed to write [DONE]",
-				zap.Error(err),
-			)
-		}
+		common.SuccessWithData(c, gin.H{"session_id": req.SessionID}, "success")
+		return
 	}
-	common.Debug("agent chat completions: stream closed",
-		zap.String("agent_id", req.AgentID),
-		zap.String("session_id", req.SessionID),
-	)
+
+	// Build the final answer payload:
+	//   final_ans["data"]["content"] = full_content
+	//   final_ans["data"]["reference"] = reference
+	//   final_ans["data"]["usage"] = run_usage (if present)
+	//   final_ans["data"]["structured"] = structured_output (if present)
+	var ansData map[string]any
+	if err := json.Unmarshal([]byte(finalAns.Data), &ansData); err != nil || ansData == nil {
+		ansData = map[string]any{}
+	}
+	ansData["content"] = fullContent
+	if len(reference) > 0 {
+		ansData["reference"] = reference
+	}
+	if runUsage != nil {
+		ansData["usage"] = runUsage
+	}
+	if len(structuredOutput) > 0 {
+		ansData["structured"] = structuredOutput
+	}
+
+	result := gin.H{
+		"event":      finalAns.Type,
+		"data":       ansData,
+		"message_id": finalAns.MessageID,
+		"created_at": finalAns.CreatedAt,
+		"task_id":    finalAns.TaskID,
+		"session_id": finalAns.SessionID,
+	}
+	common.SuccessWithData(c, result, "success")
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
@@ -1138,7 +1263,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	}
 	code, err := h.agentService.TestDBConnection(user.ID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, true, "success")

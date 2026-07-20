@@ -47,6 +47,9 @@ chrome*
 huggingface.co/
 nltk_data/
 uv-x86_64*.tar.gz
+office_oxide*.tar.gz
+pdf_oxide*.tar.gz
+stagehand-server*
 
 # Exclude hash-like temporary files like 9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 *[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*
@@ -254,3 +257,8 @@ internal/deepdoc/parser/pdf/tools-py/
 build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/
+
+# test data compare tool
+internal/ingestion/task/tool/generate_dataflow_golden.py
+internal/ingestion/task/tool/README.md
+internal/cpp/cmake-build-release

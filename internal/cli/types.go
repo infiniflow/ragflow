@@ -45,6 +45,8 @@ const (
 	TokenServer
 	TokenAPI
 	TokenAdd
+	TokenLive
+	TokenHealth
 	TokenHost
 	TokenDelete
 	TokenPassword
@@ -135,6 +137,7 @@ const (
 	TokenVector
 	TokenSize
 	TokenStore
+	TokenEngine
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenBalance
 	TokenInstance
@@ -176,6 +179,7 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenCache
 	TokenMQ
 	TokenPublish
 	TokenPull

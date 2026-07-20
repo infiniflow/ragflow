@@ -40,7 +40,11 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    get_tenant_default_model_by_type,
+    resolve_model_config,
+    get_model_config_by_id,
+)
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common.constants import LLMType
@@ -237,7 +241,9 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            if task_type == "graphrag":
+            if task_type == "raptor":
+                await self._run_raptor(embedding_model, vector_size)
+            elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
@@ -313,8 +319,13 @@ class TaskHandler:
         task_language = ctx.language
 
         try:
-            if task_embedding_id:
-                embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            if ctx.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            elif task_embedding_id:
+                embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
@@ -370,7 +381,7 @@ class TaskHandler:
                 return
 
         # Bind LLM for raptor
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=ctx.language) as chat_model:
             # Run RAPTOR
             raptor_service = RaptorService(ctx=ctx)
@@ -486,7 +497,7 @@ class TaskHandler:
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=task_language) as chat_model:
             with_resolution = graphrag_conf.get("resolution", False)
             with_community = graphrag_conf.get("community", False)
@@ -588,6 +599,10 @@ class TaskHandler:
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
+        toc_thread = None
+        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
+            toc_thread = asyncio.create_task(asyncio.to_thread(self._build_toc, ctx, chunks, ctx.progress_cb))
+
         # Insert chunks
         chunk_count = len(set([chunk["id"] for chunk in chunks]))
         start_ts = timer()
@@ -612,6 +627,11 @@ class TaskHandler:
         await post_processor.process_table_parser_metadata(task_doc_id, chunks)
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+
+        toc_chunk = await self._process_toc_thread(toc_thread)
+        if toc_chunk:
+            ctx.recording_context.record("toc_chunk", [toc_chunk])
+            await post_processor.insert_toc_chunk(toc_chunk, chunk_service)
 
         if ctx.has_canceled_func(task_id):
             abort_doc_chunking_counter(task_doc_id)
@@ -710,6 +730,7 @@ class TaskHandler:
             "content_with_weight",
             "page_num_int",
             "top_int",
+            "compile_kwd",
         ]
         order_by = OrderByExpr()
         order_by.asc("page_num_int")
@@ -722,7 +743,15 @@ class TaskHandler:
                     settings.docStoreConn.search,
                     select_fields,
                     [],
-                    {"doc_id": [doc_id], "available_int": 1},
+                    {
+                        "doc_id": [doc_id],
+                        "available_int": 1,
+                        # Compilation writes its output back to the same
+                        # document index. Exclude those rows in the query so
+                        # they cannot change offset pagination while this
+                        # task is still streaming source chunks.
+                        "must_not": {"exists": "compile_kwd"},
+                    },
                     [],
                     order_by,
                     offset,
@@ -760,7 +789,7 @@ class TaskHandler:
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
         """Build table of contents."""
         progress_cb(msg="Start to generate table of content ...")
-        chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+        chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
         with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_mdl:
             docs = sorted(
                 docs,

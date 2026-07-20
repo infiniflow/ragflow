@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"strings"
 )
 
 // CropSectionImage crops region(s) from rendered page images based on a
@@ -239,75 +240,197 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-// cropSectionByDLA crops a section using the best-overlapping DLA region.
-// It finds a DLA "figure" or "equation" region whose overlap with the section's
-// bounding box is maximal, then crops from the page image at 216 DPI using the
-// DLA region boundary (plus 3% margin via cropImageRegion).
+// cropSectionByDLA crops a section using the best-overlapping DLA region,
+// mimicking Python's cropout() in deepdoc/parser/pdf_parser.py (around line
+// 1307). Unlike the original Go version (which only cropped the first page),
+// it now walks every position and every page the section spans, crops each
+// page's best DLA region (or the section bbox as a fallback), and
+// vertically concatenates the per-page crops — exactly like cropout's
+// multi-page branch (Image.new("RGB", (...), (245,245,245)) + paste loop).
 //
-// Returns "" (empty string) if no matching DLA region or page image is found.
-// The caller should fall through to cropSectionImage as a fallback.
-//
-// Python equivalent: cropout() in pdf_parser.py:1144-1148
+// Python equivalent (single-page branch):
 //
 //	louts = [layout for layout in self.page_layout[pn] if layout["type"] == ltype]
 //	ii = Recognizer.find_overlapped(b, louts, naive=True)
-//	if ii is not None: b = louts[ii]
-func CropSectionByDLA(sec pdf.Section, dlaDebug []pdf.DLAPageRegions, pageImages map[int]image.Image) string {
-	if len(sec.Positions) == 0 || len(sec.Positions[0].PageNumbers) == 0 {
+//	if ii is not None:
+//	    b = louts[ii]
+//
+// find_overlapped ranks candidates by overlapped_area(layout, section,
+// ratio=True), i.e. intersection_area / Area(layout). We replicate that exact
+// metric with OverlapRatioA(region, bx) — NOT the symmetric OverlapRatioMax —
+// so the chosen region matches Python even when the section box is larger than
+// the candidate region.
+//
+// Fallback semantics match cropout too: when a page has no figure/equation DLA
+// region (find_overlapped returns None), cropout crops the section's own bbox
+// on that page; we do the same via cropDLAPage. We return "" (empty string)
+// only when the section has no positions/pages at all or a referenced page
+// image is missing — in which case the caller should fall through to
+// CropSectionImage for the whole section.
+//
+// Note: cropout does NOT add the 120px context bands that CropSectionImage
+// (Python crop()) inserts; matching cropout, this function returns clean
+// per-page crops with no edge bands.
+func CropSectionByDLA(sec pdf.Section, dlaRegions []pdf.DLAPageRegions, pageImages map[int]image.Image) string {
+	if len(sec.Positions) == 0 {
 		return ""
 	}
-	pg := sec.Positions[0].PageNumbers[0]
-	pos := sec.Positions[0]
+	const gap = 6 // matches cropout's vertical paste gap.
 
+	// Convert section bbox from PDF points (72 DPI) to DLA pixel space (216 DPI).
+	scale := pdf.DlaDPI / 72.0 // 3.0
+
+	var crops []image.Image
+	for _, pos := range sec.Positions {
+		if len(pos.PageNumbers) == 0 {
+			continue
+		}
+		// Spanning height in pixels for this position across its pages,
+		// mirroring CropSectionImage's accumBottom computation.
+		pn0 := pos.PageNumbers[0]
+		accumBottom := pos.Bottom * scale
+		for _, pn := range pos.PageNumbers[1:] {
+			if pn == pn0 {
+				continue
+			}
+			if img, ok := pageImages[pn]; ok {
+				accumBottom += float64(img.Bounds().Dy())
+			}
+		}
+
+		img0, ok := pageImages[pn0]
+		if !ok {
+			// First page of this position is missing → skip the whole
+			// position (its page order is anchored on pn0). Python's
+			// cropout likewise skips out-of-range pages.
+			continue
+		}
+		// First page: crop [Top, min(Bottom, page height)] (clamped).
+		firstBottom := math.Min(accumBottom, float64(img0.Bounds().Dy()))
+		crops = append(crops, cropDLAPage(img0, dlaRegions, pn0,
+			pos.Left*scale, pos.Top*scale, pos.Right*scale, firstBottom))
+
+		// Subsequent pages: each contributes [0, remaining height].
+		remaining := accumBottom - float64(img0.Bounds().Dy())
+		for _, pn := range pos.PageNumbers[1:] {
+			if pn == pn0 {
+				continue
+			}
+			imgN, ok := pageImages[pn]
+			if !ok {
+				// Missing subsequent page → skip just this page; the
+				// caller's CropSectionImage fallback would also drop it.
+				continue
+			}
+			pageH := float64(imgN.Bounds().Dy())
+			h := math.Min(remaining, pageH)
+			crops = append(crops, cropDLAPage(imgN, dlaRegions, pn,
+				pos.Left*scale, 0, pos.Right*scale, h))
+			remaining -= pageH
+		}
+	}
+	if len(crops) == 0 {
+		return ""
+	}
+	return stitchVerticalImages(crops, gap)
+}
+
+// cropDLAPage crops a single page for a section position. It prefers the
+// best-overlapping figure/equation DLA region (cropout's find_overlapped
+// branch); if none overlaps, it falls back to the section bbox on that page
+// (cropout's ii-is-None branch). left/top/right/bottom are already in DLA
+// pixel space (216 DPI).
+func cropDLAPage(img image.Image, dlaRegions []pdf.DLAPageRegions,
+	pn int, lpx, tpx, rpx, bpx float64,
+) image.Image {
 	// Find DLA regions for this page.
 	var regions []pdf.DLARegion
-	for _, dp := range dlaDebug {
-		if dp.Page == pg {
+	for _, dp := range dlaRegions {
+		if dp.Page == pn {
 			regions = dp.Regions
 			break
 		}
 	}
-	if len(regions) == 0 {
-		return ""
-	}
 
-	// Convert section bbox from PDF points (72 DPI) to DLA pixel space (216 DPI).
-	scale := pdf.DlaDPI / 72.0 // 3.0
-	bx := Rect{
-		X0: pos.Left * scale,
-		Y0: pos.Top * scale,
-		X1: pos.Right * scale,
-		Y1: pos.Bottom * scale,
-	}
-
-	// Find best-overlapping figure or equation DLA region.
+	bx := Rect{X0: lpx, Y0: tpx, X1: rpx, Y1: bpx}
 	bestIdx := -1
 	bestOverlap := 0.0
 	for i, r := range regions {
 		if r.Label != pdf.LayoutTypeFigure && r.Label != pdf.LayoutTypeEquation {
 			continue
 		}
-		overlap := RectOverlap(bx, Rect{r.X0, r.Y0, r.X1, r.Y1})
+		// Match Python's find_overlapped metric: intersection_area / Area(region).
+		overlap := OverlapRatioA(Rect{r.X0, r.Y0, r.X1, r.Y1}, bx)
 		if overlap > bestOverlap {
 			bestOverlap = overlap
 			bestIdx = i
 		}
 	}
-	if bestIdx < 0 {
-		slog.Warn("cropSectionByDLA: no matching layout region found", "page", pg)
+	if bestIdx >= 0 {
+		if cropped, err := CropImageRegion(img, regions[bestIdx]); err == nil {
+			return cropped
+		} else {
+			slog.Warn("cropSectionByDLA: cropImageRegion failed, falling back to bbox",
+				"page", pn, "err", err)
+		}
+	}
+	// Fallback: crop the section bbox on this page (FastCrop clamps to bounds).
+	return FastCrop(img, int(lpx), int(tpx), int(rpx), int(bpx))
+}
+
+// stitchVerticalImages concatenates crops top-to-bottom on a gray (245)
+// background with the given pixel gap, matching cropout's
+// Image.new("RGB", (...), (245, 245, 245)) + paste loop. Returns a base64 PNG,
+// or "" if encoding fails.
+func stitchVerticalImages(imgs []image.Image, gap int) string {
+	if len(imgs) == 0 {
 		return ""
+	}
+	totalH := 0
+	maxW := 0
+	for _, im := range imgs {
+		b := im.Bounds()
+		totalH += b.Dy() + gap
+		if w := b.Dx(); w > maxW {
+			maxW = w
+		}
+	}
+	totalH -= gap
+	stitched := image.NewRGBA(image.Rect(0, 0, maxW, totalH))
+
+	// Fill gray 245 background (BGRA bytes).
+	for y := 0; y < totalH; y++ {
+		row := stitched.Pix[stitched.PixOffset(0, y):stitched.PixOffset(maxW, y)]
+		for i := 0; i < len(row); i += 4 {
+			row[i] = 245
+			row[i+1] = 245
+			row[i+2] = 245
+			row[i+3] = 255
+		}
 	}
 
-	img, ok := pageImages[pg]
-	if !ok {
-		return ""
+	curY := 0
+	for _, im := range imgs {
+		b := im.Bounds()
+		srcW, srcH := b.Dx(), b.Dy()
+		if rgba, ok := im.(*image.RGBA); ok {
+			for ry := 0; ry < srcH; ry++ {
+				srcStart := rgba.PixOffset(b.Min.X, b.Min.Y+ry)
+				srcRow := rgba.Pix[srcStart : srcStart+srcW*4]
+				dstStart := stitched.PixOffset(0, curY+ry)
+				copy(stitched.Pix[dstStart:], srcRow)
+			}
+		} else {
+			for y := 0; y < srcH; y++ {
+				for x := 0; x < srcW; x++ {
+					stitched.Set(x, curY+y, im.At(x+b.Min.X, y+b.Min.Y))
+				}
+			}
+		}
+		curY += srcH + gap
 	}
-	cropped, err := CropImageRegion(img, regions[bestIdx])
-	if err != nil {
-		slog.Warn("cropSectionByDLA: cropImageRegion failed", "page", pg, "err", err)
-		return ""
-	}
-	data, err := EncodePNG(cropped)
+
+	data, err := EncodePNG(stitched)
 	if err != nil {
 		slog.Warn("cropSectionByDLA: PNG encode failed", "err", err)
 		return ""
@@ -412,6 +535,29 @@ func MapRotatedPointToOriginal(x, y float64, angle int, origW, origH int) (float
 	}
 }
 
+// MapRotatedRectToOriginal maps a rotated-image rectangle back into original
+// image coordinates and normalizes the resulting bounds. For 90°/270° rotation,
+// mapping only two diagonal corners can invert X/Y bounds; mapping all four
+// corners preserves the enclosing rectangle.
+func MapRotatedRectToOriginal(x0, y0, x1, y1 float64, angle int, origW, origH int) (float64, float64, float64, float64) {
+	points := [][2]float64{
+		{x0, y0},
+		{x1, y0},
+		{x0, y1},
+		{x1, y1},
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, p := range points {
+		x, y := MapRotatedPointToOriginal(p[0], p[1], angle, origW, origH)
+		minX = math.Min(minX, x)
+		minY = math.Min(minY, y)
+		maxX = math.Max(maxX, x)
+		maxY = math.Max(maxY, y)
+	}
+	return minX, minY, maxX, maxY
+}
+
 // CropImageRegion crops a pdf.DLARegion from an image with a 3% margin
 // (matching Python's _table_transformer_job: w*0.03, h*0.03).
 func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
@@ -434,4 +580,98 @@ func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
 	}
 	cropped := FastCrop(img, x0, y0, x1, y1)
 	return cropped, nil
+}
+
+// CropSectionPositions is the tag-free variant of CropSectionImage. It
+// crops directly from a typed []pdf.Position — for example decoded from a
+// chunk's _pdf_positions matrix — instead of re-parsing a position tag
+// string. The page-image map is keyed by zero-indexed page number.
+//
+// Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
+func CropSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
+	if len(positions) == 0 {
+		return ""
+	}
+	var tag strings.Builder
+	for _, pos := range positions {
+		if len(pos.PageNumbers) == 0 {
+			continue
+		}
+		if len(pos.PageNumbers) == 1 {
+			tag.WriteString(FormatPositionTag(pos.PageNumbers[0], pos.Left, pos.Right, pos.Top, pos.Bottom))
+		} else {
+			from, to := pos.PageNumbers[0], pos.PageNumbers[len(pos.PageNumbers)-1]
+			tag.WriteString(FormatPositionTagRange(from, to, pos.Left, pos.Right, pos.Top, pos.Bottom))
+		}
+	}
+	if tag.Len() == 0 {
+		return ""
+	}
+	return CropSectionImage(tag.String(), decodedImages, zoom)
+}
+
+// PositionsFromMatrix converts the _pdf_positions / positions matrix form
+// (as produced by layout.SectionsToJSON and normalized to 1-based page
+// numbers by normalizePDFPageNumber) back into typed []pdf.Position. The
+// engine renders 0-based pages, so the leading 1-based page numbers are
+// shifted to 0-based — matching Python's crop(), which indexes
+// self.page_images[page_number-1].
+func PositionsFromMatrix(m [][]any) []pdf.Position {
+	var out []pdf.Position
+	for _, row := range m {
+		if len(row) < 5 {
+			continue
+		}
+		pageNums := matrixPageNumbers(row[0])
+		left, lok := matrixFloat(row[1])
+		right, rok := matrixFloat(row[2])
+		top, tok := matrixFloat(row[3])
+		bottom, bok := matrixFloat(row[4])
+		if !lok || !rok || !tok || !bok || len(pageNums) == 0 {
+			continue
+		}
+		out = append(out, pdf.Position{
+			PageNumbers: pageNums,
+			Left:        left,
+			Right:       right,
+			Top:         top,
+			Bottom:      bottom,
+		})
+	}
+	return out
+}
+
+// matrixPageNumbers decodes a page-number cell (scalar or list) from the
+// JSON matrix and converts it from the 1-based serialization to the
+// engine's 0-based page index.
+func matrixPageNumbers(raw any) []int {
+	switch v := raw.(type) {
+	case []any:
+		var out []int
+		for _, e := range v {
+			if n, ok := matrixFloat(e); ok {
+				out = append(out, int(n)-1)
+			}
+		}
+		return out
+	case float64:
+		return []int{int(v) - 1}
+	case int:
+		return []int{v - 1}
+	case int64:
+		return []int{int(v) - 1}
+	}
+	return nil
+}
+
+func matrixFloat(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	}
+	return 0, false
 }

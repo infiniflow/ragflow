@@ -79,8 +79,8 @@ async def create_memory(memory_info: dict):
         "memory_type": list[str],
         "embd_id": str,
         "llm_id": str,
-        "tenant_embd_id": str,
-        "tenant_llm_id": str
+        "tenant_embd_id": str | None,
+        "tenant_llm_id": str | None
     }
     """
     # check name length
@@ -98,7 +98,15 @@ async def create_memory(memory_info: dict):
     if invalid_type:
         raise ArgumentException(f"Memory type '{invalid_type}' is not supported.")
     memory_type = list(memory_type)
-    success, res = MemoryService.create_memory(tenant_id=current_user.id, name=memory_name, memory_type=memory_type, embd_id=memory_info["embd_id"], llm_id=memory_info["llm_id"])
+    success, res = MemoryService.create_memory(
+        tenant_id=current_user.id,
+        name=memory_name,
+        memory_type=memory_type,
+        embd_id=memory_info["embd_id"],
+        llm_id=memory_info["llm_id"],
+        tenant_embd_id=memory_info.get("tenant_embd_id"),
+        tenant_llm_id=memory_info.get("tenant_llm_id"),
+    )
     if success:
         return True, format_ret_data_from_memory(res)
     else:
@@ -262,6 +270,7 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
 
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
     [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
+    memory_list.sort(key=lambda m: m["create_time"], reverse=True)
     return {"memory_list": memory_list, "total_count": count}
 
 

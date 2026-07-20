@@ -31,7 +31,6 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -681,7 +680,7 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 	truncatedText := truncate(text, maxLen-10)
 
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
@@ -742,11 +741,6 @@ func sortResults(results []entity.SkillSearchResult) {
 			}
 		}
 	}
-}
-
-// GenerateID generates a unique ID
-func generateID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }
 
 // CalculateContentHash calculates SHA256 hash of skill content

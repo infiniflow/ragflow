@@ -26,17 +26,18 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // TenantHandler tenant handler
 type TenantHandler struct {
 	tenantService  *service.TenantService
 	userService    *service.UserService
-	datasetService *service.DatasetService
+	datasetService *dataset.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *service.DatasetService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *dataset.DatasetService) *TenantHandler {
 	return &TenantHandler{
 		tenantService:  tenantService,
 		userService:    userService,
@@ -63,7 +64,7 @@ type SetModelRequest struct {
 func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -96,7 +97,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -128,7 +129,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -158,7 +159,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -183,7 +184,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -192,7 +193,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 
 	code, err := h.tenantService.CreateMetadataStore(tenantID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -211,7 +212,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -220,7 +221,7 @@ func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 
 	code, err := h.tenantService.DeleteMetadataStore(tenantID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -246,7 +247,7 @@ type CreateChunkTableRequest struct {
 func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -268,7 +269,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	}
 	result, code, err := h.tenantService.CreateChunkStore(serviceReq)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -293,7 +294,7 @@ type DeleteChunkTableRequest struct {
 func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -311,7 +312,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 
 	code, err := h.tenantService.DeleteChunkStore(req.KBID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -331,11 +332,11 @@ type InsertChunksFromFileRequest struct {
 // @Security ApiKeyAuth
 // @Param request body InsertChunksFromFileRequest true "insert chunks request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/insert_chunks_from_file [post]
+// @Router /v1/tenant/dev_insert_chunks_from_file [post]
 func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -409,11 +410,11 @@ type InsertMetadataFromFileRequest struct {
 // @Security ApiKeyAuth
 // @Param request body InsertMetadataFromFileRequest true "insert metadata request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/insert_metadata_from_file [post]
+// @Router /v1/tenant/dev_insert_metadata_from_file [post]
 func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -477,7 +478,7 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -506,7 +507,7 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -541,7 +542,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -576,7 +577,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

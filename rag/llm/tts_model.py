@@ -40,6 +40,7 @@ from pydantic import BaseModel, conint
 
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
+from rag.utils.url_utils import ensure_v1
 
 
 class ServeReferenceAudio(BaseModel):
@@ -88,7 +89,7 @@ class HTTPBasedTTS(Base):
 
     def __init__(self, key, model_name, base_url, **kwargs):
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.api_key = key
         self.headers = {"Content-Type": "application/json"}
         if key and key != "x":
@@ -406,7 +407,7 @@ class SILICONFLOWTTS(HTTPBasedTTS):
             "input": text,
             "voice": f"{self.model_name}:{voice}",
             "response_format": "mp3",
-            "sample_rate": 123,
+            "sample_rate": 32000,
             "stream": True,
             "speed": 1,
             "gain": 0,
@@ -504,7 +505,7 @@ class RAGconTTS(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.api_key = key
         self.model_name = model_name
         self.headers = {"accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}

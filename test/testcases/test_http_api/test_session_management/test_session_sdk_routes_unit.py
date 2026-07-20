@@ -128,8 +128,8 @@ def _load_session_module(monkeypatch):
     class _StubLLMType(StrEnum):
         CHAT = "chat"
         EMBEDDING = "embedding"
-        SPEECH2TEXT = "speech2text"
-        IMAGE2TEXT = "image2text"
+        ASR = "asr"
+        VISION = "vision"
         RERANK = "rerank"
         TTS = "tts"
         OCR = "ocr"
@@ -455,7 +455,7 @@ def _load_session_module(monkeypatch):
             }
 
     def _get_model_config_by_id(
-        tenant_model_id: int,
+        tenant_model_id: str,
         allowed_tenant_ids=None,
         requester_tenant_id=None,
     ) -> dict:
@@ -499,9 +499,9 @@ def _load_session_module(monkeypatch):
         model_name = ""
         if model_type_val == "embedding":
             model_name = tenant.embd_id
-        elif model_type_val == "speech2text":
+        elif model_type_val == "asr":
             model_name = tenant.asr_id
-        elif model_type_val == "image2text":
+        elif model_type_val == "vision":
             model_name = tenant.img2txt_id
         elif model_type_val == "chat":
             model_name = tenant.llm_id
@@ -513,13 +513,14 @@ def _load_session_module(monkeypatch):
             raise Exception("OCR model name is required")
         if not model_name:
             # Use friendly model type names
-            friendly_names = {"embedding": "Embedding", "speech2text": "ASR", "image2text": "Image2Text", "chat": "Chat", "rerank": "Rerank", "tts": "TTS", "ocr": "OCR"}
+            friendly_names = {"embedding": "Embedding", "asr": "ASR", "vision": "Vision", "chat": "Chat", "rerank": "Rerank", "tts": "TTS", "ocr": "OCR"}
             friendly_name = friendly_names.get(model_type_val, model_type_val)
             raise Exception(f"No default {friendly_name} model is set")
         return _MockModelConfig2(tenant_id, model_name, model_type_val).to_dict()
 
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
+    tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     tenant_model_service_mod.get_api_key = _get_api_key
     tenant_model_service_mod.split_model_name = _split_model_name
@@ -2196,7 +2197,7 @@ def _load_chat_api_module(monkeypatch):
     class _LLMType(StrEnum):
         CHAT = "chat"
         TTS = "tts"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         RERANK = "rerank"
 
     quart_mod = ModuleType("quart")
@@ -2243,6 +2244,7 @@ def _load_chat_api_module(monkeypatch):
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     tenant_model_svc.get_model_config_from_provider_instance = lambda **_k: {}
+    tenant_model_svc.resolve_model_config = lambda **_k: {}
     tenant_model_svc.get_api_key = lambda **_k: "fake-api-key"
     tenant_model_svc.split_model_name = lambda model_name: (model_name, "", "")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
@@ -2301,6 +2303,7 @@ def _load_chat_api_module(monkeypatch):
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
     kb_svc_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_k: [], accessible=lambda **_k: True)
+    kb_svc_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
 
     class _FakeLLMBundle:

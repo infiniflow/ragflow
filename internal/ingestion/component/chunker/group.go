@@ -20,9 +20,8 @@
 //     text records into chunks that span multiple body records while
 //     staying inside one heading section.
 //
-//   - PARALLELISM: Parallelism() advertises a fan-out hint to outer
-//     executors. Heading detection stays sequential; grouping work is
-//     local to one invocation.
+//     Heading detection stays sequential; grouping work is local to
+//     one invocation.
 //
 //   - MIRRORS python `_build_section_ids` + `GroupTitleChunker.build_chunks`:
 //     consecutive records with the same (target_level-derived) sec_id
@@ -35,10 +34,12 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -106,31 +107,28 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	lines := make([]string, len(records))
-	for i, r := range records {
-		lines[i] = r.text
-	}
-	ctx := newLevelContext(lines, p)
+	ctx := newLevelContext(records, p)
 	levels := ctx.Levels()
 
-	targetLevel := resolveTargetLevel(levels, hierarchyOr(p, ctx.mostLevel))
+	// Mirror python group_chunker._resolve_group_target_level: when
+	// `hierarchy` is unset the target level is `most_level` directly
+	// (NOT resolve_target_level — that would re-rank the distinct
+	// heading levels and pick the wrong depth when the heading levels
+	// are not contiguous from 1). When `hierarchy` is set, it defers to
+	// resolve_target_level.
+	targetLevel := resolveGroupTargetLevel(levels, p, ctx.mostLevel)
 	secIDs := buildSectionIDs(levels, targetLevel)
 
 	groups := groupRecords(records, secIDs, p)
-	if p.RootChunkAsHeading && len(groups) > 1 {
-		groups = applyRootAsHeading(groups)
-	}
-	chunks := make([]map[string]any, 0, len(groups))
-	for _, g := range groups {
-		chunks = append(chunks, map[string]any{"text": joinGroupText(g)})
-	}
+	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
-	return map[string]any{
+	out := map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
-	}, nil
+	}
+	return out, nil
 }
 
 // groupRecords mirrors `GroupTitleChunker.build_chunks`: merges
@@ -183,20 +181,9 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	return recordGroups
 }
 
-// applyRootAsHeading mirrors the `root_chunk_as_heading` branch in
-// common.py:build_chunks_from_record_groups — prepending the root
-// text to every following chunk and dropping the root chunk itself.
-func applyRootAsHeading(groups [][]lineRecord) [][]lineRecord {
-	if len(groups) < 2 {
-		return groups
-	}
-	rootText := joinGroupText(groups[0])
-	for i := 1; i < len(groups); i++ {
-		groups[i] = prependJoin(groups[i], rootText)
-	}
-	return groups[1:]
-}
-
+// joinGroupText mirrors python's `"".join(record["text"] + "\n" for
+// record in records)` — every record's text followed by a newline
+// (including the last), matching the python text join exactly.
 func joinGroupText(g []lineRecord) string {
 	var sb strings.Builder
 	for _, r := range g {
@@ -206,18 +193,52 @@ func joinGroupText(g []lineRecord) string {
 	return sb.String()
 }
 
-func prependJoin(g []lineRecord, prefix string) []lineRecord {
-	if prefix == "" {
-		return g
+// isPlainTextFormat mirrors the `output_format in ["markdown", "text",
+// "html"]` branch of common.py:build_chunks_from_record_groups. Plain
+// payloads emit only "text"; structured payloads (chunks/json) also
+// carry doc_type_kwd and img_id.
+func isPlainTextFormat(inputs map[string]any) bool {
+	if f, ok := inputs["output_format"].(string); ok {
+		return f == "markdown" || f == "text" || f == "html"
 	}
-	extra := lineRecord{text: prefix, docType: "text"}
-	if len(g) == 0 {
-		return []lineRecord{extra}
+	return false
+}
+
+// buildChunksFromRecordGroups mirrors common.py:build_chunks_from_record_groups
+// (minus the deepdoc-only remove_tag / merge_pdf_positions steps):
+//   - plain payloads: {"text": joined}
+//   - structured payloads: text plus doc_type_kwd / img_id from the
+//     group's leading record.
+//
+// root_chunk_as_heading is applied here, exactly as python does (post
+// materialisation): the root chunk's text is prepended to every
+// following chunk and the root chunk is dropped.
+func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+	chunks := make([]map[string]any, 0, len(groups))
+	for _, g := range groups {
+		if len(g) == 0 {
+			continue
+		}
+		chunk := map[string]any{"text": joinGroupText(g)}
+		if !plain {
+			first := g[0]
+			if first.docType != "" {
+				chunk["doc_type_kwd"] = first.docType
+			}
+			if first.imgID != nil {
+				chunk["img_id"] = *first.imgID
+			}
+		}
+		chunks = append(chunks, chunk)
 	}
-	out := make([]lineRecord, 0, len(g)+1)
-	out = append(out, extra)
-	out = append(out, g...)
-	return out
+	if p.RootChunkAsHeading && len(chunks) > 1 {
+		rootText := toString(chunks[0]["text"])
+		for i := 1; i < len(chunks); i++ {
+			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+		}
+		chunks = chunks[1:]
+	}
+	return chunks
 }
 
 // extractLineRecords reads the chunker inputs in the same order the
@@ -255,21 +276,42 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 			img := it.ImgID
 			imgID = &img
 		}
+		meta := make(map[string]any)
+		if it.ContentLtks != "" {
+			meta["content_ltks"] = it.ContentLtks
+		}
+		if it.ContentSmLtks != "" {
+			meta["content_sm_ltks"] = it.ContentSmLtks
+		}
+		if it.ContentWithWeight != "" {
+			meta["content_with_weight"] = it.ContentWithWeight
+		}
+		if it.TitleTks != "" {
+			meta["title_tks"] = it.TitleTks
+		}
+		if it.TitleSmTks != "" {
+			meta["title_sm_tks"] = it.TitleSmTks
+		}
+		for k, v := range it.Extra {
+			meta[k] = json.RawMessage(v)
+		}
 		out = append(out, lineRecord{
-			text:    text,
-			docType: dt,
-			imgID:   imgID,
-			layout:  it.Layout,
+			text:       text,
+			docType:    dt,
+			imgID:      imgID,
+			layout:     it.Layout,
+			parentMeta: meta,
 		})
 	}
 	return out
 }
 
-// hierarchyOr returns the param's hierarchy value (if set), falling
-// back to the `mostLevel` computed from the level-frequency pass.
-func hierarchyOr(p *titleChunkerParam, mostLevel int) int {
+// resolveGroupTargetLevel mirrors group_chunker._resolve_group_target_level:
+// when `hierarchy` is set (>0) the target depth is resolve_target_level,
+// otherwise it is the frequency-derived `most_level` directly.
+func resolveGroupTargetLevel(levels []int, p *titleChunkerParam, mostLevel int) int {
 	if p.Hierarchy != nil && *p.Hierarchy > 0 {
-		return *p.Hierarchy
+		return resolveTargetLevel(levels, *p.Hierarchy)
 	}
 	return mostLevel
 }
@@ -301,7 +343,6 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-func (c *GroupTitleChunkerComponent) Parallelism() int { return 2 }
 func (c *GroupTitleChunkerComponent) Inputs() map[string]string {
 	return ChunkerInputs
 }
@@ -310,19 +351,21 @@ func (c *GroupTitleChunkerComponent) Outputs() map[string]string {
 }
 
 func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameGroupTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			return emptyOutputs(), nil
-		}
-		if _, ok := inputs["name"].(string); !ok {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		return invokeGroup(ctx, inputs, &c.param)
-	})
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	return invokeGroup(ctx, withName(inputs, name), &c.param)
 }
 
 // init registers GroupTitleChunker under CategoryIngestion.

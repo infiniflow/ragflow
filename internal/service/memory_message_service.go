@@ -56,9 +56,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -262,12 +262,12 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 	}
 
 	content, _ := rawMessage["content"].(string)
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{content}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{content}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any)
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return common.GenerateUUID()
+	return utility.GenerateUUID()
 }
 
 func taskFromRow(row map[string]any) *entity.Task {

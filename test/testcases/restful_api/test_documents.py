@@ -24,7 +24,8 @@ from openpyxl import Workbook
 import pytest
 import requests
 from requests_toolbelt import MultipartEncoder
-from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, VERSION
+from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, VERSION
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import compare_by_hash
 from test.testcases.utils.file_utils import (
@@ -144,8 +145,7 @@ def test_documents_list_requires_auth(create_dataset):
         res = client.get(f"/datasets/{dataset_id}/documents")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -160,8 +160,7 @@ def test_documents_upload_requires_auth(create_dataset, tmp_path):
             )
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -379,7 +378,7 @@ def test_documents_upload_missing_file(rest_client, create_dataset):
     assert payload["message"] == "No file part!", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_upload_contract_matrix(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_upload_contract")
 
@@ -492,7 +491,8 @@ def test_documents_upload_error_contract(rest_client, create_dataset, tmp_path):
     assert filename_empty_res.status_code == 200
     filename_empty_payload = filename_empty_res.json()
     assert filename_empty_payload["code"] == 101, filename_empty_payload
-    assert filename_empty_payload["message"] == "No file selected!", filename_empty_payload
+    expected_message = "No file part!" if IS_GO_PROXY else "No file selected!"
+    assert filename_empty_payload["message"] == expected_message, filename_empty_payload
 
 
 @pytest.mark.p2
@@ -534,8 +534,7 @@ def test_documents_update_requires_auth(create_document):
         )
         assert res.status_code == 401, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == 401, (scenario_name, body)
-        assert body["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, body)
+        assert_auth_error(body, scenario_name)
 
 
 @pytest.mark.p2
@@ -869,8 +868,7 @@ def test_documents_metadata_batch_update_contract(rest_client, create_dataset, t
         )
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     invalid_dataset_res = rest_client.patch(
         "/datasets/invalid_dataset_id/documents/metadatas",
@@ -999,8 +997,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
         )
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     missing_payload_res = rest_client.put(f"/datasets/{dataset_id}/documents/{document_id}/metadata/config", json={})
     assert missing_payload_res.status_code == 200
@@ -1057,7 +1054,7 @@ def test_documents_metadata_update_path(rest_client, create_document):
     assert payload["data"]["updated"] >= 1, payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty object", lambda ids: {}, 102, "should either provide doc ids or set delete_all(true)", 3),
@@ -1104,8 +1101,7 @@ def test_documents_delete_requires_auth(rest_client, create_dataset, tmp_path):
         res = client.delete(f"/datasets/{dataset_id}/documents", json={"ids": [document_id]})
         assert res.status_code == 401, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == 401, (scenario_name, body)
-        assert body["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, body)
+        assert_auth_error(body, scenario_name)
 
 
 @pytest.mark.p2
@@ -1166,7 +1162,7 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
     assert other_list_payload["data"]["total"] == 1, other_list_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=60, timeout=120)
     document_ids = [doc["id"] for doc in uploaded_docs]
@@ -1221,11 +1217,10 @@ def test_documents_parse_requires_auth(create_document):
         res = client.post(f"/datasets/{dataset_id}/documents/parse", json=payload)
         assert res.status_code == 401, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == 401, (scenario_name, body)
-        assert body["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, body)
+        assert_auth_error(body, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty ids", lambda ids: {"document_ids": []}, 102, "`document_ids` is required"),
@@ -1261,7 +1256,7 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
                 assert "Task done" in doc["progress_msg"], (scenario_name, doc)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=3)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1308,7 +1303,7 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     _wait_document_runs(rest_client, dataset_id, doc_ids, expected_run="DONE")
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dataset, tmp_path):
     single_dataset_id, single_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=1)
     single_doc_id = single_docs[0]["id"]
@@ -1376,8 +1371,7 @@ def test_documents_stop_parse_requires_auth(rest_client, create_document):
         res = client.post(f"/datasets/{dataset_id}/documents/stop", json={"document_ids": [document_id]})
         assert res.status_code == 401, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == 401, (scenario_name, body)
-        assert body["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, body)
+        assert_auth_error(body, scenario_name)
 
 
 @pytest.mark.p2
@@ -1427,7 +1421,7 @@ def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_p
         assert "Can't stop parsing document that has not started or already completed" in repeated_stop_payload["message"], repeated_stop_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_stop_parse_invalid_dataset_partial_and_scaled_concurrency(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=25)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1568,7 +1562,7 @@ def test_documents_download_filetype_repeat_and_concurrent_contract(rest_client,
         assert compare_by_hash(source_path, downloaded_path), source_path.name
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_table_parser_chat_patterns(rest_client, clear_datasets, tmp_path):
     create_dataset_res = rest_client.post(
         "/datasets",

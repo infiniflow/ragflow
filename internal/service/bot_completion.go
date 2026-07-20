@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 
 	"go.uber.org/zap"
@@ -168,7 +169,7 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // data.answer, the browser receives bytes but cannot render the
 // assistant message or correlate the current Log panel.
 //
-// The "done" event type emits `data: [DONE]\n\n` (no envelope),
+// The "done" event type emits `data:[DONE]\n\n` (no envelope),
 // matching the Python agent API terminator.
 //
 // Returns the write error so callers can short-circuit; both nil
@@ -176,7 +177,7 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // disconnected mid-stream.
 func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.Type == "done" {
-		_, err := w.Write([]byte("data: [DONE]\n\n"))
+		_, err := w.Write([]byte("data:[DONE]\n\n"))
 		if err != nil {
 			return err
 		}
@@ -327,12 +328,12 @@ func (s *BotService) ChatbotCompletion(
 			},
 		})
 		session = &entity.API4Conversation{
-			ID:       common.GenerateUUID(),
+			ID:       utility.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
 			Message:  seedMsg,
 		}
-		if err := s.api4ConversationDAO.Create(session); err != nil {
+		if err = s.api4ConversationDAO.Create(session); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}
@@ -374,7 +375,7 @@ func (s *BotService) ChatbotCompletion(
 	go func() {
 		defer close(out)
 		resp, callErr := chatModel.ModelDriver.ChatWithMessages(
-			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{},
+			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{}, nil,
 		)
 		if callErr != nil {
 			// Log the real error with structured context so

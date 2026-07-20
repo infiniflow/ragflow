@@ -52,24 +52,21 @@ export function useDisableDifferenceEmbeddingMemory(name: string) {
   }, [memoryIds, memoryList]);
 
   const options = useMemo(() => {
-    return memoryList
-      .filter(Boolean)
-      .map((item: IMemory) => {
-        return {
-          label: item.name,
-          icon: () => (
-            <RAGFlowAvatar
-              className="size-4"
-              avatar={item.avatar ?? ''}
-              name={item.name}
-            />
-          ),
-          suffix: <MemoryLabel text={item.embd_id} />,
-          value: item.id,
-          disabled:
-            item.embd_id !== selectedEmbedId && selectedEmbedId !== '',
-        };
-      });
+    return memoryList.filter(Boolean).map((item: IMemory) => {
+      return {
+        label: item.name,
+        icon: () => (
+          <RAGFlowAvatar
+            className="size-4"
+            avatar={item.avatar ?? ''}
+            name={item.name}
+          />
+        ),
+        suffix: <MemoryLabel text={item.embd_id} />,
+        value: item.id,
+        disabled: item.embd_id !== selectedEmbedId && selectedEmbedId !== '',
+      };
+    });
   }, [memoryList, selectedEmbedId]);
 
   return {

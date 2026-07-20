@@ -43,13 +43,13 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMoonshotModel(baseURL, urlSuffix), nil
 	case "minimax":
 		return NewMinimaxModel(baseURL, urlSuffix), nil
-	case "gitee":
+	case "giteeai":
 		return NewGiteeModel(baseURL, urlSuffix), nil
 	case "siliconflow":
 		return NewSiliconflowModel(baseURL, urlSuffix), nil
-	case "google":
+	case "gemini":
 		return NewGoogleModel(baseURL, urlSuffix), nil
-	case "aliyun":
+	case "tongyi-qianwen":
 		return NewAliyunModel(baseURL, urlSuffix), nil
 	case "volcengine":
 		return NewVolcEngine(baseURL, urlSuffix), nil
@@ -57,7 +57,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
-	case "lmstudio":
+	case "lm-studio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
 	case "ollama":
 		return NewOllamaModel(baseURL, urlSuffix), nil
@@ -73,13 +73,13 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpenRouterModel(baseURL, urlSuffix), nil
 	case "huggingface":
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
-	case "baidu":
+	case "baiduyiyan":
 		return NewBaiduModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
-	case "fishaudio":
+	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
 		return NewMistralModel(baseURL, urlSuffix), nil
@@ -101,33 +101,35 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewModelScopeModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
-	case "hunyuan":
+	case "tencent hunyuan":
 		return NewHunyuanModel(baseURL, urlSuffix), nil
 	case "tokenpony":
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "tokenhub":
 		return NewTokenHubModel(baseURL, urlSuffix), nil
-	case "novita":
+	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
 		return NewAvianModel(baseURL, urlSuffix), nil
+	case "ragcon":
+		return NewRAGconModel(baseURL, urlSuffix), nil
 	case "replicate":
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
 		return NewTogetherAIModel(baseURL, urlSuffix), nil
 	case "ppio":
 		return NewPPIOModel(baseURL, urlSuffix), nil
-	case "voyage":
+	case "voyage ai":
 		return NewVoyageModel(baseURL, urlSuffix), nil
 	case "paddleocr.net":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
-	case "xunfei":
+	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
 	case "mineru.net":
 		return NewMinerUModel(baseURL, urlSuffix), nil
-	case "jiekouai":
+	case "jiekou.ai":
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil

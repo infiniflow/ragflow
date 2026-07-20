@@ -33,9 +33,12 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cloudwego/eino/compose"
 )
@@ -49,40 +52,65 @@ import (
 //   - Env         : env.* namespace (deployment-time constants)
 //   - Path        : entry-point sequence (Begin nodes)
 //   - History     : conversation history (chat-flow agents)
+//   - Memory      : tool-call summaries kept separate from conversation turns
 //   - Retrieval   : aggregate retrieval result (chunks, doc_aggs)
 //   - Globals     : cross-canvas-instance globals
 //   - CancelFlag  : set when cancel signal received; nodes may poll
 //   - RunID       : unique per-run identifier (used by RunTracker + CheckPointStore)
 type CanvasState struct {
-	mu         sync.RWMutex
-	Outputs    map[string]map[string]any
-	Sys        map[string]any
-	Env        map[string]any
-	Path       []string
-	History    []map[string]any
-	Retrieval  map[string]any
-	Globals    map[string]any
-	CancelFlag *atomic.Bool
-	RunID      string
-	TaskID     string
+	mu                 sync.RWMutex
+	activeHistoryIndex int
+	Outputs            map[string]map[string]any
+	Sys                map[string]any
+	Env                map[string]any
+	Path               []string
+	History            []map[string]any
+	Memory             []map[string]any
+	Retrieval          map[string]any
+	Globals            map[string]any
+	CancelFlag         *atomic.Bool
+	RunID              string
+	TaskID             string
 }
 
 // NewCanvasState returns a zero-valued CanvasState with all maps allocated.
 // The atomic CancelFlag is allocated eagerly so nodes can safely poll it
 // even before any cancel signal has been wired.
 func NewCanvasState(runID, taskID string) *CanvasState {
-	return &CanvasState{
-		Outputs:    make(map[string]map[string]any),
-		Sys:        make(map[string]any),
-		Env:        make(map[string]any),
-		Path:       []string{},
-		History:    []map[string]any{},
-		Retrieval:  make(map[string]any),
-		Globals:    make(map[string]any),
-		CancelFlag: &atomic.Bool{},
-		RunID:      runID,
-		TaskID:     taskID,
+	s := &CanvasState{
+		activeHistoryIndex: -1,
+		Outputs:            make(map[string]map[string]any),
+		Sys:                make(map[string]any),
+		Env:                make(map[string]any),
+		Path:               []string{},
+		History:            []map[string]any{},
+		Memory:             []map[string]any{},
+		Retrieval:          make(map[string]any),
+		Globals:            make(map[string]any),
+		CancelFlag:         &atomic.Bool{},
+		RunID:              runID,
+		TaskID:             taskID,
 	}
+	s.EnsureSysDate()
+	return s
+}
+
+// EnsureSysDate fills sys.date with the current UTC timestamp when it
+// is missing or blank. Python canvas initializes the same variable with
+// "%Y-%m-%d %H:%M:%S"; keep that wire format for DSL compatibility.
+func (s *CanvasState) EnsureSysDate() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	if v, ok := s.Sys["date"]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
+		return
+	}
+	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 }
 
 // init registers CanvasState with eino's internal type registry so
@@ -103,16 +131,18 @@ func init() {
 // place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
 // be marshalled directly without a wrapper).
 type canvasStateJSON struct {
-	Outputs    map[string]map[string]any `json:"outputs"`
-	Sys        map[string]any            `json:"sys,omitempty"`
-	Env        map[string]any            `json:"env,omitempty"`
-	Path       []string                  `json:"path,omitempty"`
-	History    []map[string]any          `json:"history,omitempty"`
-	Retrieval  map[string]any            `json:"retrieval,omitempty"`
-	Globals    map[string]any            `json:"globals,omitempty"`
-	CancelFlag bool                      `json:"cancel_flag"`
-	RunID      string                    `json:"run_id"`
-	TaskID     string                    `json:"task_id"`
+	ActiveHistoryIndex *int                      `json:"active_history_index,omitempty"`
+	Outputs            map[string]map[string]any `json:"outputs"`
+	Sys                map[string]any            `json:"sys,omitempty"`
+	Env                map[string]any            `json:"env,omitempty"`
+	Path               []string                  `json:"path,omitempty"`
+	History            []map[string]any          `json:"history,omitempty"`
+	Memory             []map[string]any          `json:"memory,omitempty"`
+	Retrieval          map[string]any            `json:"retrieval,omitempty"`
+	Globals            map[string]any            `json:"globals,omitempty"`
+	CancelFlag         bool                      `json:"cancel_flag"`
+	RunID              string                    `json:"run_id"`
+	TaskID             string                    `json:"task_id"`
 }
 
 // MarshalJSON serialises the CanvasState for eino's StatePre/Post
@@ -134,17 +164,24 @@ type canvasStateJSON struct {
 func (s *CanvasState) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	var activeHistoryIndex *int
+	if s.activeHistoryIndex >= 0 {
+		index := s.activeHistoryIndex
+		activeHistoryIndex = &index
+	}
 	snap := canvasStateJSON{
-		Outputs:    s.Outputs,
-		Sys:        s.Sys,
-		Env:        s.Env,
-		Path:       s.Path,
-		History:    s.History,
-		Retrieval:  s.Retrieval,
-		Globals:    s.Globals,
-		CancelFlag: s.CancelFlag != nil && s.CancelFlag.Load(),
-		RunID:      s.RunID,
-		TaskID:     s.TaskID,
+		ActiveHistoryIndex: activeHistoryIndex,
+		Outputs:            s.Outputs,
+		Sys:                s.Sys,
+		Env:                s.Env,
+		Path:               s.Path,
+		History:            s.History,
+		Memory:             s.Memory,
+		Retrieval:          s.Retrieval,
+		Globals:            s.Globals,
+		CancelFlag:         s.CancelFlag != nil && s.CancelFlag.Load(),
+		RunID:              s.RunID,
+		TaskID:             s.TaskID,
 	}
 	// Use SafeJSONMarshal to handle non-serializable values (funcs,
 	// channels) that may have leaked into state maps. Mirrors the
@@ -175,6 +212,11 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	}
 	s.Path = snap.Path
 	s.History = snap.History
+	s.activeHistoryIndex = -1
+	if snap.ActiveHistoryIndex != nil {
+		s.activeHistoryIndex = *snap.ActiveHistoryIndex
+	}
+	s.Memory = snap.Memory
 	if snap.Retrieval != nil {
 		s.Retrieval = snap.Retrieval
 	}
@@ -287,6 +329,278 @@ func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]a
 	return sys, env, globals
 }
 
+// SetHistory replaces the conversation history with a defensive copy.
+func (s *CanvasState) SetHistory(history []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.History = cloneMapSlice(history)
+	s.activeHistoryIndex = -1
+}
+
+// AppendHistory adds one user or assistant turn. payload preserves the
+// Python DSL value while content is the text consumed by Go LLM components.
+func (s *CanvasState) AppendHistory(role string, payload any) {
+	if s == nil || role == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.appendHistory(role, payload)
+	s.activeHistoryIndex = -1
+}
+
+// AppendCurrentUser adds the user prompt for the in-flight turn and records
+// its exact history index. SnapshotPriorHistory uses this identity instead of
+// guessing that any trailing user entry must be the current prompt.
+func (s *CanvasState) AppendCurrentUser(payload any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeHistoryIndex = s.appendHistory("user", payload)
+}
+
+func (s *CanvasState) appendHistory(role string, payload any) int {
+	payload = cloneJSONValue(payload)
+	s.History = append(s.History, map[string]any{
+		"role":    role,
+		"content": historyContent(payload),
+		"payload": payload,
+	})
+	return len(s.History) - 1
+}
+
+// SnapshotHistory returns a defensive copy of all conversation turns.
+func (s *CanvasState) SnapshotHistory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneMapSlice(s.History)
+}
+
+// SnapshotPriorHistory returns completed turns before the current in-flight
+// user input. Python appends the current user before workflow execution but
+// excludes it when prepending history to the same LLM request.
+func (s *CanvasState) SnapshotPriorHistory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	history := cloneMapSlice(s.History)
+	if s.activeHistoryIndex >= 0 && s.activeHistoryIndex == len(history)-1 {
+		return history[:s.activeHistoryIndex]
+	}
+	return history
+}
+
+// SetMemory replaces tool-call memory with a defensive copy.
+func (s *CanvasState) SetMemory(memory []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Memory = cloneMapSlice(memory)
+}
+
+// AppendMemory records one tool-call summary without polluting conversation
+// history used by message-history windows.
+func (s *CanvasState) AppendMemory(user, assistant, summary string) {
+	if s == nil || summary == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Memory = append(s.Memory, map[string]any{
+		"user":      user,
+		"assistant": assistant,
+		"summary":   summary,
+	})
+}
+
+// SnapshotMemory returns a defensive copy of tool-call memory.
+func (s *CanvasState) SnapshotMemory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneMapSlice(s.Memory)
+}
+
+// AppendSysHistory appends a rendered entry to sys.history while accepting
+// both []any and []string values decoded from existing DSLs.
+func (s *CanvasState) AppendSysHistory(entry string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	var history []any
+	switch value := s.Sys["history"].(type) {
+	case []any:
+		history = append(history, value...)
+	case []string:
+		history = make([]any, 0, len(value)+1)
+		for _, item := range value {
+			history = append(history, item)
+		}
+	}
+	s.Sys["history"] = append(history, entry)
+}
+
+// SetSysHistory replaces sys.history with a defensive copy.
+func (s *CanvasState) SetSysHistory(history []any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	s.Sys["history"] = append([]any(nil), history...)
+}
+
+// SnapshotSysHistory returns sys.history in its canonical []any wire shape.
+func (s *CanvasState) SnapshotSysHistory() []any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	switch value := s.Sys["history"].(type) {
+	case []any:
+		return append([]any(nil), value...)
+	case []string:
+		out := make([]any, 0, len(value))
+		for _, item := range value {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return []any{}
+	}
+}
+
+// IncrementConversationTurns advances sys.conversation_turns once for the
+// current run. JSON-backed DSLs commonly decode numbers as float64, while
+// tests and programmatic callers often use int, so preserve either shape.
+func (s *CanvasState) IncrementConversationTurns() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	switch turns := s.Sys["conversation_turns"].(type) {
+	case int:
+		s.Sys["conversation_turns"] = turns + 1
+	case int32:
+		s.Sys["conversation_turns"] = turns + 1
+	case int64:
+		s.Sys["conversation_turns"] = turns + 1
+	case float32:
+		s.Sys["conversation_turns"] = turns + 1
+	case float64:
+		s.Sys["conversation_turns"] = turns + 1
+	default:
+		s.Sys["conversation_turns"] = 1
+	}
+}
+
+func cloneMapSlice(items []map[string]any) []map[string]any {
+	if items == nil {
+		return nil
+	}
+	if len(items) == 0 {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, cloneJSONValue(item).(map[string]any))
+	}
+	return out
+}
+
+func cloneJSONValue(value any) any {
+	return cloneJSONReflect(reflect.ValueOf(value))
+}
+
+func cloneJSONReflect(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return nil
+		}
+		return cloneJSONReflect(value.Elem())
+	case reflect.Map:
+		if value.IsNil() {
+			return map[string]any(nil)
+		}
+		copyItem := make(map[string]any, value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			copyItem[fmt.Sprint(iter.Key().Interface())] = cloneJSONReflect(iter.Value())
+		}
+		return copyItem
+	case reflect.Slice:
+		if value.IsNil() {
+			return []any(nil)
+		}
+		fallthrough
+	case reflect.Array:
+		copyItem := make([]any, value.Len())
+		for index := range value.Len() {
+			copyItem[index] = cloneJSONReflect(value.Index(index))
+		}
+		return copyItem
+	case reflect.Struct:
+		raw, err := json.Marshal(value.Interface())
+		if err != nil {
+			return value.Interface()
+		}
+		var copyItem any
+		if err := json.Unmarshal(raw, &copyItem); err != nil {
+			return value.Interface()
+		}
+		return copyItem
+	default:
+		return value.Interface()
+	}
+}
+
+func historyContent(payload any) string {
+	switch value := payload.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case map[string]any:
+		if content, ok := value["content"].(string); ok {
+			return content
+		}
+		return ""
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the
 // StatePostHandler to persist a node's result so downstream nodes can
 // resolve {{cpnID@bucket.x}} references against it.
@@ -302,6 +616,35 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 		s.Outputs[cpnID] = b
 	}
 	b[bucket] = payload
+}
+
+// GetGlobal returns a value from the workflow-wide Globals bag. Globals is a
+// generic, cross-component scratch space owned by CanvasState; the set of
+// keys an ingestion pipeline elects to store there is ingestion-specific and
+// therefore lives in the ingestion component package, not here.
+func (s *CanvasState) GetGlobal(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.Globals[key]
+	return v, ok
+}
+
+// SetGlobal writes a value into the workflow-wide Globals bag. It is the
+// single, lock-safe mutation point for Globals so callers never touch the map
+// field directly.
+func (s *CanvasState) SetGlobal(key string, val any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
+	s.Globals[key] = val
 }
 
 // GetRetrievalChunks returns a snapshot of the chunks recorded in
@@ -339,6 +682,76 @@ func (s *CanvasState) GetRetrievalChunks() []map[string]any {
 	return out
 }
 
+// GetRetrievalReference returns the run-level reference payload consumed by
+// the agent chat stream. It mirrors Python canvas.py's message_end.reference
+// shape while keeping doc_aggs as a list for the current Go frontend path.
+func (s *CanvasState) GetRetrievalReference() map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.Retrieval) == 0 {
+		return nil
+	}
+
+	chunks := copyRetrievalList(s.Retrieval["chunks"])
+	docAggs := copyRetrievalDocAggs(s.Retrieval["doc_aggs"])
+	if len(chunks) == 0 && len(docAggs) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"chunks":   chunks,
+		"doc_aggs": docAggs,
+		"total":    len(chunks),
+	}
+}
+
+func copyRetrievalList(value any) []any {
+	switch list := value.(type) {
+	case []any:
+		out := make([]any, len(list))
+		copy(out, list)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func copyRetrievalDocAggs(value any) []any {
+	switch aggs := value.(type) {
+	case []any:
+		out := make([]any, len(aggs))
+		copy(out, aggs)
+		return out
+	case []map[string]any:
+		out := make([]any, 0, len(aggs))
+		for _, item := range aggs {
+			out = append(out, item)
+		}
+		return out
+	case map[string]any:
+		keys := make([]string, 0, len(aggs))
+		for key := range aggs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make([]any, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, aggs[key])
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 // SetRetrievalChunks records the supplied chunks into
 // state.Retrieval["chunks"]. Existing entries are replaced
 // (last-writer-wins) so a multi-tool canvas reflects the most
@@ -358,6 +771,90 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 		asAny = append(asAny, c)
 	}
 	s.Retrieval["chunks"] = asAny
+}
+
+// SetRetrievalReferences records the chunks and document aggregates emitted by
+// a canvas search component. It is the lock-safe counterpart of Python
+// Graph.add_reference for components that produce externally sourced results.
+func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	chunkValues, _ := s.Retrieval["chunks"].([]any)
+	if chunkValues == nil {
+		chunkValues = make([]any, 0, len(chunks))
+	}
+	seenChunkIDs := make(map[string]struct{}, len(chunkValues)+len(chunks))
+	for _, value := range chunkValues {
+		chunk, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := retrievalReferenceID(chunk); ok {
+			seenChunkIDs[id] = struct{}{}
+		}
+	}
+	for _, chunk := range chunks {
+		if id, ok := retrievalReferenceID(chunk); ok {
+			if _, exists := seenChunkIDs[id]; exists {
+				continue
+			}
+			seenChunkIDs[id] = struct{}{}
+		}
+		chunkValues = append(chunkValues, chunk)
+	}
+
+	docAggValues, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if docAggValues == nil {
+		docAggValues = make(map[string]any, len(docAggs))
+	}
+	for _, docAgg := range docAggs {
+		docName, _ := docAgg["doc_name"].(string)
+		if docName == "" {
+			continue
+		}
+		// Match Python Graph.add_reference: retain the first aggregate for
+		// a document name across the run-level reference set.
+		if _, exists := docAggValues[docName]; !exists {
+			docAggValues[docName] = docAgg
+		}
+	}
+	s.Retrieval["chunks"] = chunkValues
+	s.Retrieval["doc_aggs"] = docAggValues
+}
+
+func retrievalReferenceID(chunk map[string]any) (string, bool) {
+	value, ok := chunk["id"]
+	if !ok || value == nil {
+		return "", false
+	}
+	id := fmt.Sprint(value)
+	return id, id != ""
+}
+
+// GetRetrievalDocAggs returns a shallow snapshot keyed by document name.
+func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, _ := s.Retrieval["doc_aggs"].(map[string]any)
+	if raw == nil {
+		return nil
+	}
+	out := make(map[string]map[string]any, len(raw))
+	for name, item := range raw {
+		if agg, ok := item.(map[string]any); ok {
+			out[name] = agg
+		}
+	}
+	return out
 }
 
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or

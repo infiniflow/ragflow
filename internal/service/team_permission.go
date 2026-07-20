@@ -5,10 +5,10 @@ import (
 	"ragflow/internal/entity"
 )
 
-// hasKBTeamPermission mirrors Python check_kb_team_permission:
+// HasKBTeamPermission mirrors Python check_kb_team_permission:
 // direct owner access is always allowed; otherwise the KB must be team-shared
 // and the caller must be a joined normal member of the owner tenant.
-func hasKBTeamPermission(kb *entity.Knowledgebase, userID string, tenantDAO *dao.TenantDAO) bool {
+func HasKBTeamPermission(kb *entity.Knowledgebase, userID string, tenantDAO *dao.TenantDAO) bool {
 	if kb == nil {
 		return false
 	}

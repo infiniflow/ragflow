@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -35,12 +36,13 @@ type SkillSearchHandler struct {
 	docEngine      engine.DocEngine
 }
 
-// NewSkillSearchHandler creates a new skill search handler
-func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
+// NewSkillSearchHandler creates a new skill search handler.
+// spaceRemover is the document remover used by the skill space service for file deletion.
+func NewSkillSearchHandler(docEngine engine.DocEngine, spaceRemover file.DocRemover) *SkillSearchHandler {
 	return &SkillSearchHandler{
 		searchService:  service.NewSkillSearchService(),
 		indexerService: service.NewSkillIndexerService(),
-		spaceService:   service.NewSkillSpaceService(),
+		spaceService:   service.NewSkillSpaceService(spaceRemover),
 		docEngine:      docEngine,
 	}
 }
@@ -59,7 +61,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -68,7 +70,7 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 
 	result, code, err := h.searchService.GetConfig(user.ID, spaceID, embdID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -88,7 +90,7 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -102,7 +104,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 
 	result, code, err := h.searchService.UpdateConfig(&req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -122,7 +124,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 func (h *SkillSearchHandler) Search(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -136,7 +138,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 
 	result, code, err := h.searchService.Search(c.Request.Context(), &req, h.docEngine)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -163,7 +165,7 @@ type IndexSkillsRequest struct {
 func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -238,7 +240,7 @@ type ReindexRequest struct {
 func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -287,7 +289,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -321,7 +323,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -354,13 +356,13 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 func (h *SkillSearchHandler) ListSpaces(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	result, code, err := h.spaceService.ListSpaces(user.ID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -388,7 +390,7 @@ type CreateSpaceRequest struct {
 func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -406,7 +408,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 		RerankID:    req.RerankID,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -426,7 +428,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -438,7 +440,7 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 
 	result, code, err := h.spaceService.GetSpace(spaceID, user.ID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -468,7 +470,7 @@ type UpdateSpaceRequest struct {
 func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -492,7 +494,7 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 		TopK:        req.TopK,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -512,7 +514,7 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -524,7 +526,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 
 	code, err := h.spaceService.DeleteSpace(spaceID, user.ID, h.docEngine, c.Request.Context())
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -549,7 +551,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -561,7 +563,7 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 
 	result, code, err := h.spaceService.GetSpaceByFolderID(folderID, user.ID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 

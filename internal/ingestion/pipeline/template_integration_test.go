@@ -1,19 +1,24 @@
+//	Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//	Licensed under the Apache License, Version 2.0 (the "License");
+//	you may not use this file except in compliance with the License.
+//	You may obtain a copy of the License at
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+//	    http://www.apache.org/licenses/LICENSE-2.0
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
+//	Unless required by applicable law or agreed to in writing, software
+//	distributed under the License is distributed on an "AS IS" BASIS,
+//	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//	See the License for the specific language governing permissions and
+//	limitations under the License.
 
+// These tests exercise the real File -> Parser -> Chunker -> Tokenizer chain
+// end-to-end. They double as the regression test for run-level `name`
+// propagation: the Tokenizer reads `name` from CanvasState.Globals (via
+// globals.GlobalOrInput), so the filename resolved by File reaches the
+// Tokenizer and title weighting runs - the q_<n>_vec first element is
+// 0.1*len(name) + 0.9*len(content), and embedding_token_consumption includes
+// the one title encode (len(name)) plus the per-chunk content encodes.
 package pipeline
 
 import (
@@ -22,36 +27,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	goruntime "runtime"
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
-	_ "ragflow/internal/ingestion/component"
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/storage"
-	"ragflow/internal/tokenizer"
 
 	"github.com/signintech/gopdf"
 )
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) Encode(texts []string) ([][]float64, error) {
-	out := make([][]float64, 0, len(texts))
+func (fixedEmbedder) MaxTokens() int { return 0 }
+
+func (fixedEmbedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
 	for _, text := range texts {
-		out = append(out, []float64{float64(len(text)), 1, 2, 3})
+		out = append(out, componentpkg.EmbeddingResult{
+			Vector:     []float64{float64(len(text)), 1, 2, 3},
+			TokenCount: len(text),
+		})
 	}
 	return out, nil
 }
 
 func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_general.json")
+	RequireTokenizerPool(t)
+
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -74,9 +84,10 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -105,13 +116,14 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 			t.Fatalf("chunks[%d].content_sm_ltks missing or empty: %v", i, chunks[i]["content_sm_ltks"])
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		if len(vec) != 4 || vec[0] != float64(len(wantText)) {
-			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantText)))
+		wantFirst := expectedFixedEmbedderFirst(filename, wantText)
+		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
-		totalTokens += tokenizer.NumTokensFromString(wantText)
+		totalTokens += len(wantText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -137,9 +149,9 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -163,9 +175,10 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -173,7 +186,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 
 	wantTexts := []string{"Alpha paragraph.", "Beta paragraph."}
 	wantMergedText := "Alpha paragraph.\nBeta paragraph."
-	assertTokenizerTerminalChunk(t, payload, wantMergedText)
+	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
 	state := stateFromRunOutput(t, out)
 	fileState, ok := state["File"]
@@ -206,9 +219,9 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -223,12 +236,12 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	}
 }
 
-func TestPipelineRun_TemplateOne_RealComponents_PDFDeepDocChunking(t *testing.T) {
-	requireTokenizerPool(t)
+func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T) {
+	RequireTokenizerPool(t)
 	t.Setenv("DEEPDOC_URL", "")
 	t.Setenv("OSSDEEPDOC_URL", "")
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -250,9 +263,10 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepDocChunking(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -274,11 +288,13 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepDocChunking(t *testing.T)
 	}
 	vec := floatSliceFromAny(t, chunks[0]["q_4_vec"])
 	trimmedChunkText := strings.TrimSpace(chunkText)
-	if len(vec) != 4 || vec[0] != float64(len(trimmedChunkText)) {
-		t.Fatalf("chunks[0].q_4_vec = %v, want first=%v", vec, float64(len(trimmedChunkText)))
+	wantFirst := expectedFixedEmbedderFirst(fixture.Name, trimmedChunkText)
+	if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+		t.Fatalf("chunks[0].q_4_vec = %v, want first=%v", vec, wantFirst)
 	}
-	if got := payload["embedding_token_consumption"]; got != tokenizer.NumTokensFromString(trimmedChunkText) {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, tokenizer.NumTokensFromString(trimmedChunkText))
+	wantTokens := len(fixture.Name) + len(trimmedChunkText)
+	if got := payload["embedding_token_consumption"]; got != wantTokens {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, wantTokens)
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -306,9 +322,9 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepDocChunking(t *testing.T)
 	parserJoined := joinJSONItemTexts(jsonItems)
 	assertNormalizedContainsAll(t, parserJoined, fixture.ExpectContains...)
 
-	chunkerState, ok := state["TokenChunker:DryDrinksVisit"]
+	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
-		t.Fatal("missing TokenChunker:DryDrinksVisit state")
+		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != 1 {
@@ -320,9 +336,9 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepDocChunking(t *testing.T)
 }
 
 func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_manual.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_manual.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -345,9 +361,10 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -375,13 +392,14 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
 		wantEmbedText := strings.TrimSpace(wantText)
-		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
-			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
+		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
-		totalTokens += tokenizer.NumTokensFromString(wantText)
+		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -409,15 +427,15 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	}
 	for i, wantText := range wantChunkTexts {
 		if got := chunkerChunks[i]["text"]; got != wantText {
-			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+			t.Fatalf("chunker chunk[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 }
 
 func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_laws.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_laws.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -440,9 +458,10 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -469,13 +488,14 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 		}
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
 		wantEmbedText := strings.TrimSpace(wantText)
-		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
-			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
+		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
-		totalTokens += tokenizer.NumTokensFromString(wantText)
+		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -489,15 +509,15 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	}
 	for i, wantText := range wantChunkTexts {
 		if got := chunkerChunks[i]["text"]; got != wantText {
-			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+			t.Fatalf("chunker chunk[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 }
 
 func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_paper.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_paper.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -520,9 +540,10 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -547,13 +568,14 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 		}
 		wantEmbedText := strings.TrimSpace(wantText)
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
-			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
+		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
-		totalTokens += tokenizer.NumTokensFromString(wantText)
+		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -567,15 +589,15 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	}
 	for i, wantText := range wantChunkTexts {
 		if got := chunkerChunks[i]["text"]; got != wantText {
-			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+			t.Fatalf("chunker chunk[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 }
 
 func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_book.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_book.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -598,9 +620,10 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -630,13 +653,14 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 		}
 		wantEmbedText := strings.TrimSpace(wantText)
 		vec := floatSliceFromAny(t, chunks[i]["q_4_vec"])
-		if len(vec) != 4 || vec[0] != float64(len(wantEmbedText)) {
-			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, float64(len(wantEmbedText)))
+		wantFirst := expectedFixedEmbedderFirst(filename, wantEmbedText)
+		if len(vec) != 4 || !approxFloat(vec[0], wantFirst) {
+			t.Fatalf("chunks[%d].q_4_vec = %v, want first=%v", i, vec, wantFirst)
 		}
-		totalTokens += tokenizer.NumTokensFromString(wantText)
+		totalTokens += len(wantEmbedText)
 	}
-	if got := payload["embedding_token_consumption"]; got != totalTokens {
-		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens)
+	if got := payload["embedding_token_consumption"]; got != totalTokens+len(filename) {
+		t.Fatalf("embedding_token_consumption = %v, want %d", got, totalTokens+len(filename))
 	}
 
 	state := stateFromRunOutput(t, out)
@@ -650,21 +674,21 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	}
 	for i, wantText := range wantChunkTexts {
 		if got := chunkerChunks[i]["text"]; got != wantText {
-			t.Fatalf("chunker chunks[%d].text = %v, want %q", i, got, wantText)
+			t.Fatalf("chunker chunk[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 }
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
-	requireTokenizerPool(t)
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	RequireTokenizerPool(t)
+	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
 	}
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_resume.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_resume.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -717,10 +741,11 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
 		"llm_id": model + "@openai",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -751,7 +776,7 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 }
 
 func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
 
 	mem := withRealTemplateDeps(t)
 
@@ -762,7 +787,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 	content := "# Title\n\nIntro paragraph.\n\n## Section\n\nBody paragraph."
 	docID := seedTemplateDocument(t, mem, "template-smoke.md", bucket, path, content)
 
-	files, err := filepath.Glob(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_*.json"))
+	files, err := filepath.Glob(filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_*.json"))
 	if err != nil {
 		t.Fatalf("glob templates: %v", err)
 	}
@@ -780,6 +805,12 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "Extractor") {
 				t.Skip("template includes real Extractor and requires model credentials; covered separately from File/Parser/Chunker/Tokenizer e2e")
 			}
+			if templateUsesComponent(t, templateBytes, "QAChunker") {
+				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
+			}
+			if templateUsesComponent(t, templateBytes, "TagChunker") {
+				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
+			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
 				t.Fatalf("terminal ids = %v, want exactly 1 terminal", terminalIDs)
@@ -788,9 +819,10 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewPipelineFromDSL: %v", err)
 			}
+			attachFixedEmbedderFactory(t, pipe)
 			out, err := pipe.Run(context.Background(), map[string]any{
 				"doc_id": docID,
-			})
+			}, nil)
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -806,13 +838,20 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 	}
 }
 
-func repoRootFromPipelineTest(t *testing.T) string {
+func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
-	_, file, _, ok := goruntime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
+		if name == componentpkg.ComponentNameTokenizer {
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(_, _, _ string) (componentpkg.Embedder, error) {
+				return fixedEmbedder{}, nil
+			})
+		}
+		factory, _, _, ok := runtime.DefaultRegistry.Lookup(name)
+		if !ok {
+			return nil, fmt.Errorf("runtime: unknown component %q", name)
+		}
+		return factory(name, params)
+	})
 }
 
 func withRealTemplateDeps(t *testing.T) storage.Storage {
@@ -822,10 +861,6 @@ func withRealTemplateDeps(t *testing.T) storage.Storage {
 	mem := storage.NewMemoryStorage()
 	storage.GetStorageFactory().SetStorage(mem)
 	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
-
-	origEncode := componentpkg.EncodeFunc
-	componentpkg.EncodeFunc = func(_, _ string) componentpkg.Embedder { return fixedEmbedder{} }
-	t.Cleanup(func() { componentpkg.EncodeFunc = origEncode })
 
 	refs := map[string]componentpkg.DocumentStorageRef{}
 	componentpkg.ResolveDocumentStorageOverride = func(docID string) (*componentpkg.DocumentStorageRef, error) {
@@ -938,17 +973,66 @@ func generateTemplatePipelinePDF() ([]byte, error) {
 }
 
 func findTemplatePDFFont() (string, error) {
-	candidates := []string{
-		"/usr/share/fonts/truetype/LiberationSerif-Regular.ttf",
-		"/usr/share/fonts/truetype/DejaVuSerif.ttf",
-		"/usr/share/fonts/truetype/DejaVuSans.ttf",
+	// Option 1: Prefer fc-list (fontconfig) - most elegant approach
+	if fontPath, err := findFontViaFontconfig(); err == nil {
+		return fontPath, nil
 	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+
+	// Option 2: Fallback - search common directories (for systems without fontconfig)
+	candidates := []string{
+		"LiberationSerif-Regular.ttf",
+		"DejaVuSerif.ttf",
+		"DejaVuSans.ttf",
+	}
+	searchDirs := []string{
+		"/usr/share/fonts/truetype",
+		"/usr/share/fonts/truetype/dejavu",
+		"/usr/share/fonts/truetype/liberation",
+		"/usr/share/fonts",
+		"/usr/local/share/fonts",
+	}
+
+	for _, dir := range searchDirs {
+		for _, font := range candidates {
+			candidate := filepath.Join(dir, font)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
 		}
 	}
+
 	return "", fmt.Errorf("no usable TTF font found for generated PDF fixture")
+}
+
+// findFontViaFontconfig uses fc-list command to find a suitable TTF font
+func findFontViaFontconfig() (string, error) {
+	// Search priority: DejaVu Serif > Liberation Serif > DejaVu Sans
+	fontPatterns := []string{
+		"DejaVu Serif:style=Regular",
+		"Liberation Serif:style=Regular",
+		"DejaVu Sans:style=Regular",
+	}
+
+	for _, pattern := range fontPatterns {
+		cmd := exec.Command("fc-list", "--format=%{file}\n", pattern)
+		output, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// Verify file exists and is in TTF format
+			if _, err := os.Stat(line); err == nil && strings.HasSuffix(strings.ToLower(line), ".ttf") {
+				return line, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no font found via fontconfig")
 }
 
 func assertMetadataContainsString(t *testing.T, metadata map[string]any, key, want string) {
@@ -998,7 +1082,7 @@ func assertExtractedMetadataContains(t *testing.T, raw any, key, want string) {
 	}
 }
 
-func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, wantMergedText string) {
+func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, name, wantMergedText string) {
 	t.Helper()
 
 	if got := payload["output_format"]; got != "chunks" {
@@ -1024,182 +1108,18 @@ func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, wantMerg
 	if len(vec) != 4 {
 		t.Fatalf("chunks[0].q_4_vec len = %d, want 4", len(vec))
 	}
-	if got := vec[0]; got != float64(len(wantMergedText)) {
-		t.Fatalf("chunks[0].q_4_vec[0] = %v, want %v", got, float64(len(wantMergedText)))
+	wantFirst := expectedFixedEmbedderFirst(name, wantMergedText)
+	if got := vec[0]; !approxFloat(got, wantFirst) {
+		t.Fatalf("chunks[0].q_4_vec[0] = %v, want %v", got, wantFirst)
 	}
-	wantTokens := tokenizer.NumTokensFromString(wantMergedText)
+	wantTokens := len(name) + len(wantMergedText)
 	if got := payload["embedding_token_consumption"]; got != wantTokens {
 		t.Fatalf("embedding_token_consumption = %v, want %d", got, wantTokens)
 	}
 }
 
-func stateFromRunOutput(t *testing.T, out map[string]any) map[string]map[string]any {
-	t.Helper()
-	state, ok := out["state"].(map[string]map[string]any)
-	if !ok {
-		t.Fatalf("state = %T, want map[string]map[string]any", out["state"])
-	}
-	return state
-}
-
-func requireTokenizerPool(t *testing.T) {
-	t.Helper()
-	if tokenizer.IsInitialized() {
-		return
-	}
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       os.Getenv("RAGFLOW_DICT_PATH"),
-		MinSize:        1,
-		MaxSize:        2,
-		IdleTimeout:    30 * time.Second,
-		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	if err := tokenizer.Init(cfg); err != nil {
-		t.Skipf("tokenizer pool init failed: %v", err)
-	}
-}
-
-func floatSliceFromAny(t *testing.T, v any) []float64 {
-	t.Helper()
-	switch x := v.(type) {
-	case []float64:
-		return x
-	case []any:
-		out := make([]float64, 0, len(x))
-		for i, item := range x {
-			f, ok := item.(float64)
-			if !ok {
-				t.Fatalf("vector item %d = %T, want float64", i, item)
-			}
-			out = append(out, f)
-		}
-		return out
-	default:
-		t.Fatalf("vector = %T, want []float64 or []any", v)
-		return nil
-	}
-}
-
-func joinJSONItemTexts(items []map[string]any) string {
-	var parts []string
-	for _, item := range items {
-		text, _ := item["text"].(string)
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
-		}
-		parts = append(parts, text)
-	}
-	return strings.Join(parts, "\n")
-}
-
-func assertNormalizedContainsAll(t *testing.T, got string, wantSubstrings ...string) {
-	t.Helper()
-	normalizedGot := normalizeTestText(got)
-	for _, want := range wantSubstrings {
-		if !strings.Contains(normalizedGot, normalizeTestText(want)) {
-			t.Fatalf("normalized text %q does not contain %q", normalizedGot, normalizeTestText(want))
-		}
-	}
-}
-
-func normalizeTestText(s string) string {
-	return strings.Join(strings.Fields(strings.ReplaceAll(s, "\u00ad", "")), " ")
-}
-
-func terminalPayloadFromRunOutput(t *testing.T, out map[string]any, terminalID string) map[string]any {
-	t.Helper()
-	if out == nil {
-		t.Fatal("Run returned nil output")
-	}
-	if _, ok := out["output_format"]; ok {
-		return out
-	}
-	if terminalID == "" {
-		t.Fatal("terminalID is empty")
-	}
-	nested, ok := out[terminalID].(map[string]any)
-	if !ok {
-		t.Fatalf("run output missing terminal payload %q in %v", terminalID, out)
-	}
-	return nested
-}
-
-func terminalComponentIDsFromTemplate(t *testing.T, raw []byte) []string {
-	t.Helper()
-	var tpl map[string]any
-	if err := json.Unmarshal(raw, &tpl); err != nil {
-		t.Fatalf("unmarshal template: %v", err)
-	}
-	dsl, ok := tpl["dsl"].(map[string]any)
-	if !ok {
-		t.Fatalf("template dsl = %T, want map[string]any", tpl["dsl"])
-	}
-	components, ok := dsl["components"].(map[string]any)
-	if !ok {
-		t.Fatalf("template components = %T, want map[string]any", dsl["components"])
-	}
-	var terminals []string
-	for id, rawComp := range components {
-		comp, ok := rawComp.(map[string]any)
-		if !ok {
-			t.Fatalf("component %q = %T, want map[string]any", id, rawComp)
-		}
-		switch ds := comp["downstream"].(type) {
-		case nil:
-			terminals = append(terminals, id)
-		case []any:
-			if len(ds) == 0 {
-				terminals = append(terminals, id)
-			}
-		case []string:
-			if len(ds) == 0 {
-				terminals = append(terminals, id)
-			}
-		default:
-			t.Fatalf("component %q downstream = %T, want []any/[]string/nil", id, comp["downstream"])
-		}
-	}
-	sort.Strings(terminals)
-	return terminals
-}
-
-func templateUsesComponent(t *testing.T, raw []byte, componentName string) bool {
-	t.Helper()
-	var tpl map[string]any
-	if err := json.Unmarshal(raw, &tpl); err != nil {
-		t.Fatalf("unmarshal template: %v", err)
-	}
-	dsl, ok := tpl["dsl"].(map[string]any)
-	if !ok {
-		t.Fatalf("template dsl = %T, want map[string]any", tpl["dsl"])
-	}
-	components, ok := dsl["components"].(map[string]any)
-	if !ok {
-		t.Fatalf("template components = %T, want map[string]any", dsl["components"])
-	}
-	for id, rawComp := range components {
-		comp, ok := rawComp.(map[string]any)
-		if !ok {
-			t.Fatalf("component %q = %T, want map[string]any", id, rawComp)
-		}
-		obj, ok := comp["obj"].(map[string]any)
-		if !ok {
-			t.Fatalf("component %q obj = %T, want map[string]any", id, comp["obj"])
-		}
-		name, _ := obj["component_name"].(string)
-		if name == componentName {
-			return true
-		}
-	}
-	return false
-}
-
 func TestTemplateFixtures_AreWrappedTemplates(t *testing.T) {
-	path := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	path := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)

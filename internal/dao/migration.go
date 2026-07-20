@@ -47,19 +47,14 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on user.email: %w", err)
 	}
 
+	// Add unique index on ingestion_task.document_id
+	if err := migrateIngestionTaskDocumentIDUnique(db); err != nil {
+		return fmt.Errorf("failed to add unique index on ingestion_task.document_id: %w", err)
+	}
+
 	// Modify column types that AutoMigrate may not handle correctly
 	if err := modifyColumnTypes(db); err != nil {
 		return fmt.Errorf("failed to modify column types: %w", err)
-	}
-
-	// Create skill search tables
-	if err := migrateSkillSearchTables(db); err != nil {
-		return fmt.Errorf("failed to migrate skill search tables: %w", err)
-	}
-
-	// Create skill space tables
-	if err := migrateSkillSpaceTables(db); err != nil {
-		return fmt.Errorf("failed to migrate skill space tables: %w", err)
 	}
 
 	common.Info("All manual migrations completed successfully")
@@ -77,7 +72,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 	// Check if 'id' column already exists using raw SQL
 	var idColumnExists int64
 	err := db.Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 		WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'id'
 	`).Scan(&idColumnExists).Error
 	if err != nil {
@@ -87,10 +82,10 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 	if idColumnExists > 0 {
 		// Check if id is already a primary key with auto_increment
 		var count int64
-		err := db.Raw(`
-			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
-			WHERE TABLE_NAME = 'tenant_llm' 
-			AND COLUMN_NAME = 'id' 
+		err = db.Raw(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_NAME = 'tenant_llm'
+			AND COLUMN_NAME = 'id'
 			AND EXTRA LIKE '%auto_increment%'
 		`).Scan(&count).Error
 		if err != nil {
@@ -108,10 +103,10 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		// Check for temp_id column and drop it if exists
 		var tempIdExists int64
-		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
 		if tempIdExists > 0 {
-			if err := tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
+			if err = tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
 				common.Warn("Failed to drop temp_id column", zap.Error(err))
 			}
 		}
@@ -119,16 +114,16 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		// Check if there's already an 'id' column
 		if idColumnExists > 0 {
 			// Modify existing id column to be auto_increment primary key
-			if err := tx.Exec(`
-				ALTER TABLE tenant_llm 
+			if err = tx.Exec(`
+				ALTER TABLE tenant_llm
 				MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY
 			`).Error; err != nil {
 				return fmt.Errorf("failed to modify id column: %w", err)
 			}
 		} else {
 			// Add id column as auto_increment primary key
-			if err := tx.Exec(`
-				ALTER TABLE tenant_llm 
+			if err = tx.Exec(`
+				ALTER TABLE tenant_llm
 				ADD COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
 			`).Error; err != nil {
 				return fmt.Errorf("failed to add id column: %w", err)
@@ -137,11 +132,11 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 
 		// Add unique index on (tenant_id, llm_factory, llm_name)
 		var idxExists int64
-		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 			WHERE TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
 		if idxExists == 0 {
-			if err := tx.Exec(`
-				ALTER TABLE tenant_llm 
+			if err = tx.Exec(`
+				ALTER TABLE tenant_llm
 				ADD UNIQUE INDEX idx_tenant_llm_unique (tenant_id, llm_factory, llm_name)
 			`).Error; err != nil {
 				common.Warn("Failed to add unique index idx_tenant_llm_unique", zap.Error(err))
@@ -161,7 +156,7 @@ func migrateAddUniqueEmail(db *gorm.DB) error {
 
 	// Check if unique index already exists using raw SQL
 	var count int64
-	db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+	db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 		WHERE TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_email_unique'`).Scan(&count)
 	if count > 0 {
 		return nil
@@ -198,17 +193,77 @@ func migrateAddUniqueEmail(db *gorm.DB) error {
 	return nil
 }
 
+func migrateIngestionTaskDocumentIDUnique(db *gorm.DB) error {
+	if !db.Migrator().HasTable("ingestion_task") {
+		return nil
+	}
+
+	const indexName = "idx_ingestion_task_document_id"
+
+	var uniqueCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_NAME = 'ingestion_task'
+		  AND INDEX_NAME = ?
+		  AND COLUMN_NAME = 'document_id'
+		  AND NON_UNIQUE = 0
+	`, indexName).Scan(&uniqueCount).Error; err != nil {
+		return err
+	}
+	if uniqueCount > 0 {
+		return nil
+	}
+
+	var duplicateCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
+		) AS duplicates
+	`).Scan(&duplicateCount).Error; err != nil {
+		return err
+	}
+	if duplicateCount > 0 {
+		common.Warn("Found duplicate document_id values in ingestion_task, cannot add unique index", zap.Int64("count", duplicateCount))
+		return nil
+	}
+
+	var existingIndexCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_NAME = 'ingestion_task'
+		  AND INDEX_NAME = ?
+	`, indexName).Scan(&existingIndexCount).Error; err != nil {
+		return err
+	}
+	if existingIndexCount > 0 {
+		if err := db.Exec(`ALTER TABLE ingestion_task DROP INDEX ` + indexName).Error; err != nil {
+			return fmt.Errorf("failed to drop existing index %s: %w", indexName, err)
+		}
+	}
+
+	if err := db.Exec(`ALTER TABLE ingestion_task ADD UNIQUE INDEX ` + indexName + ` (document_id)`).Error; err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+			common.Info("Index already exists, skipping", zap.String("error", errStr))
+			return nil
+		}
+		return fmt.Errorf("failed to add unique index on ingestion_task.document_id: %w", err)
+	}
+
+	return nil
+}
+
 // modifyColumnTypes modifies column types that need explicit ALTER statements
 func modifyColumnTypes(db *gorm.DB) error {
 	// Helper function to check if column exists
 	columnExists := func(table, column string) bool {
 		var count int64
-		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, table, column).Scan(&count)
 		return count > 0
 	}
 
-	// dialog.top_k: ensure it's INTEGER with default 1024
+	// dialog.top_k: ensure its INTEGER with default 1024
 	if db.Migrator().HasTable("dialog") && columnExists("dialog", "top_k") {
 		if err := db.Exec(`ALTER TABLE dialog MODIFY COLUMN top_k BIGINT NOT NULL DEFAULT 1024`).Error; err != nil {
 			common.Warn("Failed to modify dialog.top_k", zap.Error(err))
@@ -217,7 +272,7 @@ func modifyColumnTypes(db *gorm.DB) error {
 
 	// tenant_llm.api_key: ensure it's TEXT type
 	if db.Migrator().HasTable("tenant_llm") && columnExists("tenant_llm", "api_key") {
-		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key LONGTEXT`).Error; err != nil {
+		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key VARCHAR(8192)`).Error; err != nil {
 			common.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
 		}
 	}
@@ -277,7 +332,7 @@ func renameColumnIfExists(db *gorm.DB, tableName, oldName, newName string) error
 	// Helper to check if column exists
 	columnExists := func(column string) bool {
 		var count int64
-		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, column).Scan(&count)
 		return count > 0
 	}
@@ -381,7 +436,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 
 		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
 		var legacyIndexExists int64
-		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
 		if legacyIndexExists > 0 {
 			common.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
@@ -392,11 +447,11 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 
 		// Table exists, check if unique index exists
 		var indexExists int64
-		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
 		if indexExists == 0 {
 			common.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
-			if err := db.Exec(`ALTER TABLE skill_search_configs 
+			if err := db.Exec(`ALTER TABLE skill_search_configs
 				ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
 				return fmt.Errorf("failed to add unique index idx_tenant_space_embd: %w", err)
 			}
@@ -469,7 +524,7 @@ func migrateSkillSpaceIndex(db *gorm.DB) error {
 	// Check if old index exists and drop it
 	var oldIndexExists int64
 	db.Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
 	`).Scan(&oldIndexExists)
 
@@ -483,7 +538,7 @@ func migrateSkillSpaceIndex(db *gorm.DB) error {
 	// Check if new index exists
 	var newIndexExists int64
 	db.Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
 		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
 	`).Scan(&newIndexExists)
 

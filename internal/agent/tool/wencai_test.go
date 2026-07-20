@@ -19,54 +19,39 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
 
-func TestWencai_StubsUnsupported(t *testing.T) {
+func TestWencai_InvokeMatchesCurrentPythonResult(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name string
 		args string
 	}{
-		{
-			name: "well-formed args",
-			args: `{"query":"近期涨停股","page":1,"per_page":20}`,
-		},
-		{
-			name: "minimal args",
-			args: `{"query":"高股息低估值"}`,
-		},
-		{
-			name: "missing query",
-			args: `{"page":1}`,
-		},
-		{
-			name: "empty payload",
-			args: `{}`,
-		},
+		{name: "query", args: `{"query":"商业航天"}`},
+		{name: "empty query", args: `{"query":""}`},
+		{name: "missing query", args: `{}`},
+		{name: "empty arguments", args: ``},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			tool := NewWencaiTool()
-			out, err := tool.InvokableRun(context.Background(), tc.args)
-			if err == nil {
-				t.Fatalf("expected error, got nil (out=%s)", out)
-			}
-			if !strings.Contains(err.Error(), "同花顺") {
-				t.Errorf("err = %q, want to mention 同花顺", err.Error())
+			out, err := NewWencaiTool().InvokableRun(context.Background(), tc.args)
+			if err != nil {
+				t.Fatalf("InvokableRun errored: %v (out=%s)", err, out)
 			}
 			var env wencaiEnvelope
-			if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
-				t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+			if err := json.Unmarshal([]byte(out), &env); err != nil {
+				t.Fatalf("output is not valid JSON: %v (raw=%s)", err, out)
 			}
-			if env.Error == "" {
-				t.Errorf("env.Error = empty, want populated")
+			if env.Report != "" {
+				t.Fatalf("report = %q, want empty string", env.Report)
 			}
-			if !strings.Contains(env.Error, "同花顺") {
-				t.Errorf("env.Error = %q, want to mention 同花顺", env.Error)
+			if env.Error != "" {
+				t.Fatalf("_ERROR = %q, want empty", env.Error)
 			}
 		})
 	}
@@ -75,31 +60,177 @@ func TestWencai_StubsUnsupported(t *testing.T) {
 func TestWencai_RejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
 
-	tool := NewWencaiTool()
-	_, err := tool.InvokableRun(context.Background(), `{not json`)
+	out, err := NewWencaiTool().InvokableRun(context.Background(), `{not json`)
 	if err == nil {
-		t.Fatal("expected error for malformed JSON, got nil")
+		t.Fatal("expected malformed JSON error")
 	}
-	if !strings.Contains(err.Error(), "同花顺") {
-		t.Errorf("err = %q, want to mention 同花顺", err.Error())
+	if !strings.Contains(err.Error(), "parse arguments") {
+		t.Fatalf("err = %q, want parse arguments", err.Error())
+	}
+	var env wencaiEnvelope
+	if jsonErr := json.Unmarshal([]byte(out), &env); jsonErr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jsonErr, out)
+	}
+	if env.Error == "" {
+		t.Fatal("_ERROR is empty, want parse error")
 	}
 }
 
-func TestWencai_Info(t *testing.T) {
+func TestWencai_RespectsCanceledContext(t *testing.T) {
 	t.Parallel()
 
-	tool := NewWencaiTool()
-	info, err := tool.Info(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out, err := NewWencaiTool().InvokableRun(ctx, `{"query":"商业航天"}`)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	var env wencaiEnvelope
+	if jsonErr := json.Unmarshal([]byte(out), &env); jsonErr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jsonErr, out)
+	}
+	if env.Error != context.Canceled.Error() {
+		t.Fatalf("_ERROR = %q, want %q", env.Error, context.Canceled.Error())
+	}
+}
+
+func TestWencai_InfoMatchesPythonMeta(t *testing.T) {
+	t.Parallel()
+
+	info, err := NewWencaiTool().Info(context.Background())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "wencai" {
-		t.Errorf("Name = %q, want wencai", info.Name)
+	if info.Name != "iwencai" {
+		t.Fatalf("Name = %q, want iwencai", info.Name)
 	}
-	if !strings.Contains(info.Desc, "Wencai") {
-		t.Errorf("Desc = %q, want to mention Wencai", info.Desc)
+	if strings.Contains(info.Desc, "STUB") || strings.Contains(info.Desc, "unsupported") {
+		t.Fatalf("Desc still exposes stub behavior: %q", info.Desc)
 	}
-	if !strings.Contains(info.Desc, "STUB") && !strings.Contains(info.Desc, "Python") {
-		t.Errorf("Desc = %q, want to flag stub status", info.Desc)
+	schema, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	params := string(raw)
+	if !strings.Contains(params, `"query"`) || !strings.Contains(params, `"required":["query"]`) {
+		t.Fatalf("schema does not require query: %s", params)
+	}
+	if strings.Contains(params, `"top_n"`) || strings.Contains(params, `"query_type"`) {
+		t.Fatalf("schema leaked node parameters: %s", params)
+	}
+}
+
+func TestWencai_BuildByNameAcceptsNodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("wencai", map[string]any{
+		"top_n":      float64(20),
+		"query_type": "fund",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	wencai, ok := built.(*WencaiTool)
+	if !ok {
+		t.Fatalf("built type = %T, want *WencaiTool", built)
+	}
+	if wencai.defaults.TopN != 20 {
+		t.Fatalf("defaults.TopN = %d, want 20", wencai.defaults.TopN)
+	}
+	if wencai.defaults.QueryType != "fund" {
+		t.Fatalf("defaults.QueryType = %q, want fund", wencai.defaults.QueryType)
+	}
+}
+
+func TestWencai_BuildByNameUsesPythonDefaults(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("wencai", nil)
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	wencai := built.(*WencaiTool)
+	if wencai.defaults.TopN != 10 || wencai.defaults.QueryType != "stock" {
+		t.Fatalf("defaults = %+v, want top_n=10 query_type=stock", wencai.defaults)
+	}
+}
+
+func TestWencai_BuildByNameRejectsInvalidNodeParams(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{name: "zero top_n", params: map[string]any{"top_n": 0}},
+		{name: "fractional top_n", params: map[string]any{"top_n": 1.5}},
+		{name: "string top_n", params: map[string]any{"top_n": "10"}},
+		{name: "invalid query_type", params: map[string]any{"query_type": "crypto"}},
+		{name: "non-string query_type", params: map[string]any{"query_type": 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := BuildByName("wencai", tc.params); err == nil {
+				t.Fatalf("BuildByName(%v) succeeded, want validation error", tc.params)
+			}
+		})
+	}
+}
+
+func TestWencai_BuildByNameIgnoresUnrelatedCanvasParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("wencai", map[string]any{
+		"top_n":   float64(20),
+		"outputs": map[string]any{"report": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	wencai := built.(*WencaiTool)
+	if wencai.defaults.TopN != 20 {
+		t.Fatalf("defaults.TopN = %d, want 20", wencai.defaults.TopN)
+	}
+}
+
+func TestWencai_ComponentContract(t *testing.T) {
+	t.Parallel()
+
+	wencai := NewWencaiTool()
+	spec := wencai.ComponentSpec()
+	if _, ok := spec.Inputs["query"]; !ok {
+		t.Fatalf("component inputs missing query: %#v", spec.Inputs)
+	}
+	if _, ok := spec.Outputs["report"]; !ok {
+		t.Fatalf("component outputs missing report: %#v", spec.Outputs)
+	}
+	query, ok := spec.InputForm["query"].(map[string]any)
+	if !ok || query["name"] != "Query" || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	outputs := wencai.BuildComponentOutputs(map[string]any{
+		"report":        "market report",
+		"tool_metadata": map[string]any{"request_id": "request-1"},
+	})
+	if outputs["report"] != "market report" {
+		t.Fatalf("component outputs = %#v", outputs)
+	}
+}
+
+func TestWencai_MergeDefaults(t *testing.T) {
+	t.Parallel()
+
+	got := mergeWencaiParams(
+		wencaiParams{Query: "configured", TopN: 20, QueryType: "fund"},
+		wencaiParams{Query: "商业航天"},
+	)
+	if got.Query != "商业航天" || got.TopN != 20 || got.QueryType != "fund" {
+		t.Fatalf("merged params = %+v", got)
 	}
 }

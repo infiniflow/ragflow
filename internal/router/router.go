@@ -17,10 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
@@ -51,9 +51,9 @@ type Router struct {
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
-	adminRuntimeHandler  *handler.AdminRuntimeHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
+	pipelineHandler      *handler.PipelineHandler
 }
 
 // NewRouter create router
@@ -84,10 +84,10 @@ func NewRouter(
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
 	fileCommitHandler *handler.FileCommitHandler,
-	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
+	pipelineHandler *handler.PipelineHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -117,14 +117,16 @@ func NewRouter(
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
-		adminRuntimeHandler:  adminRuntimeHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
+		pipelineHandler:      pipelineHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	SetupEERouter(engine)
+
 	// Mark all responses from Go with a header for debugging.
 	engine.Use(func(c *gin.Context) {
 		c.Header("X-API-Source", "go")
@@ -156,6 +158,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+		// Backend runtime language detection. The front end calls this once
+		// to choose between Go and Python code paths.
+		apiNoAuth.GET("/language", r.systemHandler.Language)
+
+		// Pipeline catalog. Public static data (shipped with the binary),
+		// no auth required. The front end uses it to populate the parser
+		// picker without hard-coding the parser_id list.
+		// Query: ?type=builtin returns built-in templates (default).
+		if r.pipelineHandler != nil {
+			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+			apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
+		}
 
 		// searchbots
 		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
@@ -171,7 +185,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// /auth/login/channels to GetLoginChannels and other values to
 		// OAuthLogin without conflict.
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
-		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
+
+		// For EE
+		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
+		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
+		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
+		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
+		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
+		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
+		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
+		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -197,11 +222,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth := engine.Group("/api/v1")
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
-		searchbotGroup := apiBetaAuth.Group("/searchbots")
-		searchbotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchbotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
-		searchbotGroup.POST("/ask", r.searchBotHandler.Ask)
-		searchbotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
+		searchBotGroup := apiBetaAuth.Group("/searchbots")
+		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
+		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
 		if r.botHandler != nil {
 			chatbotGroup := apiBetaAuth.Group("/chatbots")
@@ -260,6 +285,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me/models", r.tenantHandler.TenantInfo)
 				// User set tenant info endpoint
 				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
+
+				// For EE
+				users.GET("/me/admin", r.userHandler.IsAdmin)
+				users.GET("/me/meta", r.userHandler.GetMeta)
+			}
+
+			user := v1.Group("/settings")
+			{
+				user.GET("/enable-admin", r.systemHandler.GetEnableAdmin)
 			}
 
 			tenants := v1.Group("/tenants")
@@ -275,18 +309,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenant := v1.Group("/tenant")
 			{
 				tenant.GET("/list", r.tenantHandler.TenantList)
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
-				tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
-				tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
+				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                         // Internal API only for GO
+				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                       // Internal API only for GO
+				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)                   // Internal API only for GO
+				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)                 // Internal API only for GO
+				tenant.POST("/dev_insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+				tenant.POST("/dev_insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 			}
 
 			// Document routes
 			documents := v1.Group("/documents")
 			{
-				documents.POST("", r.documentHandler.CreateDocument)
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
@@ -320,6 +353,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
 				chat.POST("/mindmap", r.chatHandler.MindMap)
 				chat.POST("/recommendation", r.chatHandler.Recommendation)
+				chat.POST("/audio/speech", r.chatHandler.ChatAudioSpeech)
+				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 
@@ -334,7 +369,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
 				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
-				datasets.POST("/:dataset_id/embedding", r.datasetsHandler.RunEmbedding)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
@@ -505,8 +539,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
-				provider.GET("/", r.providerHandler.ListProviders)
-				provider.PUT("/", r.providerHandler.AddProvider)
+				provider.GET("", r.providerHandler.ListProviders)
+				provider.PUT("", r.providerHandler.AddProvider)
 				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
 				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
@@ -522,7 +556,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
-				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
+				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.AlterModel)
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
@@ -538,8 +572,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				// GET /models returns the tenant's added models across
 				// all instances. Front-end useFetchAllAddedModels consumes this.
-				model.GET("/", r.providerHandler.ListTenantAddedModels)
-				model.PATCH("/", r.tenantHandler.SetModels)
+				model.GET("", r.providerHandler.ListTenantAddedModels)
+				model.PATCH("", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
@@ -570,16 +604,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				v1.GET("/components", r.componentsHandler.Get)
 			}
 
-			// Admin routes — Phase 6 per-tenant canvas runtime override.
-			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
-			// handler is tolerated and yields a no-op registration.
-			admin := v1.Group("/admin")
-			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
-
 			connectors := v1.Group("/connectors")
 			{
-				connectors.GET("/", r.connectorHandler.ListConnectors)
-				connectors.POST("/", r.connectorHandler.CreateConnector)
+				connectors.GET("", r.connectorHandler.ListConnectors)
+				connectors.POST("", r.connectorHandler.CreateConnector)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)

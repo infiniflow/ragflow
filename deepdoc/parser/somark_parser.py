@@ -121,7 +121,7 @@ class SoMarkParser(RAGFlowPdfParser):
 
     # /usage quota check only works in SaaS; private deployments fall back
     # to a generic HEAD health check.
-    SAAS_BASE_URL = "https://somark.tech/api/v1"
+    SAAS_BASE_URL = "https://somark.cn/api/v1"
     USAGE_REQUEST_TIMEOUT = 10  # /usage request timeout
 
     # SoMark error codes
@@ -749,7 +749,7 @@ class SoMarkParser(RAGFlowPdfParser):
 
 if __name__ == "__main__":
     parser = SoMarkParser(
-        base_url=os.environ.get("SOMARK_BASE_URL", "https://somark.tech/api/v1"),
+        base_url=os.environ.get("SOMARK_BASE_URL", "https://somark.cn/api/v1"),
         api_key=os.environ.get("SOMARK_API_KEY", ""),
     )
     ok, reason = parser.check_installation()

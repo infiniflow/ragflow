@@ -43,7 +43,6 @@ from peewee import (
     Metadata,
     Model,
     TextField,
-    PrimaryKeyField,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
@@ -725,18 +724,19 @@ class Tenant(DataBaseModel):
     name = CharField(max_length=100, null=True, help_text="Tenant name", index=True)
     public_key = CharField(max_length=255, null=True, index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     asr_id = CharField(max_length=128, null=False, help_text="default ASR model ID", index=True)
-    tenant_asr_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_asr_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     img2txt_id = CharField(max_length=128, null=False, help_text="default image to text model ID", index=True)
-    tenant_img2txt_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_img2txt_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID", index=True)
-    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_rerank_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
-    tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_tts_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
+    tenant_ocr_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -803,7 +803,6 @@ class LLM(DataBaseModel):
 
 
 class TenantLLM(DataBaseModel):
-    id = PrimaryKeyField()
     tenant_id = CharField(max_length=32, null=False, index=True)
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
     model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
@@ -824,9 +823,9 @@ class TenantLLM(DataBaseModel):
 
 class TenantLangfuse(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, primary_key=True)
-    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
-    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
+    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY")
+    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY")
+    host = CharField(max_length=128, null=False, help_text="HOST")
 
     def __str__(self):
         return "Langfuse host" + self.host
@@ -843,7 +842,7 @@ class Knowledgebase(DataBaseModel):
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     created_by = CharField(max_length=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
@@ -1011,7 +1010,7 @@ class Dialog(DataBaseModel):
     icon = TextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
@@ -1031,7 +1030,7 @@ class Dialog(DataBaseModel):
     do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
 
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
-    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_rerank_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1156,7 +1155,7 @@ class CompilationTemplate(DataBaseModel):
 
     class Meta:
         db_table = "compilation_template"
-        indexes = ((("tenant_id", "name", "is_builtin", "status"), True),)
+        indexes = ((("tenant_id", "group_id", "name", "is_builtin", "status"), True),)
 
 
 class CompilationTemplateGroup(DataBaseModel):
@@ -1332,74 +1331,6 @@ class SyncLogs(DataBaseModel):
         db_table = "sync_logs"
 
 
-class EvaluationDataset(DataBaseModel):
-    """Ground truth dataset for RAG evaluation"""
-
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
-    name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
-    description = TextField(null=True, help_text="dataset description")
-    kb_ids = JSONField(null=False, help_text="knowledge base IDs to evaluate against")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="creator user ID")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    update_time = BigIntegerField(null=False, help_text="last update timestamp")
-    status = IntegerField(null=False, default=1, help_text="1=valid, 0=invalid")
-
-    class Meta:
-        db_table = "evaluation_datasets"
-
-
-class EvaluationCase(DataBaseModel):
-    """Individual test case in an evaluation dataset"""
-
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    question = TextField(null=False, help_text="test question")
-    reference_answer = TextField(null=True, help_text="optional ground truth answer")
-    relevant_doc_ids = JSONField(null=True, help_text="expected relevant document IDs")
-    relevant_chunk_ids = JSONField(null=True, help_text="expected relevant chunk IDs")
-    metadata = JSONField(null=True, help_text="additional context/tags")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_cases"
-
-
-class EvaluationRun(DataBaseModel):
-    """A single evaluation run"""
-
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
-    name = CharField(max_length=255, null=False, help_text="run name")
-    config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
-    metrics_summary = JSONField(null=True, help_text="aggregated metrics")
-    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    complete_time = BigIntegerField(null=True, help_text="completion timestamp")
-
-    class Meta:
-        db_table = "evaluation_runs"
-
-
-class EvaluationResult(DataBaseModel):
-    """Result for a single test case in an evaluation run"""
-
-    id = CharField(max_length=32, primary_key=True)
-    run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
-    case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
-    generated_answer = TextField(null=False, help_text="generated answer")
-    retrieved_chunks = JSONField(null=False, help_text="chunks that were retrieved")
-    metrics = JSONField(null=False, help_text="all computed metrics")
-    execution_time = FloatField(null=False, help_text="response time in seconds")
-    token_usage = JSONField(null=True, help_text="prompt/completion tokens")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_results"
-
-
 class Memory(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
@@ -1408,9 +1339,9 @@ class Memory(DataBaseModel):
     memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
     storage_type = CharField(max_length=32, default="table", null=False, index=True, help_text="table|graph")
     embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
@@ -1460,7 +1391,7 @@ class TenantModel(DataBaseModel):
     model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
     provider_id = CharField(max_length=32, null=False, index=False)
     instance_id = CharField(max_length=32, null=False, index=True)
-    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    model_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr")
     status = CharField(max_length=32, default="active", index=False)
     extra = CharField(max_length=1024, default="{}", index=False)
 
@@ -1523,6 +1454,51 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # rename fail will lead to a weired error.
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
+
+
+def alter_db_drop_index(migrator, table_name, index_name):
+    try:
+        migrate(migrator.drop_index(table_name, index_name))
+    except Exception:
+        # rename fail will lead to a weired error.
+        # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
+        pass
+
+def ensure_model_indexes(migrator):
+    """Create indexes declared by the Peewee models when they are missing."""
+    members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+    for name, model in members:
+        if model == DataBaseModel or not issubclass(model, DataBaseModel):
+            continue
+
+        table_name = model._meta.table_name
+        expected = {}
+        for field in model._meta.fields.values():
+            if field.primary_key:
+                continue
+            if field.index or field.unique:
+                expected[(field.name,)] = bool(field.unique)
+
+        for columns, unique in model._meta.indexes:
+            expected[tuple(columns)] = bool(unique)
+
+        if not expected:
+            continue
+
+        try:
+            existing = {tuple(index.columns): bool(index.unique) for index in DB.get_indexes(table_name)}
+        except Exception as ex:
+            logging.error(f"Failed to inspect indexes on {table_name}: {ex}")
+            continue
+
+        for columns, unique in expected.items():
+            if columns in existing and (not unique or existing[columns]):
+                continue
+            try:
+                migrate(migrator.add_index(table_name, columns, unique=unique))
+                logging.info(f"Created {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)})")
+            except Exception as ex:
+                logging.error(f"Failed to create {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)}): {ex}")
 
 
 def migrate_add_unique_email(migrator):
@@ -1773,9 +1749,9 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True))
-    alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
-    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "artifact_task_id", CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
@@ -1790,18 +1766,6 @@ def migrate_db():
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
-    update_tenant_llm_to_id_primary_key()
-    alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_asr_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_img2txt_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_tts_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "knowledgebase", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
@@ -1818,6 +1782,10 @@ def migrate_db():
     alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
     alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
     alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_secret_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_public_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_host")
+
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases
@@ -1845,3 +1813,45 @@ def migrate_db():
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
+    migrate_model_type_names()
+    ensure_model_indexes(migrator)
+
+
+def migrate_model_type_names():
+    """Rename legacy model_type string values to the canonical asr/vision names.
+
+    Previously the code used speech2text / image2text. LLMType now emits asr /
+    vision, and the backend compares model_type strings directly. This idempotent
+    data migration updates persisted rows in llm and tenant_llm before the new
+    enum values are used at runtime.
+    """
+    RENAME_MAP = {
+        "speech2text": "asr",
+        "image2text": "vision",
+    }
+    tables = ["llm", "tenant_llm"]
+    for table in tables:
+        if not DB.table_exists(table):
+            continue
+        for old_name, new_name in RENAME_MAP.items():
+            try:
+                cursor = DB.execute_sql(
+                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    (new_name, old_name),
+                )
+                if cursor.rowcount:
+                    logging.info(
+                        "Migrated %s rows in %s.model_type from %s to %s",
+                        cursor.rowcount,
+                        table,
+                        old_name,
+                        new_name,
+                    )
+            except Exception as ex:
+                logging.warning(
+                    "Failed to migrate model_type values in %s (from %s to %s): %s",
+                    table,
+                    old_name,
+                    new_name,
+                    ex,
+                )

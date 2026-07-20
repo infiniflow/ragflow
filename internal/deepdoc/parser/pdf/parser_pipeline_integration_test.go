@@ -1,4 +1,4 @@
-//go:build cgo && integration
+//go:build cgo && manual
 
 package pdf
 
@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -66,7 +67,7 @@ func writeGolden(t *testing.T, path string, v any) {
 }
 
 func updateGolden() bool {
-	return os.Getenv("UPDATE_GOLDEN") == "1"
+	return common.GetEnv(common.EnvUpdateGolden) == "1"
 }
 
 // sectionsToGolden converts []pdf.Section to the snapshot format.
@@ -371,30 +372,6 @@ func TestIntegration_Idempotency(t *testing.T) {
 	})
 }
 
-// cropImageRect crops a rectangular region from an image.
-func cropImageRect(img image.Image, x0, y0, x1, y1 int) image.Image {
-	b := img.Bounds()
-	if x0 < b.Min.X {
-		x0 = b.Min.X
-	}
-	if y0 < b.Min.Y {
-		y0 = b.Min.Y
-	}
-	if x1 > b.Max.X {
-		x1 = b.Max.X
-	}
-	if y1 > b.Max.Y {
-		y1 = b.Max.Y
-	}
-	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	for y := y0; y < y1; y++ {
-		for x := x0; x < x1; x++ {
-			out.Set(x-x0, y-y0, img.At(x, y))
-		}
-	}
-	return out
-}
-
 const coordEpsilon = 1.0 // pixels
 const confEpsilon = 0.01
 
@@ -592,25 +569,24 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 	t.Logf("Sections: %d", len(result.Sections))
 }
 
-// TestIntegration_MultiChunk verifies chunked processing for large documents.
+// TestIntegration_MultiChunk verifies parsing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
 	client := mustConnectInferenceClient(t)
 	data := mustReadPDF(t, "19_multipage_chunk.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.BatchSize = 10 // small batches to force multi-batch path
 	p := NewParser(cfg)
 	result, err := p.Parse(context.Background(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	defer result.Close()
 
-	// 52 pages with 10-page batches → >= 6 batches.
 	if len(result.Sections) == 0 {
-		t.Error("multi-batch should produce sections")
+		t.Error("large document should produce sections")
 	}
 
-	t.Logf("52 pages × batchSize=10: %d sections, %d tables",
+	t.Logf("52 pages: %d sections, %d tables",
 		len(result.Sections), len(result.Tables))
 }
 

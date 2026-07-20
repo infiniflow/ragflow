@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 
 	"gorm.io/gorm"
@@ -31,6 +32,7 @@ import (
 type SearchService struct {
 	searchDAO     *dao.SearchDAO
 	userTenantDAO *dao.UserTenantDAO
+	datasetDAO    *dao.KnowledgebaseDAO
 	tenantService *TenantService
 }
 
@@ -39,6 +41,7 @@ func NewSearchService() *SearchService {
 	return &SearchService{
 		searchDAO:     dao.NewSearchDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		datasetDAO:    dao.NewKnowledgebaseDAO(),
 		tenantService: NewTenantService(),
 	}
 }
@@ -209,7 +212,7 @@ type CreateSearchResponse struct {
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
 	// Generate UUID for search ID (same as Python get_uuid())
-	searchID := common.GenerateUUID()
+	searchID := utility.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
 	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
@@ -325,7 +328,7 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 
 	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
 	// Python: cls.model.delete().where(cls.model.id == pid).execute()
-	if err = s.searchDAO.DeleteByID(searchID); err != nil {
+	if err = s.searchDAO.DeleteByID(userID, searchID); err != nil {
 		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
 	}
 
@@ -345,12 +348,12 @@ func (s *SearchService) AccessibleForCompletion(userID string, searchID string) 
 }
 
 type SearchCompletionPlan struct {
-	UserID   string
-	SearchID string
-	Question string
-	KBIDs    []string
-	ModelID  string
-	Options  AskStreamOptions
+	UserID     string
+	SearchID   string
+	Question   string
+	DatasetIDs []string
+	ModelID    string
+	Options    AskStreamOptions
 }
 
 func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
@@ -375,21 +378,28 @@ func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCo
 		return nil, common.CodeServerError, err
 	}
 	if !accessible {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	searchDetail, err := s.GetDetail(searchID)
 	if err != nil || searchDetail == nil {
-		return nil, common.CodeDataError, fmt.Errorf("Cannot find search %s", searchID)
+		return nil, common.CodeDataError, fmt.Errorf("cannot find search %s", searchID)
 	}
 	searchConfig := searchConfigMapFromValue(searchDetail["search_config"])
 
-	kbIDs := stringSliceFromSearchConfig(searchConfig["kb_ids"])
-	if len(kbIDs) == 0 {
-		kbIDs = stringSliceFromSearchConfig(req.KBIDs)
+	datasetIDs := stringSliceFromSearchConfig(searchConfig["kb_ids"])
+	if len(datasetIDs) == 0 {
+		datasetIDs = stringSliceFromSearchConfig(req.KBIDs)
 	}
-	if len(kbIDs) == 0 {
-		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required.")
+	if len(datasetIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required")
+	}
+
+	for _, datasetID := range datasetIDs {
+		accessible = s.datasetDAO.Accessible(datasetID, userID)
+		if !accessible {
+			return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization for dataset %s", datasetID)
+		}
 	}
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
@@ -398,19 +408,20 @@ func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCo
 		if tenantSvc == nil {
 			tenantSvc = NewTenantService()
 		}
-		defaultModel, err := tenantSvc.GetDefaultModelName(userID, entity.ModelTypeChat)
+		var defaultModelName string
+		defaultModelName, err = tenantSvc.GetDefaultModelName(userID, entity.ModelTypeChat)
 		if err == nil {
-			modelID = strings.TrimSpace(defaultModel)
+			modelID = strings.TrimSpace(defaultModelName)
 		}
 	}
 
 	return &SearchCompletionPlan{
-		UserID:   userID,
-		SearchID: searchID,
-		Question: question,
-		KBIDs:    kbIDs,
-		ModelID:  modelID,
-		Options:  askOptionsFromSearchConfig(searchID, searchConfig),
+		UserID:     userID,
+		SearchID:   searchID,
+		Question:   question,
+		DatasetIDs: datasetIDs,
+		ModelID:    modelID,
+		Options:    askOptionsFromSearchConfig(searchID, searchConfig),
 	}, common.CodeSuccess, nil
 }
 

@@ -214,41 +214,6 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 	common.SuccessWithData(c, user, "success")
 }
 
-// ListUsers user list
-// @Summary User List
-// @Description Get paginated user list
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param page query int false "page number" default(1)
-// @Param page_size query int false "items per page" default(10)
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/users [get]
-func (h *UserHandler) ListUsers(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
-
-	users, total, code, err := h.userService.ListUsers(page, pageSize)
-	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, gin.H{
-		"items":     users,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-	}, "success")
-}
-
 // Logout user logout
 // @Summary User Logout
 // @Description Logout user and invalidate access token
@@ -307,7 +272,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 func (h *UserHandler) Info(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -330,7 +295,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 func (h *UserHandler) Setting(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -368,7 +333,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 func (h *UserHandler) ChangePassword(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -420,7 +385,7 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

@@ -79,3 +79,30 @@ func TestPhase3_6_ToolDSLLoading(t *testing.T) {
 		t.Errorf("Tools not preserved: %v", captured.Tools)
 	}
 }
+
+func TestAgent_GoogleToolDSLParamsLoading(t *testing.T) {
+	c := NewAgentComponent(AgentParam{
+		ModelID:   "stub",
+		MaxRounds: 1,
+		Tools:     []string{"google"},
+		ToolParams: map[string]map[string]any{
+			"google": {
+				"api_key":  "KEY",
+				"country":  "us",
+				"language": "en",
+			},
+		},
+	})
+	form := c.GetInputForm()
+	googleForm, ok := form["google_search"].(map[string]any)
+	if !ok {
+		t.Fatalf("GetInputForm missing google tool form: %+v", form)
+	}
+	if _, ok := googleForm["q"]; !ok {
+		t.Fatalf("google tool form missing q: %+v", googleForm)
+	}
+
+	if _, err := buildAgentTools(c.param); err != nil {
+		t.Fatalf("buildAgentTools with google params: %v", err)
+	}
+}

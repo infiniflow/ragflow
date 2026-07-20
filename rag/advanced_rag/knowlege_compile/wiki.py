@@ -38,6 +38,7 @@ import json
 import logging
 import re
 from typing import Callable, Optional
+from urllib.parse import urlsplit
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import gen_json, message_fit_in
@@ -1630,6 +1631,9 @@ Description: {kb_description}
 ## Extracted concepts (with mention counts)
 {concepts_summary}
 
+## Extracted topics
+{topics_summary}
+
 ## KB reconciliation results
 {kb_reconciliation}
 
@@ -1642,6 +1646,7 @@ Produce a JSON compilation plan:
       "slug": "concept/example-name",
       "title": "Example Page Title",
       "page_type": "entity | concept | topic",
+      "topic": "short canonical topic name",
       "entity_names": ["entity or concept name covered by this page"],
       "related_kb_pages": ["existing-slug-1"],
       "priority": 1
@@ -1656,6 +1661,10 @@ Rules:
 - For UPDATE, slug MUST be an existing wiki page slug from the KB
   reconciliation list above.
 - page_type is one of: entity | concept | topic. Do NOT use "source".
+- topic is required for every page. Prefer a topic from the extracted
+  topics implied by the entities/concepts. If none fits, create a short
+  canonical topic name in the user's language. For topic pages, topic should
+  usually match the page title.
 
 # Slug format (CRITICAL — every slug must follow this shape exactly)
 - The slug is ``<page_type>/<short-descriptive-name>``. The separator
@@ -1958,6 +1967,7 @@ async def _wiki_resolve_maybe_items(
 async def _wiki_planning_call(
     canonical_entities: list[dict],
     canonical_concepts: list[dict],
+    raw_topics: list,
     reconciliation: dict[str, dict],
     chat_mdl,
     kb_name: str | None,
@@ -1981,6 +1991,7 @@ async def _wiki_planning_call(
 
     entities_summary = "\n".join(_wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]) or "  (none)"
     concepts_summary = "\n".join(_wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]) or "  (none)"
+    topics_summary = "\n".join(f"  - {t.strip()}" for t in raw_topics[:200] if isinstance(t, str) and t.strip()) or "  (none)"
 
     kb_lines: list[str] = []
     for name, rec in reconciliation.items():
@@ -1993,6 +2004,7 @@ async def _wiki_planning_call(
         kb_description=kb_description or "(no description)",
         entities_summary=entities_summary,
         concepts_summary=concepts_summary,
+        topics_summary=topics_summary,
         kb_reconciliation=kb_reconciliation,
         target_page_count=target_page_count,
     )
@@ -2013,6 +2025,13 @@ async def _wiki_planning_call(
         return {"pages": [], "estimated_page_count": 0, "compilation_notes": "planner returned non-object"}
     if "pages" not in res or not isinstance(res.get("pages"), list):
         res["pages"] = []
+    for page in res["pages"]:
+        if not isinstance(page, dict):
+            continue
+        topic = page.get("topic")
+        if not isinstance(topic, str) or not topic.strip():
+            fallback = page.get("title") or page.get("slug") or page.get("page_type") or "General"
+            page["topic"] = str(fallback).strip() or "General"
     if "estimated_page_count" not in res:
         res["estimated_page_count"] = len(res["pages"])
     res.setdefault("compilation_notes", "")
@@ -2334,6 +2353,7 @@ async def wiki_plan_from_reduction(
     plan = await _wiki_planning_call(
         canonical_entities=canonical_entities,
         canonical_concepts=canonical_concepts,
+        raw_topics=raw_topics,
         reconciliation=reconciliation,
         chat_mdl=chat_mdl,
         kb_name=kb_name,
@@ -2820,19 +2840,20 @@ async def _wiki_build_source_context(
 
 _WIKILINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
 _WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
+_ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
-    """Rewrite ``[[slug]]`` / ``[[slug|display]]`` wikilinks to standard
-    markdown links whose href encodes ``(kb_id, slug)`` so a renderer can
-    fetch the target page from ES.
+def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, str] | None = None) -> tuple[str, list[str]]:
+    """Normalize wiki links and return ``(rendered_md, unique_outlinks)``.
 
-    Returns ``(rewritten_md, unique_outlinks)`` — outlinks are slug strings
-    in first-seen order. The href format is ``artifact/{kb_id}/{slug}`` which is
-    relative; clients are expected to map this to whatever route serves the
-    page (e.g. ``/api/v1/artifact/{kb_id}/{slug}``).
+    Both the canonical ``[[slug]]`` form and Markdown links emitted by an LLM
+    are accepted. Artifact links are rewritten to the relative
+    ``artifact/{kb_id}/{slug}`` form. When an artifact link uses its slug as
+    the label, prefer the planned page title; otherwise derive readable text
+    from the slug.
     """
     kb_id_str = str(kb_id)
+    page_titles = page_titles or {}
     seen: set[str] = set()
     outlinks: list[str] = []
 
@@ -2841,6 +2862,38 @@ def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
         if s and s not in seen:
             seen.add(s)
             outlinks.append(s)
+
+    def _display_text(label: str, slug: str) -> str:
+        label = label.strip()
+        if label not in {slug, slug.rsplit("/", 1)[-1]}:
+            return label
+        planned_title = page_titles.get(slug)
+        if planned_title:
+            return planned_title
+        readable = slug.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip()
+        return readable.title() or label
+
+    def _artifact_slug(href: str) -> str | None:
+        parsed = urlsplit(href)
+        if parsed.scheme or parsed.netloc:
+            if parsed.netloc != "artifact":
+                return None
+            path = parsed.path
+        else:
+            path = parsed.path
+        parts = path.strip("/").split("/")
+        if parts and parts[0] == "artifact":
+            parts = parts[1:]
+        if len(parts) < 2 or parts[0] != kb_id_str:
+            return None
+        return "/".join(parts[1:])
+
+    def _markdown_artifact(m: re.Match) -> str:
+        slug = _artifact_slug(m.group(2))
+        if not slug:
+            return m.group(0)
+        _track(slug)
+        return f"[{_display_text(m.group(1), slug)}](artifact/{kb_id_str}/{slug})"
 
     def _piped(m: re.Match) -> str:
         slug = m.group(1).strip()
@@ -2851,9 +2904,10 @@ def _wiki_transform_links(content_md: str, kb_id: str) -> tuple[str, list[str]]:
     def _simple(m: re.Match) -> str:
         slug = m.group(1).strip()
         _track(slug)
-        return f"[{slug}](artifact/{kb_id_str}/{slug})"
+        return f"[{_display_text(slug, slug)}](artifact/{kb_id_str}/{slug})"
 
-    rewritten = _WIKILINK_PIPE_RE.sub(_piped, content_md or "")
+    rewritten = _ARTIFACT_MARKDOWN_LINK_RE.sub(_markdown_artifact, content_md or "")
+    rewritten = _WIKILINK_PIPE_RE.sub(_piped, rewritten)
     rewritten = _WIKILINK_SIMPLE_RE.sub(_simple, rewritten)
     return rewritten, outlinks
 
@@ -3277,7 +3331,7 @@ async def wiki_refine_from_plan(
         callback: optional ``(progress: float, msg: str)`` callback.
 
     Returns the list of page dicts (one per planned entry). Each page dict
-    has ``slug, title, page_type, action, content_md, summary,
+    has ``slug, title, page_type, topic, action, content_md, summary,
     entity_names, related_kb_pages, source_chunk_ids``.
     """
     # Defensive: some callers accidentally pass the result of
@@ -3341,6 +3395,7 @@ async def wiki_refine_from_plan(
     all_claims = plan.get("_claims") or []
     # ``all_plan_slugs`` is implicitly deduped now (pages_spec is unique).
     all_plan_slugs = [p["slug"] for p in pages_spec]
+    page_titles = {str(p["slug"]): str(p.get("title") or "").strip() for p in pages_spec if p.get("slug") and str(p.get("title") or "").strip()}
 
     # Build canonical entity/concept lookups for evidence fallback. When MAP
     # produced no claims (a real failure mode we've seen on Chinese / dense
@@ -3462,14 +3517,19 @@ async def wiki_refine_from_plan(
                     )
 
                 # Render artifactlinks once, here, after all LLM transforms.
-                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id)
+                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id, page_titles=page_titles)
                 source_doc_ids = await _wiki_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
                 summary = _wiki_extract_summary(content_md_rendered) or title
+
+                topic = plan_item.get("topic")
+                if not isinstance(topic, str) or not topic.strip():
+                    topic = title or slug
 
                 page = {
                     "slug": slug,
                     "title": title,
                     "page_type": page_type,
+                    "topic": topic.strip(),
                     "action": action,
                     # Rendered content (with clickable artifact/{kb_id}/{slug} links) is
                     # what callers and the UI consume; the raw [[slug]] form is

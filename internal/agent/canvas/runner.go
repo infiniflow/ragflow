@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// runner.go — Canvas execution runtime. Drives a Canvas invocation
+// Package canvas runner.go — Canvas execution runtime. Drives a Canvas invocation
 // (the caller supplies the RunFunc that does Compile+Invoke), catches
 // the four possible outcomes, and surfaces them as RunEvent values on
 // a channel that the HTTP layer streams as SSE frames.
@@ -44,7 +44,6 @@
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
 //   - RunEvent.Type == "error"            → {message: <string>}
-//   - RunEvent.Type == "done"             → final terminator frame
 package canvas
 
 import (
@@ -52,12 +51,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
@@ -108,15 +106,18 @@ type NodeFinishedData struct {
 
 // MessageEvent is the JSON payload for Type=="message" frames.
 type MessageEvent struct {
-	Content   string        `json:"content"`
-	Reference []interface{} `json:"reference,omitempty"`
+	Content      string      `json:"content"`
+	Reference    interface{} `json:"reference,omitempty"`
+	Thinking     string      `json:"thinking,omitempty"`
+	StartToThink bool        `json:"start_to_think,omitempty"`
+	EndToThink   bool        `json:"end_to_think,omitempty"`
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
 type MessageEndEvent struct {
 	Status     *string       `json:"status,omitempty"`
 	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  []interface{} `json:"reference,omitempty"`
+	Reference  interface{}   `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -250,13 +251,13 @@ func (r *Runner) Run(
 	// message_id is generated per-run so the front-end can correlate
 	// all events for a single user turn. task_id is the published
 	// version id (if available) or a per-run UUID.
-	messageID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	messageID := utility.GenerateToken()
 	taskID := ""
 	if v, ok := root["version_id"].(string); ok && v != "" {
 		taskID = v
 	}
 	if taskID == "" {
-		taskID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		taskID = utility.GenerateToken()
 	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
@@ -336,11 +337,6 @@ func (r *Runner) Run(
 					}
 				}
 				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-				// Always close a RunAgent call with the `done`
-				// terminator so the front-end can rely on a
-				// channel-end sentinel regardless of whether the run
-				// completed, errored, or paused for user input.
-				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 				return
 			}
 			if IsInterruptError(runErr) {
@@ -350,22 +346,11 @@ func (r *Runner) Run(
 				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
 				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
-				push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 				return
 			}
 			pushErr(out, runErr.Error())
-			// Close the channel with the `done` terminator so the
-			// front-end sees a channel-end sentinel on the error
-			// path too — matches the contract for completed and
-			// waiting-for-user paths above.
-			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 			return
 		}
-
-		// Normal completion — the buildRunFunc already emitted the
-		// workflow events during execution. Runner just sends the
-		// terminator.
-		push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 	}()
 
 	return out
