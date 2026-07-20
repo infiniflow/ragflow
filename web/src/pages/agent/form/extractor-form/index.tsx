@@ -4,6 +4,7 @@ import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -27,6 +28,7 @@ import { useSwitchPrompt } from './use-switch-prompt';
 
 export const FormSchema = z.object({
   field_name: z.string(),
+  document_level: z.boolean().default(false),
   sys_prompt: z.string(),
   prompts: z.string().optional(),
   ...LlmSettingSchema,
@@ -80,6 +82,26 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
             ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
+
+        {!isToc && (
+          <RAGFlowFormItem
+            name="document_level"
+            label={t('flow.documentLevel')}
+            tooltip={t('flow.documentLevelTip')}
+            horizontal={true}
+            labelClassName="w-full"
+            valueClassName="w-8"
+          >
+            {(field) => (
+              <Switch
+                checked={field.value}
+                onCheckedChange={(checked) => {
+                  field.onChange?.(checked);
+                }}
+              />
+            )}
+          </RAGFlowFormItem>
+        )}
 
         {!isToc && (
           <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">

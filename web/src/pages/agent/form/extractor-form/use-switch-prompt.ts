@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 export const FormSchema = z.object({
   field_name: z.string(),
+  document_level: z.boolean().default(false),
   sys_prompt: z.string(),
   prompts: z.string().optional(),
   ...LlmSettingSchema,
