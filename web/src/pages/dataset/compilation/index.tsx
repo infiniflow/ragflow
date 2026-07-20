@@ -54,6 +54,7 @@ export default function Compilation() {
             >
               {t('knowledgeDetails.llmWiki')}
             </Button>
+
             <Button
               variant={viewMode === ViewMode.Skills ? 'default' : 'outline'}
               size="sm"
