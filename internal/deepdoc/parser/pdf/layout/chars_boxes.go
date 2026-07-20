@@ -2,13 +2,23 @@ package layout
 
 import (
 	"math"
-	"regexp"
 	"sort"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
+
+// hasCJK reports whether s contains a CJK rune. CJK scripts do not separate
+// words with spaces, so geometric gaps between their glyphs must not become one.
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if pdf.IsCJK(r) {
+			return true
+		}
+	}
+	return false
+}
 
 // CharsToBoxes converts raw characters to initial text boxes by grouping
 // characters into lines based on vertical overlap.
@@ -169,12 +179,6 @@ func verticalOverlap(a, b pdf.TextChar) bool {
 }
 
 // lineToTextBox converts a line of characters to a single pdf.TextBox.
-// asciiWordPattern matches strings composed entirely of ASCII word
-// characters. Python uses re.match (prefix match) — the stricter
-// full-string match here is equivalent in practice because each
-// pdf.TextChar.Text is a single rune, so prevText+currText ≤ 2 chars.
-// Python: pdf_parser.py:1528 re.match(r"[0-9a-zA-Z,.:;!%]+", ...)
-var asciiWordPattern = regexp.MustCompile(`^[0-9a-zA-Z,.:;!%]+$`)
 
 func LineToTextBox(chars []pdf.TextChar) pdf.TextBox {
 	if len(chars) == 0 {
@@ -186,21 +190,32 @@ func LineToTextBox(chars []pdf.TextChar) pdf.TextBox {
 		Top:    chars[0].Top,
 		Bottom: chars[0].Bottom,
 	}
+	// Recover missing spaces from geometry: many PDFs encode no space glyphs and
+	// separate words by positioning alone. For a script that separates words with
+	// spaces, a gap wider than a fraction of the mean char width is a word
+	// boundary; intra-word kerns fall well below it. CJK is excluded: it does not
+	// write inter-word spaces, so a gap between CJK glyphs is ordinary tracking,
+	// not a boundary.
+	var sumWidth float64
+	var nWidth int
+	for _, c := range chars {
+		if strings.TrimSpace(c.Text) != "" {
+			sumWidth += c.X1 - c.X0
+			nWidth++
+		}
+	}
+	var spaceGap float64
+	if nWidth > 0 {
+		spaceGap = (sumWidth / float64(nWidth)) * 0.25
+	}
 	var textParts []string
 	for i, c := range chars {
-		// Insert space between adjacent ASCII words with a visible gap.
-		// Python: pdf_parser.py:1524-1532 __img_ocr space insertion.
-		if i > 0 {
+		if i > 0 && spaceGap > 0 {
 			prev := chars[i-1]
-			prevText := strings.TrimSpace(prev.Text)
-			currText := strings.TrimSpace(c.Text)
-			if prevText != "" && currText != "" {
-				gap := c.X0 - prev.X1
-				minWidth := math.Min(c.X1-c.X0, prev.X1-prev.X0)
-				if gap >= minWidth/2 &&
-					asciiWordPattern.MatchString(prevText+currText) {
-					textParts = append(textParts, " ")
-				}
+			if strings.TrimSpace(prev.Text) != "" && strings.TrimSpace(c.Text) != "" &&
+				!hasCJK(prev.Text) && !hasCJK(c.Text) &&
+				c.X0-prev.X1 > spaceGap {
+				textParts = append(textParts, " ")
 			}
 		}
 		box.X0 = math.Min(box.X0, c.X0)

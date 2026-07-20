@@ -314,7 +314,7 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 		kbs = append(kbs, kb)
 	}
 
-	if err := validateDatasetEmbeddingModels(kbs); err != nil {
+	if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
 		return nil, err
 	}
 	return normalizedIDs, nil

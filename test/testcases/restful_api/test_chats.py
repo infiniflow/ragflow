@@ -271,7 +271,7 @@ def test_chat_delete_error_and_repeat_contract(rest_client, clear_chats):
         assert f"Chat({chat_id}) not found." in second_payload["message"], second_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_delete_concurrent_and_bulk_contract(rest_client, clear_chats):
     concurrent_ids = _reset_chat_batch(rest_client, "delete_concurrent", count=20)
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -357,7 +357,7 @@ def test_chat_list_keyword_and_invalid_param_contract(rest_client, clear_chats):
             assert payload["data"]["chats"][0]["name"] == expected_name, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_list_page_and_page_size_contract(rest_client, clear_chats):
     cases = [
         ("page none", {"page": None, "page_size": 2}, 0, lambda total: total, ""),
@@ -426,7 +426,7 @@ def test_chat_list_sorting_contract(rest_client, clear_chats):
             assert expected_message in payload["message"], (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_list_concurrent_and_dataset_delete_contract(rest_client, clear_chats, ensure_parsed_document):
     _reset_chat_batch(rest_client, "list_concurrent")
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -1456,7 +1456,7 @@ def test_update_chat_allows_knowledge_placeholder_without_sources_unit(monkeypat
     assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
 
 
-@pytest.mark.p1
+@pytest.mark.p3
 def test_chat_create_dataset_ids_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -1495,7 +1495,7 @@ def test_chat_create_avatar_contract(rest_client, clear_chats, tmp_path):
     assert payload["data"]["icon"] == encoded_avatar, payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -1555,7 +1555,7 @@ def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             assert body["message"] == expected_message, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_create_prompt_contract(rest_client, clear_chats):
     cases = [
         (
@@ -1706,7 +1706,7 @@ def test_chat_update_name_contract(rest_client, clear_chats):
             assert payload["message"] == expected_message, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_dataset_ids_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     target_res = rest_client.post("/chats", json={"name": "restful_chat_update_dataset_target", "dataset_ids": []})
@@ -1741,7 +1741,7 @@ def test_chat_update_dataset_ids_contract(rest_client, clear_chats, ensure_parse
             assert payload["message"] == expected_message, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_avatar_contract(rest_client, clear_chats, ensure_parsed_document, tmp_path):
     dataset_id, _ = ensure_parsed_document()
     create_res = rest_client.post("/chats", json={"name": "restful_chat_update_avatar_target", "dataset_ids": []})
@@ -1770,7 +1770,7 @@ def test_chat_update_avatar_contract(rest_client, clear_chats, ensure_parsed_doc
     assert get_payload["data"]["dataset_ids"] == [dataset_id], get_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -1842,7 +1842,7 @@ def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             assert body["message"] == expected_message, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_prompt_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [

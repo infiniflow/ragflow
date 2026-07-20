@@ -456,9 +456,8 @@ func (p *Parser) buildLayout(ctx context.Context,
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 
-	// FinalReadingOrderMerge sorts page → column (ColID) → top → x0, which
-	// is the correct multi-column reading order. NaiveVerticalMerge preserves
-	// this column-major order (it buckets by ColID before merging).
+	// Preserve column-major content order while NaiveVerticalMerge promotes a
+	// page-leading title isolated in its own column.
 	boxes = lyt.FinalReadingOrderMerge(boxes)
 
 	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, pageEnglish)

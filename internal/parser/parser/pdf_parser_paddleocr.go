@@ -47,7 +47,7 @@ func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) Pars
 
 	resp, err := driver.OCRFile(&algorithm, data, &filename, apiConfig, &models.OCRConfig{
 		Algorithm: algorithm,
-	})
+	}, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)}
 	}

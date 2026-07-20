@@ -17,9 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
@@ -167,6 +168,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Query: ?type=builtin returns built-in templates (default).
 		if r.pipelineHandler != nil {
 			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+			apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 		}
 
 		// searchbots
@@ -318,7 +320,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Document routes
 			documents := v1.Group("/documents")
 			{
-				documents.POST("", r.documentHandler.CreateDocument)
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
