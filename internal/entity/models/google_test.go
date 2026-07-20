@@ -329,8 +329,8 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	pages := []googleModelPage{
-		{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
-		{items: []DSModel{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
 	}
 	var pageTokens []string
 
@@ -374,7 +374,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
-			return googleModelPage{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
+			return googleModelPage{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
 		}
 		return googleModelPage{}, pageErr
 	})

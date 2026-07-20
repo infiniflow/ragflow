@@ -69,40 +69,16 @@ const useTraceQuery = (
   });
 };
 
-export const useTraceGenerate = ({ open }: { open: boolean }) => {
+const TraceTypeMap: Record<GenerateType, TraceType> = {
+  [GenerateType.KnowledgeGraph]: TraceType.Graph,
+  [GenerateType.Raptor]: TraceType.Raptor,
+  [GenerateType.Artifact]: TraceType.Artifact,
+  [GenerateType.ToSkills]: TraceType.Skill,
+};
+
+export const useTraceRunData = (type: GenerateType) => {
   const { id } = useParams();
-  const { data: graphRunData, isFetching: graphRunLoading } = useTraceQuery(
-    GenerateType.KnowledgeGraph,
-    TraceType.Graph,
-    open,
-    id,
-  );
-  const { data: raptorRunData, isFetching: raptorRunLoading } = useTraceQuery(
-    GenerateType.Raptor,
-    TraceType.Raptor,
-    open,
-    id,
-  );
-
-  const { data: artifactRunData, isFetching: artifactRunLoading } =
-    useTraceQuery(GenerateType.Artifact, TraceType.Artifact, open, id);
-  const { data: skillRunData, isFetching: skillRunLoading } = useTraceQuery(
-    GenerateType.ToSkills,
-    TraceType.Skill,
-    open,
-    id,
-  );
-
-  return {
-    graphRunData,
-    graphRunLoading,
-    raptorRunData,
-    raptorRunLoading,
-    artifactRunData,
-    artifactRunLoading,
-    skillRunData,
-    skillRunLoading,
-  };
+  return useTraceQuery(type, TraceTypeMap[type], true, id);
 };
 
 export const useUnBindTask = () => {
@@ -144,15 +120,7 @@ export const useDatasetGenerate = () => {
   } = useMutation({
     mutationKey: [DatasetKey.generate],
     mutationFn: async ({ type }: { type: GenerateType }) => {
-      const indexType =
-        type === GenerateType.KnowledgeGraph
-          ? TraceType.Graph
-          : type === GenerateType.Artifact
-            ? TraceType.Artifact
-            : type === GenerateType.ToSkills
-              ? TraceType.Skill
-              : TraceType.Raptor;
-      const { data } = await runIndex(id!, indexType);
+      const { data } = await runIndex(id!, TraceTypeMap[type]);
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({

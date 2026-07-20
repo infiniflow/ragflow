@@ -37,7 +37,6 @@ import {
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
 import { ChildrenDelimiterForm } from '../children-delimiter-form';
-import { CompilationTemplateFormField } from '../compilation-template-form-field';
 import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
@@ -153,7 +152,6 @@ export function ChunkMethodDialog({
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
-        compilation_template_group_id: z.array(z.string()).optional(),
       }),
     })
     .superRefine((data, ctx) => {
@@ -301,10 +299,6 @@ export function ChunkMethodDialog({
             <div className="space-y-6">
               <ParseTypeItem />
               {parseType === ParseType.BuiltIn && <ChunkMethodItem />}
-
-              {parseType === ParseType.BuiltIn && (
-                <CompilationTemplateFormField></CompilationTemplateFormField>
-              )}
 
               {showPages && parseType === ParseType.BuiltIn && (
                 <DynamicPageRange />

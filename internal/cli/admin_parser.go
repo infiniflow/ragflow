@@ -949,6 +949,151 @@ func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
 
 // endregion SHOW commands
 
+// region STATS commands
+
+// STATS USER 'user_name' FROM <start_time> TO <end_time> HOUR, DAY, MONTH
+// STATS USER 'user_name' FROM <start_time> TO <end_time>
+// STATS USERS TOP <n> FROM <start_time> TO <end_time>
+// STATS SUMMARY FROM <start_time> TO <end_time>
+func (p *Parser) parseAdminStatsCommands() (*Command, error) {
+	p.nextToken() // consume STATS
+
+	switch p.curToken.Type {
+	case TokenUser:
+		return p.parseAdminStatsUser()
+	case TokenUsers:
+		return p.parseAdminStatsUsers()
+	case TokenSummary:
+		return p.parseAdminStatsSummary()
+	default:
+		return nil, fmt.Errorf("expected USER or MODEL or SUMMARY after STATS")
+	}
+}
+
+// STATS USER 'user_name' FROM <start_time> TO <end_time> HOUR, DAY, MONTH
+// STATS USER 'user_name' FROM <start_time> TO <end_time>
+func (p *Parser) parseAdminStatsUser() (*Command, error) {
+	p.nextToken() // consume USER
+
+	cmd := NewCommand("admin_stats_user")
+
+	userName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Params["user_name"] = userName
+	p.nextToken()
+
+	// Parse time range
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		cmd.Params["from"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+	if p.curToken.Type == TokenTo {
+		p.nextToken()
+		cmd.Params["to"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+
+	switch p.curToken.Type {
+	case TokenHour:
+		p.nextToken()
+		cmd.Params["granularity"] = "HOUR"
+	case TokenDay:
+		p.nextToken()
+		cmd.Params["granularity"] = "DAY"
+	case TokenMonth:
+		p.nextToken()
+		cmd.Params["granularity"] = "MONTH"
+	default:
+		p.nextToken()
+		cmd.Params["granularity"] = "HOUR"
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// STATS USERS TOP <n> FROM <start_time> TO <end_time>
+func (p *Parser) parseAdminStatsUsers() (*Command, error) {
+	p.nextToken() // consume USERS
+	cmd := NewCommand("admin_stats_users")
+
+	cmd.Params["top"] = 10
+
+	var err error
+	if p.curToken.Type == TokenTop {
+		p.nextToken()
+		cmd.Params["top"], err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		cmd.Params["from"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+	if p.curToken.Type == TokenTo {
+		p.nextToken()
+		cmd.Params["to"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// STATS SUMMARY FROM <start_time> TO <end_time>
+func (p *Parser) parseAdminStatsSummary() (*Command, error) {
+	p.nextToken() // consume SUMMARY
+	cmd := NewCommand("admin_stats_summary")
+
+	var err error
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		cmd.Params["from"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+	if p.curToken.Type == TokenTo {
+		p.nextToken()
+		cmd.Params["to"], err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// endregion STATS commands
+
 // CHECK LICENSE
 // CHECK PROVIDER 'provider_name' REGION 'region_name' KEY 'api_key' [URL 'base_url'];
 // CHECK PROVIDER 'provider_name' INSTANCE 'instance_name';

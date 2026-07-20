@@ -677,11 +677,11 @@ export default {
       modelID: '模型ID',
       modelUid: '模型uid',
       modelType: '模型類型',
-      addLlmBaseUrl: '基礎 Url',
+      addLlmBaseUrl: '基礎 URL',
       vision: '是否支持 Vision',
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
-      baseUrlNameMessage: '請輸入基礎 Url！',
+      baseUrlNameMessage: '請輸入基礎 URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',

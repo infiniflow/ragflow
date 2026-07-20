@@ -28,14 +28,14 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
-  ChunkMethodItem,
+  BuiltinPipelineItem,
   EmbeddingModelItem,
   ParseTypeItem,
 } from '../dataset/dataset-setting/configuration/common-item';
 
 const FormId = 'dataset-creating-form';
 
-const ChunkMethodName = 'chunk_method';
+const ChunkMethodName = 'parser_id';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
@@ -98,7 +98,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const nextData =
-      parseType === ParseType.BuiltIn ? data : omit(data, ChunkMethodName);
+      parseType === ParseType.BuiltIn
+        ? omit(data, ['pipeline_id'])
+        : omit(data, [ChunkMethodName]);
     onOk?.(nextData);
   }
 
@@ -140,7 +142,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
         {parseType === ParseType.BuiltIn && (
-          <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
+          <BuiltinPipelineItem name={ChunkMethodName} />
         )}
         {parseType === ParseType.Pipeline && (
           <DataFlowSelect

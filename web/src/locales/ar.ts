@@ -1136,7 +1136,7 @@ export default {
       modelType: 'نوع النموذج',
       modelTypeMessage: 'الرجاء إدخال نوع النموذج الخاص بك!',
       addLlmBaseUrl: 'عنوان URL الأساسي',
-      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك!',
+      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك',
       paddleocr: {
         apiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
         apiUrlPlaceholder:

@@ -174,6 +174,13 @@ export default {
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
+  deleteDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  deleteDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
@@ -408,6 +415,8 @@ export default {
   removeDataflow: `${webAPI}/dataflow/rm`,
   listDataflow: `${webAPI}/dataflow/list`,
   runDataflow: `${webAPI}/dataflow/run`,
+  listBuiltinPipelines: `${restAPIv1}/pipelines`,
+  getBuiltinPipeline: (id: string) => `${restAPIv1}/pipelines/${id}`,
 
   // admin
   adminLogin: `${restAPIv1}/admin/login`,
