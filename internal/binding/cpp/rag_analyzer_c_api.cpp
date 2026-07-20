@@ -44,6 +44,12 @@ void RAGAnalyzer_SetEnablePosition(RAGAnalyzerHandle handle, bool enable_positio
     analyzer->SetEnablePosition(enable_position);
 }
 
+void RAGAnalyzer_SetLanguage(RAGAnalyzerHandle handle, const char* language) {
+    if (!handle || !language) return;
+    RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
+    analyzer->SetLanguage(std::string(language));
+}
+
 int RAGAnalyzer_Analyze(RAGAnalyzerHandle handle, const char* text, RAGTokenCallback callback) {
     if (!handle || !text || !callback) return -1;
 

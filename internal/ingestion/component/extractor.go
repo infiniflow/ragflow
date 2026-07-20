@@ -399,6 +399,7 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
+	lang         string
 	chunks       []map[string]any
 }
 
@@ -427,6 +428,9 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
+	}
+	if v, ok := inputs["lang"].(string); ok && v != "" {
+		out.lang = v
 	}
 	for _, key := range extractorChunkInputOrder(inputs) {
 		if chunks, ok := extractorChunkList(inputs[key]); ok {
@@ -579,6 +583,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 		return nil
 	}
 	ck["important_kwd"] = kwds
+	tokenizer.SetLanguage(in.lang)
 	tks, tkErr := tokenizer.Tokenize(strings.Join(kwds, " "))
 	if tkErr == nil {
 		ck["important_tks"] = tks
@@ -616,6 +621,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorI
 		return nil
 	}
 	ck["question_kwd"] = filtered
+	tokenizer.SetLanguage(in.lang)
 	tks, tkErr := tokenizer.Tokenize(strings.Join(filtered, "\n"))
 	if tkErr == nil {
 		ck["question_tks"] = tks

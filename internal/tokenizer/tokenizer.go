@@ -77,6 +77,7 @@ var (
 	globalPool    *analyzerPool
 	poolOnce      sync.Once
 	poolInitError error
+	globalLang    atomic.Value // string: language for acquired instances
 )
 
 // Init initializes the elastic analyzer pool with the given configuration
@@ -407,6 +408,10 @@ func withAnalyzer(fn func(*rag.Analyzer) error) error {
 	}
 	defer globalPool.release(instance)
 
+	if lang, ok := globalLang.Load().(string); ok && lang != "" {
+		instance.analyzer.SetLanguage(lang)
+	}
+
 	return fn(instance.analyzer)
 }
 
@@ -422,6 +427,10 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 		return result, err
 	}
 	defer globalPool.release(instance)
+
+	if lang, ok := globalLang.Load().(string); ok && lang != "" {
+		instance.analyzer.SetLanguage(lang)
+	}
 
 	return fn(instance.analyzer)
 }
@@ -451,6 +460,13 @@ func Analyze(text string) ([]rag.Token, error) {
 	return withAnalyzerResult(func(a *rag.Analyzer) ([]rag.Token, error) {
 		return a.Analyze(text)
 	})
+}
+
+// SetLanguage configures the tokenizer for the given language (e.g. stemming,
+// stop-word lists). Mirrors Python's `rag_tokenizer.tokenizer.set_language(lang)`.
+// The language is stored and applied to each pool instance on the next acquire.
+func SetLanguage(language string) {
+	globalLang.Store(language)
 }
 
 // SetFineGrained sets whether to use fine-grained tokenization

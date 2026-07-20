@@ -356,8 +356,10 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 
 	normalizeChunkTextFallback(chunks)
 
+	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
+
 	if contains(c.param.SearchMethod, "full_text") {
-		if err := tokenizeChunks(chunks, titleStem); err != nil {
+		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
 	}
@@ -629,8 +631,15 @@ func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
 
 // tokenizeChunks annotates each chunk with title_tks, content_ltks,
 // and (when applicable) question_tks / important_tks / summary fields.
-// Mirrors python tokenizer.py:130-185.
-func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
+// Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
+// tokenize_chunks().
+//
+// language sets the Snowball stemmer language via tokenizer.SetLanguage,
+// matching Python's rag_tokenizer.tokenizer.set_language(language) call
+// inside tokenize(). Defaults to "English" for backward compatibility;
+// currently a no-op until the CGo binding exposes Analyzer.SetLanguage.
+func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
+	tokenizer.SetLanguage(language)
 	for i := range chunks {
 		ck := &chunks[i]
 		ck.ChunkOrderInt = intPtr(i)

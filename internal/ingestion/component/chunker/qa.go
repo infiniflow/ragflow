@@ -118,7 +118,9 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
+	lang, _ := inputs["lang"].(string)
 	for _, pair := range qaPairs {
+		tokenizer.SetLanguage(lang)
 		contentLTKS, _ := tokenizer.Tokenize(pair.Question)
 		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
 		answer := rmQAPrefix(pair.Answer)
@@ -258,9 +260,17 @@ func extractQAText(text string) []qaPair {
 		return nil
 	}
 	lines := strings.Split(text, "\n")
-
 	delimiter := detectDelimiter(lines)
 
+	if delimiter == "\t" {
+		return extractQATextTab(lines)
+	}
+	return extractQATextCSV(text, lines)
+}
+
+// extractQATextTab handles tab-delimited Q&A where no CSV quoting
+// rules apply and physical lines always map 1:1 to records.
+func extractQATextTab(lines []string) []qaPair {
 	var pairs []qaPair
 	var question, answer string
 
@@ -268,7 +278,7 @@ func extractQAText(text string) []qaPair {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		parts := splitQA(line, delimiter)
+		parts := strings.Split(line, "\t")
 		if len(parts) != 2 {
 			if question != "" {
 				answer += "\n" + line
@@ -280,6 +290,66 @@ func extractQAText(text string) []qaPair {
 		}
 		question = parts[0]
 		answer = parts[1]
+	}
+	if question != "" {
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+	}
+	return pairs
+}
+
+// extractQATextCSV uses a full-text csv.Reader so that quoted fields
+// that span multiple physical lines are parsed correctly (mirrors the
+// Python fix in infiniflow/ragflow#16881).
+//
+// Because csv.Reader can merge several physical lines into one record,
+// we track the byte offset via InputOffset() and map it back to the
+// original lines slice so that malformed rows append the correct raw
+// continuation text.
+func extractQATextCSV(text string, lines []string) []qaPair {
+	// Pre‑compute the byte offset where each physical line starts.
+	lineStarts := make([]int, len(lines)+1)
+	off := 0
+	for i, l := range lines {
+		lineStarts[i] = off
+		off += len(l) + 1 // +1 for '\n'
+	}
+	lineStarts[len(lines)] = off // sentinel
+
+	r := csv.NewReader(strings.NewReader(text))
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	var pairs []qaPair
+	var question, answer string
+	prevLine := 0
+
+	for {
+		record, err := r.Read()
+		if err != nil {
+			break
+		}
+
+		// Map InputOffset back to the physical lines consumed.
+		endOff := int(r.InputOffset())
+		curLine := prevLine
+		for curLine < len(lineStarts) && lineStarts[curLine] < endOff {
+			curLine++
+		}
+
+		raw := strings.Join(lines[prevLine:curLine], "\n")
+		prevLine = curLine
+
+		if len(record) != 2 {
+			if question != "" {
+				answer += "\n" + raw
+			}
+			continue
+		}
+		if question != "" && answer != "" {
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+		}
+		question = record[0]
+		answer = record[1]
 	}
 	if question != "" {
 		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
@@ -301,24 +371,6 @@ func detectDelimiter(lines []string) string {
 		return "\t"
 	}
 	return ","
-}
-
-func splitQA(line, delimiter string) []string {
-	if delimiter == "\t" {
-		parts := strings.Split(line, "\t")
-		if len(parts) == 2 {
-			return parts
-		}
-		return []string{line}
-	}
-	r := csv.NewReader(strings.NewReader(line))
-	r.Comma = ','
-	r.LazyQuotes = true
-	records, err := r.Read()
-	if err != nil || len(records) != 2 {
-		return []string{line}
-	}
-	return records
 }
 
 // ---------------------------------------------------------------------------
