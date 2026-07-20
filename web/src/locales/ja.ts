@@ -2556,7 +2556,7 @@ export default {
       ref: '変数',
       stockCode: '銘柄コード',
       apiKeyPlaceholder:
-        'YOUR_API_KEY(https://serpapi.com/manage-API KEY から取得)',
+        'YOUR_API_KEY(https://serpapi.com/manage-api-key から取得)',
       flowStart: '開始',
       flowNum: 'N',
       test: 'テスト',

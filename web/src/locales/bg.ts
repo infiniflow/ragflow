@@ -1436,7 +1436,7 @@ The above is the content you need to summarize.`,
       ref: 'Променлива',
       stockCode: 'Борсов код',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (получен от https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (получен от https://serpapi.com/manage-api-key)',
       flowStart: 'Старт',
       flowNum: 'N',
       test: 'Тест',

@@ -1885,7 +1885,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       ref: 'Variabile',
       stockCode: 'Codice azione',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (ottenuta da https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (ottenuta da https://serpapi.com/manage-api-key)',
       flowStart: 'Inizio',
       flowNum: 'N',
       test: 'Test',

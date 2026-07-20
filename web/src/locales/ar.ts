@@ -1383,7 +1383,7 @@ export default {
       ref: 'عامل',
       stockCode: 'رمز المخزون',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (تم الحصول عليه من https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (تم الحصول عليه من https://serpapi.com/manage-api-key)',
       flowStart: 'يبدأ',
       flowNum: 'ن',
       test: 'امتحان',

@@ -1478,7 +1478,7 @@ Beispiel: Virtual Hosted Style`,
       ref: 'Variable',
       stockCode: 'Aktienkürzel',
       apiKeyPlaceholder:
-        'IHRE_API_KEY (erhalten von https://serpapi.com/manage-API KEY)',
+        'IHRE_API_KEY (erhalten von https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
       flowNum: 'N',
       test: 'Test',

@@ -1885,7 +1885,7 @@ export default {
       ref: '변수',
       stockCode: '종목 코드',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (https://serpapi.com/manage-API KEY 에서 발급)',
+        'YOUR_API_KEY (https://serpapi.com/manage-api-key 에서 발급)',
       flowStart: '시작',
       flowNum: 'N',
       test: '테스트',

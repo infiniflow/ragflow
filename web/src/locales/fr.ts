@@ -2491,7 +2491,7 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       ref: 'Variable',
       stockCode: 'Code action',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (obtenu depuis https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (obtenu depuis https://serpapi.com/manage-api-key)',
       flowStart: 'Démarrer',
       flowNum: 'N',
       test: 'Test',

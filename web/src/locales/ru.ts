@@ -1554,7 +1554,7 @@ export default {
       ref: 'Переменная',
       stockCode: 'Код акции',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (полученный с https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (полученный с https://serpapi.com/manage-api-key)',
       flowStart: 'Старт',
       flowNum: 'N',
       test: 'Тест',

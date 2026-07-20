@@ -2186,7 +2186,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       ref: 'Variable',
       stockCode: 'Stock code',
       apiKeyPlaceholder:
-        'YOUR_API_KEY (obtained from https://serpapi.com/manage-API KEY)',
+        'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
       flowNum: 'N',
       test: 'Test',
