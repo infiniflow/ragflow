@@ -154,6 +154,7 @@ const GenericProviderInstanceCard = forwardRef<
     providerName,
     formRef,
     providerConfig.verifyTransform,
+    modelInfoRef,
   );
   const handleDelete = useDeleteInstance(
     providerName,

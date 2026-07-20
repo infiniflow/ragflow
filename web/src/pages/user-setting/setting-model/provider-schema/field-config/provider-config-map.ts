@@ -77,6 +77,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.AzureOpenAI,
+        base_url: values.api_base,
         api_base: values.api_base,
         api_key: apiKey,
         model_info: [],

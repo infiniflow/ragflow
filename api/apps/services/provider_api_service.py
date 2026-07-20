@@ -661,13 +661,31 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
             }
             for model in model_info
             if model
-            for _type in model.get("model_type", [])
+            for _type in _factory_model_types(model)
         ]
         if not factory_llms:
             return False, f"No valid models found for provider '{provider_id_or_name}'", {}
     else:
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
+            # Local / OpenAI-compatible providers often have an empty factory
+            # catalog. Mirror the List-models path via ModelMeta.get_model_list
+            # so Verify does not falsely report an invalid API key when the UI
+            # did not send model_info.
+            api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key or {})
+            if provider_name in ModelMeta and base_url:
+                try:
+                    remote_models = await ModelMeta[provider_name](api_key_str, base_url).get_model_list()
+                    if remote_models:
+                        return True, "success", {}
+                    return False, f"No models found at base_url for provider '{provider_id_or_name}'", {}
+                except Exception as e:
+                    logging.exception(
+                        "Fail to list models while verifying provider=%s base_url=%s",
+                        provider_name,
+                        base_url,
+                    )
+                    return False, str(e), {}
             return False, f"No models found for provider '{provider_id_or_name}'", {}
 
     model_verify_result = {}
@@ -697,8 +715,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nEmbedding model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
                 label = f"embedding model({llm['llm_name']})"
+                try:
+                    mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
                 ok, result = await _run_verification(label, asyncio.to_thread(mdl.encode, ["Test if the api key is available"]), timeout_seconds)
                 if not ok:
                     msg += result
@@ -715,7 +739,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nChat model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                try:
+                    mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
 
                 temperature = 1 if llm["llm_name"] in ("kimi-k3", "kimi-k2.7-code") else 0.9
 
@@ -729,7 +760,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             return True
                     return False
 
-                label = f"model({provider_name}/{llm['llm_name']})"
                 ok, result = await _run_verification(label, check_streamly(), timeout_seconds)
                 if not ok:
                     msg += result
