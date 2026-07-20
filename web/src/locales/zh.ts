@@ -1728,6 +1728,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       selectFolder: '选择一个技能以查看详情',
       currentFolder: '技能',
       noContent: '无内容',
+      deleteAllTitle: '删除全部技能',
+      deleteAllDescription: '确定要删除全部技能吗？此操作无法撤销。',
+      deleteSkillTitle: '删除技能',
+      deleteSkillDescription: '确定要删除该技能吗？',
     },
     message: {
       registered: '注册成功',

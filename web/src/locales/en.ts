@@ -2066,6 +2066,11 @@ Example: Virtual Hosted Style`,
       selectFolder: 'Select a skill to view details',
       currentFolder: 'Skill',
       noContent: 'No content',
+      deleteAllTitle: 'Delete all skills',
+      deleteAllDescription:
+        'Are you sure you want to delete all skills? This action cannot be undone.',
+      deleteSkillTitle: 'Delete skill',
+      deleteSkillDescription: 'Are you sure you want to delete this skill?',
     },
     message: {
       registered: 'Registered!',
