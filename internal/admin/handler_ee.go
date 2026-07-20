@@ -1968,3 +1968,29 @@ func (h *Handler) GetTokenStatsSummary(c *gin.Context) {
 
 	common.SuccessWithData(c, stats, "success")
 }
+
+func (h *Handler) ListLogs(c *gin.Context) {
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+	days := c.Query("days")
+	if days == "" {
+		days = "7"
+	}
+	daysInt, err := strconv.Atoi(days)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid days")
+		return
+	}
+
+	stats, err := h.service.ListLogs(userName, daysInt)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+
+}

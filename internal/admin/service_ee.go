@@ -1328,3 +1328,16 @@ func (s *Service) GetTokenStatsSummary(fromDate, toDate string) (map[string]inte
 
 	return result, nil
 }
+
+// ListLogs lists operation logs for the user.
+func (s *Service) ListLogs(userName string, days int) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":   "list_logs",
+			"user_name": userName,
+			"days":      days,
+			"error":     "'List operation logs' is not supported",
+		},
+	}
+	return result, nil
+}
