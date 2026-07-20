@@ -232,8 +232,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, u
 	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
 		return common.CodeDataError, errors.New("Can't change `token_count`.")
 	}
-	if present["progress"] && req.Progress != nil && *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-		return common.CodeDataError, errors.New("Can't change `progress`.")
+	if present["progress"] && req.Progress != nil {
+		if *req.Progress > 1 {
+			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%v>", *req.Progress)
+		}
+		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
+			return common.CodeDataError, errors.New("Can't change `progress`.")
+		}
 	}
 
 	if present["enabled"] {

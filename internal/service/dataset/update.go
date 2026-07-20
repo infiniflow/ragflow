@@ -39,7 +39,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
+			return nil, common.CodeDataError, errors.New("`name` is required.")
 		}
 		if len(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
@@ -227,12 +227,18 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		}
 	}
 
-	if len(updates) == 0 && !connectorsProvided {
+	if len(updates) == 0 && !connectorsProvided && !req.ParserConfigProvided {
 		return nil, common.CodeDataError, errors.New("No properties were modified")
 	}
 
 	if len(updates) > 0 {
 		if err = d.kbDAO.UpdateByID(kb.ID, updates); err != nil {
+			if dao.IsDuplicateKeyErr(err) {
+				if nameValue, ok := updates["name"].(string); ok {
+					return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", nameValue)
+				}
+				return nil, common.CodeDataError, errors.New("Dataset name already exists")
+			}
 			return nil, common.CodeServerError, errors.New("Update dataset error.(Database error)")
 		}
 	}
