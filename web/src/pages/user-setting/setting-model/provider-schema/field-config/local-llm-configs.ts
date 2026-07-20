@@ -295,15 +295,20 @@ function buildLocalConfig(
       baseUrl: values.base_url,
       modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values) => ({
-      instance_name: values.instance_name,
-      llm_factory: llmFactory,
-      model_info: buildModelInfoFromValues(values),
-      api_base: values.base_url,
-      api_key: values.api_key,
-      ...(values.provider_order
-        ? { provider_order: values.provider_order }
-        : {}),
-    }),
+    submitTransform: (values) => {
+      const apiKey = values.provider_order
+        ? {
+            api_key: values.api_key ?? '',
+            provider_order: values.provider_order,
+          }
+        : (values.api_key ?? '');
+      return {
+        instance_name: values.instance_name,
+        llm_factory: llmFactory,
+        model_info: buildModelInfoFromValues(values),
+        api_base: values.base_url,
+        api_key: apiKey,
+      };
+    },
   };
 }
