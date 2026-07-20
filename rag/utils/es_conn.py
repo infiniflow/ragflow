@@ -27,7 +27,10 @@ from common.doc_store.es_conn_base import ESConnectionBase
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 3
+# Legacy alias. Kept so any stray import keeps working; new retry blocks should
+# reference MAX_RETRIES directly.
+ATTEMPT_TIME = MAX_RETRIES
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
 
@@ -310,7 +313,7 @@ class ESConnection(ESConnectionBase):
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = []
                 r = self.es.bulk(index=index_name, operations=operations, refresh="wait_for", timeout="60s")
@@ -323,13 +326,15 @@ class ESConnection(ESConnectionBase):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except ConnectionTimeout:
-                self.logger.exception("ES request timeout")
-                time.sleep(3)
+                self.logger.exception("ESConnection.insert bulk request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(2 ** attempt)
                 self._connect()
                 continue
             except Exception as e:
-                res.append(str(e))
-                self.logger.warning("ESConnection.insert got exception: " + str(e))
+                self.logger.exception("ESConnection.insert got exception: " + str(e))
+                raise
 
         return res
 
@@ -548,19 +553,22 @@ class ESConnection(ESConnectionBase):
         else:
             qry = bool_query
         self.logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = self.es.delete_by_query(index=index_name, body=Search().query(qry).to_dict(), refresh=True)
                 return res["deleted"]
             except ConnectionTimeout:
-                self.logger.exception("ES request timeout")
-                time.sleep(3)
+                self.logger.exception("ESConnection.delete request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(2 ** attempt)
                 self._connect()
                 continue
             except Exception as e:
                 self.logger.warning("ESConnection.delete got exception: " + str(e))
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):
                     return 0
+                raise
         return 0
 
     """
