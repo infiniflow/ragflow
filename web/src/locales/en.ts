@@ -517,7 +517,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       graph: 'Graph',
       graphPlaceholder: 'Graph view placeholder',
       llmWiki: 'LLM Wiki',
-      skills: 'Skills',
       contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
@@ -1013,7 +1012,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       representationUnsupported:
         'This representation type is not supported yet.',
-      representationEmpty: 'No representation templates available.',
+      representationEmpty: 'No artifact templates available.',
       enable: 'Enable',
       disable: 'Disable',
       delete: 'Delete',
@@ -2066,6 +2065,11 @@ Example: Virtual Hosted Style`,
       selectFolder: 'Select a skill to view details',
       currentFolder: 'Skill',
       noContent: 'No content',
+      deleteAllTitle: 'Delete all skills',
+      deleteAllDescription:
+        'Are you sure you want to delete all skills? This action cannot be undone.',
+      deleteSkillTitle: 'Delete skill',
+      deleteSkillDescription: 'Are you sure you want to delete this skill?',
     },
     message: {
       registered: 'Registered!',
