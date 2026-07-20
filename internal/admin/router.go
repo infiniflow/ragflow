@@ -244,6 +244,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/license", r.handler.SetLicense)
 			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
+
+			RegisterEERouter(protected, r)
 		}
 	}
 

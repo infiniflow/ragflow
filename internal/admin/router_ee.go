@@ -22,3 +22,6 @@ import (
 
 func SetupEERouter(engine *gin.Engine) {
 }
+
+func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
+}
