@@ -31,7 +31,10 @@ from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 3
+# Legacy alias. Kept so any stray import keeps working; new retry blocks should
+# reference MAX_RETRIES directly.
+ATTEMPT_TIME = MAX_RETRIES
 
 _PAGERANK_FEA_ADJUST_SCRIPT = """
 double cur = 0.0;
@@ -65,7 +68,8 @@ class OSConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
         logger.info(f"Use OpenSearch {settings.OS['hosts']} as the doc engine.")
-        for _ in range(ATTEMPT_TIME):
+        connected = False
+        for attempt in range(MAX_RETRIES):
             try:
                 self.os = OpenSearch(
                     settings.OS["hosts"].split(","),
@@ -73,13 +77,15 @@ class OSConnection(DocStoreConnection):
                     verify_certs=False,
                     timeout=600,
                 )
-                if self.os:
-                    self.info = self.os.info()
-                    break
+                self.info = self.os.info()
+                connected = True
+                break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting OpenSearch {settings.OS['hosts']} to be healthy.")
-                time.sleep(5)
-        if not self.os.ping():
+                logger.warning(f"{str(e)}. Waiting OpenSearch {settings.OS['hosts']} to be healthy. (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    break
+                time.sleep(2 ** attempt + 3)
+        if not connected or not self.os.ping():
             msg = f"OpenSearch {settings.OS['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
@@ -522,7 +528,7 @@ class OSConnection(DocStoreConnection):
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = []
                 r = self.os.bulk(index=(indexName), body=operations, refresh="wait_for", timeout=60)
@@ -534,14 +540,15 @@ class OSConnection(DocStoreConnection):
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
+            except ConnectionTimeout:
+                logger.exception("OSConnection.insert bulk request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(2 ** attempt + 1)
+                continue
             except Exception as e:
-                res.append(str(e))
-                logger.warning("OSConnection.insert got exception: " + str(e))
-                res = []
-                if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
-                    res.append(str(e))
-                    time.sleep(3)
-                    continue
+                logger.exception("OSConnection.insert got exception: " + str(e))
+                raise
         return res
 
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
@@ -735,18 +742,25 @@ class OSConnection(DocStoreConnection):
         else:
             qry = bool_query
         logger.debug("OSConnection.delete query: " + json.dumps(qry.to_dict()))
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 # print(Search().query(qry).to_dict(), flush=True)
                 res = self.os.delete_by_query(index=indexName, body=Search().query(qry).to_dict(), refresh=True)
                 return res["deleted"]
+            except ConnectionTimeout:
+                logger.exception("OSConnection.delete request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(2 ** attempt + 1)
+                continue
             except Exception as e:
                 logger.warning("OSConnection.delete got exception: " + str(e))
                 if re.search(r"(timeout|connection)", str(e).lower()):
-                    time.sleep(3)
+                    time.sleep(2 ** attempt + 1)
                     continue
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):
                     return 0
+                raise
         return 0
 
     """
@@ -854,15 +868,18 @@ class OSConnection(DocStoreConnection):
             sql = sql.replace(p, r, 1)
         logger.debug(f"OSConnection.sql to os: {sql}")
 
-        for i in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = self.os.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format, request_timeout="2s")
                 return res
             except ConnectionTimeout:
-                logger.exception("OSConnection.sql timeout")
+                logger.exception("OSConnection.sql timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(2 ** attempt)
                 continue
             except Exception:
                 logger.exception("OSConnection.sql got exception")
-                return None
-        logger.error(f"OSConnection.sql timeout for {ATTEMPT_TIME} times!")
+                raise
+        logger.error(f"OSConnection.sql timeout for {MAX_RETRIES} times!")
         return None
