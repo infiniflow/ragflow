@@ -502,14 +502,17 @@ class Google(ToolBase, ABC):
                 # set through an "error" field and omits "organic_results"; surface that
                 # message instead of raising a cryptic KeyError on the missing key.
                 if "organic_results" not in search:
-                    raise Exception(search.get("error", "SerpApi returned no organic_results."))
+                    raise RuntimeError(search.get("error", "SerpApi returned no organic_results."))
 
                 organic_results = search["organic_results"]
+                # a result may omit any of these; note the fallback of the "description"
+                # lookup is evaluated eagerly, so it has to be a .get() too or a result
+                # carrying a description but no snippet raises KeyError.
                 self._retrieve_chunks(
                     organic_results,
-                    get_title=lambda r: r["title"],
-                    get_url=lambda r: r["link"],
-                    get_content=lambda r: r.get("about_this_result", {}).get("source", {}).get("description", r["snippet"]),
+                    get_title=lambda r: r.get("title", ""),
+                    get_url=lambda r: r.get("link", ""),
+                    get_content=lambda r: r.get("about_this_result", {}).get("source", {}).get("description", r.get("snippet", "")),
                 )
                 self.set_output("json", organic_results)
                 return self.output("formalized_content")

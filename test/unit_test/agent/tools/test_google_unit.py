@@ -48,8 +48,13 @@ def _make_tool():
     captured = {}
     out = {}
 
-    def fake_retrieve(res_list, **_kw):
-        captured["chunks"] = list(res_list)
+    def fake_retrieve(res_list, get_title=None, get_url=None, get_content=None, **_kw):
+        # The real _retrieve_chunks applies these getters to every result; replicate
+        # that so the tests actually exercise the lambdas, which is where the
+        # per-result KeyErrors came from.
+        items = list(res_list)
+        captured["chunks"] = items
+        captured["rendered"] = [{"title": get_title(r), "url": get_url(r), "content": get_content(r)} for r in items]
         out["formalized_content"] = "FC"
 
     g._retrieve_chunks = fake_retrieve
@@ -77,4 +82,17 @@ def test_valid_response_returns_results(monkeypatch):
     g, captured, out = _make_tool()
     g._invoke(q="anything")
     assert captured["chunks"] == results
+    assert captured["rendered"] == [{"title": "t", "url": "u", "content": "s"}]
     assert out["json"] == results
+
+
+def test_result_missing_optional_fields_does_not_raise(monkeypatch):
+    # Regression: get_content's fallback `r["snippet"]` was evaluated eagerly, so a
+    # result carrying a description but no snippet raised KeyError('snippet') -- the
+    # very failure mode this tool's error handling exists to prevent. title and link
+    # may be absent on a result too.
+    results = [{"about_this_result": {"source": {"description": "d"}}}]
+    monkeypatch.setattr(g_module, "GoogleSearch", lambda params: _FakeSearch({"organic_results": results}))
+    g, captured, _ = _make_tool()
+    g._invoke(q="anything")
+    assert captured["rendered"] == [{"title": "", "url": "", "content": "d"}]
