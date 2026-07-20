@@ -1892,6 +1892,70 @@ async def get_skill_tree(dataset_id: str, tenant_id: str):
     }
 
 
+async def delete_skills(dataset_id: str, tenant_id: str):
+    """Delete every compiled skill row (``skill`` + ``skill_all``) for a dataset.
+
+    Returns ``(True, {"deleted": <n>})`` on success. When the tenant index does
+    not exist yet there is nothing to delete, so it succeeds with ``0``.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_SKILL_COMPILE_KWD, _SKILL_ALL_COMPILE_KWD]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_skills: docStore delete failed for kb=%s", dataset_id)
+        return False, "Failed to delete skills."
+
+    # Clear the skill compilation markers so the dataset reflects "no skill"
+    # (and a later re-compile isn't short-circuited by a stale task id).
+    try:
+        KnowledgebaseService.update_by_id(kb.id, {"skill_task_id": "", "skill_task_finish_at": None})
+    except Exception:
+        logging.exception("delete_skills: failed clearing skill task markers for kb=%s", dataset_id)
+
+    return True, {"deleted": int(deleted or 0)}
+
+
+async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Delete a single compiled skill node identified by ``skill_kwd``.
+
+    Removes the per-node ``skill`` row(s) matching ``skill_kwd`` (the same
+    identity ``get_skill_page`` reads). The aggregate ``skill_all`` tree row is
+    left untouched. Returns ``(True, {"deleted": <n>})``.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_skill: docStore delete failed for kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to delete skill."
+
+    return True, {"deleted": int(deleted or 0)}
+
+
 async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
     """Fetch the full markdown body for a single skill node."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -1955,6 +2019,118 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
         "source_doc_ids": row.get("source_doc_ids") or [],
         "md_with_weight": row.get("md_with_weight") or "",
     }
+
+
+# ---------------------------------------------------------------------------
+# Dataset navigation tree (written by rag/advanced_rag/knowlege_compile/
+# dataset_nav.py as nav_cluster / nav_doc rows). Loaded hierarchically: the
+# first call returns the top clusters (parent = "root"); clicking a cluster
+# returns its direct children (sub-clusters + document leaves). These rows are
+# ``available_int=0`` so they're read via docStoreConn.search directly.
+# ---------------------------------------------------------------------------
+
+_NAV_COMPILE_KWD = "dataset_nav"
+_NAV_ROOT_PARENT = "root"
+_NAV_FIELDS = [
+    "id",
+    "name",
+    "type_kwd",
+    "content_with_weight",
+    "doc_count_int",
+    "doc_ids_kwd",
+    "doc_id",
+    "depth_int",
+    "parent_kwd",
+]
+
+
+def _nav_item(row: dict) -> dict:
+    """Shape one nav row into a UI node: name, description, doc count, type."""
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        payload = {}
+    is_cluster = (row.get("type_kwd") or payload.get("type")) == "nav_cluster"
+    return {
+        "name": row.get("name") or "",
+        "description": payload.get("description") or "",
+        # doc_id count under this node: the cluster's tally, or 1 for a leaf.
+        "doc_count": int(row.get("doc_count_int") or 0) if is_cluster else 1,
+        "type": "cluster" if is_cluster else "doc",
+        "doc_id": None if is_cluster else (row.get("doc_id") or row.get("name")),
+        "has_children": is_cluster,
+    }
+
+
+async def _nav_search(dataset_id: str, tenant_id: str, condition: dict, page: int, page_size: int):
+    """Run one nav-tree search and shape the hits into UI nodes."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 1000), 2000))
+    offset = (page - 1) * page_size
+
+    order_by = OrderByExpr()
+    try:
+        # Biggest clusters first; leaves (no doc_count_int) fall to the end.
+        order_by.desc("doc_count_int")
+    except Exception:
+        order_by = OrderByExpr()
+
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=_NAV_FIELDS,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=[],
+            order_by=order_by,
+            offset=offset,
+            limit=page_size,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+    except Exception:
+        logging.exception("dataset_nav: docStore search failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    total = settings.docStoreConn.get_total(res)
+    items = [_nav_item(row) for row in (field_map or {}).values()]
+    return True, {"total": int(total or 0), "items": items}
+
+
+async def list_nav_clusters(dataset_id: str, tenant_id: str, page: int = 1, page_size: int = 1000):
+    """First level of the nav tree: the clusters with no parent."""
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "type_kwd": ["nav_cluster"],
+        "parent_kwd": [_NAV_ROOT_PARENT],
+    }
+    return await _nav_search(dataset_id, tenant_id, condition, page, page_size)
+
+
+async def list_nav_children(dataset_id: str, tenant_id: str, name: str, page: int = 1, page_size: int = 1000):
+    """Direct children of the node ``name`` — sub-clusters and document leaves.
+
+    One level at a time (lazy) so the tree loads hierarchically as the user
+    expands each node.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return True, {"total": 0, "items": []}
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "parent_kwd": [name.strip()],
+    }
+    return await _nav_search(dataset_id, tenant_id, condition, page, page_size)
 
 
 async def update_wiki_page(
