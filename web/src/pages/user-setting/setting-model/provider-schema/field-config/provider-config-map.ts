@@ -70,14 +70,18 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       baseUrl: values.api_base,
       modelInfo: [],
     }),
-    submitTransform: (values) => ({
-      instance_name: values.instance_name,
-      llm_factory: LLMFactory.AzureOpenAI,
-      api_base: values.api_base,
-      api_key: values.api_key,
-      api_version: values.api_version,
-      model_info: [],
-    }),
+    submitTransform: (values) => {
+      const apiKey = values.api_version
+        ? { api_key: values.api_key ?? '', api_version: values.api_version }
+        : (values.api_key ?? '');
+      return {
+        instance_name: values.instance_name,
+        llm_factory: LLMFactory.AzureOpenAI,
+        api_base: values.api_base,
+        api_key: apiKey,
+        model_info: [],
+      };
+    },
   },
 
   // ============ VolcEngine ============
