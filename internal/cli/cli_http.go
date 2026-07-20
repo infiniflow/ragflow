@@ -207,6 +207,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersPlanSummaryCommand(cmd)
 	case "admin_show_users_plan_quota":
 		return c.AdminShowUsersPlanQuotaCommand(cmd)
+	case "admin_stats_user":
+		return c.AdminStatsUserCommand(cmd)
+	case "admin_stats_users":
+		return c.AdminStatsUsersCommand(cmd)
+	case "admin_stats_summary":
+		return c.AdminStatsSummaryCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":

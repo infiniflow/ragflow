@@ -1289,7 +1289,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       modelType: 'Type de modèle',
       modelTypeMessage: 'Veuillez saisir le type de votre modèle !',
       addLlmBaseUrl: 'URL de base',
-      baseUrlNameMessage: 'Veuillez saisir votre URL de base !',
+      baseUrlNameMessage: 'Veuillez saisir votre URL de base',
       paddleocr: {
         apiUrl: "URL de l'API PaddleOCR",
         apiUrlPlaceholder:
