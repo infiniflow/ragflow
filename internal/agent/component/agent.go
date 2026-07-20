@@ -549,7 +549,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
-	} else if shouldFallbackToSysQuery(p.UserPrompt) && state != nil {
+	} else if shouldFallbackToSysQuery(p.UserPrompt) && strings.TrimSpace(p.SystemPrompt) == "" && state != nil {
 		if query, ok := stringFromState(state, "query"); ok {
 			p.UserPrompt = query
 		}
@@ -575,7 +575,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// what the Agent runner actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.History); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
@@ -584,15 +584,12 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
-	// the canvas state's History so downstream turns (history
-	// window) see the prior tool usage as prior assistant turns.
+	// the canvas state's Memory. Conversation History is reserved for
+	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
-				state.History = append(state.History, map[string]any{
-					"role":    "assistant",
-					"content": summary,
-				})
+				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
 	}
@@ -730,14 +727,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	if driver == "" {
 		driver = "dummy"
 	}
-	baseURL := baseURLMapForDriver(driver, p.BaseURL)
-	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
-	// The factory's NewModelDriver stores URLSuffix verbatim; the
-	// driver then appends URLSuffix.Chat to baseURL to build the
-	// chat-completions endpoint, so an empty suffix leaves the URL
-	// pointing at the v1 root (404). Seed the right suffix per
-	// driver so the agent's ReAct loop hits a working endpoint.
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, chatURLSuffixFor(driver))
+	d, err := newChatModelDriver(driver, p.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
 	}

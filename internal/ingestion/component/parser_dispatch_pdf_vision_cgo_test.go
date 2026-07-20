@@ -60,9 +60,10 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param, Setups: setups}
 
 	out, err := c.Invoke(context.Background(), map[string]any{
 		"binary":    data,

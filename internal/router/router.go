@@ -17,9 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
@@ -29,6 +30,7 @@ type Router struct {
 	documentHandler      *handler.DocumentHandler
 	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
+	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
@@ -63,6 +65,7 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
+	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -95,6 +98,7 @@ func NewRouter(
 		documentHandler:      documentHandler,
 		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
+		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
@@ -167,6 +171,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Query: ?type=builtin returns built-in templates (default).
 		if r.pipelineHandler != nil {
 			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+			apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 		}
 
 		// searchbots
@@ -185,17 +190,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
 		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
 
-		// For EE
-		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
-		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
-		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
-		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
-		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
-		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
-		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
-		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
-		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
-
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 
@@ -213,6 +207,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -318,7 +314,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Document routes
 			documents := v1.Group("/documents")
 			{
-				documents.POST("", r.documentHandler.CreateDocument)
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
@@ -352,6 +347,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
 				chat.POST("/mindmap", r.chatHandler.MindMap)
 				chat.POST("/recommendation", r.chatHandler.Recommendation)
+				chat.POST("/audio/speech", r.chatHandler.ChatAudioSpeech)
+				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 
@@ -641,7 +638,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.systemHandler.GetStats)
+				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 
 				config := system.Group("/config")
 				{

@@ -21,7 +21,7 @@ import (
 
 	"ragflow/internal/common"
 	taskpkg "ragflow/internal/ingestion/task"
-	servicepkg "ragflow/internal/service"
+	documentpkg "ragflow/internal/service/document"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -46,7 +46,7 @@ type docStateUpdater struct {
 // injected at construction time. Tests inject stubs via the docSvc field.
 func newDocStateUpdater() *docStateUpdater {
 	return &docStateUpdater{
-		docSvc: servicepkg.NewDocumentService(),
+		docSvc: documentpkg.NewDocumentService(),
 	}
 }
 
@@ -59,7 +59,7 @@ func (u *docStateUpdater) apply(r *taskpkg.PipelineResult) {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, 0); err != nil {
+	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
 	}
 }

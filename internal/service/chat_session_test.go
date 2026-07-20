@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // ---------------------------------------------------------------------------
@@ -173,6 +174,21 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	}
 	close(ch)
 	return ch
+}
+
+type fakeChatModelConfigResolver struct {
+	tenantID string
+	llmID    string
+	err      error
+}
+
+func (f *fakeChatModelConfigResolver) GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	f.tenantID = tenantID
+	f.llmID = llmID
+	if f.err != nil {
+		return nil, "", nil, 0, f.err
+	}
+	return nil, "resolved-model", &modelModule.APIConfig{}, 8192, nil
 }
 
 type feedbackContextKey struct{}
@@ -900,6 +916,182 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 	}
 	if pipeline.userID == store.dialogs["dialog-1"].TenantID {
 		t.Fatalf("pipeline used dialog tenant %q instead of request user", pipeline.userID)
+	}
+}
+
+func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "dialog-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID:         "dialog-1",
+		TenantID:   "tenant-owner",
+		LLMID:      "chat@factory",
+		LLMSetting: entity.JSONMap{},
+		PromptConfig: entity.JSONMap{
+			"parameters": []interface{}{},
+		},
+	}
+	store.dialogExists["tenant-owner|dialog-1"] = true
+
+	finalReference := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"id":            "chunk-1",
+				"content":       "Marigold is a depth-estimation model.",
+				"document_id":   "doc-1",
+				"document_name": "paper.pdf",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "doc-1", "doc_name": "paper.pdf", "count": 1},
+		},
+		"total": 1,
+	}
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "Marigold", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{
+				Answer:    "Marigold is a depth-estimation model. [ID:0]",
+				Reference: finalReference,
+				Prompt:    "### Query: what is marigold",
+				CreatedAt: 123,
+				Final:     true,
+			},
+		),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       pipeline,
+	}
+
+	streamChan := make(chan string, 8)
+	_, err := svc.ChatCompletions(
+		context.Background(),
+		"user-1",
+		"dialog-1",
+		"session-1",
+		[]map[string]interface{}{{"role": "user", "content": "what is marigold"}},
+		"",
+		nil,
+		"",
+		nil,
+		nil,
+		false,
+		false,
+		true,
+		streamChan,
+	)
+	if err != nil {
+		t.Fatalf("ChatCompletions failed: %v", err)
+	}
+
+	var finalData map[string]interface{}
+	eventCount := len(streamChan)
+	for i := 0; i < eventCount; i++ {
+		event := <-streamChan
+		payload := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(event), "data:"))
+		var wrapper map[string]interface{}
+		if err := json.Unmarshal([]byte(payload), &wrapper); err != nil {
+			t.Fatalf("failed to parse SSE payload %q: %v", payload, err)
+		}
+		data, ok := wrapper["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if final, _ := data["final"].(bool); final {
+			finalData = data
+			break
+		}
+	}
+	if finalData == nil {
+		t.Fatal("missing final SSE data")
+	}
+	if got := finalData["answer"]; got != "Marigold is a depth-estimation model. [ID:0]" {
+		t.Fatalf("final answer = %v", got)
+	}
+	if got := finalData["prompt"]; got != "### Query: what is marigold" {
+		t.Fatalf("final prompt = %v", got)
+	}
+	ref, ok := finalData["reference"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("final reference = %#v", finalData["reference"])
+	}
+	chunks, ok := ref["chunks"].([]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("final reference chunks = %#v", ref["chunks"])
+	}
+	docAggs, ok := ref["doc_aggs"].([]interface{})
+	if !ok || len(docAggs) != 1 {
+		t.Fatalf("final reference doc_aggs = %#v", ref["doc_aggs"])
+	}
+	if got := ref["total"]; got != float64(1) {
+		t.Fatalf("final reference total = %v", got)
+	}
+}
+
+func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "dialog-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID:           "dialog-1",
+		TenantID:     "tenant-owner",
+		LLMID:        "old-model@default@Provider",
+		LLMSetting:   entity.JSONMap{},
+		PromptConfig: entity.JSONMap{"parameters": []interface{}{}},
+	}
+	store.dialogExists["tenant-owner|dialog-1"] = true
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "ok", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+	resolver := &fakeChatModelConfigResolver{}
+	modelID := "3d2d824e7e5d11f1a845455b140cef90"
+
+	svc := &ChatSessionService{
+		chatSessionDAO:   store,
+		userTenantDAO:    &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:         pipeline,
+		modelProviderSvc: resolver,
+	}
+
+	_, err := svc.ChatCompletions(
+		context.Background(),
+		"user-1",
+		"dialog-1",
+		"session-1",
+		[]map[string]interface{}{{"role": "user", "content": "hi"}},
+		"",
+		nil,
+		modelID,
+		nil,
+		nil,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatCompletions failed: %v", err)
+	}
+	if resolver.tenantID != "tenant-owner" || resolver.llmID != modelID {
+		t.Fatalf("resolver got tenantID=%q llmID=%q, want tenant-owner/%s", resolver.tenantID, resolver.llmID, modelID)
+	}
+	if store.dialogs["dialog-1"].LLMID != modelID {
+		t.Fatalf("dialog LLMID=%q, want model id %q", store.dialogs["dialog-1"].LLMID, modelID)
 	}
 }
 

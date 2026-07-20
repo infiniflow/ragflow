@@ -376,8 +376,9 @@ setup_cgo_env() {
             ;;
         Darwin)
             export CGO_LDFLAGS="$CGO_LDFLAGS \
-                -framework CoreFoundation -framework Security \
-                -framework SystemConfiguration -liconv -lresolv"
+                -framework CoreGraphics -framework CoreFoundation \
+                -framework Security -framework SystemConfiguration \
+                -liconv -lresolv -lc++"
             ;;
     esac
 

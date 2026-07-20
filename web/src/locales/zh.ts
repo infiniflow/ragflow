@@ -445,6 +445,7 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
+      nextConfiguration: '下个配置',
       knowledgeGraph: '知识图谱',
       compilation: '编译',
       export: '导出',
@@ -738,10 +739,12 @@ export default {
       此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件是<b> excel </b>格式，则应由两个列组成
-      没有标题：一个提出问题，另一个用于答案，
-      答案列之前的问题列。多张纸是
-      只要列正确结构，就可以接受。
+      如果文件是<b> excel </b>格式，
+      则文件应包含两列且不包含表头：
+      一列用于存放问题，另一列用于存放答案，
+      并且问题列必须位于答案列之前。
+      可以包含多个工作表（sheet），
+      只要每个工作表中的列结构都符合要求即可。
     </li>
     <li>
       如果文件是<b> csv/txt </b>格式
@@ -1527,19 +1530,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
-      instanceNameSaveTip: '请输入实例名称并保存。保存后不可修改。',
-      instanceNameSavePrompt: '请先保存实例名称，再编辑其他字段。',
-      instanceNameLockedHint: '实例名称已锁定',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
       modelType: '模型类型',
-      addLlmBaseUrl: '基础 Url',
+      addLlmBaseUrl: '基础 URL',
       vision: '是否支持 Vision',
       modelNameMessage: '请输入模型名称！',
       modelTypeMessage: '请输入模型类型！',
-      baseUrlNameMessage: '请输入基础 Url！',
+      baseUrlNameMessage: '请输入基础 URL',
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用腾讯云语音识别',

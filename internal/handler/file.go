@@ -30,21 +30,23 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
+	"ragflow/internal/service/file"
 )
 
 // FileHandler file handler
 type FileHandler struct {
-	fileService          *service.FileService
+	fileService          *file.FileService
 	userService          *service.UserService
-	file2DocumentService *service.File2DocumentService
+	file2DocumentService *document.File2DocumentService
 }
 
 // NewFileHandler create file handler
-func NewFileHandler(fileService *service.FileService, userService *service.UserService) *FileHandler {
+func NewFileHandler(fileService *file.FileService, userService *service.UserService) *FileHandler {
 	return &FileHandler{
 		fileService:          fileService,
 		userService:          userService,
-		file2DocumentService: service.NewFile2DocumentService(),
+		file2DocumentService: document.NewFile2DocumentService(),
 	}
 }
 
@@ -60,7 +62,7 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param desc query bool false "descending order (default: true)"
-// @Success 200 {object} service.ListFilesResponse
+// @Success 200 {object} file.ListFilesResponse
 // @Router /api/v1/files [get]
 func (h *FileHandler) ListFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -527,7 +529,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 // @Tags file
 // @Accept json
 // @Produce json
-// @Param request body service.LinkToDatasetsRequest true "file_ids and kb_ids"
+// @Param request body document.LinkToDatasetsRequest true "file_ids and kb_ids"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/link-to-datasets [post]
 func (h *FileHandler) LinkToDatasets(c *gin.Context) {
@@ -537,7 +539,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	var req service.LinkToDatasetsRequest
+	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
 	// empty, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
@@ -571,9 +573,9 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 // any other (internal) error is reported as a server error.
 func linkToDatasetsErrorCode(err error) common.ErrorCode {
 	switch {
-	case errors.Is(err, service.ErrLinkFileNotFound),
-		errors.Is(err, service.ErrLinkDatasetNotFound),
-		errors.Is(err, service.ErrLinkNoAuthorization):
+	case errors.Is(err, document.ErrLinkFileNotFound),
+		errors.Is(err, document.ErrLinkDatasetNotFound),
+		errors.Is(err, document.ErrLinkNoAuthorization):
 		return common.CodeDataError
 	default:
 		return common.CodeServerError

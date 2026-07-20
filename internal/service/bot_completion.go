@@ -264,8 +264,10 @@ func WriteAgentbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 //
 // The full LLM session-lifecycle implementation is added below. It
 // is a v1 port: it yields a single frame per turn (the Go LLMBundle
-// chat call is non-streaming), seeded with the dialog's prologue
-// when the request creates a new session.
+// chat call is non-streaming). A request without session_id only
+// creates the prologue-seeded session and streams the prologue back;
+// the LLM runs exclusively for follow-up turns that carry a
+// session_id.
 //
 // Authorisation: dialog must exist, belong to the requester's tenant,
 // and have status == common.StatusDialogValid.
@@ -336,6 +338,25 @@ func (s *BotService) ChatbotCompletion(
 		if err = s.api4ConversationDAO.Create(session); err != nil {
 			return nil, common.CodeServerError, err
 		}
+
+		// Mirror python async_iframe_completion
+		// (conversation_service.py:324-334): a request without a
+		// session_id is the share page's opening handshake — the
+		// front-end sends an empty question only to obtain a session.
+		// Persist the prologue-seeded session and stream the prologue
+		// back WITHOUT invoking the LLM; running the model here would
+		// fabricate a reply to a message the user never sent.
+		out := make(chan ChatbotSSEFrame, 2)
+		go func() {
+			defer close(out)
+			out <- ChatbotSSEFrame{
+				Data:      prologue,
+				Reference: map[string]any{},
+				SessionID: session.ID,
+			}
+			out <- ChatbotSSEFrame{Done: true}
+		}()
+		return out, common.CodeSuccess, nil
 	}
 
 	// 3. Resolve the chat LLM via ModelProviderService. The python
@@ -375,7 +396,7 @@ func (s *BotService) ChatbotCompletion(
 	go func() {
 		defer close(out)
 		resp, callErr := chatModel.ModelDriver.ChatWithMessages(
-			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{},
+			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{}, nil,
 		)
 		if callErr != nil {
 			// Log the real error with structured context so

@@ -97,7 +97,7 @@ def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(deepcopy(payload)))
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_add_message_partial_failure_branch(monkeypatch):
     module = _load_memory_routes_module(monkeypatch)
 

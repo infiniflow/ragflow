@@ -187,10 +187,14 @@ const (
 	TokenNoACK
 	TokenAnalyze
 	TokenSummary
+	TokenStats
 	TokenStorage
 	TokenQuota
 	TokenTree
 	TokenOrphan
+	TokenHour
+	TokenDay
+	TokenMonth
 	TokenDays
 	TokenWindow
 	TokenActivity

@@ -1191,8 +1191,8 @@ The above is the content you need to summarize.`,
       modelNameMessage: 'Моля, въведете името на модела!',
       modelType: 'Тип модел',
       modelTypeMessage: 'Моля, въведете типа на модела!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Моля, въведете вашия base url!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Моля, въведете вашия base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:

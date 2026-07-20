@@ -354,7 +354,7 @@ def test_chunks_list_empty_document(rest_client, create_document):
     assert "doc" in list_payload["data"], list_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_basic_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_basic.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -471,7 +471,7 @@ def test_chunk_delete_web_legacy_basic_variants(rest_client, create_document):
         assert list_payload["data"]["total"] == remaining, (scenario_name, list_payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_bulk_contract.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -661,7 +661,7 @@ def test_chunk_update_requires_auth(rest_client, create_document):
         assert_auth_error(payload, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_update_content_and_available_contract(rest_client, create_document):
     content_cases = [
         ("content none", {"content": None}, 0, ""),
@@ -773,7 +773,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         assert body["code"] == 0, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_client, create_document):
     dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt")
 

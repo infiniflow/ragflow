@@ -58,6 +58,7 @@ GO_ONLY_SKIPS = {
         "test_dataset_update_parser_config_defaults_contract",
         "test_dataset_update_parser_config_invalid_contract",
         "test_dataset_update_field_unset_and_unsupported_contract",
+        "test_dataset_create_parser_config_different_chunk_methods_contract",
         "test_dataset_create_parser_config_missing_raptor_and_graphrag",
         "test_dataset_create_embedding_model_contract",
         "test_dataset_create_embedding_model_format_contract",
@@ -315,6 +316,7 @@ def ensure_parsed_document(rest_client, create_document):
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     import time
+
     start = time.perf_counter()
     yield
     duration = time.perf_counter() - start

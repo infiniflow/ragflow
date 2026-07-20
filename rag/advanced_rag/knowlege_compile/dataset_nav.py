@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 import xxhash
@@ -181,6 +182,8 @@ async def _store_knn(
     fields = [
         "content_with_weight",
         "name",
+        "doc_id",
+        "type_kwd",
         "parent_kwd",
         "depth_int",
         "doc_count_int",
@@ -924,6 +927,118 @@ async def _maybe_split_cluster(
                 row["parent_kwd"] = group_name
                 row["depth_int"] = depth + 1
                 await _store_upsert(tenant_id, kb_id, row)
+
+
+async def search_dataset_nav(
+    tenant_id: str,
+    kb_id: str,
+    query: str,
+    embd_mdl=None,
+    top_k: int = 8,
+) -> list[dict]:
+    """Find the nav-tree nodes most relevant to ``query`` for one KB.
+
+    The nav rows are ``available_int=0`` (invisible to the normal retriever), so
+    this is the sanctioned read seam: a caller uses the returned document ids to
+    route a scoped chunk retrieval. Returns items shaped as::
+
+        {"type": "nav_doc" | "nav_cluster",
+         "doc_id": str | None,      # the document, for a leaf
+         "doc_ids": [str],          # the documents a node covers
+         "name": str, "description": str, "score": float}
+
+    Ranked by vector KNN over the node summaries when ``embd_mdl`` is given;
+    otherwise a best-effort text-ranked scan.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    condition = {"compile_kwd": [_COMPILE_KWD]}
+    rows_with_scores: list[tuple[dict, float]] = []
+
+    if embd_mdl is not None:
+        try:
+            vec = await _embed(embd_mdl, query)
+        except Exception:
+            logging.exception("search_dataset_nav: embed failed for kb=%s", kb_id)
+            vec = []
+        if vec:
+            try:
+                rows = await _store_knn(tenant_id, kb_id, vec, len(vec), condition, top_k=top_k)
+                vf = _vec_field(len(vec))
+                rows_with_scores = [(r, _cosine_sim(vec, r.get(vf) or [])) for r in rows]
+            except Exception:
+                logging.exception("search_dataset_nav: knn failed for kb=%s", kb_id)
+                rows_with_scores = []
+
+    if not rows_with_scores:
+        fields = ["content_with_weight", "name", "doc_id", "type_kwd", "doc_ids_kwd", "doc_count_int"]
+        try:
+            rows = await _store_search(tenant_id, kb_id, condition, fields, limit=max(top_k * 20, 100))
+        except Exception:
+            logging.exception("search_dataset_nav: scan failed for kb=%s", kb_id)
+            rows = []
+        rows_with_scores = [(r, _nav_text_score(query, r)) for r in rows]
+        rows_with_scores.sort(key=lambda item: item[1], reverse=True)
+
+    # Discard zero-score rows (text match produced no relevant hits)
+    rows_with_scores = [(r, s) for r, s in rows_with_scores if s > 0]
+
+    out: list[dict] = []
+    for r, score in rows_with_scores[:top_k]:
+        try:
+            payload = json.loads(r.get("content_with_weight") or "{}")
+        except Exception:
+            payload = {}
+        typ = payload.get("type") or r.get("type_kwd") or ("nav_cluster" if r.get("doc_ids_kwd") else "nav_doc")
+        name = r.get("name") or ""
+        if typ == "nav_cluster":
+            doc_id = None
+            doc_ids = _as_str_list(r.get("doc_ids_kwd"))
+        else:
+            # Leaf: ``name`` == the document id (see ``_make_nav_doc_row``).
+            doc_id = r.get("doc_id") or name
+            doc_ids = [doc_id] if doc_id else []
+        out.append(
+            {
+                "type": typ,
+                "doc_id": doc_id,
+                "doc_ids": doc_ids,
+                "name": name,
+                "description": payload.get("description") or "",
+                "doc_count": int(r.get("doc_count_int") or len(doc_ids) or 0),
+                "score": float(score or 0.0),
+            }
+        )
+    return out
+
+
+def _as_str_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(v) for v in value if v]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
+
+
+def _nav_text_score(query: str, row: dict) -> float:
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        payload = {}
+    haystack = " ".join(
+        str(x or "")
+        for x in (
+            row.get("name"),
+            payload.get("description"),
+        )
+    ).lower()
+    q_terms = set(re.findall(r"[\w]+", query.lower()))
+    if not q_terms:
+        return 0.0
+    hits = sum(1 for term in q_terms if term in haystack)
+    return hits / max(len(q_terms), 1)
 
 
 def remove_dataset_nav_doc_sync(

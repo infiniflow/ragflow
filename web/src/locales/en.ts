@@ -499,6 +499,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
+      nextConfiguration: 'Next configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       export: 'Export',
@@ -1837,11 +1838,6 @@ Example: Virtual Hosted Style`,
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
-      instanceNameSaveTip:
-        'Enter an instance name and save it. Once saved, it cannot be changed.',
-      instanceNameSavePrompt:
-        'Please save the instance name first before editing other fields.',
-      instanceNameLockedHint: 'Instance name is locked',
       deleteInstance: 'Delete instance',
       modelName: 'Model name',
       modelID: 'Model ID',
@@ -1849,8 +1845,8 @@ Example: Virtual Hosted Style`,
       modelNameMessage: 'Please input your model name!',
       modelType: 'Model type',
       modelTypeMessage: 'Please input your model type!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Please input your base url!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Please input your base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:

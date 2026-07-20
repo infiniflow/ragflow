@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -158,7 +159,7 @@ type n1nChatResponse struct {
 
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
-func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion.
-func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -321,7 +322,7 @@ type n1nEmbeddingRequest struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -415,7 +416,7 @@ type n1nRerankRequest struct {
 
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
-func (n *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (n *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -492,7 +493,7 @@ type n1nModelCatalogItem struct {
 }
 
 type n1nModelCatalogResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 // ListModels returns the live n1n.ai model catalog
@@ -548,30 +549,30 @@ func (n *N1NModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 }
 
 // TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
-func (n *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (n *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (n *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // AudioSpeech: n1n.ai exposes /v1/audio/speech
-func (n *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (n *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *N1NModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (n *N1NModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // OCRFile is not exposed by the n1n.ai API.
-func (n *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (n *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ParseFile is not exposed by the n1n.ai API.
-func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
