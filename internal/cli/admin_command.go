@@ -1733,6 +1733,105 @@ func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get users plan quota")
 }
 
+// AdminStatsUserCommand stats user token usage
+func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	var conditionStr string
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user name not provided")
+	}
+	conditionStr = fmt.Sprintf("user_name=%s", userName)
+
+	fromTime, ok := cmd.Params["from"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&from=%s", fromTime)
+	}
+
+	toTime, ok := cmd.Params["to"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&to=%s", toTime)
+	}
+
+	granularity, ok := cmd.Params["granularity"].(string)
+	if !ok {
+		return nil, fmt.Errorf("granularity not provided")
+	}
+	conditionStr += fmt.Sprintf("&granularity=%s", granularity)
+
+	url := fmt.Sprintf("/admin/stats/token?%s", conditionStr)
+
+	resp, err := c.AdminServerClient.Request("GET", url, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats user: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get stats user")
+}
+
+// AdminStatsUsersCommand stats users token usage
+func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	var conditionStr string
+	top, ok := cmd.Params["top"].(int)
+	if !ok {
+		return nil, fmt.Errorf("top not provided")
+	}
+	conditionStr = fmt.Sprintf("top=%d", top)
+
+	fromTime, ok := cmd.Params["from"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&from=%s", fromTime)
+	}
+
+	toTime, ok := cmd.Params["to"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&to=%s", toTime)
+	}
+
+	url := fmt.Sprintf("/admin/stats/token/users?%s", conditionStr)
+
+	resp, err := c.AdminServerClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get stats")
+}
+
+// AdminStatsSummaryCommand stats summary token usage
+func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	var conditionStr string
+	fromTime, ok := cmd.Params["from"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&from=%s", fromTime)
+	}
+
+	toTime, ok := cmd.Params["to"].(string)
+	if ok {
+		conditionStr += fmt.Sprintf("&to=%s", toTime)
+	}
+
+	url := fmt.Sprintf("/admin/stats/token/summary?%s", conditionStr)
+
+	resp, err := c.AdminServerClient.Request("GET", url, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats summary: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get stats summary")
+}
+
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {

@@ -238,6 +238,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/system/license", r.handler.ShowSystemLicense)
 			protected.PUT("/system/license/config", r.handler.UpdateSystemLicenseConfig)
 
+			// Token statistics
+			protected.GET("/stats/token", r.handler.GetTokenStats)
+			protected.GET("/stats/token/users", r.handler.GetTokenUsersStats)
+			protected.GET("/stats/token/summary", r.handler.GetTokenStatsSummary)
+
 			// Fingerprint
 			protected.GET("/fingerprint", r.handler.GetFingerprint)
 			// License
