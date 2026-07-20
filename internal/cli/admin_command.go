@@ -19,6 +19,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"ragflow/internal/common"
 )
 
@@ -1739,32 +1740,30 @@ func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	var conditionStr string
 	userName, ok := cmd.Params["user_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("user name not provided")
 	}
-	conditionStr = fmt.Sprintf("user_name=%s", userName)
-
-	fromTime, ok := cmd.Params["from"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&from=%s", fromTime)
-	}
-
-	toTime, ok := cmd.Params["to"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&to=%s", toTime)
-	}
-
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
 	granularity, ok := cmd.Params["granularity"].(string)
 	if !ok {
 		return nil, fmt.Errorf("granularity not provided")
 	}
-	conditionStr += fmt.Sprintf("&granularity=%s", granularity)
 
-	url := fmt.Sprintf("/admin/stats/token?%s", conditionStr)
+	q := url.Values{}
+	q.Set("user_name", userName)
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
+	}
+	q.Set("granularity", granularity)
 
-	resp, err := c.AdminServerClient.Request("GET", url, "admin", nil, nil)
+	baseUrl := fmt.Sprintf("/admin/stats/token?%s", q.Encode())
+
+	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats user: %w", err)
 	}
@@ -1778,24 +1777,23 @@ func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	var conditionStr string
 	top, ok := cmd.Params["top"].(int)
 	if !ok {
 		return nil, fmt.Errorf("top not provided")
 	}
-	conditionStr = fmt.Sprintf("top=%d", top)
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
 
-	fromTime, ok := cmd.Params["from"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&from=%s", fromTime)
+	q := url.Values{}
+	q.Set("top", fmt.Sprintf("%d", top))
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
 	}
 
-	toTime, ok := cmd.Params["to"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&to=%s", toTime)
-	}
-
-	url := fmt.Sprintf("/admin/stats/token/users?%s", conditionStr)
+	url := fmt.Sprintf("/admin/stats/token/users?%s", q.Encode())
 
 	resp, err := c.AdminServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
@@ -1811,20 +1809,20 @@ func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	var conditionStr string
-	fromTime, ok := cmd.Params["from"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&from=%s", fromTime)
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
+
+	q := url.Values{}
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
 	}
 
-	toTime, ok := cmd.Params["to"].(string)
-	if ok {
-		conditionStr += fmt.Sprintf("&to=%s", toTime)
-	}
+	baseUrl := fmt.Sprintf("/admin/stats/token/summary?%s", q.Encode())
 
-	url := fmt.Sprintf("/admin/stats/token/summary?%s", conditionStr)
-
-	resp, err := c.AdminServerClient.Request("GET", url, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats summary: %w", err)
 	}
