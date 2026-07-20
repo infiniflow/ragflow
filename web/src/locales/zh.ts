@@ -1503,7 +1503,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addInstance: '添加实例',
       addInstanceText: '添加实例',
       noInstancesConfigured: '尚未配置任何实例。',
-      saveAll: '保存',
       editInstanceName: '编辑实例名称',
       models: '模型',
       chatModel: 'LLM',
