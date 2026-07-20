@@ -78,6 +78,15 @@ func normalizeXLSXParseMethod(raw string) string {
 	if method == "tcadp parser" {
 		return "tcadp"
 	}
+	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
+	// (see schema.ParserParam.Defaults and the matching Python ParserParam),
+	// and the DSL templates ship "DeepDOC". Normalize to "" so the default
+	// Excelize/CSV path is taken by all three spreadsheet parsers, mirroring
+	// rag/flow/parser/parser.py:_spreadsheet which only special-cases
+	// "tcadp parser" and routes every other value to the default parser.
+	if method == "deepdoc" || method == "deepdoc parser" {
+		return ""
+	}
 	return method
 }
 
@@ -94,9 +103,10 @@ func (p *XLSXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	case "", "excelize":
 		// Continue with the local Excelize parser.
 	default:
-		return ParseResult{
-			Err: fmt.Errorf("unsupported XLSX parse method: %q", p.ParseMethod),
-		}
+		// PDF-specific methods like "DeepDOC" / "PaddleOCR" / "MinerU"
+		// are meaningless for XLSX; treat them as the default excelize path,
+		// matching Python's behaviour where parse_method is irrelevant
+		// for spreadsheet processing.
 	}
 
 	f, err := excelize.OpenReader(bytes.NewReader(data))

@@ -117,8 +117,8 @@ type SyncLogs struct {
 	ErrorCount           int64      `gorm:"column:error_count;default:0" json:"error_count"`
 	FullExceptionTrace   *string    `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
 	TimeStarted          *time.Time `gorm:"column:time_started;index" json:"time_started,omitempty"`
-	PollRangeStart       *string    `gorm:"column:poll_range_start;size:255;index" json:"poll_range_start,omitempty"`
-	PollRangeEnd         *string    `gorm:"column:poll_range_end;size:255;index" json:"poll_range_end,omitempty"`
+	PollRangeStart       *time.Time `gorm:"column:poll_range_start;index" json:"poll_range_start,omitempty"`
+	PollRangeEnd         *time.Time `gorm:"column:poll_range_end;index" json:"poll_range_end,omitempty"`
 	KbID                 string     `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
 	BaseModel
 }

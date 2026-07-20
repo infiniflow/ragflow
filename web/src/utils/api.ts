@@ -27,7 +27,7 @@ export default {
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
   listProviders: `${restAPIv1}/providers`,
-  addProvider: `${restAPIv1}/providers/`,
+  addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
   verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
@@ -181,6 +181,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
+  listPipelines: `${restAPIv1}/pipelines?type=builtin`,
   runIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>

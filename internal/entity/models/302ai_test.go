@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -97,6 +98,7 @@ func TestAI302ChatForcesNonStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -138,6 +140,7 @@ func TestAI302StreamForcesStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(answer, reason *string) error {
 			if answer != nil {
 				content = append(content, *answer)
@@ -252,7 +255,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newAI302ForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "api key is required",
@@ -260,7 +263,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "model name is required",
@@ -268,21 +271,21 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, send)
+				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -290,7 +293,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(&model, "q", []string{"doc"}, nil, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(&model, "q", []string{"doc"}, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -298,7 +301,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank query",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(&model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(&model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "query is required",
@@ -306,7 +309,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "asr model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").TranscribeAudio(nil, &docURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").TranscribeAudio(nil, &docURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -314,7 +317,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "asr file",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").TranscribeAudio(&model, &file, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").TranscribeAudio(&model, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "file is missing",
@@ -322,7 +325,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &docURL, nil, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &docURL, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -330,7 +333,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr input",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "file url or content is required",
@@ -338,7 +341,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr invalid url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "invalid document URL",
@@ -346,7 +349,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "parse file url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "valid public document URL",
@@ -354,7 +357,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "parse file invalid url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "invalid document URL",

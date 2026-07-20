@@ -64,6 +64,65 @@ function buildTreeDataItems(
     .filter((item): item is TreeDataItem => item !== undefined);
 }
 
+function buildUniqueTreeDataItems(
+  entities: IStructureGraphEntity[],
+  relations: IStructureGraphRelation[],
+  relationTypes: string[],
+): TreeDataItem[] {
+  const normalized = [
+    ...new Map(
+      entities
+        .map(normalizeEntity)
+        .filter((entity) => entity.id)
+        .map((entity) => [entity.id, entity]),
+    ).values(),
+  ];
+  const map = new Map<string, TreeDataItem>(
+    normalized.map((entity) => [
+      entity.id,
+      {
+        id: entity.id,
+        name: entity.name,
+        source_chunk_ids: entity.source_chunk_ids,
+      },
+    ]),
+  );
+  const childIds = new Set<string>();
+  const parentMap = new Map<string, string>();
+
+  for (const relation of relations) {
+    if (!relationTypes.includes(relation.type ?? '')) continue;
+
+    const parent = map.get(relation.from);
+    const child = map.get(relation.to);
+    if (!parent || !child) continue;
+    if (childIds.has(child.id)) continue;
+
+    // Avoid cycles: do not attach a node under one of its descendants.
+    let cursor = relation.from;
+    let wouldCycle = false;
+    while (parentMap.has(cursor)) {
+      const ancestor = parentMap.get(cursor)!;
+      if (ancestor === child.id) {
+        wouldCycle = true;
+        break;
+      }
+      cursor = ancestor;
+    }
+    if (wouldCycle) continue;
+
+    childIds.add(child.id);
+    parentMap.set(child.id, relation.from);
+    parent.children = parent.children ?? [];
+    parent.children.push(child);
+  }
+
+  return normalized
+    .filter((entity) => !childIds.has(entity.id))
+    .map((entity) => map.get(entity.id))
+    .filter((item): item is TreeDataItem => item !== undefined);
+}
+
 export function adaptPageIndexToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
@@ -143,7 +202,10 @@ export function adaptKnowledgeGraphToForceGraph(
 function treeDataItemToG6TreeData(item: TreeDataItem): TreeData {
   const node: TreeData = {
     id: item.id,
-    source_chunk_ids: item.source_chunk_ids,
+    data: {
+      name: item.name,
+      source_chunk_ids: item.source_chunk_ids,
+    },
   };
 
   if (item.children && item.children.length > 0) {
@@ -242,10 +304,11 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
 export function adaptMindMapToIndentedTree(
   template: IStructureGraphTemplate,
 ): TreeData {
-  const roots = buildTreeDataItems(template.entities, template.relations, [
-    'has_branch',
-    'has_sub_branch',
-  ]);
+  const roots = buildUniqueTreeDataItems(
+    template.entities,
+    template.relations,
+    ['has_branch', 'has_sub_branch'],
+  );
 
   const g6Roots = roots.map(treeDataItemToG6TreeData);
 

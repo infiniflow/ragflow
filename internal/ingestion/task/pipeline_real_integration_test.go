@@ -1,6 +1,3 @@
-//go:build integration
-// +build integration
-
 package task
 
 import (
@@ -65,7 +62,7 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -193,7 +190,7 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 		componentpkg.ResolveDocumentStorageOverride = origDocResolver
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -325,7 +322,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
-	templatePath := filepath.Join(taskRepoRoot(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -354,7 +351,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 
 	pipelineOut, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("pipeline Run: %v", err)
 	}
@@ -386,7 +383,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.processOutput(context.Background(), pipelineOut); err != nil {
+	if _, err := svc.processOutput(context.Background(), pipelineOut, time.Now()); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -430,7 +427,7 @@ func taskRepoRoot(t *testing.T) string {
 
 func mustLoadTaskRealIntegrationConfig(t *testing.T) *server.Config {
 	t.Helper()
-	if err := common.Init("info", common.FileOutput{}); err != nil {
+	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)
 	}
 	server.SetLogger(zap.NewNop())

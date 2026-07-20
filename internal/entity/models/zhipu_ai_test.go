@@ -104,6 +104,7 @@ func TestZhipuAITranscribeAudio(t *testing.T) {
 			"user_id":   12345,
 			"nil_value": nil,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
@@ -132,7 +133,7 @@ func TestZhipuAITranscribeAudioValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newZhipuAIForTest("http://unused").TranscribeAudio(tt.modelName, tt.file, tt.apiConfig, nil)
+			_, err := newZhipuAIForTest("http://unused").TranscribeAudio(tt.modelName, tt.file, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error=%v, want %q", err, tt.want)
 			}
@@ -148,6 +149,7 @@ func TestZhipuAITranscribeAudioRequiresASRSuffix(t *testing.T) {
 		&modelName,
 		&file,
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "ASR URL suffix is not configured") {
@@ -165,7 +167,7 @@ func TestZhipuAITranscribeAudioHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "glm-asr-2512"
 	file := writeZhipuAITestAudio(t)
-	_, err := newZhipuAIForTest(srv.URL).TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newZhipuAIForTest(srv.URL).TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "ZhipuAI ASR API error: 400 Bad Request") {
 		t.Fatalf("error=%v", err)
 	}
@@ -229,6 +231,7 @@ func TestZhipuAIAudioSpeech(t *testing.T) {
 			"stream":          true,
 			"response_format": "wav",
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("AudioSpeech: %v", err)
@@ -261,6 +264,7 @@ func TestZhipuAIAudioSpeechWithSender(t *testing.T) {
 		&modelName,
 		&content,
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(content *string, reasoning *string) error {
 			if content != nil {
@@ -299,7 +303,7 @@ func TestZhipuAIAudioSpeechValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newZhipuAIForTest("http://unused").AudioSpeech(tt.modelName, tt.audioContent, tt.apiConfig, nil)
+			_, err := newZhipuAIForTest("http://unused").AudioSpeech(tt.modelName, tt.audioContent, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error=%v, want %q", err, tt.want)
 			}
@@ -315,6 +319,7 @@ func TestZhipuAIAudioSpeechRequiresTTSSuffix(t *testing.T) {
 		&modelName,
 		&content,
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "TTS URL suffix is not configured") {
@@ -332,7 +337,7 @@ func TestZhipuAIAudioSpeechHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "glm-tts"
 	content := "hello"
-	_, err := newZhipuAIForTest(srv.URL).AudioSpeech(&modelName, &content, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newZhipuAIForTest(srv.URL).AudioSpeech(&modelName, &content, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "ZhipuAI TTS API error: 400 Bad Request") {
 		t.Fatalf("error=%v", err)
 	}

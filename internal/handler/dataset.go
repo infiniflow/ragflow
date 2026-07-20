@@ -30,11 +30,12 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService       *service.DatasetService
+	datasetsService       *dataset.DatasetService
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
@@ -55,7 +56,7 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
+func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,
@@ -661,35 +662,6 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, true, "success")
-}
-
-// RunEmbedding Run embedding for all documents in a dataset.
-func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user_id is required")
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	result, errorCode, err := h.datasetsService.RunEmbedding(userID, datasetID)
-	if err != nil {
-		common.ResponseWithCodeData(c, errorCode, nil, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
 }
 
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,

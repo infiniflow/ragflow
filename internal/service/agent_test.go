@@ -32,6 +32,221 @@ import (
 	"ragflow/internal/entity"
 )
 
+func TestBuildAgentMessageEventsThinkingProtocol(t *testing.T) {
+	events := buildAgentMessageEvents("final answer", "think step", nil)
+	if len(events) < 4 {
+		t.Fatalf("events len = %d, want at least start, thinking, end, answer", len(events))
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event StartToThink = false")
+	}
+	if events[0].Content != "" {
+		t.Fatalf("start event content = %q, want empty", events[0].Content)
+	}
+
+	endIdx := -1
+	for i, ev := range events {
+		if ev.EndToThink {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx < 0 {
+		t.Fatal("missing EndToThink event")
+	}
+	var thinking strings.Builder
+	for _, ev := range events[1:endIdx] {
+		thinking.WriteString(ev.Content)
+	}
+	if got := thinking.String(); got != "think step" {
+		t.Fatalf("thinking stream = %q, want %q", got, "think step")
+	}
+	var answer strings.Builder
+	for _, ev := range events[endIdx+1:] {
+		answer.WriteString(ev.Content)
+	}
+	if got := answer.String(); got != "final answer" {
+		t.Fatalf("answer stream = %q, want %q", got, "final answer")
+	}
+}
+
+func TestBuildAgentMessageEventsSplitsInlineThink(t *testing.T) {
+	events := buildAgentMessageEvents("<think>plan</think>\nanswer", "", nil)
+	if len(events) < 4 || !events[0].StartToThink {
+		t.Fatalf("inline think events malformed: %+v", events)
+	}
+
+	endIdx := -1
+	for i, ev := range events {
+		if ev.EndToThink {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx < 0 {
+		t.Fatal("missing EndToThink event")
+	}
+	if got := events[1].Content; got != "plan" {
+		t.Fatalf("inline thinking = %q, want plan", got)
+	}
+	var answer strings.Builder
+	for _, ev := range events[endIdx+1:] {
+		answer.WriteString(ev.Content)
+	}
+	if got := answer.String(); got != "answer" {
+		t.Fatalf("inline answer = %q, want answer", got)
+	}
+}
+
+func TestBuildAgentMessageEventsWithoutThinkingKeepsSingleMessage(t *testing.T) {
+	ref := map[string]any{"total": 1}
+	events := buildAgentMessageEvents("answer", "", ref)
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1", len(events))
+	}
+	if events[0].Content != "answer" {
+		t.Fatalf("content = %q, want answer", events[0].Content)
+	}
+	if events[0].Reference == nil {
+		t.Fatal("reference missing")
+	}
+}
+
+func TestAgentMessageDeltaEmitterStreamsInlineThink(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit := makeAgentMessageDeltaEmitter(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("<thi", "")
+	if len(events) != 0 {
+		t.Fatalf("events after partial tag = %+v, want none", events)
+	}
+	emit("nk>plan", "")
+	emit("</thi", "")
+	emit("nk>answer", "")
+
+	if len(events) != 4 {
+		t.Fatalf("events len = %d, want 4: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "plan" {
+		t.Fatalf("thinking content = %q, want plan", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if events[3].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[3].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterStreamsReasoningBeforeAnswer(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit := makeAgentMessageDeltaEmitter(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("", "step 1")
+	emit("", " step 2")
+	emit("answer", "")
+
+	if len(events) != 5 {
+		t.Fatalf("events len = %d, want 5: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content+events[2].Content != "step 1 step 2" {
+		t.Fatalf("thinking content = %q, want step 1 step 2", events[1].Content+events[2].Content)
+	}
+	if !events[3].EndToThink {
+		t.Fatalf("fourth event = %+v, want EndToThink", events[3])
+	}
+	if events[4].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[4].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterProcessesThinkingAndContentTogether(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("answer", "think")
+	finalize()
+
+	if len(events) != 4 {
+		t.Fatalf("events len = %d, want 4: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think" {
+		t.Fatalf("thinking content = %q, want think", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if events[3].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[3].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterFinalizeClosesReasoning(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("", "think only")
+	finalize()
+
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want 3: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think only" {
+		t.Fatalf("thinking content = %q, want think only", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+}
+
 // TestListVersions_Success verifies that ListVersions returns all versions
 // for a canvas, ordered by update_time DESC.
 func TestListVersions_Success(t *testing.T) {
@@ -40,7 +255,6 @@ func TestListVersions_Success(t *testing.T) {
 
 	// Migrate tables needed for agent versions
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -220,7 +434,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -248,7 +464,9 @@ func TestGetVersion_NotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -281,7 +499,6 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -319,8 +536,7 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 		"canvas-1",      // we're running canvas-1…
 		"",              // session ID auto-generated
 		"v-on-canvas-2", // …with a version that belongs to canvas-2
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected error when version belongs to a different canvas (IDOR guard)")
 	}
@@ -341,7 +557,6 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -367,8 +582,7 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 		"canvas-1",
 		"",
 		"does-not-exist",
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected error when explicit version id does not exist")
 	}
@@ -400,7 +614,6 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -426,8 +639,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		"canvas-empty",
 		"test-session",
 		"", // no explicit version → use GetLatest, which returns ErrUserCanvasVersionNotFound
-		"hi",
-	)
+		"hi", nil)
 	if err != nil {
 		t.Fatalf("RunAgent should proceed with placeholder when no version published: %v", err)
 	}
@@ -439,11 +651,10 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	// answer text is present. The driver emits at least one
 	// orchestrator (canvas.Runner) RunEvent with Type=="message" whose Data is a
 	// JSON-encoded MessageEvent with the placeholder Content, plus
-	// a terminator RunEvent with Type=="done".
+	// the handler writes the final data:[DONE] frame after the channel closes.
 	var (
 		gotAnswer       string
 		gotMessageEvent bool
-		gotDoneEvent    bool
 	)
 	deadline := time.After(5 * time.Second)
 	for {
@@ -462,9 +673,6 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 				if !strings.Contains(gotAnswer, "No published version") {
 					t.Errorf("placeholder answer %q does not contain 'No published version'", gotAnswer)
 				}
-				if !gotDoneEvent {
-					t.Error("placeholder channel closed without emitting a DoneEvent")
-				}
 				return
 			}
 			switch ev.Type {
@@ -475,8 +683,6 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 					t.Fatalf("message RunEvent had un-decodable Data %q: %v", ev.Data, err)
 				}
 				gotAnswer = msg.Content
-			case "done":
-				gotDoneEvent = true
 			}
 		case <-deadline:
 			t.Fatal("placeholder channel did not close within 5s — driver deadlocked?")
@@ -506,7 +712,6 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -543,8 +748,7 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 		"canvas-1",
 		"",
 		"",
-		"hi",
-	)
+		"hi", nil)
 	if err == nil {
 		t.Fatal("expected storage error from closed DB")
 	}
@@ -570,7 +774,6 @@ func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserTenant{},
 	); err != nil {
@@ -617,8 +820,7 @@ func setupAgentSessionServiceTest(t *testing.T) {
 		t.Fatalf("failed to access sqlite handle: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := testDB.AutoMigrate(
-		&entity.User{},
+	if err = testDB.AutoMigrate(
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -1624,5 +1826,24 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 	}
 	if verify == nil || verify.ID != "session-1" {
 		t.Fatalf("session was deleted despite IDOR rejection: %+v", verify)
+	}
+}
+
+func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
+	user := renderUserHistoryValue(map[string]any{
+		"content": "你好",
+		"count":   2,
+	})
+	if user != `{"content":"你好","count":2}` {
+		t.Fatalf("rendered user history = %q", user)
+	}
+
+	assistant := pythonHistoryRepr(map[string]any{
+		"content": "it's ready\nnext",
+		"ok":      true,
+	})
+	want := `{'content': 'it\'s ready\nnext', 'ok': True}`
+	if assistant != want {
+		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
 	}
 }

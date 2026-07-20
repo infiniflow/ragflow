@@ -18,8 +18,9 @@ import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
+import { IProviderModelItem } from '@/interfaces/request/llm';
 import { ListMinus, ListPlus, Loader2, Plus, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -48,7 +49,6 @@ export function ModelsSection(props: ModelsSectionProps) {
     instance,
     hideActions = false,
     hideIfEmpty = false,
-    instanceDetailsLoaded = false,
     getFormValues,
     onBlurSuppressChange,
     onInstanceModelsChange,
@@ -60,6 +60,12 @@ export function ModelsSection(props: ModelsSectionProps) {
 
   // 1. Credentials for catalog / verify / batch calls.
   const { resolveCreds } = useResolveCreds(instance, getFormValues);
+
+  // Snapshot of the current api_key so `useModelsCatalog` can gate the
+  // auto-fetch for VolcEngine on the user actually having typed one.
+  // Recomputed on every render so the effect re-runs as soon as the
+  // form value lands.
+  const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
   const { data: instanceModels } = useFetchInstanceModels(
@@ -78,16 +84,38 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerName,
     instanceName,
     hideActions,
-    isDraftInstance,
     resolveCreds,
     instanceModels,
-    instanceDetailsLoaded,
+    apiKeyValue: currentCreds.apiKey,
   });
+
+  // 3a. Draft-only: locally-tracked "added models" list.
+  // The backend has no per-instance models yet, so per-model add /
+  // remove / batch-toggle on a draft mutates this array instead of
+  // firing a mutation. The host save handler then flushes the latest
+  // snapshot through `model_info` on save. Reset when the provider
+  // or instance changes (rare in practice since the host remounts
+  // the section on draft switch, but kept as a safety net).
+  const [draftModels, setDraftModels] = useState<IProviderModelItem[]>([]);
+  useEffect(() => {
+    setDraftModels([]);
+  }, [providerName, instanceName]);
+
+  const addDraftModel = useCallback((model: IProviderModelItem) => {
+    setDraftModels((prev) =>
+      prev.some((m) => m.name === model.name) ? prev : [...prev, model],
+    );
+  }, []);
+  const removeDraftModel = useCallback((name: string) => {
+    setDraftModels((prev) => prev.filter((m) => m.name !== name));
+  }, []);
 
   // 4. Derived union list (instance ∪ catalog) + push to host.
   const { instanceItems, models, addedSet } = useModelsDerived({
     catalog,
     instanceModels,
+    draftModels,
+    isDraftInstance,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
@@ -122,6 +150,9 @@ export function ModelsSection(props: ModelsSectionProps) {
     filteredModels,
     addedSet,
     setCatalog,
+    addDraftModel,
+    removeDraftModel,
+    setDraftModelsList: setDraftModels,
   });
 
   // 8. Edit dialog state + submit.

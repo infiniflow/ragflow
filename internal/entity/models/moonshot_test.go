@@ -116,7 +116,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 		" kimi-k2.6 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		&ChatConfig{Stream: &stream, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -126,6 +126,57 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 	}
 	if resp.ReasonContent == nil || *resp.ReasonContent != "thought" {
 		t.Errorf("ReasonContent=%v, want thought", resp.ReasonContent)
+	}
+}
+
+func TestMoonshotChatSupportsTools(t *testing.T) {
+	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		tools, ok := body["tools"].([]interface{})
+		if !ok || len(tools) != 1 {
+			t.Errorf("tools=%#v, want one tool", body["tools"])
+		}
+		if body["tool_choice"] != "auto" {
+			t.Errorf("tool_choice=%v, want auto", body["tool_choice"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content": nil,
+					"tool_calls": []map[string]interface{}{{
+						"id":   "call_weather",
+						"type": "function",
+						"function": map[string]string{
+							"name":      "get_weather",
+							"arguments": `{"city":"北京"}`,
+						},
+					}},
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	tools := []map[string]interface{}{{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name": "get_weather",
+		},
+	}}
+	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		"kimi-k2.6",
+		[]Message{{Role: "user", Content: "北京今天天气怎么样？"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Tools: tools}, nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "" {
+		t.Errorf("Answer=%v, want empty", resp.Answer)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0]["id"] != "call_weather" {
+		t.Errorf("ToolCalls=%#v, want call_weather", resp.ToolCalls)
 	}
 }
 
@@ -162,6 +213,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(answer, reason *string) error {
 			if answer != nil {
 				if *answer == "[DONE]" {
@@ -206,6 +258,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(answer, _ *string) error {
 			if answer != nil && *answer == "[DONE]" {
@@ -346,7 +399,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -354,7 +407,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -362,21 +415,21 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream model",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
 			},
 			want: "model name is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},

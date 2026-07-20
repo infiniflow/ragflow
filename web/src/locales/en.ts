@@ -779,6 +779,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
+        general: 'General',
         qa: 'Q&A',
         resume: 'Resume',
         manual: 'Manual',
@@ -1809,6 +1810,7 @@ Example: Virtual Hosted Style`,
       addInstance: 'Add instance',
       addInstanceText: 'Add instance',
       noInstancesConfigured: 'No instances configured yet.',
+      saveAll: 'Save all',
       editInstanceName: 'Edit instance name',
       models: 'Models',
       chatModel: 'LLM',
@@ -1837,11 +1839,6 @@ Example: Virtual Hosted Style`,
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
-      instanceNameSaveTip:
-        'Enter an instance name and save it. Once saved, it cannot be changed.',
-      instanceNameSavePrompt:
-        'Please save the instance name first before editing other fields.',
-      instanceNameLockedHint: 'Instance name is locked',
       deleteInstance: 'Delete instance',
       modelName: 'Model name',
       modelID: 'Model ID',
@@ -2005,7 +2002,7 @@ Example: Virtual Hosted Style`,
         baseUrl: 'Base URL',
         baseUrlMessage: 'Please input the Base URL',
         baseUrlPlaceholder:
-          'For SoMark API, fill in https://somark.tech/api/v1; for self-hosted deployment, fill in your local Base URL',
+          'For SoMark API, use https://somark.cn/api/v1 in mainland China; use https://somark.ai/api/v1 outside mainland China (including Taiwan, China; Hong Kong, China; Macau, China; and overseas). For self-hosted deployment, use your local Base URL',
         apiKey: 'API Key',
         apiKeyPlaceholder:
           'Required for SoMark API; leave blank for self-hosted deployment',
@@ -2024,6 +2021,8 @@ Example: Virtual Hosted Style`,
         enableTextCrossPage: 'Enable Text Cross Page',
         enableTableCrossPage: 'Enable Table Cross Page',
         keepHeaderFooter: 'Keep Header Footer',
+        purchaseUrl:
+          'Purchase API: mainland China — https://somark.cn/workbench/purchase; overseas (including Taiwan, China; Hong Kong, China; Macau, China) — https://somark.ai/studio/purchase',
       },
       modelTypes: {
         chat: 'Chat',

@@ -52,7 +52,10 @@ type Config struct {
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
 	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
+	Ingestor         IngestorConfig         `mapstructure:"ingestor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
+	OTel             OtelConfig             `mapstructure:"otel"`
+	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
 }
 
 // AdminConfig admin server configuration
@@ -72,6 +75,10 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+type IngestorConfig struct {
+	MQType string `mapstructure:"mq_type"`
+}
+
 type TaskExecutorConfig struct {
 	MessageQueueType string `mapstructure:"message_queue_type"`
 }
@@ -81,7 +88,23 @@ type FileSyncerConfig struct {
 	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
-// UserDefaultLLMConfig user default LLM configuration
+type OtelConfig struct {
+	Host        string  `mapstructure:"host"`
+	Port        int     `mapstructure:"port"`
+	SampleRatio float64 `mapstructure:"sample_ratio"`
+	Secure      bool    `mapstructure:"secure"`
+	Stdout      bool    `mapstructure:"stdout"`
+	Enable      bool    `mapstructure:"enable"`
+}
+
+type ClickhouseConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	Database string `mapstructure:"database"`
+}
+
 type UserDefaultLLMConfig struct {
 	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
 }
@@ -380,7 +403,7 @@ func Init(configPath string) error {
 			configDict["name"] = "redis"
 			configDict["host"] = host
 			configDict["port"] = port
-			configDict["service_type"] = "message_queue"
+			configDict["service_type"] = "cache"
 			configDict["extra"] = map[string]interface{}{
 				"mq_type":  "redis",
 				"database": db,
@@ -408,23 +431,27 @@ func Init(configPath string) error {
 			delete(configDict, "max_allowed_packet")
 			delete(configDict, "user")
 			delete(configDict, "password")
-		case "task_executor":
-			mqType := getString(configDict, "message_queue_type")
+		case "ingestor":
+			mqType := getString(configDict, "mq_type")
 			configDict["id"] = id
-			configDict["name"] = "task_executor"
-			configDict["service_type"] = "task_executor"
+			configDict["name"] = "ingestor"
+			configDict["service_type"] = "ingestor"
 			configDict["extra"] = map[string]interface{}{
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
 		case "nats":
-			host := getString(configDict, "host")
-			port := getInt(configDict, "port")
 			configDict["id"] = id
 			configDict["name"] = "nats"
-			configDict["host"] = host
-			configDict["port"] = port
 			configDict["service_type"] = "message_queue"
+		case "otel":
+			configDict["id"] = id
+			configDict["name"] = "jaeger"
+			configDict["service_type"] = "tracing"
+		case "clickhouse":
+			configDict["id"] = id
+			configDict["name"] = "clickhouse"
+			configDict["service_type"] = "olap"
 		case "admin":
 			// Skip admin section
 			continue
