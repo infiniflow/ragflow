@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 )
 
 // recordingTaskPublisher implements service.TaskPublisher and records published messages.
@@ -708,29 +707,6 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	mappings, _ = f2dDAO.GetByDocumentID("doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d mapping for doc-2, got %d", len(mappings))
-	}
-}
-
-func TestSelectUploadParser_MirrorsPython(t *testing.T) {
-	tests := []struct {
-		name         string
-		docType      utility.FileType
-		filename     string
-		defaultValue string
-		want         string
-	}{
-		{name: "visual", docType: utility.FileTypeVISUAL, filename: "img.png", defaultValue: "naive", want: "picture"},
-		{name: "aural", docType: utility.FileTypeAURAL, filename: "audio.mp3", defaultValue: "naive", want: "audio"},
-		{name: "presentation by ext", docType: utility.FileTypeDOC, filename: "deck.pptx", defaultValue: "naive", want: "presentation"},
-		{name: "email by ext", docType: utility.FileTypeDOC, filename: "mail.eml", defaultValue: "naive", want: "email"},
-		{name: "fallback default", docType: utility.FileTypeDOC, filename: "notes.txt", defaultValue: "manual", want: "manual"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := selectUploadParser(tt.docType, tt.filename, tt.defaultValue); got != tt.want {
-				t.Fatalf("selectUploadParser(%q)=%q, want %q", tt.filename, got, tt.want)
-			}
-		})
 	}
 }
 

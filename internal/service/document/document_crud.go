@@ -100,7 +100,6 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 	}, nil
 }
 
-// CreateDocument create document
 // GetDocumentByID get document by ID
 func (s *DocumentService) GetDocumentByID(id string) (*DocumentResponse, error) {
 	document, err := s.documentDAO.GetByID(id)
