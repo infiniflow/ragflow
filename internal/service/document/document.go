@@ -63,7 +63,6 @@ func NewDocumentService() *DocumentService {
 	}
 }
 
-// CreateDocumentRequest create document request
 // UpdateDocumentRequest update document request
 type UpdateDocumentRequest struct {
 	Name        *string  `json:"name"`

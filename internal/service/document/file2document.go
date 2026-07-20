@@ -198,7 +198,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 				continue
 			}
 
-			parserID := selectUploadParser(utility.FileType(file.Type), file.Name, kb.ParserID)
+			parserID := kb.ParserID
 			suffix := strings.TrimPrefix(filepath.Ext(file.Name), ".")
 			doc := &entity.Document{
 				ID:           utility.GenerateUUID(),
@@ -217,19 +217,6 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 			if kb.PipelineID != nil {
 				doc.PipelineID = kb.PipelineID
 				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
-			}
-
-			// When the document's builtin parser_id differs from the KB's
-			// (e.g. visual→picture, aural→audio), re-resolve component_params
-			// defaults from the document's own DSL template so cpnIDs and
-			// param keys match the pipeline that will actually execute.
-			if kb.PipelineID == nil && parserID != kb.ParserID {
-				if cp, err := service.ResolveComponentParamsDefaults(parserID, nil); err != nil {
-					common.Warn("convertFiles: resolve component_params defaults",
-						zap.String("parserID", parserID), zap.Error(err))
-				} else if cp != nil {
-					doc.ParserConfig = cp
-				}
 			}
 
 			// InsertDocument creates the row and increments KB doc_num in one
