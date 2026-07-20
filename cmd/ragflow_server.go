@@ -696,6 +696,7 @@ func startServer(config *server.Config) {
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
+	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
@@ -717,6 +718,7 @@ func startServer(config *server.Config) {
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
+	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -816,6 +818,7 @@ func startServer(config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
+		statsHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,
