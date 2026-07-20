@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -25,6 +26,13 @@ import (
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
 )
+
+// streamDoneSentinel is the OpenAI-style end-of-stream marker model drivers
+// emit as their final sender call. It is a transport signal, not answer text.
+const streamDoneSentinel = "[DONE]"
+
+// errStreamDone aborts the driver loop once the terminal sentinel arrives.
+var errStreamDone = errors.New("chat stream done")
 
 func (m *ModelProviderService) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := m.GetChatModel(tenantID, modelID)
@@ -51,6 +59,9 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 				if delta == nil {
 					return nil
 				}
+				if *delta == streamDoneSentinel {
+					return errStreamDone
+				}
 				select {
 				case ch <- *delta:
 					return nil
@@ -58,7 +69,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 					return ctx.Err()
 				}
 			}); err != nil {
-			if err == context.Canceled || err == context.DeadlineExceeded {
+			if errors.Is(err, errStreamDone) || err == context.Canceled || err == context.DeadlineExceeded {
 				return
 			}
 			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
