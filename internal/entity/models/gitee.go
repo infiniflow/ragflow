@@ -125,9 +125,11 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 				}
 			}
 		}
-
 		if chatModelConfig.Tools != nil {
 			reqBody["tools"] = chatModelConfig.Tools
+		}
+		if chatModelConfig.ToolChoice != nil {
+			reqBody["tool_choice"] = chatModelConfig.ToolChoice
 		}
 	}
 
