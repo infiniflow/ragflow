@@ -322,6 +322,81 @@ func TestWriteChatbotRunEvent_MessageEventCarriesEvent(t *testing.T) {
 	}
 }
 
+// TestBotService_ChatbotCompletion_NewSessionSkipsLLM locks in the
+// share-page handshake behaviour: the front-end opens a shared chat
+// with an empty question and no session_id only to obtain a session
+// (web/src/pages/next-chats/hooks/use-send-shared-message.ts
+// fetchSessionId). Mirrors python async_iframe_completion
+// (conversation_service.py:324-334): the server must create the
+// prologue-seeded session and stream the prologue back WITHOUT
+// invoking the LLM. The previous Go implementation ran the model
+// with an empty user turn, so merely opening a share link produced
+// a fabricated "you sent a blank message" reply.
+func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.Chat{}); err != nil {
+		t.Fatalf("migrate chat: %v", err)
+	}
+	pushServiceDB(t, db)
+
+	prologue := "你好！我是你的AI助手。"
+	if err := db.Create(&entity.Chat{
+		ID:           "dlg-1",
+		TenantID:     "tenant-1",
+		Name:         sptr("bot"),
+		LLMSetting:   entity.JSONMap{},
+		PromptType:   "simple",
+		PromptConfig: entity.JSONMap{"prologue": prologue},
+		KBIDs:        entity.JSONSlice{},
+		Status:       sptr(common.StatusDialogValid),
+	}).Error; err != nil {
+		t.Fatalf("seed dialog: %v", err)
+	}
+
+	// llmService is nil — any attempt to reach the LLM path would
+	// fail loudly, so a successful run proves the LLM was skipped.
+	svc := NewBotService(nil, nil)
+	frames, code, err := svc.ChatbotCompletion(context.Background(),
+		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
+	if err != nil {
+		t.Fatalf("ChatbotCompletion: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("want code %d, got %d", common.CodeSuccess, code)
+	}
+
+	var got []ChatbotSSEFrame
+	for f := range frames {
+		got = append(got, f)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 frames (prologue + done), got %d: %+v", len(got), got)
+	}
+	if got[0].Err != nil {
+		t.Errorf("frame 0 unexpected error: %v", got[0].Err)
+	}
+	if got[0].Data != prologue {
+		t.Errorf("frame 0 data = %q, want prologue %q", got[0].Data, prologue)
+	}
+	if got[0].SessionID == "" {
+		t.Errorf("frame 0 must carry the new session_id")
+	}
+	if !got[1].Done {
+		t.Errorf("frame 1 must be the done marker")
+	}
+
+	// The persisted session must hold exactly the prologue turn —
+	// no empty user message may be written.
+	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(got[0].SessionID, "dlg-1")
+	if derr != nil || row == nil {
+		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
+	}
+	msgs := historyToMessages(row.Message)
+	if len(msgs) != 1 || msgs[0].Role != "assistant" || msgs[0].Content != prologue {
+		t.Errorf("persisted messages = %+v, want single prologue assistant turn", msgs)
+	}
+}
+
 // recordingResponseWriter is a minimal http.ResponseWriter stub
 // for SSE frame tests. Tracks writes so the test can assert the
 // emitted frame contents.
