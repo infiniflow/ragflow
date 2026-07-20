@@ -397,7 +397,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 						}
 					}
 				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					accumulatedToolCalls[idx] = CloneMap(tcMap)
 				}
 			}
 		}

@@ -334,7 +334,7 @@ func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Messag
 						}
 					}
 				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					accumulatedToolCalls[idx] = CloneMap(tcMap)
 				}
 			}
 			continue

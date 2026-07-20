@@ -101,19 +101,10 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -244,19 +235,10 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      true,
 		"temperature": 1,
 	}
@@ -297,6 +279,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 				}
 			}
 		}
+
 	}
 
 	jsonData, err := json.Marshal(reqBody)

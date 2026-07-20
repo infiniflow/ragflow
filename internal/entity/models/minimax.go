@@ -380,7 +380,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 						}
 					}
 				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					accumulatedToolCalls[idx] = CloneMap(tcMap)
 				}
 			}
 		}

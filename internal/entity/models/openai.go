@@ -409,7 +409,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 							}
 						}
 					} else {
-						accumulatedToolCalls[idx] = cloneMap(tcMap)
+						accumulatedToolCalls[idx] = CloneMap(tcMap)
 					}
 				}
 			}
@@ -1101,12 +1101,4 @@ func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
 		tt = pt + ct
 	}
 	return pt, ct, tt
-}
-
-func cloneMap(m map[string]interface{}) map[string]interface{} {
-	cp := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		cp[k] = v
-	}
-	return cp
 }
