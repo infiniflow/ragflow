@@ -486,23 +486,59 @@ async def _llm_merge(chat_mdl, cluster_desc: str, doc_summary: str) -> str:
     return cluster_desc
 
 
-async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> str:
-    """LLM create a cluster summary from one or more doc summaries."""
+def _clean_title(title: str) -> str:
+    """Normalize an LLM title into a one-line, length-capped display name."""
+    return " ".join((title or "").split())[:48].strip()
+
+
+def _fallback_title(summary: str) -> str:
+    """Derive a short readable title from a summary when the LLM gives none."""
+    words = " ".join((summary or "").split()).split(" ")
+    return " ".join(words[:6]).strip() or "Cluster"
+
+
+def _readable_cluster_name(title: str, seed: str) -> str:
+    """A readable yet unique nav-cluster key: ``"<title> <8-hex>"``.
+
+    The title makes the node name human-readable; the short hash of ``seed``
+    (the cluster description) preserves the per-KB uniqueness the tree keying
+    relies on (``_nav_cluster_id`` / ``parent_kwd``).
+    """
+    suffix = xxhash.xxh64((seed or "").encode("utf-8")).hexdigest()[:8]
+    return f"{_clean_title(title) or 'Cluster'} {suffix}"
+
+
+async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> tuple[str, str]:
+    """LLM-derive a cluster's readable ``(name, summary)`` from doc summaries.
+
+    ``name`` is a short human-readable topic title used to make the nav node
+    name readable (the caller still appends a short hash to keep the tree key
+    unique); ``summary`` is the 1-3 sentence description.
+    """
+    fallback_summary = doc_summaries[0] if doc_summaries else ""
     if not chat_mdl:
-        return doc_summaries[0] if doc_summaries else ""
+        return _fallback_title(fallback_summary), fallback_summary
+
     from rag.prompts.generator import gen_json
 
     texts = "\n---\n".join(doc_summaries)
-    prompt = f"Summarize the common topic of the following document excerpts in 1-3 concise sentences:\n\n{texts}\n\nReturn ONLY the summary text, no commentary."
+    prompt = (
+        "Given the document excerpts below, produce a short human-readable topic "
+        "name and a concise description of their common topic.\n\n"
+        f"{texts}\n\n"
+        'Return ONLY JSON: {"name": "<2-6 word topic title>", "summary": "<1-3 sentence description>"}'
+    )
     try:
         resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
         if isinstance(resp, dict):
-            return str(resp.get("summary", resp.get("result", doc_summaries[0])))
+            summary = str(resp.get("summary") or resp.get("result") or fallback_summary).strip()
+            name = _clean_title(str(resp.get("name") or "")) or _fallback_title(summary)
+            return name, (summary or fallback_summary)
         if isinstance(resp, str) and resp.strip():
-            return resp.strip()
+            return _fallback_title(resp), resp.strip()
     except Exception:
         logging.exception("dataset_nav: LLM summary failed")
-    return doc_summaries[0] if doc_summaries else ""
+    return _fallback_title(fallback_summary), fallback_summary
 
 
 # ---------------------------------------------------------------------------
@@ -631,8 +667,8 @@ async def upsert_dataset_nav_doc(
             if parent_row:
                 depth_of_parent = parent_row.get("depth_int", 1)
             new_depth = depth_of_parent + 1
-            new_name = f"{parent_for_new}_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
-            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_title, new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_name = _readable_cluster_name(new_title, summary)
             new_cluster = _make_nav_cluster_row(
                 kb_id,
                 new_name,
@@ -658,8 +694,8 @@ async def upsert_dataset_nav_doc(
             await _store_upsert(tenant_id, kb_id, nav_doc_row)
         else:
             # ── Create root-level new cluster ──
-            new_name = f"root_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
-            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            root_title, new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_name = _readable_cluster_name(root_title, summary)
             new_cluster = _make_nav_cluster_row(
                 kb_id,
                 new_name,
@@ -915,8 +951,11 @@ async def _maybe_split_cluster(
                 for d in dids:
                     if d not in doc_ids:
                         doc_ids.append(d)
-        group_desc = await _llm_create_summary(chat_mdl, descs) if descs else f"Group {gi + 1}"
-        group_name = f"navc_split_{xxhash.xxh64(group_desc.encode()).hexdigest()[:12]}"
+        if descs:
+            group_title, group_desc = await _llm_create_summary(chat_mdl, descs)
+        else:
+            group_title = group_desc = f"Group {gi + 1}"
+        group_name = _readable_cluster_name(group_title, group_desc)
         group_emb = await _embed(embd_mdl, group_desc) if embd_mdl else []
         new_cluster = _make_nav_cluster_row(
             kb_id,
