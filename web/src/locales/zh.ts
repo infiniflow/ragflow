@@ -462,7 +462,6 @@ export default {
       graph: '图谱',
       graphPlaceholder: '图谱视图占位',
       llmWiki: 'LLM Wiki',
-      skills: '技能',
       contents: '导航',
       topics: '主题',
       concept: '概念',

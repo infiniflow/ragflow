@@ -59,7 +59,7 @@ export default function Compilation() {
               size="sm"
               onClick={handleSwitchToSkills}
             >
-              {t('knowledgeDetails.skills')}
+              To Skills
             </Button>
           </div>
         </section>

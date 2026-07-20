@@ -516,7 +516,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       graph: 'Graph',
       graphPlaceholder: 'Graph view placeholder',
       llmWiki: 'LLM Wiki',
-      skills: 'Skills',
       contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
