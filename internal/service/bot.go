@@ -47,6 +47,7 @@ type BotService struct {
 	api4ConversationDAO *dao.API4ConversationDAO
 	agentService        *AgentService
 	llmService          *LLMService
+	pipeline            *ChatPipelineService
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
@@ -59,6 +60,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
 		agentService:        agentSvc,
 		llmService:          llmSvc,
+		pipeline:            NewChatPipelineService(),
 	}
 }
 
@@ -190,6 +192,18 @@ type ChatbotCompletionRequest struct {
 	Question  string         `json:"question"`
 	Stream    bool           `json:"stream"`
 	Inputs    map[string]any `json:"inputs"`
+	// Quote controls citation generation. Nil means "absent" —
+	// python bot_api.py defaults it to False for chatbot
+	// completions, so the service layer mirrors that.
+	Quote *bool `json:"quote"`
+	// Reasoning / Internet arrive as bool OR 0/1 number depending
+	// on the widget; the service layer normalises them before
+	// handing them to the chat pipeline.
+	Reasoning any `json:"reasoning"`
+	Internet  any `json:"internet"`
+	// DocIDs is an optional comma-separated document filter,
+	// same shape as the regular chat completion kwargs.
+	DocIDs string `json:"doc_ids"`
 }
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the
