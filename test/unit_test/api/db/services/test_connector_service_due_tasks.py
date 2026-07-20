@@ -16,7 +16,7 @@
 
 import pytest
 
-from api.db.db_models import SyncLogs
+from api.db.db_models import Connector, SyncLogs
 from api.db.services.connector_service import SyncLogsService
 from common.constants import ConnectorTaskType
 
@@ -50,7 +50,6 @@ def test_list_due_sync_tasks_excludes_non_positive_refresh_frequencies_unless_re
 @pytest.mark.p2
 def test_due_sync_query_filters_disabled_connectors_before_materialization(monkeypatch):
     where_calls = []
-    select = SyncLogs.select
 
     class Query:
         def join(self, *_args, **_kwargs):
@@ -73,5 +72,6 @@ def test_due_sync_query_filters_disabled_connectors_before_materialization(monke
 
     assert SyncLogsService._list_due_tasks_for_freq(ConnectorTaskType.SYNC, "refresh_freq") == []
 
-    compiled_conditions = [select(SyncLogs.id).where(*conditions).sql() for conditions in where_calls]
-    assert any("refresh_freq` >" in sql and "from_beginning` =" in sql and params[-2:] == [0, "1"] for sql, params in compiled_conditions)
+    frequency_filter = next(condition for conditions in where_calls for condition in conditions if getattr(condition, "op", None) == "OR")
+    assert (frequency_filter.lhs.lhs, frequency_filter.lhs.op, frequency_filter.lhs.rhs) == (Connector.refresh_freq, ">", 0)
+    assert (frequency_filter.rhs.lhs, frequency_filter.rhs.op, frequency_filter.rhs.rhs) == (SyncLogs.from_beginning, "=", "1")
