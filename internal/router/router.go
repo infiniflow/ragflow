@@ -30,6 +30,7 @@ type Router struct {
 	documentHandler      *handler.DocumentHandler
 	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
+	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
@@ -64,6 +65,7 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
+	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -96,6 +98,7 @@ func NewRouter(
 		documentHandler:      documentHandler,
 		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
+		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
@@ -644,7 +647,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.systemHandler.GetStats)
+				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 
 				config := system.Group("/config")
 				{
