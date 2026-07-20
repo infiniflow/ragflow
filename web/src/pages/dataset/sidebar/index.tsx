@@ -61,7 +61,7 @@ export function SideBar({ dataset: data }: PropType) {
         ? [
             {
               icon: <LucideCog className="size-[1em]" />,
-              label: t(`knowledgeDetails.nextConfiguration`),
+              label: t(`knowledgeDetails.configuration`),
               key: Routes.DataSetSettingNext,
             },
           ]
