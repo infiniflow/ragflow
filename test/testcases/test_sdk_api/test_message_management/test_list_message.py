@@ -41,7 +41,7 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestMessageList:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_unset(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})

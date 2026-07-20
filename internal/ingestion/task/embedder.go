@@ -42,7 +42,7 @@ func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error
 		return nil, fmt.Errorf("embedder: embedding model driver is nil for model %v", e.model.ModelName)
 	}
 	config := &models.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.model.ModelDriver.Embed(e.model.ModelName, texts, e.model.APIConfig, config)
+	embeds, err := e.model.ModelDriver.Embed(e.model.ModelName, texts, e.model.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}

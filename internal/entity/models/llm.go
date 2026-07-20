@@ -147,7 +147,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg)
+	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}
@@ -155,7 +155,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	// Langfuse) can compute the run total. Mirrors Python's
 	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
 	if resp != nil && resp.Usage != nil {
-		m.inner.LastUsage = &ChatUsage{
+		m.inner.LastUsage = &TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, m.inner)
@@ -276,14 +276,11 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if m.inner.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	if len(m.tools) > 0 {
-		msg, err := m.Generate(ctx, msgs, opts...)
-		if err != nil {
-			return nil, err
-		}
-		return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+	internalMessage := toInternalMessages(msgs)
+	chatCfg, err := m.chatConfigForGenerate()
+	if err != nil {
+		return nil, err
 	}
-	internal := toInternalMessages(msgs)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
@@ -316,8 +313,16 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg, sender); err != nil {
+		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
 			_ = sw.Send(nil, err)
+			return
+		}
+		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
+			msg := &schema.Message{
+				Role:      schema.Assistant,
+				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),
+			}
+			_ = sw.Send(msg, nil)
 		}
 	}()
 	return sr, nil

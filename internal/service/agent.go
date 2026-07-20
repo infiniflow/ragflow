@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
 	"reflect"
 	"sort"
@@ -1185,6 +1186,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		})
 		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
 		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
+		ctx2 = runtime.WithCanvasMessageEmitter(ctx2, func(content string) {
+			emitAgentMessageEvent(emit, canvas.MessageEvent{Content: content})
+		})
 
 		// Seed initial env/sys values from the Canvas DSL globals.
 		// Python's self.globals dict stores "sys.*" and "env.*" under
@@ -1216,8 +1220,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			state.Sys["tenant_id"] = tid
 		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
-			fileSvc := NewFileService()
-			files, ferr := fileSvc.parseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
+			// Only used for ParseAgentUploads (read-only); nil DocRemover means
+			// this FileService MUST NOT be used for DeleteFiles.
+			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+			files, ferr := fileSvc.ParseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)

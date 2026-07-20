@@ -1609,7 +1609,15 @@ func (s *ChatSessionService) ChatCompletions(
 						}
 						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					} else {
-						ans := s.structureAnswer(session, "", messageID, sessionID, reference)
+						ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+						if result.Reference != nil {
+							ans["reference"] = result.Reference
+						}
+						ans["audio_binary"] = result.AudioBinary
+						ans["prompt"] = result.Prompt
+						if result.CreatedAt != 0 {
+							ans["created_at"] = result.CreatedAt
+						}
 						ans["final"] = true
 						if chatID != "" {
 							ans["chat_id"] = chatID
@@ -1779,7 +1787,6 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 	}
 }
 
-// createSessionForCompletion mirrors Python _create_session_for_completion.
 func (s *ChatSessionService) createSessionForCompletion(chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
 	newID := utility.GenerateUUID()
 	name := "New session"

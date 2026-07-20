@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"ragflow/internal/common"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -153,6 +154,61 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Function.Name != "search_my_dateset" {
 		t.Fatalf("stream message tool calls = %#v, want search_my_dateset", msg.ToolCalls)
 	}
+	if driver.lastConfig == nil || driver.lastConfig.Tools == nil {
+		t.Fatal("Stream did not send tools to driver")
+	}
+}
+
+func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
+	apiKey := "key"
+	modelName := "chat"
+	answer := "streamed answer"
+	driver := &captureToolDriver{
+		resp: &ChatResponse{Answer: &answer},
+	}
+	var callbacks []string
+	base := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	model := NewEinoChatModel(base, &ChatConfig{
+		StreamCallback: func(content, _ string) {
+			if content != "" {
+				callbacks = append(callbacks, content)
+			}
+		},
+	})
+	bound, err := model.WithTools([]*schema.ToolInfo{
+		{
+			Name: "search_my_dateset",
+			Desc: "Search datasets.",
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"query": {Type: schema.String, Required: true},
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("WithTools: %v", err)
+	}
+
+	stream, err := bound.Stream(context.Background(), []*schema.Message{
+		schema.UserMessage("hello"),
+		{
+			Role:       schema.Tool,
+			Content:    `{"formalized_content":"hit"}`,
+			ToolCallID: "call-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	msg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("stream.Recv: %v", err)
+	}
+	if msg == nil || msg.Content != answer {
+		t.Fatalf("stream message = %#v, want final answer content", msg)
+	}
+	if len(callbacks) != 1 || callbacks[0] != answer {
+		t.Fatalf("callbacks = %#v, want streamed answer", callbacks)
+	}
 }
 
 func TestToInternalMessagesPreservesToolMessages(t *testing.T) {
@@ -194,7 +250,7 @@ type streamSentinelDriver struct {
 	*captureToolDriver
 }
 
-func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, sender func(*string, *string) error) error {
+func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	answer := "answer"
 	if err := sender(&answer, nil); err != nil {
 		return err
@@ -209,35 +265,47 @@ func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *
 
 func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver { return d }
 func (d *captureToolDriver) Name() string                                      { return "capture" }
-func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig) (*ChatResponse, error) {
+func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	d.lastConfig = cfg
 	return d.resp, nil
 }
-func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	d.lastConfig = cfg
+	if d.resp == nil {
+		return nil
+	}
+	if cfg != nil && len(d.resp.ToolCalls) > 0 {
+		tcs := append([]map[string]interface{}(nil), d.resp.ToolCalls...)
+		cfg.ToolCallsResult = &tcs
+		return nil
+	}
+	if d.resp.Answer != nil {
+		return sender(d.resp.Answer, d.resp.ReasonContent)
+	}
 	return nil
 }
-func (d *captureToolDriver) Embed(_ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig) ([]EmbeddingData, error) {
+func (d *captureToolDriver) Embed(_ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Rerank(_ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig) (*RerankResponse, error) {
+func (d *captureToolDriver) Rerank(_ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudio(_ *string, _ *string, _ *APIConfig, _ *ASRConfig) (*ASRResponse, error) {
+func (d *captureToolDriver) TranscribeAudio(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudioWithSender(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) TranscribeAudioWithSender(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) AudioSpeech(_ *string, _ *string, _ *APIConfig, _ *TTSConfig) (*TTSResponse, error) {
+func (d *captureToolDriver) AudioSpeech(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage) (*TTSResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) AudioSpeechWithSender(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ func(*string, *string) error) error {
+func (d *captureToolDriver) AudioSpeechWithSender(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) OCRFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig) (*OCRFileResponse, error) {
+func (d *captureToolDriver) OCRFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig, _ *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) ParseFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig) (*ParseFileResponse, error) {
+func (d *captureToolDriver) ParseFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig, _ *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, nil
 }
 func (d *captureToolDriver) ListModels(_ *APIConfig) ([]ListModelResponse, error) {

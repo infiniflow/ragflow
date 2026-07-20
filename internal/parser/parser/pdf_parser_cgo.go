@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -15,6 +16,7 @@ func (p *PDFParser) ParseWithResult(filename string, data []byte) ParseResult {
 	if err := p.validateParseMethod(); err != nil {
 		return ParseResult{Err: err}
 	}
+	common.Info(fmt.Sprintf("------------file: %s, parse_method: %s", filename, p.ParseMethod))
 	switch normalizePDFParseMethod(p.ParseMethod) {
 	case "plain_text":
 		return parsePDFWithPlainText(filename, data, p)

@@ -300,10 +300,12 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body directly), the wrapper degrades to a plain invocation:
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
-func withStateBracket(body nodeBodyFn) nodeBodyFn {
+func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		originalIn := in
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 		if state != nil {
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {
 				in = map[string]any{}
 			}
@@ -317,21 +319,30 @@ func withStateBracket(body nodeBodyFn) nodeBodyFn {
 		}
 		out, err := body(ctx, in)
 		if err != nil {
+			if state != nil {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
+			}
 			return nil, err
 		}
-		if state == nil || out == nil {
+		if state == nil {
 			return out, nil
 		}
-		cpnID, _ := out["__cpn_id__"].(string)
-		if cpnID == "" {
+		if out == nil {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			return out, nil
+		}
+		outputCpnID, _ := out["__cpn_id__"].(string)
+		if outputCpnID == "" {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 			return out, nil
 		}
 		for k, v := range out {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
-			state.SetVar(cpnID, k, v)
+			state.SetVar(outputCpnID, k, v)
 		}
+		nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 		return out, nil
 	}
 }

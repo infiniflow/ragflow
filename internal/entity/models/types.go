@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"ragflow/internal/common"
+)
 
 // Message represents a chat message with role and content
 //
@@ -27,23 +30,23 @@ type ModelDriver interface {
 	Name() string
 
 	// ChatWithMessages sends multiple messages synchronously
-	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
+	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error)
 	// ChatStreamlyWithSender sends multiple messages asynchronously
-	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
+	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 	// Embed a list of texts into embeddings
-	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
+	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
-	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
+	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
 	// TranscribeAudio transcribe audio
-	TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error)
-	TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error
+	TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error)
+	TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 	// AudioSpeech convert text to audio
-	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error)
-	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
+	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error)
+	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 	// OCRFile OCR file
-	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error)
+	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error)
 	// ParseFile parse file
-	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
+	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 
@@ -60,16 +63,16 @@ type ChatResponse struct {
 	Answer        *string                  `json:"answer"`
 	ReasonContent *string                  `json:"reason_content"`
 	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
-	Usage         *ChatUsage               `json:"usage,omitempty"`
+	Usage         *TokenUsage              `json:"usage,omitempty"`
 }
 
 // ChatUsage holds token usage split for one LLM call. Consumed by
 // LLMBundle for accurate Langfuse reporting and run aggregation.
 // Mirrors Python's common.token_utils.usage_from_response() split.
-type ChatUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"  mapstructure:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"  mapstructure:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"  mapstructure:"total_tokens"`
 }
 
 type EmbeddingData struct {
@@ -127,9 +130,15 @@ type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
 }
 
+type ModelListItem struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by"`
+}
+
 type ModelList struct {
-	Object string    `json:"object"`
-	Models []DSModel `json:"data"`
+	Object string          `json:"object"`
+	Models []ModelListItem `json:"data"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -171,7 +180,7 @@ type ChatConfig struct {
 	// The ChatStreamlyWithSender driver writes to this pointer (if
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
-	UsageResult *ChatUsage `json:"-"`
+	UsageResult *TokenUsage `json:"-"`
 	// StreamCallback receives raw content/reasoning deltas as soon as
 	// the model driver streams them.
 	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
@@ -243,8 +252,8 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity between query and texts
-func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig, rerankConfig)
+func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig, rerankConfig, modelUsage)
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.
@@ -264,7 +273,7 @@ type ChatModel struct {
 	// LastUsage holds the token usage (prompt/completion/total) of the most
 	// recent chat call. Consumed by callers for accurate Langfuse reporting
 	// and per-run token aggregation. Reset before each call.
-	LastUsage *ChatUsage
+	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel
