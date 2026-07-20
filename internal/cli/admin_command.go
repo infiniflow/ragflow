@@ -19,6 +19,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"ragflow/internal/common"
 )
 
@@ -1731,6 +1732,102 @@ func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, "get users plan quota")
+}
+
+// AdminStatsUserCommand stats user token usage
+func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user name not provided")
+	}
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
+	granularity, ok := cmd.Params["granularity"].(string)
+	if !ok {
+		return nil, fmt.Errorf("granularity not provided")
+	}
+
+	q := url.Values{}
+	q.Set("user_name", userName)
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
+	}
+	q.Set("granularity", granularity)
+
+	baseUrl := fmt.Sprintf("/admin/stats/token?%s", q.Encode())
+
+	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats user: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get stats user")
+}
+
+// AdminStatsUsersCommand stats users token usage
+func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	top, ok := cmd.Params["top"].(int)
+	if !ok {
+		return nil, fmt.Errorf("top not provided")
+	}
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
+
+	q := url.Values{}
+	q.Set("top", fmt.Sprintf("%d", top))
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
+	}
+
+	url := fmt.Sprintf("/admin/stats/token/users?%s", q.Encode())
+
+	resp, err := c.AdminServerClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get stats")
+}
+
+// AdminStatsSummaryCommand stats summary token usage
+func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	fromTime, _ := cmd.Params["from"].(string)
+	toTime, _ := cmd.Params["to"].(string)
+
+	q := url.Values{}
+	if fromTime != "" {
+		q.Set("from", fromTime)
+	}
+	if toTime != "" {
+		q.Set("to", toTime)
+	}
+
+	baseUrl := fmt.Sprintf("/admin/stats/token/summary?%s", q.Encode())
+
+	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats summary: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get stats summary")
 }
 
 // ListUsers lists all users (admin mode only)
