@@ -187,10 +187,7 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
+	content, _ := messageMap["content"].(string)
 
 	// Handle thinking/reasoning if enabled
 	var reasonContent string

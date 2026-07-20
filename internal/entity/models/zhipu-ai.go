@@ -483,11 +483,8 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
-	if err = sender(new("[DONE]"), nil); err != nil {
-		return err
-	}
-
-	return nil
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
 }
 
 type zhipuEmbeddingResponse struct {

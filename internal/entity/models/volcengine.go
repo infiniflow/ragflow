@@ -207,10 +207,7 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
+	content, _ := messageMap["content"].(string)
 
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
