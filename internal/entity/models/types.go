@@ -66,7 +66,7 @@ type ChatResponse struct {
 	Usage         *TokenUsage              `json:"usage,omitempty"`
 }
 
-// TokenUsage ChatUsage holds token usage split for one LLM call. Consumed by
+// TokenUsage holds token usage split for one LLM call. Consumed by
 // LLMBundle for accurate Langfuse reporting and run aggregation.
 // Mirrors Python's common.token_utils.usage_from_response() split.
 type TokenUsage struct {
