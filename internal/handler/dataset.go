@@ -30,11 +30,12 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService       *service.DatasetService
+	datasetsService       *dataset.DatasetService
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
@@ -55,7 +56,7 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
+func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,

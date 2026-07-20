@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
+	"ragflow/internal/service/document"
 )
 
 // TestProgressSink_CanConstructDocumentServiceWithoutServerConfig ensures the
@@ -39,7 +40,7 @@ func TestProgressSink_CanConstructDocumentServiceWithoutServerConfig(t *testing.
 	defer cleanup()
 
 	// No server config is initialized in the test env; this must not panic.
-	svc := servicepkg.NewDocumentService()
+	svc := document.NewDocumentService()
 	if svc == nil {
 		t.Fatal("expected non-nil DocumentService")
 	}

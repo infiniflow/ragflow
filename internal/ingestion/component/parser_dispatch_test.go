@@ -34,6 +34,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
@@ -579,34 +580,34 @@ type mineruTestDriver struct{}
 
 func (d *mineruTestDriver) NewInstance(baseURL map[string]string) modelModule.ModelDriver { return d }
 func (d *mineruTestDriver) Name() string                                                  { return "mineru" }
-func (d *mineruTestDriver) ChatWithMessages(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (d *mineruTestDriver) ChatWithMessages(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ChatStreamlyWithSender(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) ChatStreamlyWithSender(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, error) {
+func (d *mineruTestDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Rerank(modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, error) {
+func (d *mineruTestDriver) Rerank(modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig, usage *common.ModelUsage) (*modelModule.RerankResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) TranscribeAudio(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, error) {
+func (d *mineruTestDriver) TranscribeAudio(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage) (*modelModule.ASRResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) AudioSpeech(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, error) {
+func (d *mineruTestDriver) AudioSpeech(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage) (*modelModule.TTSResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) OCRFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, error) {
+func (d *mineruTestDriver) OCRFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, usage *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ParseFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, error) {
+func (d *mineruTestDriver) ParseFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig, usage *common.ModelUsage) (*modelModule.ParseFileResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 func (d *mineruTestDriver) ListModels(apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
