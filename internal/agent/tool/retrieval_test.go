@@ -93,6 +93,11 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 	if !strings.Contains(string(raw), `"query"`) {
 		t.Errorf("schema JSON does not contain 'query' key: %s", raw)
 	}
+	for _, nodeConfig := range []string{"dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold", "keywords_similarity_weight", "use_kg"} {
+		if strings.Contains(string(raw), `"`+nodeConfig+`"`) {
+			t.Errorf("schema JSON exposes Canvas node config %q to the model: %s", nodeConfig, raw)
+		}
+	}
 }
 
 func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
