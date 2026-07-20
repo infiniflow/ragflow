@@ -88,11 +88,7 @@ export function useWikiDetailContent({
     '';
 
   const displayedArtifact = currentEntry
-    ? {
-        slug: currentEntry.slug,
-        title: currentEntry.title,
-        page_type: currentEntry.pageType,
-      }
+    ? { slug: currentEntry.slug, title: currentEntry.title, page_type: currentEntry.pageType }
     : selectedArtifact;
 
   const previousEntryTitle = previousEntry?.title || previousEntry?.slug;
@@ -168,7 +164,9 @@ export function useWikiDetailContent({
       onSuccess: handleCommitSuccess,
     });
 
-  const { documents } = useFetchDocumentsByIds(pageData?.source_doc_ids ?? []);
+  const { documents } = useFetchDocumentsByIds(
+    pageData?.source_doc_ids ?? [],
+  );
 
   const referenceDocuments = useMemo<Docagg[]>(() => {
     return documents.map(

@@ -29,7 +29,9 @@ export function parseWikiLinkHref(
   }
 
   // Fallback to a plain {pageType}/{slug} form.
-  const simpleMatch = normalized.match(/(?:^|\/)(entity|concept)\/([^/\s"']+)/);
+  const simpleMatch = normalized.match(
+    /(?:^|\/)(entity|concept)\/([^/\s"']+)/,
+  );
   if (simpleMatch) {
     return {
       pageType: simpleMatch[1] as WikiPageType,

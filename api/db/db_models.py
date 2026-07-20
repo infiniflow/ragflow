@@ -1464,7 +1464,6 @@ def alter_db_drop_index(migrator, table_name, index_name):
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
-
 def ensure_model_indexes(migrator):
     """Create indexes declared by the Peewee models when they are missing."""
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
