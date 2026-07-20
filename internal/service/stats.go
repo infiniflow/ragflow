@@ -29,13 +29,13 @@ var ErrTenantNotFound = errors.New("Tenant not found!")
 type StatPoint [2]interface{}
 
 type StatsService struct {
-	systemSettingsDAO *dao.SystemSettingsDAO
+	userTenantDAO *dao.UserTenantDAO
 }
 
 // NewStatsService create stats service
 func NewStatsService() *StatsService {
 	return &StatsService{
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 }
 
@@ -51,8 +51,7 @@ type StatsResponse struct {
 
 // GetStats returns daily API conversation statistics for the first tenant of a user.
 func (s *StatsService) GetStats(userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
-	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil || len(tenants) == 0 {
 		return nil, ErrTenantNotFound
 	}
