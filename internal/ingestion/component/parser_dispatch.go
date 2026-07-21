@@ -382,10 +382,13 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
 // / tokenizer / extractor components read the matching family
 // key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType) map[string]any {
+func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
 	out := map[string]any{
 		"pages": toAnyPages(parsed),
 		"name":  name,
+	}
+	if lang != "" {
+		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = dispatched.OutputFormat
