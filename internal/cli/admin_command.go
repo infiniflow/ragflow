@@ -1881,49 +1881,35 @@ func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	var orderBy *string
-	var userStatus *string
-	var top *int
-	var plan *string
-	var quota *int
-	var days *int
-
-	orderByStr, ok := cmd.Params["order_by"].(string)
-	if ok {
-		orderBy = &orderByStr
+	// Server-side ListUsers reads these via c.Query(), so GET parameters must
+	// travel in the URL query string, not the request body. Parameter names
+	// must match the server-side query keys (e.g. "order" not "order_by").
+	q := url.Values{}
+	if orderByStr, ok := cmd.Params["order_by"].(string); ok {
+		q.Set("order", orderByStr)
 	}
-	userStatusStr, ok := cmd.Params["user_status"].(string)
-	if ok {
-		userStatus = &userStatusStr
+	if userStatusStr, ok := cmd.Params["user_status"].(string); ok {
+		q.Set("status", userStatusStr)
 	}
-	topInt, ok := cmd.Params["top"].(int)
-	if ok {
-		top = &topInt
+	if topInt, ok := cmd.Params["top"].(int); ok {
+		q.Set("top", fmt.Sprintf("%d", topInt))
 	}
-	planStr, ok := cmd.Params["plan"].(string)
-	if ok {
-		plan = &planStr
+	if planStr, ok := cmd.Params["plan"].(string); ok {
+		q.Set("plan", planStr)
 	}
-	quotaInt, ok := cmd.Params["quota"].(int)
-	if ok {
-		quota = &quotaInt
+	if quotaInt, ok := cmd.Params["quota"].(int); ok {
+		q.Set("quota", fmt.Sprintf("%d", quotaInt))
 	}
-	daysInt, ok := cmd.Params["days"].(int)
-	if ok {
-		days = &daysInt
+	if daysInt, ok := cmd.Params["days"].(int); ok {
+		q.Set("days", fmt.Sprintf("%d", daysInt))
 	}
 
-	payload := map[string]interface{}{
-		"enterprise":  true,
-		"order_by":    orderBy,
-		"user_status": userStatus,
-		"top":         top,
-		"plan":        plan,
-		"quota":       quota,
-		"days":        days,
+	apiURL := "/admin/users"
+	if encoded := q.Encode(); encoded != "" {
+		apiURL = fmt.Sprintf("%s?%s", apiURL, encoded)
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}

@@ -748,7 +748,7 @@ func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
 		{Text: "("},
 		{Text: "*"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Summary: "   ", Text: "real content here"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}
