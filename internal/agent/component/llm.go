@@ -300,34 +300,7 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 // chat. Provider-specific endpoint suffixes remain owned by conf/models/*.json;
 // a tenant base_url override replaces only the endpoint root.
 func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
-	pm := models.GetProviderManager()
-	if pm != nil {
-		provider := pm.FindProvider(driver)
-		if provider != nil && provider.ModelDriver != nil {
-			modelDriver := provider.ModelDriver
-			if strings.TrimSpace(override) != "" {
-				modelDriver = modelDriver.NewInstance(
-					map[string]string{
-						"default": strings.TrimRight(override, "/"),
-					},
-				)
-				if modelDriver == nil {
-					return nil, fmt.Errorf("provider does not support a custom base_url")
-				}
-			}
-			return modelDriver, nil
-		}
-	}
-
-	// Dummy is an explicit test/development driver and has no provider config.
-	if strings.EqualFold(driver, "dummy") {
-		baseURL := map[string]string(nil)
-		if strings.TrimSpace(override) != "" {
-			baseURL = map[string]string{"default": strings.TrimRight(override, "/")}
-		}
-		return models.NewDummyModel(baseURL, models.URLSuffix{Chat: "chat/completions"}), nil
-	}
-	return nil, fmt.Errorf("provider is not configured")
+	return models.GetPreconfiguredDriver(driver, override)
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.

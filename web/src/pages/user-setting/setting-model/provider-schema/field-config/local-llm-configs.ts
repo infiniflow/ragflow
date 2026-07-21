@@ -306,7 +306,7 @@ function buildLocalConfig(
         instance_name: values.instance_name,
         llm_factory: llmFactory,
         model_info: buildModelInfoFromValues(values),
-        api_base: values.base_url,
+        base_url: values.base_url,
         api_key: apiKey,
       };
     },

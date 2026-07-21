@@ -17,6 +17,7 @@
 package parser
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,135 @@ func TestEmailParser_MsgNotSupported(t *testing.T) {
 	}
 	if !strings.Contains(result.Err.Error(), ".msg") {
 		t.Errorf("error should mention .msg: %v", result.Err)
+	}
+}
+
+func TestEmailParser_Base64Attachment(t *testing.T) {
+	attachmentContent := "Hello! This is the decoded content of the attachment."
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	// Simulate MIME line-wrapping (typically 76 chars per line).
+	if len(encoded) > 20 {
+		encoded = encoded[:20] + "\r\n" + encoded[20:]
+	}
+
+	boundary := "attachboundary"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Base64 Attachment Test",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body text here.",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"test.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult("test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	atts, ok := item["attachments"].([]map[string]any)
+	if !ok {
+		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+	}
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(atts))
+	}
+	payload, ok := atts[0]["payload"].(string)
+	if !ok {
+		t.Fatalf("payload missing or wrong type: %T", atts[0]["payload"])
+	}
+	if payload != attachmentContent {
+		t.Errorf("attachment payload = %q, want %q (should be decoded from base64, not raw base64)", payload, attachmentContent)
+	}
+	if fn, _ := atts[0]["filename"].(string); fn != "test.txt" {
+		t.Errorf("filename = %q, want test.txt", fn)
+	}
+}
+
+func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
+	// Simulates the original test email structure:
+	// multipart/mixed → multipart/alternative (text/plain + text/html) + base64 attachment
+	innerBoundary := "inneralt"
+	outerBoundary := "outermixed"
+	attachmentContent := "<html><body><h1>Bookmarks</h1><p>Test data</p></body></html>"
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	// Simulate MIME line-wrapping (typically 76 chars per line).
+	if len(encoded) > 20 {
+		encoded = encoded[:20] + "\r\n" + encoded[20:]
+	}
+
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Mixed Multipart Test",
+		"Content-Type: multipart/mixed; boundary=" + outerBoundary,
+		"",
+		"--" + outerBoundary,
+		"Content-Type: multipart/alternative; boundary=" + innerBoundary,
+		"",
+		"--" + innerBoundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Plain text body.",
+		"--" + innerBoundary,
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		"<p>HTML body.</p>",
+		"--" + innerBoundary + "--",
+		"--" + outerBoundary,
+		"Content-Type: text/html; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"bookmarks.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + outerBoundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult("test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	// Verify body text was extracted from nested multipart/alternative
+	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain text body") {
+		t.Errorf("text: got %q, want to contain 'Plain text body'", v)
+	}
+	if v, ok := item["text_html"].(string); !ok || !strings.Contains(v, "HTML body") {
+		t.Errorf("text_html: got %q, want to contain 'HTML body'", v)
+	}
+
+	// Verify attachment is decoded from base64
+	atts, ok := item["attachments"].([]map[string]any)
+	if !ok || len(atts) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(atts))
+	}
+	payload, _ := atts[0]["payload"].(string)
+	if payload != attachmentContent {
+		t.Errorf("attachment payload = %q, want %q (should be decoded from base64)", payload, attachmentContent)
 	}
 }
 
