@@ -190,8 +190,7 @@ func (f *FunASR) TranscribeAudio(modelName *string, file *string, apiConfig *API
 }
 
 func (f *FunASR) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	//TODO implement me
-	panic("implement me")
+	return fmt.Errorf("%s no such method", f.Name())
 }
 
 func (f *FunASR) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
