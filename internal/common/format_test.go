@@ -37,3 +37,19 @@ func TestPtrString_Bool(t *testing.T) {
 		t.Errorf("PtrString(&true) = %q, want true", got)
 	}
 }
+
+func TestChunkID_NotPanic(t *testing.T) {
+	_ = ChunkID("", "")
+	_ = ChunkID("doc-1", "content")
+}
+
+func TestChunkID_PreservesLeadingZero(t *testing.T) {
+	got := ChunkID("doc-1", "")
+	want := "037fe13bd80c56aa"
+	if got != want {
+		t.Fatalf("ChunkID(%q, %q) = %q, want %q", "doc-1", "", got, want)
+	}
+	if len(got) != 16 {
+		t.Fatalf("ChunkID length = %d, want 16", len(got))
+	}
+}

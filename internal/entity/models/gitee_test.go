@@ -97,12 +97,12 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 
 		resp := ModelList{
 			Object: "list",
-			Models: make([]DSModel, 0, len(aliases)+1),
+			Models: make([]ModelListItem, 0, len(aliases)+1),
 		}
 		for _, alias := range aliases {
-			resp.Models = append(resp.Models, DSModel{ID: alias})
+			resp.Models = append(resp.Models, ModelListItem{ID: alias})
 		}
-		resp.Models = append(resp.Models, DSModel{ID: "unknown-model"})
+		resp.Models = append(resp.Models, ModelListItem{ID: "unknown-model"})
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

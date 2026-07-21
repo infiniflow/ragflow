@@ -25,6 +25,7 @@ import {
   InitialOutputFormatMap,
   initialParserValues,
 } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -326,7 +327,11 @@ function ParserItem({
   );
 }
 
-const ParserForm = ({ node }: INextOperatorForm) => {
+const ParserForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
@@ -360,6 +365,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   }, [append]);
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -382,9 +388,11 @@ const ParserForm = ({ node }: INextOperatorForm) => {
           </BlockButton>
         )}
       </form>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

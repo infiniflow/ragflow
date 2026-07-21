@@ -116,7 +116,6 @@ export function TemplateConfiguration({
             key={activeFieldsPath}
             fieldsPath={activeFieldsPath}
             sectionName={sectionName}
-            builtinSection={builtinSection}
             onOpenAddField={handleOpenAddField}
             onEditField={handleOpenEditField}
           />
@@ -126,7 +125,6 @@ export function TemplateConfiguration({
     [
       activeFieldsPath,
       activeSectionTab,
-      builtinSection,
       handleOpenAddField,
       handleOpenEditField,
     ],
@@ -147,6 +145,7 @@ export function TemplateConfiguration({
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.name`}
             label={t('setting.templateName')}
+            required
           >
             <Input placeholder={t('common.namePlaceholder')} />
           </RAGFlowFormItem>
@@ -158,6 +157,7 @@ export function TemplateConfiguration({
             <Textarea
               placeholder={t('common.descriptionPlaceholder')}
               rows={2}
+              resize="vertical"
             />
           </RAGFlowFormItem>
 
@@ -189,7 +189,8 @@ export function TemplateConfiguration({
           >
             <Textarea
               placeholder={t('setting.globalRulesPlaceholder')}
-              rows={4}
+              rows={8}
+              resize="vertical"
             />
           </RAGFlowFormItem>
 
