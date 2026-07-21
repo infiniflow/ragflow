@@ -842,19 +842,25 @@ export const useFetchKnowledgeList = (
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
-      const { data } = await listDataset(
-        keywords
-          ? {
-              ext: {
-                keywords,
-              },
-            }
-          : undefined,
-      );
-      const list = data?.data ?? [];
+      const pageSize = 200;
+      const all: IDataset[] = [];
+      let page = 1;
+      // Loop through pages until all knowledge bases are fetched.
+      let hasMore = true;
+      while (hasMore) {
+        const { data } = await listDataset({
+          page,
+          page_size: pageSize,
+          ...(keywords ? { ext: { keywords } } : {}),
+        });
+        const pageData = data?.data ?? [];
+        all.push(...pageData);
+        hasMore = pageData.length >= pageSize;
+        page++;
+      }
       return shouldFilterListWithoutDocument
-        ? list.filter((x: IDataset) => x.chunk_count > 0)
-        : list;
+        ? all.filter((x: IDataset) => x.chunk_count > 0)
+        : all;
     },
   });
 
