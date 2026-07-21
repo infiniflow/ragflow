@@ -24,6 +24,10 @@ from infinity.errors import ErrorCode
 from common import settings
 from common.decorator import singleton
 
+MAX_RETRIES = 8
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
+HEALTH_CHECK_MAX_DELAY_SECONDS = 60
+
 
 @singleton
 class InfinityConnectionPool:
@@ -47,7 +51,7 @@ class InfinityConnectionPool:
             self.infinity_uri = infinity.common.NetworkAddress(host, int(port))
 
         self.conn_pool = None
-        for _ in range(24):
+        for attempt in range(MAX_RETRIES):
             conn_pool = None
             inf_conn = None
             try:
@@ -57,11 +61,29 @@ class InfinityConnectionPool:
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
                     self.conn_pool = conn_pool
                     break
-                logging.warning(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                logging.warning(
+                    "Infinity status %s on attempt %d/%d, waiting Infinity %s to be healthy.",
+                    res.server_status,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
+                    logging.error(msg)
+                    raise Exception(msg)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
-                logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                logging.warning(
+                    "Infinity connection attempt %d/%d to %s failed: %s",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             finally:
                 if inf_conn is not None and conn_pool is not None:
                     conn_pool.release_conn(inf_conn)
@@ -69,7 +91,7 @@ class InfinityConnectionPool:
                     conn_pool.destroy()
 
         if self.conn_pool is None:
-            msg = f"Infinity {infinity_uri} is unhealthy in 120s."
+            msg = f"Infinity {infinity_uri} is unhealthy after {MAX_RETRIES} attempts."
             logging.error(msg)
             raise Exception(msg)
 
@@ -108,8 +130,8 @@ class InfinityConnectionPool:
                 return self.conn_pool
 
     def __del__(self):
-        if hasattr(self, "conn_pool") and self.conn_pool:
-            self.conn_pool.destroy()
+            if hasattr(self, "conn_pool") and self.conn_pool:
+                self.conn_pool.destroy()
 
 
 INFINITY_CONN = InfinityConnectionPool()
