@@ -1881,3 +1881,21 @@ func (s *AgentService) CancelAgent(ctx context.Context, userID, canvasID string)
 	}
 	return nil
 }
+
+// CancelTask cancels an active agent run by the task_id exposed to clients.
+// Unknown or already-finished tasks are intentionally idempotent, matching
+// Python's /tasks/<task_id>/cancel endpoint.
+func (s *AgentService) CancelTask(ctx context.Context, userID, taskID string) error {
+	if taskID == "" || s.runner == nil {
+		return nil
+	}
+	canvasID, active := s.runner.TaskCanvas(taskID)
+	if !active {
+		return nil
+	}
+	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+		return err
+	}
+	s.runner.CancelTask(taskID)
+	return nil
+}

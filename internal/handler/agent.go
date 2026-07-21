@@ -493,6 +493,22 @@ func (h *AgentHandler) CancelAgent(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
+// CancelTask cancels an active agent run by the task_id emitted in its events.
+// Unknown and already-completed task ids are treated as successful no-ops.
+func (h *AgentHandler) CancelTask(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	if err := h.agentService.CancelTask(c.Request.Context(), user.ID, c.Param("task_id")); err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, true, "success")
+}
+
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
 type publishAgentRequest struct {
 	Title       *string        `json:"title,omitempty"`
