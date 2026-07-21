@@ -62,7 +62,7 @@ export default {
       viewLess: '表示を減らす',
       clear: 'クリア',
       embedIntoSite: 'Webページに埋め込む',
-      openInNewTab: '新しいタブでチャット',
+      openInNewTab: '新しいタブで開く',
       previousPage: '前へ',
       nextPage: '次へ',
       previous: '前へ',
