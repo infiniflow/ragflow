@@ -1149,9 +1149,9 @@ The above is the content you need to summarize.`,
         'API ключът може да бъде получен чрез регистрация при съответния LLM доставчик.',
       showMoreModels: 'Преглед на модели',
       hideModels: 'Скрий модели',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този BASE URL с API ключа.',
+        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този Base URL с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1191,8 +1191,8 @@ The above is the content you need to summarize.`,
       modelNameMessage: 'Моля, въведете името на модела!',
       modelType: 'Тип модел',
       modelTypeMessage: 'Моля, въведете типа на модела!',
-      addLlmBaseUrl: 'BASE URL',
-      baseUrlNameMessage: 'Моля, въведете вашия BASE URL',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Моля, въведете вашия Base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:

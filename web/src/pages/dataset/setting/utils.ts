@@ -13,7 +13,7 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { cloneDeep } from 'lodash';
+import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
 
@@ -278,23 +278,20 @@ export function buildOperatorNode(
   const operatorId = dslNode.id;
   const operatorType = getOperatorType(operatorId);
 
-  // DSL-format config from API's parser_config
-  const configFromApi = operatorId
-    ? pipelineParserConfig[operatorId]
-    : undefined;
-
   // Form-format config from DSL graph
   const configFromDsl = dslNode.data?.form;
 
-  // Convert API config to form format, then merge (DSL template is baseline, API overrides)
-  const convertedApiConfig = transformApiConfigToForm(
-    operatorType,
-    configFromApi,
-  );
   const rawForm = {
     ...configFromDsl, // template defaults from DSL (form format)
-    ...convertedApiConfig, // user overrides from API (now also form format)
   };
+
+  if (!isEmpty(pipelineParserConfig)) {
+    // user overrides from API (now also form format)
+    Object.assign(
+      rawForm,
+      transformApiConfigToForm(operatorType, pipelineParserConfig[operatorId]), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
+    );
+  }
 
   return {
     ...dslNode,
@@ -342,4 +339,20 @@ export function buildPipelineOperatorNodes(
     .map((id) => nodeById.get(id))
     .filter((node): node is RAGFlowNodeType => node !== undefined)
     .map((node) => buildOperatorNode(node, pipelineParserConfig));
+}
+
+/**
+ * Builds a parser_config record from operator nodes, keyed by operatorId.
+ * Each entry is the node's merged form (DSL template defaults + overrides),
+ * i.e. exactly what the operator tabs display.
+ */
+export function buildParserConfigFromNodes(
+  operatorNodes: RAGFlowNodeType[],
+): Record<string, any> {
+  return Object.fromEntries(
+    operatorNodes.map((node) => [
+      (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
+      node.data?.form ?? {},
+    ]),
+  );
 }

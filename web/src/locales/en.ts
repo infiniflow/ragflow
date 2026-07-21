@@ -1265,7 +1265,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
-        'The BASE URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+        'The Base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       confluenceSpaceKeyTip:
         'Optional: Specify a space key to limit syncing to a specific space. Leave empty to sync all accessible spaces. For multiple spaces, separate with commas (e.g., DEV,DOCS,HR)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from.
@@ -1362,7 +1362,7 @@ Example: Virtual Hosted Style`,
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'The BASE URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+        'The Base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
@@ -1418,7 +1418,7 @@ Example: Virtual Hosted Style`,
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
-        'BASE URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
       jiraProjectKeyTip:
         'Optional: limit syncing to a single project key (e.g., ENG).',
       jiraJqlTip:
@@ -1757,9 +1757,9 @@ Example: Virtual Hosted Style`,
         'The API KEY can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
       hideModels: 'Hide models',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'If your API KEY is from OpenAI, just ignore it. Any other intermediate providers will give this BASE URL with the API KEY.',
+        'If your API KEY is from OpenAI, just ignore it. Any other intermediate providers will give this Base URL with the API KEY.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1845,8 +1845,8 @@ Example: Virtual Hosted Style`,
       modelNameMessage: 'Please input your model name!',
       modelType: 'Model type',
       modelTypeMessage: 'Please input your model type!',
-      addLlmBaseUrl: 'BASE URL',
-      baseUrlNameMessage: 'Please input your BASE URL',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Please input your Base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
@@ -1998,10 +1998,10 @@ Example: Virtual Hosted Style`,
       },
       somark: {
         modelNameMessage: 'Please input your model name',
-        baseUrl: 'BASE URL',
-        baseUrlMessage: 'Please input the BASE URL',
+        baseUrl: 'Base URL',
+        baseUrlMessage: 'Please input the Base URL',
         baseUrlPlaceholder:
-          'For SoMark API, use https://somark.cn/api/v1 in mainland China; use https://somark.ai/api/v1 outside mainland China (including Taiwan, China; Hong Kong, China; Macau, China; and overseas). For self-hosted deployment, use your local BASE URL',
+          'For SoMark API, use https://somark.cn/api/v1 in mainland China; use https://somark.ai/api/v1 outside mainland China (including Taiwan, China; Hong Kong, China; Macau, China; and overseas). For self-hosted deployment, use your local Base URL',
         apiKey: 'API KEY',
         apiKeyPlaceholder:
           'Required for SoMark API; leave blank for self-hosted deployment',
