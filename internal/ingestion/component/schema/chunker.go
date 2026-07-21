@@ -264,8 +264,11 @@ type TitleChunkerParam struct {
 	RootChunkAsHeading bool `json:"root_chunk_as_heading"`
 
 	// ChunkTokenNum caps the token size of an emitted chunk. When set, a grouped
-	// title chunk is split at line boundaries up to the cap; a single line longer
-	// than the cap is emitted whole. Pointer distinguishes nil (unset) from 0.
+	// title chunk is split at line boundaries up to the cap, and a
+	// RootChunkAsHeading heading counts against it. Two cases still exceed the cap:
+	// a single line longer than the cap, which is emitted whole, and a heading at
+	// or over the cap, which is still prepended to every piece so no chunk loses
+	// it. Pointer distinguishes nil (unset) from 0.
 	ChunkTokenNum *int `json:"chunk_token_num,omitempty"`
 }
 

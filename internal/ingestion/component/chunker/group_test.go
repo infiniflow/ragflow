@@ -162,6 +162,44 @@ func TestGroupTitleChunker_SingleGroupSplit_RootHeadingNoop(t *testing.T) {
 	}
 }
 
+// Every piece of a section split by chunk_token_num keeps the root heading, and
+// still fits the budget with that heading included.
+func TestGroupTitleChunker_RootHeadingOnEverySplitPiece(t *testing.T) {
+	const maxTok = 64
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels":                [][]string{{`^# `}, {`^## `}},
+		"root_chunk_as_heading": true,
+		"chunk_token_num":       maxTok,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	// The root group must exceed minGroupTokens (32) to become its own group, and
+	// Section A must be long enough that the remaining budget splits it.
+	text := "# Root\n" + strings.Repeat("context ", 40) + "\n" +
+		"## Section A\n" + strings.Repeat("alpha beta gamma delta epsilon\n", 10) +
+		"## Section B\ntail tail tail\n"
+	out, err := c.Invoke(context.Background(), map[string]any{"name": "doc.md", "text": text})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("expected the body to split into >=2 pieces, got %d", len(chunks))
+	}
+	for i, ch := range chunks {
+		got := toString(ch["text"])
+		// 1) no piece loses the heading
+		if !strings.Contains(got, "# Root") {
+			t.Errorf("piece %d lost the root heading: %q", i, got)
+		}
+		// 2) no piece exceeds the budget, heading included
+		if n := tokenizeStr(got); n > maxTok && strings.Count(got, "\n") > 1 {
+			t.Errorf("piece %d has %d tokens > chunk_token_num %d (heading included)", i, n, maxTok)
+		}
+	}
+}
+
 // TestResolveGroupTargetLevel_UsesMostLevelDirectly pins Gap F: when
 // `hierarchy` is unset the group target level is `most_level` DIRECTLY,
 // not resolve_target_level (which would re-rank the distinct heading

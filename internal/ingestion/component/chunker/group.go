@@ -201,11 +201,14 @@ func capChunkText(text string, maxTok int) []string {
 	}
 	for _, line := range strings.Split(text, "\n") {
 		lineTok := tokenizeStr(line)
-		if curTok > 0 && curTok+lineTok > maxTok {
+		// +1 for the newline this line is joined with, so curTok upper-bounds the
+		// assembled piece.
+		if curTok > 0 && curTok+1+lineTok > maxTok {
 			flush()
 		}
 		if cur.Len() > 0 {
 			cur.WriteByte('\n')
+			curTok++
 		}
 		cur.WriteString(line)
 		curTok += lineTok
@@ -248,7 +251,8 @@ func isPlainTextFormat(inputs map[string]any) bool {
 //
 // root_chunk_as_heading is applied here, exactly as python does (post
 // materialisation): the root chunk's text is prepended to every
-// following chunk and the root chunk is dropped.
+// following chunk (and to every piece it is split into), and the root
+// chunk is dropped.
 func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
 	maxTok := 0
 	if p.ChunkTokenNum != nil && *p.ChunkTokenNum > 0 {
@@ -275,20 +279,33 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 		}
 		chunks = append(chunks, chunk)
 	}
+	// Resolve the heading at group granularity, before any split: it is always the
+	// complete root group.
+	rootText := ""
 	if p.RootChunkAsHeading && len(chunks) > 1 {
-		rootText := toString(chunks[0]["text"])
-		for i := 1; i < len(chunks); i++ {
-			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
-		}
+		rootText = toString(chunks[0]["text"])
 		chunks = chunks[1:]
 	}
-	if maxTok <= 0 {
+	if maxTok <= 0 && rootText == "" {
 		return chunks
 	}
-	// Split each chunk to <= chunk_token_num, copying metadata to every piece.
+	// Split the body against the budget left after the heading, then prepend the
+	// heading to every piece: each piece keeps the heading and still fits maxTok.
+	budget := maxTok
+	if maxTok > 0 && rootText != "" {
+		// Only shrink while that leaves a usable body budget. A heading at or over
+		// the cap cannot fit either way, and shrinking further would duplicate it
+		// across a flood of single-line pieces.
+		if bodyBudget := maxTok - tokenizeStr(rootText+"\n"); bodyBudget >= 1 {
+			budget = bodyBudget
+		}
+	}
 	out := make([]map[string]any, 0, len(chunks))
 	for _, ch := range chunks {
-		for _, text := range capChunkText(toString(ch["text"]), maxTok) {
+		for _, text := range capChunkText(toString(ch["text"]), budget) {
+			if rootText != "" {
+				text = rootText + "\n" + text
+			}
 			piece := map[string]any{"text": text}
 			if v, ok := ch["doc_type_kwd"]; ok {
 				piece["doc_type_kwd"] = v
