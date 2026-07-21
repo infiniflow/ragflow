@@ -101,7 +101,10 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -345,6 +348,10 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, err
 	}
 	chunks := chunksFromTokenizerUpstream(upstream)
+	common.Debug("tokenizer stage",
+		zap.String("component", "Tokenizer"),
+		zap.Int("input_chunks", len(chunks)),
+	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
 	normalizeChunkTextFallback(chunks)
@@ -372,6 +379,10 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, err
 	}
 
+	common.Debug("tokenizer stage",
+		zap.String("component", "Tokenizer"),
+		zap.Int("output_chunks", len(chunks)),
+	)
 	return out, nil
 }
 

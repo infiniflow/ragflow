@@ -64,6 +64,48 @@ func TestGroupTitleChunker_NewRejectsHierarchyWithoutHierarchyParam(t *testing.T
 	}
 }
 
+// TestExtractLineRecords_MarkdownKey verifies extractLineRecords reads
+// the "markdown" payload key. Before this fix extractLineRecords only
+// looked at "text"/"content" and silently returned nil for parser
+// output that carried output_format="markdown".
+func TestExtractLineRecords_MarkdownKey(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"output_format": "markdown",
+		"markdown":      "line1\nline2\nline3",
+	})
+	if len(records) != 3 {
+		t.Fatalf("got %d records, want 3", len(records))
+	}
+	for i, r := range records {
+		if r.textOrEmpty() == "" {
+			t.Errorf("record[%d]: empty text", i)
+		}
+	}
+}
+
+// TestExtractLineRecords_HTMLKey verifies extractLineRecords reads the
+// "html" payload key, same safety-net rationale as TestMarkdownKey.
+func TestExtractLineRecords_HTMLKey(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"output_format": "html",
+		"html":          "<p>first</p>\n<p>second</p>",
+	})
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want 2", len(records))
+	}
+}
+
+// TestExtractLineRecords_TextKeyStillWorks ensures the existing "text"
+// key path is not broken by the addition of "markdown"/"html".
+func TestExtractLineRecords_TextKeyStillWorks(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"text": "hello\nworld",
+	})
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want 2", len(records))
+	}
+}
+
 func TestGroupTitleChunker_InvokeEmptyInput(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{
 		"levels": [][]string{{`^# `}},

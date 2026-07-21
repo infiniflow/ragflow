@@ -849,7 +849,11 @@ func (s *ChatPipelineService) AsyncChat(
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
 		//      actually display the fallback message.
-		//   2. Final=true   — closes the stream with the reference/prompt.
+		//   2. Final=true   — closes the stream with the same full answer plus
+		//      the reference/prompt. Python yields the full answer again in the
+		//      final event (dialog_service.py:807); consumers that only look at
+		//      the final event (e.g. the OpenAI-compatible endpoint) would
+		//      otherwise see an empty reply.
 		if len(knowledges) == 0 {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
@@ -857,7 +861,7 @@ func (s *ChatPipelineService) AsyncChat(
 					Reference: map[string]interface{}{},
 				}
 				out <- AsyncChatResult{
-					Answer:      "",
+					Answer:      emptyResp,
 					Reference:   kbinfos,
 					AudioBinary: s.synthesizeTTS(ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
