@@ -851,10 +851,11 @@ async def run_wiki(
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
-                    # Let the inner dynamic batcher feed the shared pool. The
-                    # pool globally limits active + admitted waiting calls to
-                    # WIKI_MAP_MAX_PENDING, regardless of batch nesting.
-                    max_workers=0,
+                    # Keep a bounded internal worker queue. The shared pool
+                    # globally limits active + admitted waiting calls to
+                    # WIKI_MAP_MAX_PENDING, while this prevents every outer
+                    # batch from creating all of its sub-batch tasks at once.
+                    max_workers=6,
                 )
                 for key in stats["agg"]:
                     stats["agg"][key] += len(phase1.get(key) or [])

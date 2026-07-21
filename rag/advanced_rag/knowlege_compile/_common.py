@@ -493,27 +493,43 @@ async def run_chunked_pipeline(
         return aggregate([]) if aggregate else []
 
     total = len(batches)
-    semaphore = asyncio.Semaphore(max_workers) if max_workers and max_workers > 0 else None
+    worker_count = max_workers if max_workers and max_workers > 0 else 6
+    work_queue: asyncio.Queue[tuple[int, list[dict]] | None] = asyncio.Queue(maxsize=worker_count)
+    results: list[Any] = [None] * total
+    completed: list[bool] = [False] * total
 
-    async def _one(idx: int, entries: list[dict]) -> Any:
-        async def _do() -> Any:
-            return await process_batch(entries, idx, total)
+    async def _producer() -> None:
+        for idx, entries in enumerate(batches):
+            if entries:
+                await work_queue.put((idx, entries))
+        for _ in range(worker_count):
+            await work_queue.put(None)
 
-        if semaphore is not None:
-            async with semaphore:
-                return await _do()
-        return await _do()
+    async def _worker() -> None:
+        while True:
+            item = await work_queue.get()
+            if item is None:
+                work_queue.task_done()
+                return
+            idx, entries = item
+            try:
+                results[idx] = await process_batch(entries, idx, total)
+                completed[idx] = True
+            finally:
+                work_queue.task_done()
 
-    tasks = [asyncio.create_task(_one(i, b)) for i, b in enumerate(batches) if b]
-    if not tasks:
+    if not any(batches):
         return aggregate([]) if aggregate else []
 
+    producer = asyncio.create_task(_producer())
+    workers = [asyncio.create_task(_worker()) for _ in range(worker_count)]
     try:
-        results = await asyncio.gather(*tasks, return_exceptions=False)
+        await asyncio.gather(producer, *workers)
     except Exception:
-        for t in tasks:
+        producer.cancel()
+        for t in workers:
             t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(producer, *workers, return_exceptions=True)
         raise
 
     if callback:
@@ -522,7 +538,8 @@ async def run_chunked_pipeline(
         except Exception:
             logging.debug("%s: completion callback failed", log_prefix, exc_info=True)
 
-    return aggregate(results) if aggregate else results
+    ordered_results = [results[idx] for idx in range(total) if completed[idx]]
+    return aggregate(ordered_results) if aggregate else ordered_results
 
 
 # ---------------------------------------------------------------------------
