@@ -333,13 +333,7 @@ func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("ragcon: stream ended before [DONE] or finish_reason")
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, tc := range accumulatedToolCalls {
-			tcs = append(tcs, tc)
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if streamUsage != nil && chatModelConfig != nil {
 		chatModelConfig.UsageResult = streamUsage
 	}

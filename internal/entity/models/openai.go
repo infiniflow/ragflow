@@ -413,14 +413,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
 	}
 
-	// Populate ToolCallsResult with accumulated streaming tool_calls.
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, tc := range accumulatedToolCalls {
-			tcs = append(tcs, tc)
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Populate UsageResult with the authoritative usage from the stream.
 	if streamUsage != nil && chatModelConfig != nil {

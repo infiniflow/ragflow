@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"sort"
 	"strings"
 )
 
@@ -396,18 +395,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("moonshot: stream ended before [DONE] or finish_reason")
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

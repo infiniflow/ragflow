@@ -28,7 +28,6 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"sort"
 	"strings"
 )
 
@@ -377,18 +376,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		modelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
