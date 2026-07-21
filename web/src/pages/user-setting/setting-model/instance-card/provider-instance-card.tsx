@@ -123,7 +123,7 @@ const GenericProviderInstanceCard = forwardRef<
   const { baseUrlOptions } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
     providerName,
-    instance.instance_name,
+    instance.id,
     isDraft,
     open,
   );

@@ -584,6 +584,7 @@ export function useModelMutations({
     const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
+      id: instance!.id,
       instance_name: instanceName,
       api_key: apiKey,
       base_url: baseUrl,
