@@ -184,7 +184,13 @@ class DoclingParser(RAGFlowPdfParser):
             return (None, None) if need_position else None
 
         page_count = len(self.page_images)
-        poss = [p for p in poss if p[0] and all(0 <= pn < page_count for pn in p[0])]
+        valid_poss = []
+        for p in poss:
+            if p[0] and all(0 <= pn < page_count for pn in p[0]):
+                valid_poss.append(p)
+            else:
+                self.logger.warning(f"[Docling] Position on pages {p[0]} is out of range for {page_count} rendered page(s); skipping it.")
+        poss = valid_poss
         if not poss:
             return (None, None) if need_position else None
 
