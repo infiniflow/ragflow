@@ -732,16 +732,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 		return err
 	}
 
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return err
-	}
-
-	factoryModelType := factoryModelTypeName(modelType)
-	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return fmt.Errorf("model %s isn't a %s model", modelName, modelType)
-	}
-
+	// Validate model availability through the DB (TenantModel table)
 	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
