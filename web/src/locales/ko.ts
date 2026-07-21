@@ -1518,7 +1518,7 @@ export default {
       apiKeyTip: '해당 LLM 공급업체에 등록하여 API 키를 얻을 수 있습니다.',
       showMoreModels: '모델 보기',
       hideModels: '모델 숨기기',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'API 키가 OpenAI에서 발급된 경우 무시하세요. 다른 중간 제공업체는 API 키와 함께 이 기본 URL을 제공합니다.',
       tongyiBaseUrlTip:
