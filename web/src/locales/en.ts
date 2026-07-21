@@ -517,6 +517,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       graph: 'Graph',
       graphPlaceholder: 'Graph view placeholder',
       llmWiki: 'LLM Wiki',
+      navTree: 'Tree',
       contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
@@ -2070,6 +2071,20 @@ Example: Virtual Hosted Style`,
         'Are you sure you want to delete all skills? This action cannot be undone.',
       deleteSkillTitle: 'Delete skill',
       deleteSkillDescription: 'Are you sure you want to delete this skill?',
+    },
+    datasetNav: {
+      title: 'Navigation tree',
+      empty: 'No navigation nodes',
+      loading: 'Loading...',
+      selectNode: 'Select a child node to view details',
+      noDescription: 'No description',
+      docCount: '{{count}} documents',
+      deleteAllTitle: 'Delete navigation tree',
+      deleteAllDescription:
+        'Are you sure you want to delete the entire navigation tree? This action cannot be undone.',
+      deleteNodeTitle: 'Delete node',
+      deleteNodeDescription:
+        'Are you sure you want to delete this node and its children?',
     },
     message: {
       registered: 'Registered!',
