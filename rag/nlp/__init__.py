@@ -1154,9 +1154,68 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
-def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+def _compute_overlap_prefix(prev_text, overlapped_percent):
+    """Return (overlap_text, overlap_token_count) carved from the tail of ``prev_text``.
+
+    ``prev_text`` is treated as if HTML/PDF markup has been stripped, so the carve
+    index is computed against the visible characters, matching the existing
+    behaviour of ``RAGFlowPdfParser.remove_tag`` callers above.
+    """
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
+    visible = RAGFlowPdfParser.remove_tag(prev_text or "")
+    if not visible:
+        return "", 0
+    overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
+    overlap_text = visible[overlap_start:]
+    return overlap_text, num_tokens_from_string(overlap_text)
+
+
+def _split_oversized_unit(text, chunk_token_num):
+    """Split a single unit that exceeds ``chunk_token_num`` tokens into pieces
+    that each fit the budget. Whitespace is used as the primary break (mirrors
+    ``RAGFlowHtmlParser._split_oversized_block``); a single run of non-whitespace
+    longer than the budget falls back to fixed-size character windows.
+    """
+    if num_tokens_from_string(text or "") <= chunk_token_num:
+        return [text]
+    pieces = []
+    current = ""
+    current_tokens = 0
+    token_cache = {}
+
+    def atom_tokens(atom):
+        if atom.isspace():
+            return 0
+        if atom not in token_cache:
+            token_cache[atom] = num_tokens_from_string(atom)
+        return token_cache[atom]
+
+    # Match whitespace runs OR non-whitespace runs (i.e. individual words/tokens).
+    for atom in re.findall(r"\s+|\S+", text or ""):
+        a_tokens = atom_tokens(atom)
+        if a_tokens > chunk_token_num and not atom.isspace():
+            # An atom longer than the budget: flush current buffer, then carve
+            # character windows out of the atom itself.
+            if current:
+                pieces.append(current)
+                current = ""
+                current_tokens = 0
+            for i in range(0, len(atom), chunk_token_num):
+                pieces.append(atom[i : i + chunk_token_num])
+            continue
+        if current and current_tokens + a_tokens > chunk_token_num:
+            pieces.append(current)
+            current = ""
+            current_tokens = 0
+        current += atom
+        current_tokens += a_tokens
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     if not sections:
         return []
     if isinstance(sections, str):
@@ -1175,22 +1234,44 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
-            if cks:
-                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
-                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
-                tnum = num_tokens_from_string(t)
+
+        # First chunk ever — no previous content to overlap with.
+        if cks[-1] == "":
             if t.find(pos) < 0:
                 t += pos
-            cks.append(t)
-            tk_nums.append(tnum)
-        else:
+            cks[-1] = t
+            tk_nums[-1] = tnum
+            return
+
+        # Proactive merge: append only if the *projected* total still fits.
+        # The previous ``> threshold`` check fired late and let each chunk
+        # overshoot the budget by the size of one section.
+        if tk_nums[-1] + tnum <= chunk_token_num:
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
             tk_nums[-1] += tnum
+            return
+
+        # Need a new chunk. Apply overlap prefix from the previous chunk —
+        # but only when the projected size (overlap + t) still fits. Otherwise
+        # drop the overlap for this boundary so the chunk stays within budget.
+        new_t = t
+        new_tnum = tnum
+        if overlapped_percent > 0:
+            overlap_text, overlap_tokens = _compute_overlap_prefix(cks[-1], overlapped_percent)
+            if overlap_tokens + new_tnum <= chunk_token_num:
+                new_t = overlap_text + t
+                new_tnum = num_tokens_from_string(new_t)
+        if t.find(pos) < 0:
+            new_t_with_pos = new_t + pos
+            new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
+            # Only attach pos if it does not push us over budget.
+            if new_tnum_with_pos <= chunk_token_num:
+                new_t = new_t_with_pos
+                new_tnum = new_tnum_with_pos
+        cks.append(new_t)
+        tk_nums.append(new_tnum)
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
@@ -1214,6 +1295,9 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         return cks
 
     # Split oversized sections at sentence delimiters; add_chunk re-merges to size.
+    # Units that exceed the budget after the regex split (a single long line with
+    # no delimiter, e.g. PDF / .txt runs of unbroken text) are sub-split on
+    # whitespace atoms with a character-window fallback, mirroring the html path.
     dels = get_delimiters(delimiter)
     for sec, pos in sections:
         if not dels or num_tokens_from_string(sec) < chunk_token_num:
@@ -1222,15 +1306,23 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
             if not sub_sec or re.fullmatch(dels, sub_sec):
                 continue
-            add_chunk("\n" + sub_sec, pos)
+            text = "\n" + sub_sec
+            if num_tokens_from_string(text) <= chunk_token_num:
+                add_chunk(text, pos)
+                continue
+            for piece in _split_oversized_unit(text, chunk_token_num):
+                add_chunk(piece, pos)
 
     logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
+    # Drop the leading empty placeholder that exists only so ``add_chunk`` could
+    # detect "first chunk ever" without an extra flag.
+    if cks and cks[0] == "":
+        cks = cks[1:]
+        tk_nums = tk_nums[1:]
     return cks
 
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
-    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-
     if not texts or len(texts) != len(images):
         return [], []
     cks = [""]
@@ -1244,27 +1336,47 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
-            if cks:
-                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
-                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
-                tnum = num_tokens_from_string(t)
+
+        # First chunk ever — no previous content to overlap with.
+        if cks[-1] == "":
             if t.find(pos) < 0:
                 t += pos
-            cks.append(t)
-            result_images.append(image)
-            tk_nums.append(tnum)
-        else:
+            cks[-1] = t
+            tk_nums[-1] = tnum
+            result_images[-1] = image
+            return
+
+        # Proactive merge: append only if the *projected* total still fits.
+        if tk_nums[-1] + tnum <= chunk_token_num:
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
+            tk_nums[-1] += tnum
             if result_images[-1] is None:
                 result_images[-1] = image
             else:
                 result_images[-1] = concat_img(result_images[-1], image)
-            tk_nums[-1] += tnum
+            return
+
+        # Need a new chunk. Apply overlap prefix only when the projected size
+        # (overlap + t) fits — otherwise drop the overlap for this boundary so
+        # the chunk stays within budget.
+        new_t = t
+        new_tnum = tnum
+        if overlapped_percent > 0:
+            overlap_text, overlap_tokens = _compute_overlap_prefix(cks[-1], overlapped_percent)
+            if overlap_tokens + new_tnum <= chunk_token_num:
+                new_t = overlap_text + t
+                new_tnum = num_tokens_from_string(new_t)
+        if t.find(pos) < 0:
+            new_t_with_pos = new_t + pos
+            new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
+            if new_tnum_with_pos <= chunk_token_num:
+                new_t = new_t_with_pos
+                new_tnum = new_tnum_with_pos
+        cks.append(new_t)
+        result_images.append(image)
+        tk_nums.append(new_tnum)
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
@@ -1294,6 +1406,8 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
     # Split oversized sections at sentence delimiters; the section's image rides
     # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
+    # Units still exceeding the budget after the regex split are sub-split on
+    # whitespace atoms so they cannot blow past the token cap.
     dels = get_delimiters(delimiter)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
@@ -1309,9 +1423,18 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
             if not sub_sec or re.fullmatch(dels, sub_sec):
                 continue
-            add_chunk("\n" + sub_sec, image, text_pos)
+            text_seg = "\n" + sub_sec
+            if num_tokens_from_string(text_seg) <= chunk_token_num:
+                add_chunk(text_seg, image, text_pos)
+                continue
+            for piece in _split_oversized_unit(text_seg, chunk_token_num):
+                add_chunk(piece, image, text_pos)
 
     logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
+    if cks and cks[0] == "":
+        cks = cks[1:]
+        result_images = result_images[1:]
+        tk_nums = tk_nums[1:]
     return cks, result_images
 
 
