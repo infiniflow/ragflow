@@ -343,20 +343,19 @@ type ListMemoryResponse struct {
 //	req := &CreateMemoryRequest{Name: "MyMemory", MemoryType: []string{"semantic"}, EmbdID: "embd1", LLMID: "llm1"}
 //	resp, err := service.CreateMemory("tenant123", req)
 func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) (*CreateMemoryResponse, error) {
+	// Resolve tenant model IDs, mirroring Python's ensure_tenant_model_ids_for_params.
+	// Resolution failure is non-fatal (e.g. Builtin models that have no
+	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelProvider := NewModelProviderService()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
-		if err != nil {
-			return nil, err
+		if tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID); err == nil && tenantLLMID != "" {
+			req.TenantLLMID = &tenantLLMID
 		}
-		req.TenantLLMID = &tenantLLMID
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
-		if err != nil {
-			return nil, err
+		if tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID); err == nil && tenantEmbdID != "" {
+			req.TenantEmbdID = &tenantEmbdID
 		}
-		req.TenantEmbdID = &tenantEmbdID
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
@@ -481,12 +480,29 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		updateDict["permissions"] = perm
 	}
 
+	// Resolve tenant model IDs when llm_id / embd_id is provided, mirroring
+	// Python's ensure_tenant_model_ids_for_params. The frontend sends model
+	// names (or model_id UUIDs); the backend must resolve them to
+	// tenant_model row IDs so downstream code that depends on
+	// tenant_llm_id / tenant_embd_id stays consistent after an update.
+	// Resolution failure is non-fatal (e.g. Builtin models).
+	modelProvider := NewModelProviderService()
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
+		if req.TenantLLMID == nil && *req.LLMID != "" {
+			if resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, *req.LLMID); err == nil && resolved != "" {
+				updateDict["tenant_llm_id"] = resolved
+			}
+		}
 	}
 
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
+		if req.TenantEmbdID == nil && *req.EmbdID != "" {
+			if resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, *req.EmbdID); err == nil && resolved != "" {
+				updateDict["tenant_embd_id"] = resolved
+			}
+		}
 	}
 
 	if req.TenantLLMID != nil {
