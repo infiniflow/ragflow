@@ -37,6 +37,8 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.TenantModelGroup{},
+		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)

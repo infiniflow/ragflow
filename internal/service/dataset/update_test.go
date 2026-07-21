@@ -654,6 +654,13 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupServiceTestDB(t)
+	migrateDatasetUpdateTestTables(t, db)
+	return db
+}
+
+func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
 	if err := db.AutoMigrate(
 		&entity.Connector{},
 		&entity.Connector2Kb{},
@@ -661,11 +668,12 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.TenantModelGroup{},
+		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
-	return db
 }
 
 func testDatasetUpdateService(t *testing.T) *DatasetService {
@@ -786,13 +794,9 @@ func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, mo
 	}
 }
 
-// seedDatasetUpdateCanvas migrates user_canvas on the active test DB and
-// inserts a canvas row with the given DSL.
+// seedDatasetUpdateCanvas inserts a canvas row with the given DSL.
 func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 	t.Helper()
-	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
-		t.Fatalf("migrate user_canvas: %v", err)
-	}
 	var dslMap map[string]any
 	if err := json.Unmarshal(dslJSON, &dslMap); err != nil {
 		t.Fatalf("unmarshal seed dsl: %v", err)

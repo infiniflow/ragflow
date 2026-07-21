@@ -171,7 +171,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 
 		if req.Permission != nil && lockedKB.TenantID != tenantID {
 			txCode = common.CodeDataError
-			return fmt.Errorf("user '%s' lacks permission to update dataset '%s'", lockedKB.TenantID, tenantID)
+			return errors.New("Only dataset owner can change permission")
 		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
