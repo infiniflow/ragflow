@@ -129,3 +129,22 @@ def test_empty_text_returns_empty(monkeypatch):
     result2 = RAGFlowTxtParser.parser_txt("   \n\n  ", chunk_token_num=128, delimiter="\n")
     non_empty2 = [c for c in result2 if c[0].strip()]
     assert non_empty2 == []
+
+
+def test_unbroken_token_exceeding_budget_fallback(monkeypatch):
+    """A single unbroken non-whitespace string exceeding the budget is split
+    via the character-window/token-slicing fallback.
+    """
+
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(_mod, "num_tokens_from_string", char_count_tokens)
+
+    huge_word = "a" * 80  # 80 characters/tokens, no whitespace
+    chunks = RAGFlowTxtParser.parser_txt(huge_word, chunk_token_num=30, delimiter="\n")
+
+    non_empty = [c[0] for c in chunks if c[0].strip()]
+    assert len(non_empty) >= 3
+    assert all(char_count_tokens(c) <= 30 for c in non_empty)
+    assert "".join(non_empty) == huge_word

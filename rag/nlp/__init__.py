@@ -1161,9 +1161,7 @@ def _compute_overlap_prefix(prev_text, overlapped_percent):
     index is computed against the visible characters, matching the existing
     behaviour of ``RAGFlowPdfParser.remove_tag`` callers above.
     """
-    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-
-    visible = RAGFlowPdfParser.remove_tag(prev_text or "")
+    visible = re.sub(r"@@[\t0-9.-]+?##", "", prev_text or "")
     if not visible:
         return "", 0
     overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
@@ -1171,13 +1169,45 @@ def _compute_overlap_prefix(prev_text, overlapped_percent):
     return overlap_text, num_tokens_from_string(overlap_text)
 
 
-def _split_oversized_unit(text, chunk_token_num):
+def _split_atom_by_token_budget(atom, chunk_token_num, token_count_fn=None):
+    """Split a single non-whitespace string `atom` into substrings that each
+    have <= chunk_token_num tokens.
+    """
+    if token_count_fn is None:
+        token_count_fn = num_tokens_from_string
+    if not atom:
+        return []
+    if token_count_fn(atom) <= chunk_token_num:
+        return [atom]
+    pieces = []
+    start = 0
+    n = len(atom)
+    while start < n:
+        low = start + 1
+        high = n
+        best_end = start + 1
+        while low <= high:
+            mid = (low + high) // 2
+            substring = atom[start:mid]
+            if token_count_fn(substring) <= chunk_token_num:
+                best_end = mid
+                low = mid + 1
+            else:
+                high = mid - 1
+        pieces.append(atom[start:best_end])
+        start = best_end
+    return pieces
+
+
+def _split_oversized_unit(text, chunk_token_num, token_count_fn=None):
     """Split a single unit that exceeds ``chunk_token_num`` tokens into pieces
     that each fit the budget. Whitespace is used as the primary break (mirrors
     ``RAGFlowHtmlParser._split_oversized_block``); a single run of non-whitespace
-    longer than the budget falls back to fixed-size character windows.
+    longer than the budget falls back to token-budget-based character windows.
     """
-    if num_tokens_from_string(text or "") <= chunk_token_num:
+    if token_count_fn is None:
+        token_count_fn = num_tokens_from_string
+    if token_count_fn(text or "") <= chunk_token_num:
         return [text]
     pieces = []
     current = ""
@@ -1188,7 +1218,7 @@ def _split_oversized_unit(text, chunk_token_num):
         if atom.isspace():
             return 0
         if atom not in token_cache:
-            token_cache[atom] = num_tokens_from_string(atom)
+            token_cache[atom] = token_count_fn(atom)
         return token_cache[atom]
 
     # Match whitespace runs OR non-whitespace runs (i.e. individual words/tokens).
@@ -1196,13 +1226,13 @@ def _split_oversized_unit(text, chunk_token_num):
         a_tokens = atom_tokens(atom)
         if a_tokens > chunk_token_num and not atom.isspace():
             # An atom longer than the budget: flush current buffer, then carve
-            # character windows out of the atom itself.
+            # token-budget-based slices out of the atom itself.
             if current:
                 pieces.append(current)
                 current = ""
                 current_tokens = 0
-            for i in range(0, len(atom), chunk_token_num):
-                pieces.append(atom[i : i + chunk_token_num])
+            for sub_piece in _split_atom_by_token_budget(atom, chunk_token_num, token_count_fn):
+                pieces.append(sub_piece)
             continue
         if current and current_tokens + a_tokens > chunk_token_num:
             pieces.append(current)
@@ -1240,7 +1270,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             if t.find(pos) < 0:
                 t += pos
             cks[-1] = t
-            tk_nums[-1] = tnum
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
             return
 
         # Proactive merge: append only if the *projected* total still fits.
@@ -1250,7 +1280,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
-            tk_nums[-1] += tnum
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
             return
 
         # Need a new chunk. Apply overlap prefix from the previous chunk —
@@ -1342,7 +1372,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             if t.find(pos) < 0:
                 t += pos
             cks[-1] = t
-            tk_nums[-1] = tnum
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
             result_images[-1] = image
             return
 
@@ -1351,7 +1381,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
-            tk_nums[-1] += tnum
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
             if result_images[-1] is None:
                 result_images[-1] = image
             else:

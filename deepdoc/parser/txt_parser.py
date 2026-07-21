@@ -15,50 +15,11 @@
 #
 
 import re
+import logging
 
 from deepdoc.parser.utils import get_text
 from common.token_utils import num_tokens_from_string
-
-
-def _split_oversized_text(text, chunk_token_num):
-    """Break a single unit that exceeds ``chunk_token_num`` tokens into pieces
-    that each fit the budget. Whitespace is used as the primary break (mirrors
-    ``RAGFlowHtmlParser._split_oversized_block``); a single run of non-whitespace
-    longer than the budget falls back to fixed-size character windows.
-    """
-    if num_tokens_from_string(text or "") <= chunk_token_num:
-        return [text]
-    pieces = []
-    current = ""
-    current_tokens = 0
-    token_cache = {}
-
-    def atom_tokens(atom):
-        if atom.isspace():
-            return 0
-        if atom not in token_cache:
-            token_cache[atom] = num_tokens_from_string(atom)
-        return token_cache[atom]
-
-    for atom in re.findall(r"\s+|\S+", text or ""):
-        a_tokens = atom_tokens(atom)
-        if a_tokens > chunk_token_num and not atom.isspace():
-            if current:
-                pieces.append(current)
-                current = ""
-                current_tokens = 0
-            for i in range(0, len(atom), chunk_token_num):
-                pieces.append(atom[i : i + chunk_token_num])
-            continue
-        if current and current_tokens + a_tokens > chunk_token_num:
-            pieces.append(current)
-            current = ""
-            current_tokens = 0
-        current += atom
-        current_tokens += a_tokens
-    if current:
-        pieces.append(current)
-    return pieces
+from rag.nlp import _split_oversized_unit
 
 
 class RAGFlowTxtParser:
@@ -85,7 +46,7 @@ class RAGFlowTxtParser:
 
             if tk_nums[-1] + tnum <= chunk_token_num:
                 cks[-1] += "\n" + t
-                tk_nums[-1] += tnum
+                tk_nums[-1] = num_tokens_from_string(cks[-1])
                 return
 
             cks.append(t)
@@ -94,10 +55,10 @@ class RAGFlowTxtParser:
         dels = []
         s = 0
         for m in re.finditer(r"`([^`]+)`", delimiter, re.I):
-            f, t = m.span()
+            f, m_t = m.span()
             dels.append(m.group(1))
             dels.extend(list(delimiter[s:f]))
-            s = t
+            s = m_t
         if s < len(delimiter):
             dels.extend(list(delimiter[s:]))
         dels = [re.escape(d) for d in dels if d]
@@ -112,7 +73,10 @@ class RAGFlowTxtParser:
             if num_tokens_from_string(sec) <= chunk_token_num:
                 add_chunk(sec)
                 continue
-            for piece in _split_oversized_text(sec, chunk_token_num):
+            pieces = _split_oversized_unit(sec, chunk_token_num, token_count_fn=num_tokens_from_string)
+            logging.debug("parser_txt: split oversized section (%d tokens) into %d pieces", num_tokens_from_string(sec), len(pieces))
+            for piece in pieces:
                 add_chunk(piece)
 
+        logging.debug("parser_txt: %d sections -> %d chunks (chunk_token_num=%d)", len(secs), len(cks), chunk_token_num)
         return [[c, ""] for c in cks]
