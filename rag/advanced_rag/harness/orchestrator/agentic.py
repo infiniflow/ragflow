@@ -91,7 +91,7 @@ async def agentic_research(state: dict, tools) -> dict:
                                         description=dc,
                                     )
                                 )
-                                _LOG.info("[Agentic research] Found a new angle worth researching: \"%s\"", dc)
+                                _LOG.info('[Agentic research] Found a new angle worth researching: "%s"', dc)
 
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
@@ -140,7 +140,7 @@ async def _run_claim_research(
     mode,
     compilation_map: dict,
 ) -> dict:
-    _LOG.info("[Agentic research] Researching: \"%s\"", _snip(claim.description))
+    _LOG.info('[Agentic research] Researching: "%s"', _snip(claim.description))
     try:
         result = await asyncio.wait_for(
             research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
@@ -150,7 +150,7 @@ async def _run_claim_research(
         raise
     except asyncio.TimeoutError:
         _LOG.warning(
-            "[Agentic research] Gave up on \"%s\" — it took longer than %ss.",
+            '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
             CLAIM_RESEARCH_TIMEOUT_SECONDS,
         )
@@ -163,7 +163,7 @@ async def _run_claim_research(
             "discovered_claims": [],
         }
     except Exception:
-        _LOG.exception("[Agentic research] Hit an error while researching \"%s\".", _snip(claim.description))
+        _LOG.exception('[Agentic research] Hit an error while researching "%s".', _snip(claim.description))
         return {
             "report": "",
             "is_verified": False,
@@ -174,7 +174,7 @@ async def _run_claim_research(
         }
 
     _LOG.info(
-        "[Agentic research] Finished \"%s\" — %s, backed by %d passage(s) (confidence %.0f%%)%s.",
+        '[Agentic research] Finished "%s" — %s, backed by %d passage(s) (confidence %.0f%%)%s.',
         _snip(claim.description),
         "answered" if result.get("is_verified") else "still unanswered",
         len(result.get("evidence_ids") or []),
@@ -233,6 +233,91 @@ async def _get_compilation_map(tools) -> dict[str, set[str]]:
             comps.add("mindmap")
         if parser_config.get("page_index"):
             comps.add("page_index")
+        await _add_template_group_compilations(comps, parser_config, getattr(kb, "tenant_id", ""))
+        if await _has_dataset_nav_rows(getattr(kb, "tenant_id", ""), getattr(kb, "id", "")):
+            comps.add("tree")
         if comps:
             result[kb.id] = comps
     return result
+
+
+async def _has_dataset_nav_rows(tenant_id: str, kb_id: str) -> bool:
+    if not tenant_id or not kb_id:
+        return False
+    try:
+        from common import settings
+        from common.doc_store.doc_store_base import OrderByExpr
+        from common.misc_utils import thread_pool_exec
+        from rag.nlp import search
+
+        index_name = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index_name, kb_id):
+            return False
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"compile_kwd": ["dataset_nav"]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index_name,
+            [kb_id],
+        )
+        return bool(settings.docStoreConn.get_total(res))
+    except Exception:
+        _LOG.exception("[agentic] dataset-nav existence check failed for kb=%s", kb_id)
+        return False
+
+
+async def _add_template_group_compilations(comps: set[str], parser_config: dict, tenant_id: str) -> None:
+    """Infer available compilation kinds from selected template groups."""
+    if not tenant_id:
+        return
+    try:
+        from common.misc_utils import thread_pool_exec
+        from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from rag.svr.task_executor_refactor.chunk_post_processor import (
+            _parser_config_compilation_template_group_ids,
+        )
+    except Exception:
+        _LOG.exception("[agentic] compilation-map helper import failed")
+        return
+
+    try:
+        group_ids = _parser_config_compilation_template_group_ids(parser_config)
+    except Exception:
+        _LOG.exception("[agentic] compilation template group id resolution failed")
+        return
+
+    for group_id in group_ids:
+        try:
+            group = await thread_pool_exec(CompilationTemplateGroupService.get_saved, group_id, tenant_id)
+        except Exception:
+            _LOG.exception("[agentic] compilation template group read failed id=%s", group_id)
+            continue
+        for template in (group or {}).get("templates") or []:
+            config = template.get("config") or {}
+            raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
+            raw_norm = raw_kind.strip().lower().replace("-", "_") if isinstance(raw_kind, str) else ""
+            kind = _compilation_kind_for_agentic_map(raw_kind)
+            if raw_norm == "knowledge_graph":
+                comps.add("knowledge_graph")
+            if kind == "tree":
+                comps.add("tree")
+            elif kind in {"timeline", "page_index", "pageindex"}:
+                comps.add("page_index")
+            elif kind in {"mindmap", "mind_map"}:
+                comps.add("mindmap")
+            elif kind == "artifacts":
+                comps.add("wiki")
+
+
+def _compilation_kind_for_agentic_map(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index"}:
+        return "timeline"
+    return normalized

@@ -62,6 +62,12 @@ func (e *memoryMessageDocEngine) UpdateChunks(ctx context.Context, condition map
 	return nil
 }
 
+func (e *memoryMessageDocEngine) FilterDocIdsByMetaPushdown(_ context.Context, _ []string, _ []map[string]interface{}, _ string) []string {
+	return nil
+}
+
+func (e *memoryMessageDocEngine) GetType() string { return "memory" }
+
 func setupMemoryMessageTestDB(t *testing.T) {
 	t.Helper()
 

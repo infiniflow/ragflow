@@ -23,8 +23,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
+	"sort"
 	"strings"
+
+	"ragflow/internal/common"
 )
 
 // AliyunModel implements ModelDriver for Aliyun
@@ -68,14 +70,7 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
+	apiMessages := aliyunChatMessages(messages)
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -112,6 +107,11 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 			} else {
 				reqBody["enable_thinking"] = false
 			}
+		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
 		}
 	}
 
@@ -167,9 +167,10 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	answer, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	answer, hasAnswer := messageMap["content"].(string)
+	toolCalls := aliyunToolCalls(messageMap)
+	if !hasAnswer && len(toolCalls) == 0 {
+		return nil, fmt.Errorf("response contains neither content nor tool calls")
 	}
 
 	var reasonContent string
@@ -187,6 +188,7 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 	chatResponse := &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -210,14 +212,7 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
+	apiMessages := aliyunChatMessages(messages)
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -227,35 +222,39 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+		}
+		chatModelConfig.ToolCallsResult = nil
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.DoSample != nil {
-		reqBody["do_sample"] = *chatModelConfig.DoSample
-	}
+		if chatModelConfig.DoSample != nil {
+			reqBody["do_sample"] = *chatModelConfig.DoSample
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["enable_thinking"] = true
-		} else {
-			reqBody["enable_thinking"] = false
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
 		}
 	}
 
@@ -286,8 +285,9 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
@@ -299,9 +299,23 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
+			return nil
+		}
+
+		if toolCalls, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, rawToolCall := range toolCalls {
+				toolCall, ok := rawToolCall.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				mergeAliyunToolCallDelta(accumulatedToolCalls, toolCall)
+			}
 			return nil
 		}
 
@@ -320,13 +334,122 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("aliyun: stream ended before [DONE] or finish_reason")
+	}
+
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for index := range accumulatedToolCalls {
+			indices = append(indices, index)
+		}
+		sort.Ints(indices)
+		toolCalls := make([]map[string]interface{}, 0, len(indices))
+		for _, index := range indices {
+			toolCalls = append(toolCalls, accumulatedToolCalls[index])
+		}
+		chatModelConfig.ToolCallsResult = &toolCalls
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
+}
+
+func mergeAliyunToolCallDelta(accumulated map[int]map[string]interface{}, delta map[string]interface{}) {
+	indexValue, ok := delta["index"].(float64)
+	if !ok {
+		return
+	}
+	index := int(indexValue)
+	toolCall, exists := accumulated[index]
+	if !exists {
+		toolCall = map[string]interface{}{"index": indexValue}
+		accumulated[index] = toolCall
+	}
+
+	for _, field := range []string{"id", "type"} {
+		if value, ok := delta[field].(string); ok && value != "" {
+			toolCall[field] = value
+		}
+	}
+
+	functionDelta, ok := delta["function"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	function, ok := toolCall["function"].(map[string]interface{})
+	if !ok {
+		function = make(map[string]interface{})
+		toolCall["function"] = function
+	}
+	if name, ok := functionDelta["name"].(string); ok && name != "" {
+		function["name"] = name
+	}
+	if arguments, ok := functionDelta["arguments"].(string); ok {
+		currentArguments, _ := function["arguments"].(string)
+		function["arguments"] = currentArguments + arguments
+	}
+}
+
+func aliyunChatMessages(messages []Message) []map[string]interface{} {
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessage := map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+		if msg.ToolCallID != "" {
+			apiMessage["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMessage["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMessage
+	}
+	return apiMessages
+}
+
+// aliyunToolChoice prevents qwen-flash from repeatedly issuing another tool call
+// after a tool result has already been supplied. With "auto", qwen-flash can
+// keep emitting tool_calls even for a successful result until the ReAct graph
+// exhausts its step limit. Other models, initial calls, and explicit choices
+// retain their configured behavior.
+func aliyunToolChoice(modelName string, messages []Message, configured *string) string {
+	choice := "auto"
+	if configured != nil && strings.TrimSpace(*configured) != "" {
+		choice = *configured
+	}
+	if !strings.EqualFold(strings.TrimSpace(choice), "auto") {
+		return choice
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(modelName)), "qwen-flash") {
+		return choice
+	}
+	for _, message := range messages {
+		if strings.EqualFold(message.Role, "tool") && message.ToolCallID != "" {
+			return "none"
+		}
+	}
+	return choice
+}
+
+func aliyunToolCalls(message map[string]interface{}) []map[string]interface{} {
+	rawToolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
+	for _, rawToolCall := range rawToolCalls {
+		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
+			toolCalls = append(toolCalls, toolCall)
+		}
+	}
+	return toolCalls
 }
 
 type aliyunEmbeddingResponse struct {

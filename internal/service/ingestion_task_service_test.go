@@ -850,27 +850,3 @@ func TestIngestionTaskServiceMarkCompletedIdempotentOnAlreadyTerminal(t *testing
 		t.Fatalf("MarkCompleted on already FAILED task should be idempotent, got: %v", err)
 	}
 }
-
-func TestDocumentServiceUpdateRunProgressMirrorsFields(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-
-	svc := testDocumentService(t)
-	if err := svc.UpdateRunProgress("doc-1", 0.5, "1", "halfway"); err != nil {
-		t.Fatalf("UpdateRunProgress failed: %v", err)
-	}
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
-	if err != nil {
-		t.Fatalf("load document: %v", err)
-	}
-	if doc.Progress != 0.5 {
-		t.Fatalf("progress = %v, want 0.5", doc.Progress)
-	}
-	if doc.Run == nil || *doc.Run != "1" {
-		t.Fatalf("run = %v, want 1", doc.Run)
-	}
-	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
-		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
-	}
-}

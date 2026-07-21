@@ -24,6 +24,7 @@ import (
 	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -58,6 +59,10 @@ type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
+type chatModelConfigResolver interface {
+	GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+}
+
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
 // persistence. Mirrors the Python ChunkFeedbackService.apply_feedback
 // (api/db/services/chunk_feedback_service.py) call site at
@@ -80,6 +85,7 @@ type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
 	userTenantDAO        userTenantStore
 	pipeline             chatPipelineRunner
+	modelProviderSvc     chatModelConfigResolver
 	chunkFeedbackApplier chunkFeedbackApplier
 	docEngine            engine.DocEngine
 }
@@ -87,10 +93,11 @@ type ChatSessionService struct {
 // NewChatSessionService create chat session service
 func NewChatSessionService() *ChatSessionService {
 	return &ChatSessionService{
-		chatSessionDAO: dao.NewChatSessionDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
-		pipeline:       NewChatPipelineService(),
-		docEngine:      engine.Get(),
+		chatSessionDAO:   dao.NewChatSessionDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		pipeline:         NewChatPipelineService(),
+		modelProviderSvc: NewModelProviderService(),
+		docEngine:        engine.Get(),
 	}
 }
 
@@ -1304,7 +1311,12 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 	var answer strings.Builder
 	var finalRef map[string]interface{}
 	for result := range resultChan {
-		if result.Answer != "" {
+		if result.Final && result.Answer != "" {
+			// The final event carries the complete (decorated) answer;
+			// it replaces any accumulated deltas rather than appending.
+			answer.Reset()
+			answer.WriteString(result.Answer)
+		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
 		if result.Reference != nil {
@@ -1666,7 +1678,12 @@ func (s *ChatSessionService) ChatCompletions(
 		var answer strings.Builder
 		var finalRef map[string]interface{}
 		for result := range resultChan {
-			if result.Answer != "" {
+			if result.Final && result.Answer != "" {
+				// The final event carries the complete (decorated) answer;
+				// it replaces any accumulated deltas rather than appending.
+				answer.Reset()
+				answer.WriteString(result.Answer)
+			} else if result.Answer != "" {
 				answer.WriteString(result.Answer)
 			}
 			if result.Reference != nil {
@@ -1936,7 +1953,11 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 }
 
 func (s *ChatSessionService) checkTenantLLMAPIKey(tenantID, modelName string) (bool, error) {
-	_, err := NewTenantLLMService().GetAPIKeyFromInstance(tenantID, modelName)
+	resolver := s.modelProviderSvc
+	if resolver == nil {
+		resolver = NewModelProviderService()
+	}
+	_, _, _, _, err := resolver.GetChatModelConfig(tenantID, modelName)
 	if err != nil {
 		return false, err
 	}

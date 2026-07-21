@@ -493,7 +493,7 @@ type n1nModelCatalogItem struct {
 }
 
 type n1nModelCatalogResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 // ListModels returns the live n1n.ai model catalog

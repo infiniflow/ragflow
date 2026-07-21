@@ -18,7 +18,10 @@
       "max_tokens": 995904,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "text-embedding-v4",

@@ -28,18 +28,19 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
+  BuiltinPipelineItem,
   ChunkMethodItem,
   EmbeddingModelItem,
   ParseTypeItem,
 } from '../dataset/dataset-setting/configuration/common-item';
+import { isGoBackend } from '@/utils/backend-runtime';
 
 const FormId = 'dataset-creating-form';
-
-const ChunkMethodName = 'chunk_method';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const ChunkMethodName = isGoBackend() ? 'parser_id' : 'chunk_method';
 
   const FormSchema = z
     .object({
@@ -98,7 +99,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const nextData =
-      parseType === ParseType.BuiltIn ? data : omit(data, ChunkMethodName);
+      parseType === ParseType.BuiltIn
+        ? omit(data, ['pipeline_id'])
+        : omit(data, [ChunkMethodName]);
     onOk?.(nextData);
   }
 
@@ -139,9 +142,12 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === ParseType.BuiltIn && (
-          <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
-        )}
+        {parseType === ParseType.BuiltIn &&
+          (isGoBackend() ? (
+            <BuiltinPipelineItem name={ChunkMethodName} />
+          ) : (
+            <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
+          ))}
         {parseType === ParseType.Pipeline && (
           <DataFlowSelect
             isMult={false}

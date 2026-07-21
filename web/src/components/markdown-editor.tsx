@@ -21,7 +21,9 @@ export default function MarkdownEditor({
   const contentRef = useRef(content);
 
   useEffect(() => {
-    contentRef.current = content;
+    if (content === contentRef.current) {
+      return;
+    }
     if (showSource) setRawContent(content);
   }, [showSource, content]);
 

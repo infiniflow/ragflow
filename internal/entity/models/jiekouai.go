@@ -554,7 +554,7 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	}
 
 	var result struct {
-		Data []DSModel `json:"data"`
+		Data []ModelListItem `json:"data"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)

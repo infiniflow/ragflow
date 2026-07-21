@@ -374,6 +374,82 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
     )
 
 
+# ── Dataset navigation (document router) ────────────────────────────────────
+
+_NAV_MAX_DOCS = 8  # documents the nav tree routes a query to
+_NAV_MAX_HITS_PER_KB = 8
+
+
+async def dataset_navigate(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
+    """Route the query to the most relevant documents via the dataset nav tree,
+    then search within only those documents.
+
+    The nav tree is a KB-level RAPTOR-style summary of every document; searching
+    it narrows the corpus to the handful of documents worth reading before the
+    real chunk retrieval runs (coarse-to-fine). Falls back to a plain hybrid
+    search when the KB has no nav tree or nothing routes.
+
+    :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
+    """
+    from rag.advanced_rag.harness.tools.search import hybrid_search
+
+    query = topic
+    _LOG.info(f'[Dataset navigation] Finding the most relevant documents for "{query}" (keywords: {keywords})')
+
+    # Caller already narrowed the corpus — just retrieve within it.
+    if doc_scope:
+        return await hybrid_search(tools, query=query, keywords=keywords, doc_scope=doc_scope)
+
+    from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
+
+    candidates: list[tuple[float, str]] = []
+    nav_entities: list[dict] = []
+    seen: set[str] = set()
+    seen_nodes: set[str] = set()
+    for kb in getattr(tools, "kbs", []) or []:
+        try:
+            hits = await search_dataset_nav(
+                kb.tenant_id,
+                kb.id,
+                query,
+                embd_mdl=getattr(tools, "embed_mdl", None),
+                top_k=_NAV_MAX_HITS_PER_KB,
+            )
+        except Exception:
+            _LOG.exception("[Dataset navigation] nav-tree search failed for kb=%s", kb.id)
+            continue
+        for h in hits:
+            score = float(h.get("score") or 0.0)
+            node_name = str(h.get("name") or "")
+            if node_name and node_name not in seen_nodes:
+                seen_nodes.add(node_name)
+                nav_entities.append(
+                    {
+                        "name": node_name,
+                        "type": h.get("type") or "dataset_nav",
+                        "discription": h.get("description") or "",
+                    }
+                )
+            for did in h.get("doc_ids") or []:
+                if did and did not in seen:
+                    seen.add(did)
+                    candidates.append((score, did))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    routed = [did for _, did in candidates[:_NAV_MAX_DOCS]]
+    if not routed:
+        _LOG.info("[Dataset navigation] No dataset map here — falling back to a normal search.")
+        return await hybrid_search(tools, query=query, keywords=keywords)
+
+    _LOG.info("[Dataset navigation] Routed to %d document(s); searching within them.", len(routed))
+    answer = ""
+    if nav_entities:
+        answer, _ = await _ask_structure(tools, query, nav_entities, [], "dataset map", "Dataset navigation")
+    result = await hybrid_search(tools, query=query, keywords=keywords, doc_scope=routed)
+    result["answer"] = answer
+    return result
+
+
 # ── Knowledge-graph exploration ─────────────────────────────────────────────
 #
 # Unlike catalog/mindmap (which read the merged "graph" JSON of one doc), the KG

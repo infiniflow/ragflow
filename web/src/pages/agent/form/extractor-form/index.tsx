@@ -1,3 +1,7 @@
+import {
+  AutoKeywordsFormField,
+  AutoQuestionsFormField,
+} from '@/components/auto-keywords-form-field';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
@@ -15,10 +19,11 @@ import {
   ContextGeneratorFieldName,
   initialExtractorValues,
 } from '../../constant/pipeline';
+import { useOwnerTenantId } from '../../context';
 import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
-import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -29,6 +34,8 @@ export const FormSchema = z.object({
   field_name: z.string(),
   sys_prompt: z.string(),
   prompts: z.string().optional(),
+  auto_keywords: z.number().optional(),
+  auto_questions: z.number().optional(),
   ...LlmSettingSchema,
 });
 
@@ -36,7 +43,11 @@ export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
 
 const outputList = buildOutputList(initialExtractorValues.outputs);
 
-const ExtractorForm = ({ node }: INextOperatorForm) => {
+const ExtractorForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const defaultValues = useFormValues(initialExtractorValues, node);
   const { t } = useTranslation();
 
@@ -59,6 +70,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
   } = useSwitchPrompt(form);
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   const ownerTenantId = useOwnerTenantId();
   const isToc = form.getValues('field_name') === 'toc';
@@ -66,7 +78,11 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
+        <LargeModelFormField
+          ownerTenantId={ownerTenantId}
+        ></LargeModelFormField>
+        <AutoKeywordsFormField name="auto_keywords"></AutoKeywordsFormField>
+        <AutoQuestionsFormField name="auto_questions"></AutoQuestionsFormField>
         <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch
@@ -101,7 +117,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
           ></PromptEditor>
         </RAGFlowFormItem>
 
-        <Output list={outputList}></Output>
+        {!hideOutputs && <Output list={outputList}></Output>}
       </FormWrapper>
       {visible && (
         <ConfirmDeleteDialog
