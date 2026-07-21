@@ -1,3 +1,4 @@
+import { humanId } from 'human-id';
 import { isEqual } from 'lodash';
 
 import {
@@ -42,6 +43,9 @@ export const getFieldKeyOrder = (keys: string[]): string[] => {
     keys
   );
 };
+
+export const generateTemplateName = () =>
+  humanId({ separator: ' ', capitalize: true });
 
 export const DefaultTemplateValues: TemplateSchemaType = {
   id: undefined,

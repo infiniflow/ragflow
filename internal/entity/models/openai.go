@@ -124,10 +124,14 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
+	// Qwen3 family: disable thinking unless explicitly enabled (matches
+	// Python's _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		} else {
+			reqBody["enable_thinking"] = false
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -302,9 +306,13 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 	}
 
-	// Qwen3 family: disable thinking by default.
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
+	// Qwen3 family: disable thinking unless explicitly enabled.
+	if strings.Contains(strings.ToLower(modelName), "qwen3") {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		} else {
+			reqBody["enable_thinking"] = false
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -385,36 +393,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			continue
 		}
 
-		// Accumulate streaming tool_call deltas (mirrors Python's
-		// async_chat_streamly_with_tools in rag/llm/chat_model.py:500-509).
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				if tcMap, ok := tc.(map[string]interface{}); ok {
-					idxF, ok := tcMap["index"].(float64)
-					if !ok {
-						continue
-					}
-					idx := int(idxF)
-					existing, hasExisting := accumulatedToolCalls[idx]
-					if hasExisting {
-						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-							if args, ok := fn["arguments"].(string); ok {
-								if ef, ok := existing["function"].(map[string]interface{}); ok {
-									if ea, ok := ef["arguments"].(string); ok {
-										ef["arguments"] = ea + args
-									} else {
-										ef["arguments"] = args
-									}
-								}
-							}
-						}
-					} else {
-						accumulatedToolCalls[idx] = cloneMap(tcMap)
-					}
-				}
-			}
-			continue // tool_call deltas don't carry content
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -442,14 +421,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
 	}
 
-	// Populate ToolCallsResult with accumulated streaming tool_calls.
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, tc := range accumulatedToolCalls {
-			tcs = append(tcs, tc)
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Populate UsageResult with the authoritative usage from the stream.
 	if streamUsage != nil && chatModelConfig != nil {
@@ -1101,12 +1073,4 @@ func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
 		tt = pt + ct
 	}
 	return pt, ct, tt
-}
-
-func cloneMap(m map[string]interface{}) map[string]interface{} {
-	cp := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		cp[k] = v
-	}
-	return cp
 }

@@ -1311,7 +1311,12 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 	var answer strings.Builder
 	var finalRef map[string]interface{}
 	for result := range resultChan {
-		if result.Answer != "" {
+		if result.Final && result.Answer != "" {
+			// The final event carries the complete (decorated) answer;
+			// it replaces any accumulated deltas rather than appending.
+			answer.Reset()
+			answer.WriteString(result.Answer)
+		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
 		if result.Reference != nil {
@@ -1673,7 +1678,12 @@ func (s *ChatSessionService) ChatCompletions(
 		var answer strings.Builder
 		var finalRef map[string]interface{}
 		for result := range resultChan {
-			if result.Answer != "" {
+			if result.Final && result.Answer != "" {
+				// The final event carries the complete (decorated) answer;
+				// it replaces any accumulated deltas rather than appending.
+				answer.Reset()
+				answer.WriteString(result.Answer)
+			} else if result.Answer != "" {
 				answer.WriteString(result.Answer)
 			}
 			if result.Reference != nil {

@@ -344,6 +344,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
+	if s.taskCtx.KB.Language != nil {
+		inputs["lang"] = *s.taskCtx.KB.Language
+	}
 
 	// Component params from Doc.ParserConfig — including the tenant LLM id
 	// injected into Extractor components above — are passed to Run as

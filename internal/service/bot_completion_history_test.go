@@ -14,11 +14,13 @@
 //  limitations under the License.
 //
 
-// Tests for the conversation-history round-trip helpers used by
-// BotService.ChatbotCompletion. Locks in review Finding 8 — a resumed
-// session_id must carry prior turns (assistant prologue + earlier
-// user/assistant exchanges) into the next LLM call so multi-turn
-// chatbot clients retain context.
+// Tests for the message-building / flag-normalisation helpers used
+// by BotService.ChatbotCompletion. A resumed session_id must carry
+// prior turns (assistant prologue + earlier user/assistant
+// exchanges) into the next pipeline call so multi-turn chatbot
+// clients retain context, and the filtering must match python
+// async_iframe_completion (drop system turns and the leading
+// assistant prologue).
 
 package service
 
@@ -27,148 +29,94 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-
-	modelModule "ragflow/internal/entity/models"
 )
 
-func TestHistoryToMessages_Empty(t *testing.T) {
-	// A freshly-seeded session with no prior turns returns an empty
-	// slice. Caller appends the new user turn; LLM receives only
-	// the current prompt. Matches python conversation_service seed.
-	got := historyToMessages(nil)
-	if len(got) != 0 {
-		t.Fatalf("nil raw: want 0 messages, got %d", len(got))
+func TestBuildChatbotPipelineMessages_Empty(t *testing.T) {
+	// A freshly-seeded session with no prior turns produces just
+	// the new user question. Matches python conversation_service.
+	msgs := buildChatbotPipelineMessages(nil, "hi", "msg-1")
+	if len(msgs) != 1 {
+		t.Fatalf("nil raw: want 1 message, got %d", len(msgs))
 	}
-	got = historyToMessages(json.RawMessage(`[]`))
-	if len(got) != 0 {
-		t.Fatalf("empty array: want 0 messages, got %d", len(got))
+	if msgs[0]["role"] != "user" || msgs[0]["content"] != "hi" || msgs[0]["id"] != "msg-1" {
+		t.Errorf("got %+v", msgs[0])
+	}
+
+	msgs = buildChatbotPipelineMessages(json.RawMessage(`[]`), "hi", "msg-1")
+	if len(msgs) != 1 {
+		t.Fatalf("empty array: want 1 message, got %d", len(msgs))
 	}
 }
 
-func TestHistoryToMessages_RoundTrip(t *testing.T) {
-	// Simulate a session with: 1 prologue assistant turn + 1 prior
-	// user/assistant pair. The LLM must see all 3 prior turns
-	// before the new user turn is appended.
+func TestBuildChatbotPipelineMessages_DropsLeadingAssistantAndSystem(t *testing.T) {
+	// Prologue (leading assistant) and system turns must not reach
+	// the pipeline; later assistant turns are kept so the LLM sees
+	// prior exchanges.
 	turns := []map[string]any{
 		{"role": "assistant", "content": "Hello, how can I help?", "created_at": 1},
-		{"role": "user", "content": "What is Go?", "created_at": 2},
-		{"role": "assistant", "content": "Go is a compiled language.", "created_at": 3},
+		{"role": "system", "content": "hidden", "created_at": 2},
+		{"role": "user", "content": "What is Go?", "created_at": 3},
+		{"role": "assistant", "content": "Go is a compiled language.", "created_at": 4},
 	}
 	raw, err := json.Marshal(turns)
 	if err != nil {
 		t.Fatalf("marshal seed: %v", err)
 	}
-	msgs := historyToMessages(raw)
+	msgs := buildChatbotPipelineMessages(raw, "and Rust?", "msg-2")
 	if len(msgs) != 3 {
-		t.Fatalf("want 3 prior messages, got %d", len(msgs))
+		t.Fatalf("want 3 messages (user, assistant, new user), got %d: %+v", len(msgs), msgs)
 	}
-	if msgs[0].Role != "assistant" || msgs[0].Content != "Hello, how can I help?" {
-		t.Errorf("turn 0: role=%q content=%q", msgs[0].Role, msgs[0].Content)
+	if msgs[0]["role"] != "user" || msgs[0]["content"] != "What is Go?" {
+		t.Errorf("turn 0: %+v", msgs[0])
 	}
-	if msgs[1].Role != "user" || msgs[1].Content != "What is Go?" {
-		t.Errorf("turn 1: role=%q content=%q", msgs[1].Role, msgs[1].Content)
+	if msgs[1]["role"] != "assistant" || msgs[1]["content"] != "Go is a compiled language." {
+		t.Errorf("turn 1: %+v", msgs[1])
 	}
-	if msgs[2].Role != "assistant" || msgs[2].Content != "Go is a compiled language." {
-		t.Errorf("turn 2: role=%q content=%q", msgs[2].Role, msgs[2].Content)
-	}
-}
-
-func TestHistoryToMessages_Malformed(t *testing.T) {
-	// Malformed JSON must not panic; returns nil so caller falls back
-	// to a fresh single-turn LLM call rather than failing the request.
-	got := historyToMessages(json.RawMessage(`not json`))
-	if got != nil {
-		t.Fatalf("malformed raw: want nil, got %v", got)
+	if msgs[2]["role"] != "user" || msgs[2]["content"] != "and Rust?" || msgs[2]["id"] != "msg-2" {
+		t.Errorf("turn 2: %+v", msgs[2])
 	}
 }
 
-func TestHistoryToMessages_SkipsEmptyFields(t *testing.T) {
-	// Defensive: turns missing role or content are dropped, not
-	// passed to the LLM as empty messages.
-	turns := []map[string]any{
-		{"role": "assistant", "content": "valid", "created_at": 1},
-		{"role": "", "content": "no role", "created_at": 2},
-		{"role": "user", "content": "", "created_at": 3},
-		{"role": "user", "content": "second valid", "created_at": 4},
-	}
-	raw, _ := json.Marshal(turns)
-	msgs := historyToMessages(raw)
-	if len(msgs) != 2 {
-		t.Fatalf("want 2 valid turns, got %d", len(msgs))
-	}
-	if msgs[0].Content != "valid" || msgs[1].Content != "second valid" {
-		t.Errorf("got %+v", msgs)
+func TestBuildChatbotPipelineMessages_Malformed(t *testing.T) {
+	// Malformed JSON must not panic; falls back to just the new
+	// question rather than failing the request.
+	msgs := buildChatbotPipelineMessages(json.RawMessage(`not json`), "hi", "msg-3")
+	if len(msgs) != 1 || msgs[0]["content"] != "hi" {
+		t.Fatalf("malformed raw: want single user turn, got %+v", msgs)
 	}
 }
 
-func TestHistoryFromMessages_PreservesOrder(t *testing.T) {
-	// The LLM driver returns messages in the same order the input
-	// was provided. The round-trip must preserve that order so the
-	// next call to ChatbotCompletion sees a coherent history.
-	msgs := []modelModule.Message{
-		{Role: "assistant", Content: "first"},
-		{Role: "user", Content: "second"},
-		{Role: "assistant", Content: "third"},
+func TestNormalizeBotBoolFlag(t *testing.T) {
+	cases := []struct {
+		in    any
+		value bool
+		ok    bool
+	}{
+		{true, true, true},
+		{false, false, true},
+		{float64(1), true, true},
+		{float64(0), false, true},
+		{1, true, true},
+		{0, false, true},
+		{nil, false, false},
+		{"yes", false, false},
+		{float64(2), false, false},
 	}
-	turns := historyFromMessages(msgs)
-	if len(turns) != 3 {
-		t.Fatalf("want 3 turns, got %d", len(turns))
-	}
-	for i, want := range []string{"first", "second", "third"} {
-		if turns[i]["content"] != want {
-			t.Errorf("turn %d content = %v, want %q", i, turns[i]["content"], want)
-		}
-		if turns[i]["role"] != msgs[i].Role {
-			t.Errorf("turn %d role = %v, want %q", i, turns[i]["role"], msgs[i].Role)
-		}
-	}
-}
-
-func TestHistoryRoundTrip_PreservesPriorTurns(t *testing.T) {
-	// End-to-end: prior JSON → history → back to JSON must be
-	// semantically identical (modulo the created_at monotonic
-	// adjustment that historyFromMessages applies for ordering).
-	turns := []map[string]any{
-		{"role": "assistant", "content": "p1", "created_at": int64(100)},
-		{"role": "user", "content": "p2", "created_at": int64(200)},
-	}
-	raw, _ := json.Marshal(turns)
-
-	msgs := historyToMessages(raw)
-	// Caller appends a new user turn (the current request).
-	msgs = append(msgs, modelModule.Message{Role: "user", Content: "current"})
-
-	// Round-trip back to JSON for storage.
-	newTurns := historyFromMessages(msgs)
-	raw2, err := json.Marshal(newTurns)
-	if err != nil {
-		t.Fatalf("marshal round-trip: %v", err)
-	}
-
-	var got []map[string]any
-	if err := json.Unmarshal(raw2, &got); err != nil {
-		t.Fatalf("unmarshal round-trip: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("want 3 turns after round-trip, got %d", len(got))
-	}
-	expected := []struct{ role, content string }{
-		{"assistant", "p1"},
-		{"user", "p2"},
-		{"user", "current"},
-	}
-	for i, want := range expected {
-		if got[i]["role"] != want.role || got[i]["content"] != want.content {
-			t.Errorf("turn %d: got role=%v content=%v, want role=%q content=%q",
-				i, got[i]["role"], got[i]["content"], want.role, want.content)
+	for _, c := range cases {
+		value, ok := normalizeBotBoolFlag(c.in)
+		if value != c.value || ok != c.ok {
+			t.Errorf("normalizeBotBoolFlag(%v) = (%v, %v), want (%v, %v)",
+				c.in, value, ok, c.value, c.ok)
 		}
 	}
 }
@@ -391,9 +339,194 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	if derr != nil || row == nil {
 		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
 	}
-	msgs := historyToMessages(row.Message)
-	if len(msgs) != 1 || msgs[0].Role != "assistant" || msgs[0].Content != prologue {
+	msgs := parseChatbotTurns(row.Message)
+	if len(msgs) != 1 || msgs[0]["role"] != "assistant" || msgs[0]["content"] != prologue {
 		t.Errorf("persisted messages = %+v, want single prologue assistant turn", msgs)
+	}
+}
+
+func TestParseChatbotTurns(t *testing.T) {
+	// Empty / malformed input must yield an empty (non-nil) slice so
+	// callers can always append.
+	for _, raw := range []json.RawMessage{
+		nil,
+		json.RawMessage(`[]`),
+		json.RawMessage(`null`),
+		json.RawMessage(`not json`),
+	} {
+		turns := parseChatbotTurns(raw)
+		if turns == nil {
+			t.Errorf("parseChatbotTurns(%q) returned a nil slice", string(raw))
+		}
+		if len(turns) != 0 {
+			t.Errorf("parseChatbotTurns(%q) = %+v, want empty", string(raw), turns)
+		}
+	}
+
+	turns := parseChatbotTurns(json.RawMessage(`[{"role":"user","content":"hi"}]`))
+	if len(turns) != 1 || turns[0]["role"] != "user" || turns[0]["content"] != "hi" {
+		t.Errorf("valid input: got %+v", turns)
+	}
+}
+
+func TestReferenceOrEmpty(t *testing.T) {
+	got := referenceOrEmpty(nil)
+	if got == nil || len(got) != 0 {
+		t.Errorf("nil reference must yield an empty non-nil map, got %v", got)
+	}
+	ref := map[string]any{"chunks": []any{map[string]any{"chunk_id": "c1"}}}
+	got = referenceOrEmpty(ref)
+	chunks, _ := got["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Errorf("non-nil reference must pass through, got %+v", got)
+	}
+}
+
+// TestPersistChatbotTurn_AppendsPairAndReference covers the turn
+// persistence after a completed stream: the user/assistant pair is
+// appended to the existing history, shares one message id, and the
+// retrieval reference is appended to the reference list.
+func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seed, _ := json.Marshal([]map[string]any{
+		{"role": "assistant", "content": "Hello!", "created_at": 1},
+	})
+	sess := &entity.API4Conversation{
+		ID:       "sess-p1",
+		DialogID: "dlg-p1",
+		UserID:   "tenant-1",
+		Message:  seed,
+	}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	ref := map[string]any{
+		"chunks":   []any{map[string]any{"chunk_id": "c1"}},
+		"doc_aggs": []any{},
+	}
+	if err := svc.persistChatbotTurn(sess, "What is Go?", "A language.", "msg-p1", ref); err != nil {
+		t.Fatalf("persistChatbotTurn: %v", err)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p1", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 3 {
+		t.Fatalf("want 3 turns (prologue + pair), got %d: %+v", len(turns), turns)
+	}
+	// The Q&A pair shares the message id so the exchange is addressed
+	// as a unit, matching the in-app chat pairing convention.
+	if turns[1]["role"] != "user" || turns[1]["content"] != "What is Go?" || turns[1]["id"] != "msg-p1" {
+		t.Errorf("user turn: %+v", turns[1])
+	}
+	if turns[2]["role"] != "assistant" || turns[2]["content"] != "A language." || turns[2]["id"] != "msg-p1" {
+		t.Errorf("assistant turn: %+v", turns[2])
+	}
+
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("want 1 reference entry, got %d: %+v", len(refs), refs)
+	}
+	chunks, _ := refs[0]["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Errorf("reference chunks: %+v", refs[0])
+	}
+}
+
+// TestPersistChatbotTurn_NilReferenceDefaultsToEmpty ensures a turn
+// without retrieval results still records an empty reference object,
+// keeping the reference list index-aligned with the turn pairs.
+func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	sess := &entity.API4Conversation{ID: "sess-p2", DialogID: "dlg-p1", UserID: "tenant-1"}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	if err := svc.persistChatbotTurn(sess, "q", "a", "msg-p2", nil); err != nil {
+		t.Fatalf("persistChatbotTurn: %v", err)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p2", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("want 1 reference entry, got %+v", refs)
+	}
+	if chunks, ok := refs[0]["chunks"].([]any); !ok || len(chunks) != 0 {
+		t.Errorf("default reference must carry empty chunks: %+v", refs[0])
+	}
+	if aggs, ok := refs[0]["doc_aggs"].([]any); !ok || len(aggs) != 0 {
+		t.Errorf("default reference must carry empty doc_aggs: %+v", refs[0])
+	}
+}
+
+// TestPersistChatbotTurn_ConcurrentSameSession guards the
+// read-modify-write race on session.Message: two requests persisting
+// to the same session_id at the same time must both land — without
+// the persist lock + re-read the last Update would silently drop one
+// exchange.
+func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	// In-memory sqlite opens a fresh database per connection, so pin
+	// the pool to a single connection for the concurrent goroutines.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	sess := &entity.API4Conversation{ID: "sess-p3", DialogID: "dlg-p1", UserID: "tenant-1"}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	// Both callers hold the same stale snapshot loaded before their
+	// streams started — exactly the race the lock fixes.
+	var wg sync.WaitGroup
+	for i, turn := range [][2]string{{"q1", "a1"}, {"q2", "a2"}} {
+		wg.Add(1)
+		go func(i int, q, a string) {
+			defer wg.Done()
+			if err := svc.persistChatbotTurn(sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil); err != nil {
+				t.Errorf("persistChatbotTurn %d: %v", i, err)
+			}
+		}(i, turn[0], turn[1])
+	}
+	wg.Wait()
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p3", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 4 {
+		t.Fatalf("want both exchanges persisted (4 turns), got %d: %+v", len(turns), turns)
+	}
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("want 2 reference entries, got %d: %+v", len(refs), refs)
 	}
 }
 
