@@ -633,7 +633,7 @@ async def _embedding_dedup(
     merge_threshold: float = 0.90,
     ambiguous_low: float = 0.75,
 ) -> tuple[dict[int, int], list[tuple[int, int]], Optional[list]]:
-    """Vectorised pairwise cosine; same-type-only when ``type_key`` given.
+    """Blockwise pairwise cosine; same-type-only when ``type_key`` given.
 
     Returns ``(merged_into, ambiguous_pairs, vectors)``. ``merged_into``
     is a union-find map ``index → parent_index``. ``ambiguous_pairs`` is the
@@ -655,11 +655,17 @@ async def _embedding_dedup(
         return {}, [], None
 
     try:
-        from sklearn.metrics.pairwise import cosine_similarity
         import numpy as np
 
         matrix = np.asarray([list(v) for v in vectors], dtype=float)
-        sims = cosine_similarity(matrix)
+        if matrix.ndim != 2 or matrix.shape[0] != n:
+            raise ValueError(f"invalid embedding matrix shape: {matrix.shape}")
+
+        # Normalize once, then calculate only bounded blocks of the upper
+        # triangle. The old implementation materialized an N x N matrix,
+        # which becomes a significant memory spike for large KBs.
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = np.divide(matrix, norms, out=np.zeros_like(matrix), where=norms > 0)
     except Exception:
         logging.exception("bulk_dedup: pairwise cosine failed; skipping")
         return {}, [], vectors
@@ -673,16 +679,28 @@ async def _embedding_dedup(
 
     auto_pairs: list[tuple[int, int]] = []
     ambiguous_pairs: list[tuple[int, int]] = []
+    block_size = 1024
+    groups: dict[Any, list[int]] = {}
+    for index, item in enumerate(canonical):
+        groups.setdefault(item.get(type_key) if type_key else None, []).append(index)
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if type_key and canonical[i].get(type_key) != canonical[j].get(type_key):
-                continue
-            s = float(sims[i, j])
-            if s >= merge_threshold:
-                auto_pairs.append((i, j))
-            elif s >= ambiguous_low:
-                ambiguous_pairs.append((i, j))
+    for group_indices in groups.values():
+        for left_start in range(0, len(group_indices), block_size):
+            left_indices = group_indices[left_start : left_start + block_size]
+            left_vectors = matrix[left_indices]
+            for right_start in range(left_start, len(group_indices), block_size):
+                right_indices = group_indices[right_start : right_start + block_size]
+                sims = left_vectors @ matrix[right_indices].T
+                if right_start == left_start:
+                    rows, cols = np.triu_indices(len(left_indices), k=1)
+                else:
+                    rows, cols = np.nonzero(sims >= ambiguous_low)
+                for row, col in zip(rows.tolist(), cols.tolist()):
+                    score = float(sims[row, col])
+                    if score >= merge_threshold:
+                        auto_pairs.append((left_indices[row], right_indices[col]))
+                    elif score >= ambiguous_low:
+                        ambiguous_pairs.append((left_indices[row], right_indices[col]))
 
     for i, j in auto_pairs:
         ri, rj = _root(i), _root(j)
@@ -709,7 +727,11 @@ async def _resolve_ambiguous_pairs(
     llm_timeout: int = 60,
     system_prompt: str = DEFAULT_DISAMBIGUATE_SYSTEM,
 ) -> dict[int, int]:
-    """LLM-judged disambiguation in batches; returns updated ``merged_into``."""
+    """LLM-judged disambiguation in concurrent batches.
+
+    LLM results are collected concurrently, then applied to union-find in one
+    serial pass so shared roots are never mutated by competing tasks.
+    """
     if not ambiguous_pairs:
         return merged_into
 
@@ -718,12 +740,9 @@ async def _resolve_ambiguous_pairs(
             i = merged_into[i]
         return i
 
-    for start in range(0, len(ambiguous_pairs), batch_size):
-        batch = ambiguous_pairs[start : start + batch_size]
-        batch = [(i, j) for i, j in batch if _root(i) != _root(j)]
-        if not batch:
-            continue
+    batches = [ambiguous_pairs[start : start + batch_size] for start in range(0, len(ambiguous_pairs), batch_size)]
 
+    async def _resolve_batch(batch: list[tuple[int, int]]) -> tuple[list[tuple[int, int]], Optional[list]]:
         lines: list[str] = []
         for k, (i, j) in enumerate(batch):
             a_type = f" ({canonical[i].get(type_key, '')})" if type_key else ""
@@ -737,17 +756,20 @@ async def _resolve_ambiguous_pairs(
             "Return ONLY the JSON array.\n\n" + "\n".join(lines)
         )
 
-        try:
-            res = await asyncio.wait_for(
+        async def _call_model():
+            return await asyncio.wait_for(
                 gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
                 timeout=llm_timeout,
             )
+
+        try:
+            res = await _call_model()
         except asyncio.TimeoutError:
             logging.warning("bulk_dedup: disambiguation timed out (%d pairs)", len(batch))
-            continue
+            return batch, None
         except Exception:
             logging.exception("bulk_dedup: disambiguation call failed (%d pairs)", len(batch))
-            continue
+            return batch, None
 
         decisions = None
         if isinstance(res, list):
@@ -759,8 +781,13 @@ async def _resolve_ambiguous_pairs(
                     break
         if not isinstance(decisions, list):
             logging.warning("bulk_dedup: disambiguation returned unexpected shape: %r", type(res))
-            continue
+            return batch, None
+        return batch, decisions
 
+    results = await asyncio.gather(*(_resolve_batch(batch) for batch in batches))
+    for batch, decisions in results:
+        if decisions is None:
+            continue
         for k, (i, j) in enumerate(batch):
             verdict = decisions[k] if k < len(decisions) else False
             if not verdict:
@@ -837,7 +864,7 @@ async def bulk_dedup_items(
     ``aggregate_extra(group)``.
 
     Phase 2 (when ``embd_mdl`` is provided AND ``len(canonical) > 1``):
-    vectorised pairwise cosine over the canonical ``name_key`` values.
+    blockwise pairwise cosine over the canonical ``name_key`` values.
     Pairs at similarity ≥ ``merge_threshold`` auto-merge; pairs in
     ``[ambiguous_low, merge_threshold)`` move to phase 3. When ``type_key``
     is given, pairs are only considered when both endpoints share the same
