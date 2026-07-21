@@ -217,11 +217,13 @@ type ChatbotCompletionRequest struct {
 }
 
 // persistLock returns the striped mutex guarding one session row's
-// read-modify-write in persistChatbotTurn.
+// read-modify-write in persistChatbotTurn. The modulo runs on the
+// unsigned hash — converting to int first would go negative on
+// 32-bit architectures and panic with an out-of-bounds index.
 func (s *BotService) persistLock(sessionID string) *sync.Mutex {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(sessionID))
-	return &s.persistLocks[int(h.Sum32())%len(s.persistLocks)]
+	return &s.persistLocks[h.Sum32()%uint32(len(s.persistLocks))]
 }
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the
