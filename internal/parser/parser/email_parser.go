@@ -18,10 +18,12 @@ package parser
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
 	"strings"
@@ -255,6 +257,8 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 		// Check if this part is an attachment.
 		if collectAttachments && isAttachmentPart(part) {
 			raw, _ := io.ReadAll(part)
+			raw = decodeCTE(raw, part.Header.Get("Content-Transfer-Encoding"))
+
 			attachments = append(attachments, map[string]any{
 				"filename": attachmentFilename(part),
 				"payload":  decodeMailPayload(raw, partParams["charset"]),
@@ -263,6 +267,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 		}
 
 		raw, _ := io.ReadAll(part)
+		raw = decodeCTE(raw, part.Header.Get("Content-Transfer-Encoding"))
 		decoded := decodeMailPayload(raw, partParams["charset"])
 
 		switch partMedia {
@@ -278,6 +283,28 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 // isAttachmentPart checks whether a multipart part should be treated as
 // an attachment (Content-Disposition starts with "attachment"). Mirrors
 // Python's check in _email().
+// decodeCTE decodes Content-Transfer-Encoding (base64, quoted-printable, etc.).
+// Mirrors Python part.get_payload(decode=True).
+func decodeCTE(raw []byte, cte string) []byte {
+	switch strings.ToLower(strings.TrimSpace(cte)) {
+	case "base64":
+		d, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+		if err != nil {
+			return raw
+		}
+		return d
+	case "quoted-printable":
+		r := quotedprintable.NewReader(bytes.NewReader(raw))
+		d, err := io.ReadAll(r)
+		if err != nil {
+			return raw
+		}
+		return d
+	default:
+		return raw
+	}
+}
+
 func isAttachmentPart(part *multipart.Part) bool {
 	disp := part.Header.Get("Content-Disposition")
 	if disp == "" {
