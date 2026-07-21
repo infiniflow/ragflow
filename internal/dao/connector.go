@@ -18,6 +18,7 @@ package dao
 
 import (
 	"errors"
+	"fmt"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"time"
@@ -27,6 +28,13 @@ import (
 
 // ConnectorDAO connector data access object
 type ConnectorDAO struct{}
+
+var errConnectorNotAccessible = errors.New("connector is not accessible for this tenant")
+
+// IsConnectorNotAccessibleErr reports connector ownership mismatches.
+func IsConnectorNotAccessibleErr(err error) bool {
+	return errors.Is(err, errConnectorNotAccessible)
+}
 
 // NewConnectorDAO create connector DAO
 func NewConnectorDAO() *ConnectorDAO {
@@ -98,12 +106,16 @@ type DatasetConnectorLink struct {
 // LinkDatasetConnectors syncs connector2kb rows for a dataset.
 func (dao *ConnectorDAO) LinkDatasetConnectors(kbID string, connectors []DatasetConnectorLink) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		return dao.LinkDatasetConnectorsTx(tx, kbID, connectors)
+		var kb entity.Knowledgebase
+		if err := tx.Select("tenant_id").Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error; err != nil {
+			return err
+		}
+		return dao.LinkDatasetConnectorsTx(tx, kbID, kb.TenantID, connectors)
 	})
 }
 
 // LinkDatasetConnectorsTx syncs connector2kb rows using the caller's transaction.
-func (dao *ConnectorDAO) LinkDatasetConnectorsTx(tx *gorm.DB, kbID string, connectors []DatasetConnectorLink) error {
+func (dao *ConnectorDAO) LinkDatasetConnectorsTx(tx *gorm.DB, kbID, tenantID string, connectors []DatasetConnectorLink) error {
 	var existing []entity.Connector2Kb
 	if err := tx.Where("kb_id = ?", kbID).Find(&existing).Error; err != nil {
 		return err
@@ -120,6 +132,14 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(tx *gorm.DB, kbID string, conne
 		autoParse := connector.AutoParse
 		if autoParse == "" {
 			autoParse = "1"
+		}
+
+		var fullConnector entity.Connector
+		if err := tx.Where("id = ? AND tenant_id = ?", connector.ID, tenantID).First(&fullConnector).Error; err != nil {
+			if IsNotFoundErr(err) {
+				return fmt.Errorf("%w: %s", errConnectorNotAccessible, connector.ID)
+			}
+			return err
 		}
 
 		if _, ok := oldConnectorIDs[connector.ID]; ok {
@@ -144,10 +164,6 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(tx *gorm.DB, kbID string, conne
 			return err
 		}
 
-		var fullConnector entity.Connector
-		if err := tx.Where("id = ?", connector.ID).First(&fullConnector).Error; err != nil {
-			return err
-		}
 		if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
 			if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
 				return err
