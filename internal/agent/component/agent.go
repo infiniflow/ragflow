@@ -71,16 +71,17 @@ type AgentComponent struct {
 
 // AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
-	ModelID               string
-	SystemPrompt          string
-	UserPrompt            string
-	Thinking              string
-	TopP                  *float64
-	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
-	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
-	MaxRounds             int
-	OptimizeMultiTurn     bool // when true (default), multi-turn history is condensed via full_question LLM call
-	OptimizeHistoryWindow int  // number of history turns to include in the optimization prompt (default 3)
+	ModelID                  string
+	SystemPrompt             string
+	UserPrompt               string
+	Thinking                 string
+	TopP                     *float64
+	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
+	MaxRounds                int
+	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
+	OptimizeMultiTurn        bool
+	OptimizeHistoryWindow    int
 	// Meta is the OpenAI-style function-call schema the Agent exposes
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
@@ -98,7 +99,10 @@ type AgentParam struct {
 	BaseURL string
 }
 
-const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
+const (
+	agentUserPromptSchemaDefault         = "This is the order you need to send to the agent."
+	defaultAgentMessageHistoryWindowSize = 13
+)
 
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
@@ -146,13 +150,14 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	input := buildAgentInputMessages(ctx, p)
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
-		MessageModifier: func(ctx context.Context, msgs []*schema.Message) []*schema.Message {
+		MessageModifier: func(_ context.Context, msgs []*schema.Message) []*schema.Message {
 			if p.SystemPrompt != "" {
 				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
 			}
@@ -164,7 +169,6 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, fmt.Errorf("create react agent: %w", err)
 	}
 
-	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
 	stream, err := agent.Stream(ctx, input, opt)
@@ -199,6 +203,35 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, err
 	}
 	return msg, nil
+}
+
+// buildAgentInputMessages assembles the Python-compatible Agent prompt: the
+// configured history window followed by the current user prompt. The current
+// in-flight user entry is excluded through SnapshotPriorHistory, because the
+// canvas service appends it to state before invoking the workflow.
+func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
+	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
+	messages := []schema.Message{}
+	if p.MessageHistoryWindowSize > 0 {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			// Python takes the last 2*N entries from history, which already
+			// contains the current user input, and then removes that final
+			// entry before formatting the configured prompt.
+			priorLimit := p.MessageHistoryWindowSize*2 - 1
+			messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
+		}
+	}
+	if len(messages) > 0 && messages[len(messages)-1].Role == current.Role {
+		messages[len(messages)-1] = current
+	} else {
+		messages = append(messages, current)
+	}
+
+	input := make([]*schema.Message, len(messages))
+	for i := range messages {
+		input[i] = &messages[i]
+	}
+	return input
 }
 
 func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
@@ -570,9 +603,9 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 
 	// Multi-turn conversation optimization. When the canvas state
 	// carries prior history and OptimizeMultiTurn is enabled
-	// (default), rephrase the user prompt into a self-contained
-	// question via a dedicated LLM call. The rephrased prompt is
-	// what the Agent runner actually consumes.
+	// explicitly, rephrase the user prompt into a self-contained question via
+	// a dedicated LLM call. The rephrased prompt is what the Agent runner
+	// actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
@@ -679,8 +712,8 @@ func (c *AgentComponent) Inputs() map[string]string {
 		"tools":                   "List of tool names to make available to the ReAct agent.",
 		"tool_params":             "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
 		"max_rounds":              "Maximum ReAct rounds (default 3).",
-		"optimize_multi_turn":     "When true (default), multi-turn history is condensed via full_question LLM call.",
-		"optimize_history_window": "Number of history turns to include in the optimization prompt (default 3).",
+		"optimize_multi_turn":     "When true, multi-turn history is condensed via a question-rewrite LLM call.",
+		"optimize_history_window": "Number of history entries to include in the optimization prompt (default 3).",
 		"driver":                  "Provider driver name",
 		"api_key":                 "Override API key for this call.",
 		"base_url":                "Override the driver default endpoint URL.",
@@ -1248,7 +1281,7 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
-		var p AgentParam
+		p := AgentParam{MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize}
 		if v, ok := stringFrom(params, "model_id"); ok {
 			p.ModelID = v
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
@@ -1282,6 +1315,9 @@ func init() {
 		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v
+		}
+		if v, ok := intFrom(params, "message_history_window_size"); ok {
+			p.MessageHistoryWindowSize = v
 		}
 		if v, ok := stringFrom(params, "driver"); ok {
 			p.Driver = v
