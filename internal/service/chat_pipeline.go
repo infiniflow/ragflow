@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"regexp"
@@ -48,7 +49,7 @@ import (
 type ChatPipelineService struct {
 	ModelProviderSvc *ModelProviderService
 	MetadataSvc      *MetadataService
-	datasetService   *DatasetService
+	kbDAO            *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
@@ -56,7 +57,7 @@ func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
 		ModelProviderSvc: NewModelProviderService(),
 		MetadataSvc:      NewMetadataService(),
-		datasetService:   NewDatasetService(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -347,7 +348,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		fieldMap, fmErr := s.datasetService.GetFieldMap(kbIDStrings(kbs))
+		fieldMap, fmErr := s.kbDAO.GetFieldMap(kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
@@ -848,7 +849,11 @@ func (s *ChatPipelineService) AsyncChat(
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
 		//      actually display the fallback message.
-		//   2. Final=true   — closes the stream with the reference/prompt.
+		//   2. Final=true   — closes the stream with the same full answer plus
+		//      the reference/prompt. Python yields the full answer again in the
+		//      final event (dialog_service.py:807); consumers that only look at
+		//      the final event (e.g. the OpenAI-compatible endpoint) would
+		//      otherwise see an empty reply.
 		if len(knowledges) == 0 {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
@@ -856,7 +861,7 @@ func (s *ChatPipelineService) AsyncChat(
 					Reference: map[string]interface{}{},
 				}
 				out <- AsyncChatResult{
-					Answer:      "",
+					Answer:      emptyResp,
 					Reference:   kbinfos,
 					AudioBinary: s.synthesizeTTS(ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
@@ -1602,7 +1607,9 @@ func (s *ChatPipelineService) AsyncChatSolo(
 func (s *ChatPipelineService) extractImageFiles(userID string, files interface{}) []string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 		// Use raw=false to get base64 data URIs for images.
 		_, images, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
@@ -1959,7 +1966,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := validateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {
@@ -2062,7 +2069,9 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 func (s *ChatPipelineService) processFileAttachments(userID string, files interface{}) string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 		texts, _, err := fileSvc.GetFileContents(userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in processFileAttachments",
@@ -2117,7 +2126,9 @@ func (s *ChatPipelineService) processFileAttachments(userID string, files interf
 func splitFileAttachments(userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 		texts, images, err := fileSvc.GetFileContents(userID, fileDicts, raw)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",

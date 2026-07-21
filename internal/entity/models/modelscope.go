@@ -51,7 +51,7 @@ type modelscopeChatResponse struct {
 }
 
 type modelscopeModelListResponse struct {
-	Data []DSModel `json:"data"`
+	Data []ModelListItem `json:"data"`
 }
 
 // NewModelScopeModel creates a new ModelScope model instance.

@@ -96,6 +96,7 @@ export function AddFieldModal({
                     handleTypeChange(value);
                   }}
                   placeholder={t('setting.selectFieldType')}
+                  allowCustomValue
                 />
               )}
             </RAGFlowFormItem>
@@ -105,7 +106,8 @@ export function AddFieldModal({
             <RAGFlowFormItem key={key} name={key} label={getFieldLabel(key)}>
               <Textarea
                 placeholder={t('setting.descriptionPlaceholder')}
-                rows={3}
+                rows={key === 'description' ? 4 : 10}
+                resize="vertical"
               />
             </RAGFlowFormItem>
           ))}

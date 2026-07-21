@@ -175,6 +175,12 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		if v, ok := params["auto_questions"]; ok {
 			p.AutoQuestions = mapInt(v)
 		}
+		if v, ok := params["auto_tags"]; ok {
+			p.AutoTags = mapInt(v)
+		}
+		if v, ok := params["tag_file_id"].(string); ok {
+			p.TagFileID = v
+		}
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
@@ -326,17 +332,9 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	if driver == "" {
 		driver = "dummy"
 	}
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
-	urlSuffix := extractorChatURLSuffixFor(driver)
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("extractor: no driver for %q", driver)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -379,19 +377,6 @@ func splitExtractorLLIDPair(s string) (modelName, provider string, ok bool) {
 	}
 }
 
-// extractorChatURLSuffixFor matches
-// internal/agent/component/llm.go:chatURLSuffixFor — anthropic
-// uses v1/messages, everything else falls through to the openai-
-// compatible chat/completions default.
-func extractorChatURLSuffixFor(driver string) models.URLSuffix {
-	switch strings.ToLower(driver) {
-	case "anthropic":
-		return models.URLSuffix{Chat: "v1/messages"}
-	default:
-		return models.URLSuffix{Chat: "chat/completions"}
-	}
-}
-
 // toExtractorEinoMessages converts eschema.Message → *eschema.Message
 // for the eino bridge. The user / system / assistant roles pass
 // through; multi-modal content is intentionally not propagated —
@@ -420,6 +405,7 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
+	lang         string
 	chunks       []map[string]any
 }
 
@@ -448,6 +434,9 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
+	}
+	if v, ok := inputs["lang"].(string); ok && v != "" {
+		out.lang = v
 	}
 	for _, key := range extractorChunkInputOrder(inputs) {
 		if chunks, ok := extractorChunkList(inputs[key]); ok {
@@ -520,11 +509,24 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("input_chunks", len(in.chunks)),
+	)
 	if in.fieldName == "toc" {
 		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
 	}
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
+		// Tag phase: run when auto_tags > 0 and we have chunks.
+		if c.Param.AutoTags > 0 && len(in.chunks) > 0 {
+			tagged, tagErr := c.runAutoTags(timeoutCtx, in)
+			if tagErr != nil {
+				return tagErr
+			}
+			in.chunks = tagged
+		}
+
 		if len(in.chunks) == 0 {
 			ans, callErr := c.call(timeoutCtx, in, "")
 			if callErr != nil {
@@ -534,9 +536,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 			return nil
 		}
 		for i, ck := range in.chunks {
-			text, _ := ck["text"].(string)
+			text, _ := ck["content_with_weight"].(string)
 			if strings.TrimSpace(text) == "" {
-				text, _ = ck["content_with_weight"].(string)
+				text, _ = ck["text"].(string)
 			}
 
 			if c.Param.AutoKeywords > 0 {
@@ -557,13 +559,15 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 				}
 				ck[in.fieldName] = ans
 			}
-
-			in.chunks[i] = ck
 		}
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("output_chunks", len(in.chunks)),
+	)
 	return map[string]any{
 		"chunks":        in.chunks,
 		"output_format": "chunks",
@@ -592,7 +596,8 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 		return nil
 	}
 	ck["important_kwd"] = kwds
-	tks, tkErr := tokenizer.Tokenize(strings.Join(kwds, " "))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
 	if tkErr == nil {
 		ck["important_tks"] = tks
 	}
@@ -629,7 +634,8 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorI
 		return nil
 	}
 	ck["question_kwd"] = filtered
-	tks, tkErr := tokenizer.Tokenize(strings.Join(filtered, "\n"))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
 	if tkErr == nil {
 		ck["question_tks"] = tks
 	}

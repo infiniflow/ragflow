@@ -467,10 +467,7 @@ class DoclingParser(RAGFlowPdfParser):
                     if chunk_flag and response_is_chunk:
                         self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
                     elif chunk_flag:
-                        self.logger.warning(
-                            f"[Docling] Server ignored chunking request on {endpoint}; "
-                            "treating response as standard conversion."
-                        )
+                        self.logger.warning(f"[Docling] Server ignored chunking request on {endpoint}; treating response as standard conversion.")
                     else:
                         self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
                     break

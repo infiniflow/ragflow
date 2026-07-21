@@ -11,7 +11,7 @@ export enum MemoryType {
   Procedural = 'procedural',
 }
 export const MemoryOptions = (t: TFunction) => [
-  { label: t('memories.raw'), value: MemoryType.Raw },
+  { label: t('memories.raw'), value: MemoryType.Raw, disabled: true },
   { label: t('memories.semantic'), value: MemoryType.Semantic },
   { label: t('memories.episodic'), value: MemoryType.Episodic },
   { label: t('memories.procedural'), value: MemoryType.Procedural },

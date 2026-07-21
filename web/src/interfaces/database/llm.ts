@@ -62,7 +62,7 @@ export interface IProviderInstance {
   status: string;
   /**
    * Optional: only returned by the showProviderInstance endpoint. Used
-   * to pre-fill the base_url/api_base form field when opening a saved
+   * to pre-fill the base_url form field when opening a saved
    * instance.
    */
   base_url?: string;
