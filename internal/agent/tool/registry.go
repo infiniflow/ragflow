@@ -54,13 +54,17 @@ var registry = map[string]Factory{
 	"search_my_dateset":     buildRetrievalTool,
 	"searxng":               buildSearXNGTool,
 	"tavily":                buildTavilyTool,
-	"tavily_extract":        buildTavilyExtractTool,
-	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":                buildWencaiTool,
-	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":             buildWikipediaTool,
-	"wikipedia_search":      buildWikipediaTool,
-	"yahoo_finance":         buildYahooFinanceTool,
+	// Agent DSL tool lists carry the Python Canvas component_name verbatim.
+	// BuildByName lower-cases names, so register those component names too.
+	"tavilysearch":     buildTavilyTool,
+	"tavily_extract":   buildTavilyExtractTool,
+	"tavilyextract":    buildTavilyExtractTool,
+	"tushare":          noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"wencai":           buildWencaiTool,
+	"web_crawler":      noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"wikipedia":        buildWikipediaTool,
+	"wikipedia_search": buildWikipediaTool,
+	"yahoo_finance":    buildYahooFinanceTool,
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
