@@ -701,14 +701,13 @@ func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rank
 	// Compute tag score for each chunk
 	tagScores := make([]float64, len(chunks))
 	for i, chunk := range chunks {
-		tagFeaStr, ok := chunk[common.TAG_FLD].(string)
-		if !ok || tagFeaStr == "" {
+		// tag_feas may be a JSON string (legacy) or an object as stored by the
+		// "rank_features" ES mapping; normalize to map[string]float64 either way.
+		tagFeaMap := extractTagFeasMap(chunk[common.TAG_FLD])
+		if len(tagFeaMap) == 0 {
 			tagScores[i] = 0
 			continue
 		}
-
-		// Parse tag_feas JSON string: {"tag1": 0.5, "tag2": 0.3}
-		tagFeaMap := parseTagFeasRerank(tagFeaStr)
 		// Sort keys for deterministic float accumulation
 		tagFeaKeys := make([]string, 0, len(tagFeaMap))
 		for k := range tagFeaMap {
@@ -816,14 +815,13 @@ func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]inte
 			tagScores[i] = 0
 			continue
 		}
-		tagFeaStr, ok := chunk[common.TAG_FLD].(string)
-		if !ok || tagFeaStr == "" {
+		// tag_feas may be a JSON string (legacy) or an object as stored by the
+		// "rank_features" ES mapping; normalize to map[string]float64 either way.
+		tagFeaMap := extractTagFeasMap(chunk[common.TAG_FLD])
+		if len(tagFeaMap) == 0 {
 			tagScores[i] = 0
 			continue
 		}
-
-		// Parse tag_feas JSON string: {"tag1": 0.5, "tag2": 0.3}
-		tagFeaMap := parseTagFeasRerank(tagFeaStr)
 		// Sort keys for deterministic float accumulation
 		tagFeaKeys := make([]string, 0, len(tagFeaMap))
 		for k := range tagFeaMap {
@@ -1047,4 +1045,38 @@ func parseTagFeasRerank(tagFeasStr string) map[string]float64 {
 		}
 	}
 	return result
+}
+
+// extractTagFeasMap normalizes a tag_feas value into map[string]float64.
+// Depending on the search backend, tag_feas is stored either as an object of
+// numeric values (e.g. the ES "rank_features" type) or as a JSON string (e.g.
+// Infinity's varchar rankfeatures column), so both forms are accepted.
+func extractTagFeasMap(v interface{}) map[string]float64 {
+	switch t := v.(type) {
+	case string:
+		return parseTagFeasRerank(t)
+	case map[string]interface{}:
+		out := make(map[string]float64, len(t))
+		for k, val := range t {
+			if f, ok := toFloat64(val); ok {
+				out[k] = f
+			}
+		}
+		return out
+	case map[string]float64:
+		return t
+	case map[string]int:
+		out := make(map[string]float64, len(t))
+		for k, val := range t {
+			out[k] = float64(val)
+		}
+		return out
+	case nil:
+		return nil
+	default:
+		if b, err := json.Marshal(t); err == nil {
+			return parseTagFeasRerank(string(b))
+		}
+		return nil
+	}
 }
