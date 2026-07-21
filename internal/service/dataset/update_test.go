@@ -237,6 +237,40 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+
+	permission := string(entity.TenantPermissionMe)
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "user-1", service.UpdateDatasetRequest{
+		Permission: &permission,
+	})
+	if err == nil {
+		t.Fatal("expected permission change error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if err.Error() != "Only dataset owner can change permission" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get dataset: %v", err)
+	}
+	if persisted.Permission != string(entity.TenantPermissionTeam) {
+		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -324,6 +358,37 @@ func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
 	}
 	if link.AutoParse != autoParse {
 		t.Fatalf("expected auto_parse %q, got %q", autoParse, link.AutoParse)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetRejectsCrossTenantConnector(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-2")
+
+	autoParse := "0"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
+	})
+	if err == nil {
+		t.Fatal("expected connector tenant mismatch error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !dao.IsConnectorNotAccessibleErr(err) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.Connector2Kb{}).
+		Where("kb_id = ? AND connector_id = ?", "kb-1", "connector-1").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count connector link: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no connector link, got %d", count)
 	}
 }
 
@@ -589,6 +654,13 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupServiceTestDB(t)
+	migrateDatasetUpdateTestTables(t, db)
+	return db
+}
+
+func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
 	if err := db.AutoMigrate(
 		&entity.Connector{},
 		&entity.Connector2Kb{},
@@ -596,11 +668,12 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.TenantModelGroup{},
+		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
-	return db
 }
 
 func testDatasetUpdateService(t *testing.T) *DatasetService {
@@ -641,6 +714,20 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
 		t.Fatalf("insert test canvas: %v", err)
+	}
+}
+
+func insertDatasetUpdateTeamMember(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "normal",
+		InvitedBy: tenantID,
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user tenant: %v", err)
 	}
 }
 
@@ -707,13 +794,9 @@ func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, mo
 	}
 }
 
-// seedDatasetUpdateCanvas migrates user_canvas on the active test DB and
-// inserts a canvas row with the given DSL.
+// seedDatasetUpdateCanvas inserts a canvas row with the given DSL.
 func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 	t.Helper()
-	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
-		t.Fatalf("migrate user_canvas: %v", err)
-	}
 	var dslMap map[string]any
 	if err := json.Unmarshal(dslJSON, &dslMap); err != nil {
 		t.Fatalf("unmarshal seed dsl: %v", err)
