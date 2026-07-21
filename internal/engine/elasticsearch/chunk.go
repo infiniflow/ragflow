@@ -699,7 +699,7 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 			sanitized := sanitizeString(val)
 			params[fmt.Sprintf("pp_%s", k)] = sanitized
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
-		case int, float64:
+		case int, int8, int16, int32, int64, float32, float64:
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=%v;", k, val))
 		case []interface{}:
 			params[fmt.Sprintf("pp_%s", k)] = val
@@ -708,6 +708,9 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 	}
 
 	scriptSource := strings.Join(scripts, "")
+	if scriptSource == "" {
+		return fmt.Errorf("no supported update fields for update by query")
+	}
 
 	// Build update by query body
 	updateBody := map[string]interface{}{
