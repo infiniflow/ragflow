@@ -29,10 +29,25 @@ class RAGFlowMarkdownParser:
         tables = []
         working_text = markdown_text
 
+        # a fenced code block can legitimately contain a pipe table, e.g. docs that show
+        # markdown syntax. extracting it would strip the example out of the fence and
+        # re-emit it as a bogus table, leaving a hollow fence behind.
+        # MarkdownElementExtractor already shields fences (see _fenced_code_ranges), so
+        # keep table extraction consistent with it.
+        fence_pattern = re.compile(
+            r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}\1[ \t]*$|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+
         def replace_tables_with_rendered_html(pattern, table_list, render=True):
             new_text = ""
             last_end = 0
+            fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
             for match in pattern.finditer(working_text):
+                if any(start <= match.start() < end for start, end in fenced_spans):
+                    # inside a code fence: leave it in place. last_end is untouched, so
+                    # the block is copied through verbatim.
+                    continue
                 raw_table = match.group()
                 table_list.append(raw_table)
                 if separate_tables:
