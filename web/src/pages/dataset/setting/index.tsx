@@ -31,6 +31,7 @@ import {
   useFetchDatasetSettingOnMount,
   usePipelineDataList,
   usePipelineOperatorNodes,
+  useResetParserConfigOnPipelineChange,
   useSaveDatasetSetting,
 } from './hooks';
 import PipelineOperatorTabs from './pipeline-operator-tabs';
@@ -92,10 +93,35 @@ export default function DatasetSetting() {
     | Record<string, any>
     | undefined;
 
-  const { operatorNodes } = usePipelineOperatorNodes(
-    parseType === ParseType.Pipeline ? pipelineId : builtinPipelineId,
-    pipelineParserConfig,
-    parseType === ParseType.BuiltIn,
+  const isPipelineMode = parseType === ParseType.Pipeline;
+  const selectedPipelineId = isPipelineMode ? pipelineId : builtinPipelineId;
+  // The saved parser_config only belongs to the pipeline (and parse type) it
+  // was saved with — expose its id only while that exact pipeline is selected,
+  // so that after switching, defaults come purely from the new pipeline's DSL.
+  const savedParseType = knowledgeDetails?.pipeline_id
+    ? ParseType.Pipeline
+    : ParseType.BuiltIn;
+  const savedPipelineId =
+    parseType === savedParseType
+      ? isPipelineMode
+        ? knowledgeDetails?.pipeline_id
+        : knowledgeDetails?.parser_id
+      : undefined;
+
+  const { operatorNodes, loading: operatorNodesLoading } =
+    usePipelineOperatorNodes(
+      selectedPipelineId,
+      selectedPipelineId && selectedPipelineId === savedPipelineId
+        ? pipelineParserConfig
+        : undefined,
+      !isPipelineMode,
+    );
+
+  useResetParserConfigOnPipelineChange(
+    form,
+    selectedPipelineId,
+    savedPipelineId,
+    operatorNodes,
   );
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
@@ -211,7 +237,11 @@ export default function DatasetSetting() {
 
                 <ButtonLoading
                   type="submit"
-                  loading={datasetSettingLoading || saveLoading}
+                  loading={
+                    datasetSettingLoading ||
+                    saveLoading ||
+                    (operatorNodesLoading && operatorNodes.length === 0)
+                  }
                 >
                   {t('knowledgeConfiguration.save')}
                 </ButtonLoading>
