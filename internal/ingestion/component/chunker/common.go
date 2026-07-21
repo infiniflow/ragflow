@@ -105,25 +105,25 @@ func stringListFromAny(in []any) []string {
 // alternation. Entries wrapped in backticks are treated as regex
 // literals and regex-escaped; plain strings are simply regex-escaped.
 // Longer patterns win (matches python `sorted(set, key=len, reverse=True)`).
+// Mirrors Python _compile_delimiter_pattern: only backtick-wrapped delimiters
+// produce an active pattern. Plain delimiters are not compiled — they are only
+// used by naive_merge / mergeByTokenSize for sentence-level splitting when no
+// active pattern exists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	var custom []string
-	var plain []string
 	for _, d := range delims {
 		if d == "" {
 			continue
 		}
 		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
 			custom = append(custom, regexp.QuoteMeta(d[1:len(d)-1]))
-		} else {
-			plain = append(plain, regexp.QuoteMeta(d))
 		}
 	}
-	all := append(plain, custom...)
-	if len(all) == 0 {
+	if len(custom) == 0 {
 		return nil
 	}
-	sort.SliceStable(all, func(i, j int) bool { return len(all[i]) > len(all[j]) })
-	return regexp.MustCompile(strings.Join(all, "|"))
+	sort.SliceStable(custom, func(i, j int) bool { return len(custom[i]) > len(custom[j]) })
+	return regexp.MustCompile(strings.Join(custom, "|"))
 }
 
 // splitKeepingDelim is the Go equivalent of python's

@@ -11,10 +11,6 @@ import {
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import kbService from '@/services/knowledge-service';
-import {
-  getBackendLanguage,
-  subscribeBackendLanguage,
-} from '@/utils/backend-runtime';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -22,9 +18,12 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
+import {
+  getBackendLanguage,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
-import { useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -165,8 +164,11 @@ export const useSelectParserList = (): Array<{
   const parserList = useMemo(() => {
     // Go backend: prefer the dynamic pipeline catalog from the API.
     if (backendLang === 'go') {
-      const pipelineList: Array<{ parser_id: string; title: string; dsl: Record<string, any> }> =
-        pipelineListData?.data ?? [];
+      const pipelineList: Array<{
+        parser_id: string;
+        title: string;
+        dsl: Record<string, any>;
+      }> = pipelineListData?.data ?? [];
       if (pipelineList.length > 0) {
         const labelFromAPI = (parserId: string, title: string) => {
           const key = `knowledgeConfiguration.parserLabel.${parserId}`;

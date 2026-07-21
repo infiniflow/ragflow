@@ -10,6 +10,7 @@ SEARCH_PHASES = {
     "locate": {
         "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
+            "dataset_navigate",
             "catalog_navigate",
             "mindmap_navigate",
             "wiki_query",
@@ -65,7 +66,8 @@ def compilation_available(tool_name: str, compilation_map: dict) -> bool:
     comp_type = tool["compilation_type"]
     if not compilation_map:
         return False
-    return any(comp_type in comps for comps in compilation_map.values())
+    comp_types = set(comp_type) if isinstance(comp_type, (list, tuple, set)) else {comp_type}
+    return any(bool(comp_types & set(comps)) for comps in compilation_map.values())
 
 
 def tool_fits_context(tool_name: str, context: OrchestratorContext) -> bool:
@@ -73,6 +75,8 @@ def tool_fits_context(tool_name: str, context: OrchestratorContext) -> bool:
     if tool_name.startswith("inspector_") and not context.has_any_chunks():
         return False
     if tool_name == "catalog_navigate" and not context.current_claim:
+        return False
+    if tool_name == "dataset_navigate" and not context.current_claim:
         return False
     if tool_name == "graph_explore" and not context.last_entity:
         return False

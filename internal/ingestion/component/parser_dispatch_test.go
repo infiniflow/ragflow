@@ -288,6 +288,21 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	}
 }
 
+func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
+	setups := defaultSetups()
+	docx, ok := setups["docx"]
+	if !ok {
+		t.Fatal("defaultSetups: docx key missing")
+	}
+	got, ok := docx["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: docx.output_format missing or not a string")
+	}
+	if got != "json" {
+		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	setups := defaultSetups()
 	got := &captureSetupConfigurer{}

@@ -83,11 +83,8 @@ func ProcessChunksForPipeline(
 		ck["create_timestamp_flt"] = timestamp
 
 		if _, exists := ck["id"]; !exists {
-			text, err := GetChunkTextString(ck)
-			if err != nil {
-				return nil, fmt.Errorf("process chunks for pipeline: doc=%s: %w", docID, err)
-			}
-			ck["id"] = ChunkID(text, docID)
+			text, _ := ck["text"].(string)
+			ck["id"] = common.ChunkID(docID, text)
 		}
 
 		cleanupConsumedChunkFields(ck)
