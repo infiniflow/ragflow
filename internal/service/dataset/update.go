@@ -257,6 +257,8 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	}
 
 	txCode := common.CodeSuccess
+	var updatedKB *entity.Knowledgebase
+	var linkedConnectors []*dao.ConnectorDatasetListItem
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, kb.ID, tenantID)
 		if authErr != nil {
@@ -291,22 +293,25 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 			}
 		}
 
+		updatedKB = &entity.Knowledgebase{}
+		if err = tx.Where("id = ? AND status = ?", lockedKB.ID, string(entity.StatusValid)).First(updatedKB).Error; err != nil {
+			txCode = common.CodeDataError
+			return errors.New("Dataset updated failed")
+		}
+
+		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(tx, lockedKB.ID)
+		if err != nil {
+			txCode = common.CodeServerError
+			return errors.New("Database operation failed")
+		}
+
 		return nil
 	})
 	if err != nil {
 		return nil, txCode, err
 	}
 
-	updatedKB, err := d.kbDAO.GetByID(kb.ID)
-	if err != nil {
-		return nil, common.CodeDataError, errors.New("Dataset updated failed")
-	}
-
 	data := datasetToMap(updatedKB)
-	linkedConnectors, err := d.connectorDAO.ListByDatasetID(kb.ID)
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
-	}
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
 }

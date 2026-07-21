@@ -69,9 +69,14 @@ func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, 
 
 // ListByDatasetID lists connectors linked to a dataset.
 func (dao *ConnectorDAO) ListByDatasetID(datasetID string) ([]*ConnectorDatasetListItem, error) {
+	return dao.ListByDatasetIDTx(DB, datasetID)
+}
+
+// ListByDatasetIDTx lists connectors linked to a dataset using the caller's DB handle.
+func (dao *ConnectorDAO) ListByDatasetIDTx(db *gorm.DB, datasetID string) ([]*ConnectorDatasetListItem, error) {
 	var connectors []*ConnectorDatasetListItem
 
-	err := DB.Model(&entity.Connector2Kb{}).
+	err := db.Model(&entity.Connector2Kb{}).
 		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
 		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
 		Where("connector2kb.kb_id = ?", datasetID).
