@@ -190,7 +190,14 @@ jobs:
             while IFS= read -r file; do
               case "$file" in
                 # Docker, test, SDK, and workflow changes can alter either server path.
-                Dockerfile|docker/**|.github/workflows/**|test/**|sdk/**)
+                Dockerfile|docker/**|.github/workflows/**|sdk/**)
+                  has_go=true
+                  has_python=true
+                  ;;
+                test/unit_test/**)
+                  has_python=true
+                  ;;
+                test/**)
                   has_go=true
                   has_python=true
                   ;;
@@ -385,64 +392,124 @@ jobs:
                # each container has its own /tmp and its own network namespace, and `ss` cannot
                # see host ports bound by other runners' compose stacks. Use the shared daemon for
                # both primitives:
-               #   - offset mutex = a config-only docker network created atomically on the shared daemon
-               #     without allocating a subnet from the daemon's address pools
-               #     (docker network create is NOT idempotent: it fails on name conflict, which
-               #      is exactly the cross-runner test-and-set we need);
+               #   - per-port mutex = for each host port (base+offset) we intend to bind, create
+               #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
+               #     network create is NOT idempotent (fails on name conflict), so only one runner
+               #     can claim a given port. This is per-PORT, not per-offset, because different
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
+               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
-               PORT_GUARD_PREFIX=ragflow-ci-portguard
-
-               port_offset_available() {
-                 local offset=$1
-                 local base port used
-                 # Enumerate host-published tcp ports across ALL containers on the shared daemon.
-                 # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
-                 for base in "${PORT_BASES[@]}"; do
-                   port=$((base + offset))
-                   if grep -qx "${port}" <<< "${used}"; then
-                     return 1
-                   fi
-                 done
-                 return 0
-               }
 
                cleanup_stale_port_locks() {
-                 local now stale_after net ts
+                 local now stale_after net ts before after
                  now=$(date -u +%s)
-                 stale_after=$((2 * 60 * 60))
+                 stale_after=$((60 * 60))
+                 before=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
                  for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
                    ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
-                   if [[ "${ts}" =~ ^[0-9]+$ ]] && (( now - ts > stale_after )); then
+                   # Remove if timestamp is non-numeric (legacy network from a previous code
+                   # version) or if it is numeric and older than stale_after.
+                   if [[ ! "${ts}" =~ ^[0-9]+$ ]] || (( now - ts > stale_after )); then
                      sudo docker network rm "${net}" >/dev/null 2>&1 || true
                    fi
                  done
+                 after=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+                 echo "  cleanup_stale_port_locks: ${before} -> ${after} guards (TTL=${stale_after}s)" >&2
                }
 
                reserve_port_offset() {
-                 local attempt candidate guard
+                 local attempt candidate base port guard g ok reject_reason create_err guard_subnet
+                 local -a guards
+                 local used guarded need_refresh used_n guarded_n debug_count create_fail_streak
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 5999); do
+                 echo "Reserving host ports for ${DOC_ENGINE} compose stack..." >&2
+                 # Fail fast if the shared docker daemon is not reachable — avoids a
+                 # long spin where every docker network create silently fails.
+                 if ! sudo docker info >/dev/null 2>&1; then
+                   echo "  ERROR: 'sudo docker info' failed — docker daemon is not reachable from this runner" >&2
+                   return 1
+                 fi
+                 echo "  Running containers on shared daemon: $(sudo docker ps -q 2>/dev/null | wc -l)" >&2
+                 echo "  Docker networks on shared daemon: $(sudo docker network ls -q 2>/dev/null | wc -l)" >&2
+                 need_refresh=1
+                 debug_count=0
+                 create_fail_streak=0
+                 for attempt in $(seq 0 499); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
-                   guard="${PORT_GUARD_PREFIX}-${candidate}"
-                   # Already held by some runner on this shared daemon.
-                   if sudo docker network inspect "${guard}" >/dev/null 2>&1; then
+                   # Refresh snapshots on first attempt and after a failed reservation.
+                   if [[ ${need_refresh} -eq 1 ]]; then
+                     used=$(sudo docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->' | tr -d '>-' | sort -u || true)
+                     # Strip both ragflow-ci-port- (current) and ragflow-ci-portguard- (legacy) prefixes.
+                     guarded=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' 2>/dev/null | sed 's/^ragflow-ci-port\(guard\)\?-//' | sort -u || true)
+                     used_n=$(echo "${used}" | grep -c . 2>/dev/null || true)
+                     guarded_n=$(echo "${guarded}" | grep -c . 2>/dev/null || true)
+                     echo "  Snapshot: ${used_n} bound ports, ${guarded_n} guarded ports" >&2
+                     [[ ${used_n} -gt 0 ]] && echo "  Bound sample: $(echo "${used}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     [[ ${guarded_n} -gt 0 ]] && echo "  Guarded sample: $(echo "${guarded}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     need_refresh=0
+                   fi
+                   # Fast path: skip if any (base+candidate) port is already bound or guarded.
+                   ok=1
+                   reject_reason=""
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     if grep -qx "${port}" <<< "${used}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already bound"; break
+                     fi
+                     if grep -qx "${port}" <<< "${guarded}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already guarded"; break
+                     fi
+                   done
+                   if [[ ${ok} -eq 0 ]]; then
+                     if [[ ${debug_count} -lt 5 ]]; then
+                       echo "  Candidate ${candidate}: rejected — ${reject_reason}" >&2
+                       debug_count=$((debug_count + 1))
+                     fi
                      continue
                    fi
-                   if ! port_offset_available "${candidate}"; then
-                     continue
-                   fi
-                   # Atomic cross-runner test-and-set: docker network create fails if the name
-                   # already exists on the shared daemon, so even if two runners race here, only
-                   # one wins; the loser retries the next candidate.
-                   if sudo docker network create --config-only --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                   # Atomically claim every (base+candidate) host port via a per-port docker
+                   # network. docker network create fails on name conflict, so only one runner
+                   # can claim a given port. If any port is already claimed, undo partial
+                   # reservations and try the next offset.
+                   guards=()
+                   ok=1
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     guard="ragflow-ci-port-${port}"
+                     # Use an explicit subnet from 10.0.0.0/8 (outside Docker's
+                     # default 172.17-31.x.x pools) to bypass "all predefined
+                     # address pools have been fully subnetted" errors on shared
+                     # daemons where auto-allocation is exhausted.
+                     guard_subnet="10.$((port / 256)).$((port % 256)).0/24"
+                     if ! create_err=$(sudo docker network create --subnet "${guard_subnet}" --label ragflow-ci-created="$(date -u +%s)" "${guard}" 2>&1 >/dev/null); then
+                       echo "  docker network create ${guard} failed: ${create_err}" >&2
+                       ok=0; break
+                     fi
+                     guards+=("${guard}")
+                   done
+                   if [[ ${ok} -eq 1 ]]; then
                      PORT_OFFSET=${candidate}
-                     PORT_RESERVATION="${guard}"
+                     PORT_RESERVATION="${guards[*]}"
+                     echo "Reserved offset ${PORT_OFFSET} (attempt ${attempt})" >&2
                      return 0
                    fi
+                   for g in "${guards[@]}"; do
+                     sudo docker network rm "${g}" >/dev/null 2>&1 || true
+                   done
+                   # If docker network create keeps failing (daemon gone, permission, etc.),
+                   # bail out early instead of looping 6000 times. A name-conflict failure
+                   # should be rare because the fast path already filters guarded ports.
+                   create_fail_streak=$((create_fail_streak + 1))
+                   if [[ ${create_fail_streak} -ge 10 ]]; then
+                     echo "  docker network create failed ${create_fail_streak} consecutive candidates; aborting" >&2
+                     return 1
+                   fi
+                   # Another runner just claimed a port; refresh snapshots before retrying.
+                   need_refresh=1
                  done
+                 echo "  Exhausted ${attempt} candidates. Last snapshot: ${used_n} bound, ${guarded_n} guarded" >&2
                  return 1
                }
 
@@ -745,9 +812,11 @@ jobs:
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
           if [[ -n ${PORT_RESERVATION:-} ]]; then
-            # PORT_RESERVATION is now a docker network name on the shared daemon (created by the
-            # prepare step as a cross-runner port-offset mutex). Remove it to free the offset.
-            sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
+            # PORT_RESERVATION is a space-separated list of per-port docker network guards
+            # created by the prepare step. Remove each to free the ports for other runners.
+            for guard in ${PORT_RESERVATION}; do
+              sudo docker network rm "${guard}" >/dev/null 2>&1 || true
+            done
           fi
 
 
@@ -896,64 +965,124 @@ jobs:
                # each container has its own /tmp and its own network namespace, and `ss` cannot
                # see host ports bound by other runners' compose stacks. Use the shared daemon for
                # both primitives:
-               #   - offset mutex = a config-only docker network created atomically on the shared daemon
-               #     without allocating a subnet from the daemon's address pools
-               #     (docker network create is NOT idempotent: it fails on name conflict, which
-               #      is exactly the cross-runner test-and-set we need);
+               #   - per-port mutex = for each host port (base+offset) we intend to bind, create
+               #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
+               #     network create is NOT idempotent (fails on name conflict), so only one runner
+               #     can claim a given port. This is per-PORT, not per-offset, because different
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
+               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
-               PORT_GUARD_PREFIX=ragflow-ci-portguard
-
-               port_offset_available() {
-                 local offset=$1
-                 local base port used
-                 # Enumerate host-published tcp ports across ALL containers on the shared daemon.
-                 # Format example: "0.0.0.0:38217->4222/tcp". We extract the left side.
-                 used=$(sudo docker ps --format '{{.Ports}}' | grep -oE '[0-9]+->' | sed 's/->$//' | sort -u)
-                 for base in "${PORT_BASES[@]}"; do
-                   port=$((base + offset))
-                   if grep -qx "${port}" <<< "${used}"; then
-                     return 1
-                   fi
-                 done
-                 return 0
-               }
 
                cleanup_stale_port_locks() {
-                 local now stale_after net ts
+                 local now stale_after net ts before after
                  now=$(date -u +%s)
-                 stale_after=$((2 * 60 * 60))
+                 stale_after=$((60 * 60))
+                 before=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
                  for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
                    ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
-                   if [[ "${ts}" =~ ^[0-9]+$ ]] && (( now - ts > stale_after )); then
+                   # Remove if timestamp is non-numeric (legacy network from a previous code
+                   # version) or if it is numeric and older than stale_after.
+                   if [[ ! "${ts}" =~ ^[0-9]+$ ]] || (( now - ts > stale_after )); then
                      sudo docker network rm "${net}" >/dev/null 2>&1 || true
                    fi
                  done
+                 after=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+                 echo "  cleanup_stale_port_locks: ${before} -> ${after} guards (TTL=${stale_after}s)" >&2
                }
 
                reserve_port_offset() {
-                 local attempt candidate guard
+                 local attempt candidate base port guard g ok reject_reason create_err guard_subnet
+                 local -a guards
+                 local used guarded need_refresh used_n guarded_n debug_count create_fail_streak
                  cleanup_stale_port_locks
-                 for attempt in $(seq 0 5999); do
+                 echo "Reserving host ports for ${DOC_ENGINE} compose stack..." >&2
+                 # Fail fast if the shared docker daemon is not reachable — avoids a
+                 # long spin where every docker network create silently fails.
+                 if ! sudo docker info >/dev/null 2>&1; then
+                   echo "  ERROR: 'sudo docker info' failed — docker daemon is not reachable from this runner" >&2
+                   return 1
+                 fi
+                 echo "  Running containers on shared daemon: $(sudo docker ps -q 2>/dev/null | wc -l)" >&2
+                 echo "  Docker networks on shared daemon: $(sudo docker network ls -q 2>/dev/null | wc -l)" >&2
+                 need_refresh=1
+                 debug_count=0
+                 create_fail_streak=0
+                 for attempt in $(seq 0 499); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
-                   guard="${PORT_GUARD_PREFIX}-${candidate}"
-                   # Already held by some runner on this shared daemon.
-                   if sudo docker network inspect "${guard}" >/dev/null 2>&1; then
+                   # Refresh snapshots on first attempt and after a failed reservation.
+                   if [[ ${need_refresh} -eq 1 ]]; then
+                     used=$(sudo docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->' | tr -d '>-' | sort -u || true)
+                     # Strip both ragflow-ci-port- (current) and ragflow-ci-portguard- (legacy) prefixes.
+                     guarded=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' 2>/dev/null | sed 's/^ragflow-ci-port\(guard\)\?-//' | sort -u || true)
+                     used_n=$(echo "${used}" | grep -c . 2>/dev/null || true)
+                     guarded_n=$(echo "${guarded}" | grep -c . 2>/dev/null || true)
+                     echo "  Snapshot: ${used_n} bound ports, ${guarded_n} guarded ports" >&2
+                     [[ ${used_n} -gt 0 ]] && echo "  Bound sample: $(echo "${used}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     [[ ${guarded_n} -gt 0 ]] && echo "  Guarded sample: $(echo "${guarded}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     need_refresh=0
+                   fi
+                   # Fast path: skip if any (base+candidate) port is already bound or guarded.
+                   ok=1
+                   reject_reason=""
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     if grep -qx "${port}" <<< "${used}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already bound"; break
+                     fi
+                     if grep -qx "${port}" <<< "${guarded}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already guarded"; break
+                     fi
+                   done
+                   if [[ ${ok} -eq 0 ]]; then
+                     if [[ ${debug_count} -lt 5 ]]; then
+                       echo "  Candidate ${candidate}: rejected — ${reject_reason}" >&2
+                       debug_count=$((debug_count + 1))
+                     fi
                      continue
                    fi
-                   if ! port_offset_available "${candidate}"; then
-                     continue
-                   fi
-                   # Atomic cross-runner test-and-set: docker network create fails if the name
-                   # already exists on the shared daemon, so even if two runners race here, only
-                   # one wins; the loser retries the next candidate.
-                   if sudo docker network create --config-only --label ragflow-ci-created="$(date -u +%s)" "${guard}" >/dev/null 2>&1; then
+                   # Atomically claim every (base+candidate) host port via a per-port docker
+                   # network. docker network create fails on name conflict, so only one runner
+                   # can claim a given port. If any port is already claimed, undo partial
+                   # reservations and try the next offset.
+                   guards=()
+                   ok=1
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     guard="ragflow-ci-port-${port}"
+                     # Use an explicit subnet from 10.0.0.0/8 (outside Docker's
+                     # default 172.17-31.x.x pools) to bypass "all predefined
+                     # address pools have been fully subnetted" errors on shared
+                     # daemons where auto-allocation is exhausted.
+                     guard_subnet="10.$((port / 256)).$((port % 256)).0/24"
+                     if ! create_err=$(sudo docker network create --subnet "${guard_subnet}" --label ragflow-ci-created="$(date -u +%s)" "${guard}" 2>&1 >/dev/null); then
+                       echo "  docker network create ${guard} failed: ${create_err}" >&2
+                       ok=0; break
+                     fi
+                     guards+=("${guard}")
+                   done
+                   if [[ ${ok} -eq 1 ]]; then
                      PORT_OFFSET=${candidate}
-                     PORT_RESERVATION="${guard}"
+                     PORT_RESERVATION="${guards[*]}"
+                     echo "Reserved offset ${PORT_OFFSET} (attempt ${attempt})" >&2
                      return 0
                    fi
+                   for g in "${guards[@]}"; do
+                     sudo docker network rm "${g}" >/dev/null 2>&1 || true
+                   done
+                   # If docker network create keeps failing (daemon gone, permission, etc.),
+                   # bail out early instead of looping 6000 times. A name-conflict failure
+                   # should be rare because the fast path already filters guarded ports.
+                   create_fail_streak=$((create_fail_streak + 1))
+                   if [[ ${create_fail_streak} -ge 10 ]]; then
+                     echo "  docker network create failed ${create_fail_streak} consecutive candidates; aborting" >&2
+                     return 1
+                   fi
+                   # Another runner just claimed a port; refresh snapshots before retrying.
+                   need_refresh=1
                  done
+                 echo "  Exhausted ${attempt} candidates. Last snapshot: ${used_n} bound, ${guarded_n} guarded" >&2
                  return 1
                }
 
@@ -1251,7 +1380,9 @@ jobs:
             sudo docker rmi -f ${RAGFLOW_IMAGE}
           fi
           if [[ -n ${PORT_RESERVATION:-} ]]; then
-            # PORT_RESERVATION is now a docker network name on the shared daemon (created by the
-            # prepare step as a cross-runner port-offset mutex). Remove it to free the offset.
-            sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
+            # PORT_RESERVATION is a space-separated list of per-port docker network guards
+            # created by the prepare step. Remove each to free the ports for other runners.
+            for guard in ${PORT_RESERVATION}; do
+              sudo docker network rm "${guard}" >/dev/null 2>&1 || true
+            done
           fi
