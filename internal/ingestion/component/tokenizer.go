@@ -634,20 +634,18 @@ func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
 // Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
 // tokenize_chunks().
 //
-// language sets the Snowball stemmer language via tokenizer.SetLanguage,
-// matching Python's rag_tokenizer.tokenizer.set_language(language) call
-// inside tokenize(). Defaults to "English" for backward compatibility;
-// currently a no-op until the CGo binding exposes Analyzer.SetLanguage.
+// language sets the Snowball stemmer language, matching Python's
+// rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
 func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
-	tokenizer.SetLanguage(language)
+	tok := tokenizer.New(language)
 	for i := range chunks {
 		ck := &chunks[i]
 		ck.ChunkOrderInt = intPtr(i)
-		titleTk, err := tokenizer.Tokenize(titleStem)
+		titleTk, err := tok.Tokenize(titleStem)
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title tokenize: %w", err)
 		}
-		titleSmTk, err := tokenizer.FineGrainedTokenize(titleTk)
+		titleSmTk, err := tok.FineGrainedTokenize(titleTk)
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title fine-grain: %w", err)
 		}
@@ -660,7 +658,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if err := ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
 				return fmt.Errorf("Tokenizer: question keywords marshal: %w", err)
 			}
-			qt, err := tokenizer.Tokenize(q)
+			qt, err := tok.Tokenize(q)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: question tokenize: %w", err)
 			}
@@ -672,7 +670,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if err := ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
 				return fmt.Errorf("Tokenizer: keyword list marshal: %w", err)
 			}
-			it, err := tokenizer.Tokenize(kw)
+			it, err := tok.Tokenize(kw)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: keyword tokenize: %w", err)
 			}
@@ -681,7 +679,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if s := ck.Summary; strings.TrimSpace(s) != "" {
-			st, err := tokenizer.Tokenize(s)
+			st, err := tok.Tokenize(s)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
 			}
@@ -689,7 +687,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 				st = s
 			}
 			ck.ContentLtks = st
-			smt, err := tokenizer.FineGrainedTokenize(st)
+			smt, err := tok.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
 			}
@@ -698,7 +696,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 			ck.ContentSmLtks = smt
 		} else if t := ck.Text; strings.TrimSpace(t) != "" {
-			tt, err := tokenizer.Tokenize(t)
+			tt, err := tok.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
 			}
@@ -706,7 +704,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 				tt = t
 			}
 			ck.ContentLtks = tt
-			smt, err := tokenizer.FineGrainedTokenize(tt)
+			smt, err := tok.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
 			}

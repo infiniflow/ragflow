@@ -583,8 +583,8 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 		return nil
 	}
 	ck["important_kwd"] = kwds
-	tokenizer.SetLanguage(in.lang)
-	tks, tkErr := tokenizer.Tokenize(strings.Join(kwds, " "))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
 	if tkErr == nil {
 		ck["important_tks"] = tks
 	}
@@ -621,8 +621,8 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorI
 		return nil
 	}
 	ck["question_kwd"] = filtered
-	tokenizer.SetLanguage(in.lang)
-	tks, tkErr := tokenizer.Tokenize(strings.Join(filtered, "\n"))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
 	if tkErr == nil {
 		ck["question_tks"] = tks
 	}

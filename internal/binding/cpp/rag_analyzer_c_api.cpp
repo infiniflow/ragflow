@@ -94,43 +94,47 @@ RAGTokenList* RAGAnalyzer_TokenizeWithPosition(RAGAnalyzerHandle handle, const c
 
     RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
 
-    Term input;
-    input.text_ = std::string(text);
+    auto [tokens, positions] = analyzer->TokenizeWithPosition(std::string(text));
+    if (analyzer->fine_grained_) {
+        std::string joined_tokens;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            if (i > 0) joined_tokens += " ";
+            joined_tokens += tokens[i];
+        }
 
-    TermList output;
-    // Pass fine_grained and enable_position=true to get position information
-    analyzer->Analyze(input, output, analyzer->fine_grained_, true);
+        std::vector<std::string> fine_tokens;
+        std::vector<std::pair<unsigned, unsigned>> fine_positions;
+        analyzer->FineGrainedTokenizeWithPosition(joined_tokens, positions, fine_tokens, fine_positions);
+        tokens = std::move(fine_tokens);
+        positions = std::move(fine_positions);
+    }
 
-    // Allocate memory for the token list structure
     RAGTokenList* token_list = static_cast<RAGTokenList*>(malloc(sizeof(RAGTokenList)));
     if (!token_list) {
         return nullptr;
     }
 
-    // Allocate memory for the tokens array
+    token_list->tokens = nullptr;
+    token_list->count = static_cast<uint32_t>(tokens.size());
+    if (tokens.empty()) {
+        return token_list;
+    }
+
     token_list->tokens = static_cast<RAGTokenWithPosition*>(
-        malloc(sizeof(RAGTokenWithPosition) * output.size())
+        malloc(sizeof(RAGTokenWithPosition) * tokens.size())
     );
     if (!token_list->tokens) {
         free(token_list);
         return nullptr;
     }
 
-    token_list->count = static_cast<uint32_t>(output.size());
-
-    // Fill in the tokens
-    for (size_t i = 0; i < output.size(); ++i) {
-        // Allocate memory for the text and copy it
-        token_list->tokens[i].text = static_cast<char*>(
-            malloc(output[i].text_.size() + 1)
-        );
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        token_list->tokens[i].text = static_cast<char*>(malloc(tokens[i].size() + 1));
         if (token_list->tokens[i].text) {
-            std::memcpy(token_list->tokens[i].text,
-                        output[i].text_.c_str(),
-                        output[i].text_.size() + 1);
+            std::memcpy(token_list->tokens[i].text, tokens[i].c_str(), tokens[i].size() + 1);
         }
-        token_list->tokens[i].offset = output[i].word_offset_;
-        token_list->tokens[i].end_offset = output[i].end_offset_;
+        token_list->tokens[i].offset = positions[i].first;
+        token_list->tokens[i].end_offset = positions[i].second;
     }
 
     return token_list;

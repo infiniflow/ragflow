@@ -109,14 +109,14 @@ func (c *TagChunkerComponent) invoke(_ context.Context, inputs map[string]any) (
 
 	chunks := make([]schema.ChunkDoc, 0, len(pairs))
 	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
 	for _, pair := range pairs {
 		content := strings.TrimSpace(pair.Content)
 		if content == "" {
 			continue
 		}
-		tokenizer.SetLanguage(lang)
-		contentLTKS, _ := tokenizer.Tokenize(content)
-		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
+		contentLTKS, _ := tok.Tokenize(content)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
 		chunk := schema.ChunkDoc{
 			ContentWithWeight: content,
 			DocType:           "text",

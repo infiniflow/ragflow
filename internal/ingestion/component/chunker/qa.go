@@ -119,10 +119,10 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
 	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
 	for _, pair := range qaPairs {
-		tokenizer.SetLanguage(lang)
-		contentLTKS, _ := tokenizer.Tokenize(pair.Question)
-		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
+		contentLTKS, _ := tok.Tokenize(pair.Question)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
 		answer := rmQAPrefix(pair.Answer)
 		if isMarkdown {
 			answer = renderMarkdown(answer)
