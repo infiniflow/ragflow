@@ -34,6 +34,9 @@ import (
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
+	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
+	"ragflow/internal/service/file"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
@@ -681,8 +684,8 @@ func startServer(config *server.Config) {
 
 	// Initialize service layer
 	userService := service.NewUserService()
-	documentService := service.NewDocumentService()
-	datasetsService := service.NewDatasetService()
+	documentService := document.NewDocumentService()
+	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
@@ -693,10 +696,11 @@ func startServer(config *server.Config) {
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
+	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := service.NewFileService()
+	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
@@ -711,9 +715,10 @@ func startServer(config *server.Config) {
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
-	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
+	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
+	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -741,7 +746,7 @@ func startServer(config *server.Config) {
 			return handler.MCPRetrieval(datasetsService, userID, req)
 		},
 	)
-	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
+	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Redis-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
@@ -789,7 +794,7 @@ func startServer(config *server.Config) {
 	searchHandler.SetCompletionDependencies(modelProviderService, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
-	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
+	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
 
 	// Dify retrieval handler
 	docDAO := documentDAO
@@ -813,6 +818,7 @@ func startServer(config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
+		statsHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,

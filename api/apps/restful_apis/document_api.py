@@ -79,14 +79,6 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
-def _compilation_template_group_id_changed(old_config, new_config) -> bool:
-    from rag.svr.task_executor_refactor.chunk_post_processor import (
-        _parser_config_compilation_template_group_ids,
-    )
-
-    return _parser_config_compilation_template_group_ids(old_config) != _parser_config_compilation_template_group_ids(new_config)
-
-
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
     from rag.svr.task_executor_refactor.chunk_post_processor import (
         _parser_config_compilation_template_group_ids,
@@ -260,16 +252,12 @@ async def update_document(tenant_id, dataset_id, document_id):
     if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
         return get_data_error_result(message="Not supported yet!")
 
-    parser_config_template_group_changed = False
     # parser config provided (already validated in UpdateDocumentReq), update it.
-    # Changing the document-scoped knowledge compilation template group
-    # affects parse output, so the document must be parsed again for it to
-    # execute.
+    # Changing the document-scoped knowledge compilation template group must
+    # not remove the existing chunks.
     if update_doc_req.parser_config:
-        old_parser_config = dict(doc.parser_config or {})
         req["parser_config"].update(update_doc_req.parser_config.ext)
-        parser_config_template_group_touched = _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
-        parser_config_template_group_changed = parser_config_template_group_touched and _compilation_template_group_id_changed(old_parser_config, req["parser_config"])
+        _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
     # A non-empty pipeline_id selects pipeline parsing; an explicitly empty
@@ -280,12 +268,6 @@ async def update_document(tenant_id, dataset_id, document_id):
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
-            return error
-        if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
-            if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
-                return error
-    elif parser_config_template_group_changed:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
             return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present

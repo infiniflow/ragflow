@@ -342,3 +342,99 @@ func TestZhipuAIAudioSpeechHTTPError(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestZhipuAIChatStreamlyWithSenderCollectsToolCalls(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s", r.Method)
+			return
+		}
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("path=%s", r.URL.Path)
+			return
+		}
+
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Decode: %v", err)
+			return
+		}
+		if body["stream"] != true {
+			t.Errorf("stream=%v", body["stream"])
+		}
+		if body["tools"] == nil {
+			t.Error("tools missing from request")
+		}
+		if body["tool_choice"] != "auto" {
+			t.Errorf("tool_choice=%v", body["tool_choice"])
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"search_knowledge\",\"arguments\":\"{\\\"query\\\":\\\"mari\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"gold\\\"}\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5,\"total_tokens\":8}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	cfg := &ChatConfig{
+		Tools: []map[string]interface{}{
+			{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        "search_knowledge",
+					"description": "Search the knowledge base.",
+					"parameters": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{"query": map[string]interface{}{"type": "string"}},
+						"required":   []string{"query"},
+					},
+				},
+			},
+		},
+	}
+	toolChoice := "auto"
+	cfg.ToolChoice = &toolChoice
+
+	err := NewZhipuAIModel(
+		map[string]string{"default": srv.URL},
+		URLSuffix{Chat: "chat/completions"},
+	).ChatStreamlyWithSender(
+		"glm-4",
+		[]Message{{Role: "user", Content: "what is marigold"}},
+		&APIConfig{ApiKey: &apiKey},
+		cfg,
+		nil,
+		func(content *string, reasoning *string) error {
+			if content != nil && *content != "[DONE]" {
+				t.Errorf("content=%q", *content)
+			}
+			if reasoning != nil {
+				t.Errorf("reasoning=%q", *reasoning)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if cfg.ToolCallsResult == nil || len(*cfg.ToolCallsResult) != 1 {
+		t.Fatalf("ToolCallsResult=%#v, want one tool call", cfg.ToolCallsResult)
+	}
+	call := (*cfg.ToolCallsResult)[0]
+	if call["id"] != "call-1" || call["type"] != "function" {
+		t.Fatalf("tool call metadata=%#v", call)
+	}
+	fn, ok := call["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("function=%#v", call["function"])
+	}
+	if fn["name"] != "search_knowledge" || fn["arguments"] != `{"query":"marigold"}` {
+		t.Fatalf("function=%#v", fn)
+	}
+	if cfg.UsageResult == nil || cfg.UsageResult.TotalTokens != 8 {
+		t.Fatalf("UsageResult=%#v, want total tokens 8", cfg.UsageResult)
+	}
+}

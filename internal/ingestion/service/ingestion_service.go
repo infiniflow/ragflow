@@ -34,6 +34,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
+	documentpkg "ragflow/internal/service/document"
 
 	"github.com/cenkalti/backoff/v5"
 )
@@ -607,7 +608,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 // row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
 // appended timestamped cancel message (progress_msg += cancelMsg).
 func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
-	svc := servicepkg.NewDocumentService()
+	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
@@ -625,7 +626,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 // row. Unlike cancellation (markCancelProgress), this records a TIMEOUT
 // failure rather than a user-initiated stop.
 func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
-	svc := servicepkg.NewDocumentService()
+	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)

@@ -164,7 +164,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         q, kw = await tools.formalize(msgs)
         q = (q or "").strip()
         kw = (kw or "").strip()
-        _LOG.info("[Formalizing the question] Understood the question as: \"%s\" — searching with keywords: %s", _snip(q), _snip(kw))
+        _LOG.info('[Formalizing the question] Understood the question as: "%s" — searching with keywords: %s', _snip(q), _snip(kw))
         return {
             "question": q,
             "keywords": kw,
@@ -198,7 +198,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         q = state.get("question", "")
         kw = state.get("keywords", "")
-        _LOG.info("[Preliminary search] Taking a first look in the knowledge base for: \"%s\" (keywords: %s)", _snip(q), _snip(kw))
+        _LOG.info('[Preliminary search] Taking a first look in the knowledge base for: "%s" (keywords: %s)', _snip(q), _snip(kw))
         try:
             result = await hybrid_search(tools, query=q, keywords=kw)
         except Exception:
@@ -231,7 +231,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         empty_result = state.get("empty_result", False)
 
         _note = " — partial answer, some gaps remain" if partial else (" — not enough evidence to answer" if abstain else "")
-        _LOG.info("[Composing the answer] Writing the final answer to \"%s\" from %d gathered passage(s)%s.", _snip(question), len(kbinfos["chunks"]), _note)
+        _LOG.info('[Composing the answer] Writing the final answer to "%s" from %d gathered passage(s)%s.', _snip(question), len(kbinfos["chunks"]), _note)
 
         tools.kbinfos = kbinfos
 
@@ -302,7 +302,12 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
-    _LOG.info("[Agentic RAG] Starting research to answer your question...")
+    _LOG.info(
+        "[Agentic RAG] Starting research — %d message(s), last role=%s, content_len=%d",
+        len(messages),
+        messages[-1].get("role", "") if messages else "?",
+        len(messages[-1].get("content", "")) if messages else 0,
+    )
 
     token_queue: asyncio.Queue = asyncio.Queue()
     graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf)
