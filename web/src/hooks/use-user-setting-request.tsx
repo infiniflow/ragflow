@@ -165,10 +165,10 @@ export const useSelectParserList = (): Array<{
     // Go backend: prefer the dynamic pipeline catalog from the API.
     if (backendLang === 'go') {
       const pipelineList: Array<{
-        parser_id: string;
+        id: string;
         title: string;
         dsl: Record<string, any>;
-      }> = pipelineListData?.data ?? [];
+      }> = pipelineListData?.data?.canvas ?? [];
       if (pipelineList.length > 0) {
         const labelFromAPI = (parserId: string, title: string) => {
           const key = `knowledgeConfiguration.parserLabel.${parserId}`;
@@ -176,8 +176,8 @@ export const useSelectParserList = (): Array<{
           return translated !== key ? translated : title;
         };
         return pipelineList.map((item) => ({
-          value: item.parser_id,
-          label: labelFromAPI(item.parser_id, item.title),
+          value: item.id,
+          label: labelFromAPI(item.id, item.title),
         }));
       }
     }
