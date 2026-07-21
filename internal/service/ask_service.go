@@ -186,7 +186,12 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		{Role: "system", Content: sysPrompt},
 		{Role: "user", Content: question},
 	}
-	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1)}
+	// Thinking is disabled: summarization does not need reasoning. With
+	// thinking enabled, the reasoning (which drafts the summary) streams
+	// first, then collapses into a hidden think block, and the provider may
+	// emit only a fragment as the visible answer once the reasoning has
+	// consumed the output budget.
+	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1), Thinking: ptrBool(false)}
 
 	ch, err := llm.ChatStream(ctx, messages, genConf)
 	if err != nil {
@@ -279,3 +284,4 @@ func toFloat64Slice(v interface{}) []float64 {
 
 func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
+func ptrBool(v bool) *bool          { return &v }
