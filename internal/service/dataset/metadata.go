@@ -16,7 +16,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
 	if !d.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+		return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)

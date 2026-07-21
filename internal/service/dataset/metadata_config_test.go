@@ -166,7 +166,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "User 'user-1' lacks permission for dataset 'kb-1'" {
+	if err.Error() != "You don't own the dataset." {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
