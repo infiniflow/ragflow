@@ -169,10 +169,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// no auth required. The front end uses it to populate the parser
 		// picker without hard-coding the parser_id list.
 		// Query: ?type=builtin returns built-in templates (default).
-		if r.pipelineHandler != nil {
-			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
-			apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
-		}
+		apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 		// searchbots
 		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
@@ -239,9 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
 		// Uses BetaAuthMiddleware to resolve the user from the
 		// Authorization header.
-		if r.mcpServerHandler != nil {
-			apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
-		}
+		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -596,9 +592,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// ?category=ingestion,agent,shared filter; defaults to
 			// all categories. The data source is
 			// runtime.DefaultRegistry.
-			if r.componentsHandler != nil {
-				v1.GET("/components", r.componentsHandler.Get)
-			}
+			v1.GET("/components", r.componentsHandler.Get)
 
 			connectors := v1.Group("/connectors")
 			{
