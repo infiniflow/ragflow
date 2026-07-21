@@ -242,7 +242,13 @@ class RAGFlowConnector:
 
         result_list = []
         for data in datasets:
-            d = {"description": data["description"], "id": data["id"]}
+            # Include name so MCP clients can pick datasets by human-readable
+            # label (parity with list_chats and GET /api/v1/datasets). #17133
+            d = {
+                "id": data.get("id"),
+                "name": data.get("name"),
+                "description": data.get("description", ""),
+            }
             result_list.append(json.dumps(d, ensure_ascii=False))
         return "\n".join(result_list)
 
