@@ -191,14 +191,21 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	quotaInt, err := common.ParseRequestIntPositive(c, c.Query("quota"), "quota", 0)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if quotaInt > 100 {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be less than or equal to 100")
-		return
+	// quota is optional: nil when the query param is absent, &v when present
+	// (including 0). This lets ListUsersEE distinguish "no quota filter" from
+	// "filter by quota threshold 0".
+	var quotaPtr *int
+	if quotaStr := c.Query("quota"); quotaStr != "" {
+		q, err := common.ParseRequestIntPositive(c, quotaStr, "quota", 0)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			return
+		}
+		if q > 100 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be less than or equal to 100")
+			return
+		}
+		quotaPtr = &q
 	}
 	daysInt, err := common.ParseRequestIntPositive(c, c.Query("days"), "days", 0)
 	if err != nil {
@@ -219,11 +226,13 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.SuccessWithData(c, users, "List users")
 		return
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaInt)
+		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
+		common.SuccessWithData(c, users, "List users")
+		return
 	default:
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
