@@ -20,23 +20,29 @@ import "encoding/json"
 
 // Chat chat model (mapped to dialog table)
 type Chat struct {
-	ID                     string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID               string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name                   *string   `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Description            *string   `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	Icon                   *string   `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
-	Language               *string   `gorm:"column:language;size:32;index" json:"language,omitempty"`
-	LLMID                  string    `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
-	TenantLLMID            *string   `gorm:"column:tenant_llm_id;size:32;index" json:"tenant_llm_id,omitempty"`
-	LLMSetting             JSONMap   `gorm:"column:llm_setting;type:longtext;not null" json:"llm_setting"`
-	PromptType             string    `gorm:"column:prompt_type;size:16;not null;default:'simple';index" json:"prompt_type"`
-	PromptConfig           JSONMap   `gorm:"column:prompt_config;type:longtext;not null" json:"prompt_config"`
-	MetaDataFilter         *JSONMap  `gorm:"column:meta_data_filter;type:longtext" json:"meta_data_filter,omitempty"`
-	SimilarityThreshold    float64   `gorm:"column:similarity_threshold;default:0.2" json:"similarity_threshold"`
-	VectorSimilarityWeight float64   `gorm:"column:vector_similarity_weight;default:0.3" json:"vector_similarity_weight"`
-	TopN                   int64     `gorm:"column:top_n;default:6" json:"top_n"`
-	TopK                   int64     `gorm:"column:top_k;default:1024" json:"top_k"`
-	DoRefer                string    `gorm:"column:do_refer;size:1;not null;default:1" json:"do_refer"`
+	ID             string   `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID       string   `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name           *string  `gorm:"column:name;size:255;index" json:"name,omitempty"`
+	Description    *string  `gorm:"column:description;type:longtext" json:"description,omitempty"`
+	Icon           *string  `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
+	Language       *string  `gorm:"column:language;size:32;index" json:"language,omitempty"`
+	LLMID          string   `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
+	TenantLLMID    *string  `gorm:"column:tenant_llm_id;size:32;index" json:"tenant_llm_id,omitempty"`
+	LLMSetting     JSONMap  `gorm:"column:llm_setting;type:longtext;not null" json:"llm_setting"`
+	PromptType     string   `gorm:"column:prompt_type;size:16;not null;default:'simple';index" json:"prompt_type"`
+	PromptConfig   JSONMap  `gorm:"column:prompt_config;type:longtext;not null" json:"prompt_config"`
+	MetaDataFilter *JSONMap `gorm:"column:meta_data_filter;type:longtext" json:"meta_data_filter,omitempty"`
+	// NOTE: No `default:` GORM tags here. The service layer (chat.go Create)
+	// supplies sensible defaults (0.1 / 0.3 / 6 / 1024 / "1") when a field is
+	// omitted, and honors an explicitly provided zero value. A GORM `default:`
+	// tag would force GORM to overwrite an explicit zero (e.g.
+	// similarity_threshold=0) with the column default during Create, breaking
+	// the API contract that permits 0.
+	SimilarityThreshold    float64   `gorm:"column:similarity_threshold" json:"similarity_threshold"`
+	VectorSimilarityWeight float64   `gorm:"column:vector_similarity_weight" json:"vector_similarity_weight"`
+	TopN                   int64     `gorm:"column:top_n" json:"top_n"`
+	TopK                   int64     `gorm:"column:top_k" json:"top_k"`
+	DoRefer                string    `gorm:"column:do_refer;size:1;not null" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
 	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:32;index" json:"tenant_rerank_id,omitempty"`
 	KBIDs                  JSONSlice `gorm:"column:kb_ids;type:longtext;not null" json:"kb_ids"`

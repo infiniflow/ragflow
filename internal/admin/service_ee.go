@@ -1287,3 +1287,57 @@ func (s *Service) BatchDeleteWhiteList(ids []int) (map[string]interface{}, error
 	}
 	return result, nil
 }
+
+// GetTokenStats returns API token statistics for the user.
+func (s *Service) GetTokenStats(userName, fromDate, toDate, granularity string) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":     "get_token_stats",
+			"user_name":   userName,
+			"from_date":   fromDate,
+			"to_date":     toDate,
+			"granularity": granularity,
+			"error":       "'Get API token stats' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// GetTokenUsersStats returns API token statistics for all users.
+func (s *Service) GetTokenUsersStats(fromDate, toDate string, top int) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":   "get_token_users_stats",
+			"from_date": fromDate,
+			"to_date":   toDate,
+			"top":       top,
+			"error":     "'Get API token users stats' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// GetTokenStatsSummary returns API token statistics summary for all users.
+func (s *Service) GetTokenStatsSummary(fromDate, toDate string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "get_token_stats_summary",
+		"from_date": fromDate,
+		"to_date":   toDate,
+		"error":     "'Get API token stats summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListLogs lists operation logs for the user.
+func (s *Service) ListLogs(userName string, days int) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":   "list_logs",
+			"user_name": userName,
+			"days":      days,
+			"error":     "'List operation logs' is not supported",
+		},
+	}
+	return result, nil
+}

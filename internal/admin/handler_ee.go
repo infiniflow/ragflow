@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -1892,4 +1893,104 @@ func (h *Handler) BatchDeleteWhiteList(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "Batch delete white list successfully")
+}
+
+// GetTokenStats returns API token statistics for the current user's tenant.
+func (h *Handler) GetTokenStats(c *gin.Context) {
+
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	granularity := c.Query("granularity")
+	if granularity == "" {
+		granularity = "hour"
+	}
+	granularity = strings.ToLower(granularity)
+
+	stats, err := h.service.GetTokenStats(userName, fromDate, toDate, granularity)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetTokenUsersStats returns API token statistics summary for the current user's tenant.
+func (h *Handler) GetTokenUsersStats(c *gin.Context) {
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	topStr := c.Query("top")
+	top, err := strconv.Atoi(topStr)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid top")
+		return
+	}
+
+	stats, err := h.service.GetTokenUsersStats(fromDate, toDate, top)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetTokenStatsSummary returns API token statistics summary for the current user's tenant.
+func (h *Handler) GetTokenStatsSummary(c *gin.Context) {
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	stats, err := h.service.GetTokenStatsSummary(fromDate, toDate)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+func (h *Handler) ListLogs(c *gin.Context) {
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+	days := c.Query("days")
+	if days == "" {
+		days = "7"
+	}
+	daysInt, err := strconv.Atoi(days)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid days")
+		return
+	}
+
+	stats, err := h.service.ListLogs(userName, daysInt)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+
 }

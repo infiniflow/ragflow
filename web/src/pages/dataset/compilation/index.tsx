@@ -1,83 +1,30 @@
 import BackButton from '@/components/back-button';
-import MarkdownEditor from '@/components/markdown-editor';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import {
-  useFetchArtifactTopicList,
-  useFetchKnowledgeBaseConfiguration,
-  useFetchKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
 import { ViewMode } from './constants';
-import CompilationEmptyState from './empty-state';
-import { useCompilationArtifact } from './hooks/use-compilation-artifact';
-import { useCompilationSkill } from './hooks/use-compilation-skill';
-import { useCompilationView } from './hooks/use-compilation-view';
-import KnowledgeForceGraph from './knowledge-force-graph';
-import { SkillsLeftPanel } from './skills-left-panel';
-import { WikiDetailContent } from './wiki-detail-content';
-import { WikiLeftPanel } from './wiki-left-panel';
+import { LlmWikiView } from './llm-wiki-view';
+import { SkillsView } from './skills-view';
 
 export default function Compilation() {
   const { t } = useTranslation();
   const { id } = useParams();
   const { navigateToDataFile } = useNavigatePage();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
-  const { data: knowledgeGraph, loading: knowledgeGraphLoading } =
-    useFetchKnowledgeGraph();
-  const { topics, loading: topicListLoading } = useFetchArtifactTopicList();
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
 
-  const {
-    leftTab,
-    viewMode,
-    artifactRunData,
-    skillRunData,
-    handleSwitchToLlmWiki,
-    handleSwitchToSkills,
-    handleLeftTabChange,
-  } = useCompilationView();
+  const handleSwitchToLlmWiki = useCallback(() => {
+    setViewMode(ViewMode.LlmWiki);
+  }, []);
 
-  const {
-    selectedArtifact,
-    selectedVersion,
-    selectVersion,
-    handleSelectArtifact,
-    clearSelectedArtifact,
-  } = useCompilationArtifact();
-
-  const {
-    selectedSkill,
-    setSelectedSkill,
-    skillTree,
-    skillTreeLoading,
-    skillPage,
-  } = useCompilationSkill();
-
-  const isLlmWikiEmpty = topics.length === 0 && !topicListLoading;
-  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
-
-  const isGraphLoading = knowledgeGraphLoading && !knowledgeGraph?.graph;
-  const isLlmWikiLoading = topicListLoading && topics.length === 0;
-  const isSkillsLoading =
-    skillTreeLoading && !skillTree?.skill_with_weight?.length;
-  const isSkillsEmpty =
-    !skillTree?.skill_with_weight?.length && !skillTreeLoading;
-
-  const loadingCard = (
-    <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col p-8">
-      <SkeletonCard className="flex-1" />
-    </Card>
-  );
+  const handleSwitchToSkills = useCallback(() => {
+    setViewMode(ViewMode.Skills);
+  }, []);
 
   return (
     <section className="flex flex-col p-4 gap-4 h-full">
@@ -107,85 +54,19 @@ export default function Compilation() {
             >
               {t('knowledgeDetails.llmWiki')}
             </Button>
+
             <Button
               variant={viewMode === ViewMode.Skills ? 'default' : 'outline'}
               size="sm"
               onClick={handleSwitchToSkills}
             >
-              {t('knowledgeDetails.skills')}
+              To Skills
             </Button>
           </div>
         </section>
       </header>
 
-      {viewMode === ViewMode.Graph ? (
-        isGraphLoading ? (
-          loadingCard
-        ) : (
-          <div className="flex-1 min-h-0 flex flex-col">
-            <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
-          </div>
-        )
-      ) : viewMode === ViewMode.LlmWiki ? (
-        isLlmWikiLoading ? (
-          loadingCard
-        ) : isLlmWikiEmpty ? (
-          <CompilationEmptyState
-            type="llm-wiki"
-            disabled={!canGenerate}
-            data={artifactRunData}
-          />
-        ) : (
-          <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-            <ResizablePanelGroup direction="horizontal" className="flex-1">
-              <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
-                <WikiLeftPanel
-                  tab={leftTab}
-                  onTabChange={handleLeftTabChange}
-                  selectedArtifact={selectedArtifact}
-                  onSelectArtifact={handleSelectArtifact}
-                  onClearWiki={clearSelectedArtifact}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel>
-                <WikiDetailContent
-                  selectedArtifact={selectedArtifact}
-                  selectedVersion={selectedVersion}
-                  onSelectVersion={selectVersion}
-                  onSelectArtifact={handleSelectArtifact}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </Card>
-        )
-      ) : isSkillsLoading ? (
-        loadingCard
-      ) : isSkillsEmpty ? (
-        <CompilationEmptyState
-          type="skills"
-          disabled={!canGenerate}
-          data={skillRunData}
-        />
-      ) : (
-        <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-          <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
-              <SkillsLeftPanel
-                selectedSkill={selectedSkill}
-                onSelectSkill={setSelectedSkill}
-              />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel className="flex flex-col">
-              <MarkdownEditor
-                content={skillPage?.md_with_weight ?? ''}
-                readOnly
-              />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </Card>
-      )}
+      {viewMode === ViewMode.LlmWiki ? <LlmWikiView /> : <SkillsView />}
     </section>
   );
 }

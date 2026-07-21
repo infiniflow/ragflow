@@ -26,7 +26,10 @@
 package chunker
 
 import (
+	"context"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // MustRegisterChunker registers a single chunker component under
@@ -41,16 +44,46 @@ func MustRegisterChunker(name string) {
 		if err != nil {
 			return nil, err
 		}
-		// newChunkerByName returns runtime.Component directly (each
-		// NewXxxChunker constructor satisfies the interface, so no
-		// intermediate type assertion is needed).
-		return comp, nil
+		return &imageUploadDecorator{inner: comp}, nil
 	}
 	runtime.MustRegister(name, runtime.CategoryIngestion, factory, runtime.Metadata{
 		Version: "1.0.0",
 		Inputs:  ChunkerInputs,
 		Outputs: ChunkerOutputs,
 	})
+}
+
+// imageUploadDecorator wraps a chunker component. Before upload it writes
+// ck["id"] (the single source of chunk identity) for every chunk; then it runs
+// uploadChunkImages which reads ck["id"] and uploads any raw image bytes.
+type imageUploadDecorator struct {
+	inner runtime.Component
+}
+
+func (d *imageUploadDecorator) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	out, err := d.inner.Invoke(ctx, inputs)
+	if err != nil {
+		return nil, err
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		return out, nil
+	}
+	kbID, docID := resolveImageUploadContext(ctx, inputs)
+
+	// Compute and write the deterministic chunk id (component.ChunkID) for
+	// every chunk. This happens here — before any upload — so uploadChunkImage
+	// can read ck["id"] without deriving it itself. Downstream, the persist
+	// stage reuses the same formula as a fallback when ck["id"] is absent.
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		ck["id"] = common.ChunkID(docID, text)
+	}
+
+	if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ChunkerInputs is the static, registered input descriptor shared

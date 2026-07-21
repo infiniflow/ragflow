@@ -68,7 +68,7 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 	}
 	doc, err := s.documentDAO.GetByID(docID)
 	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("The dataset not own the document %s.", docID)
+		return nil, fmt.Errorf("Document not found!")
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(doc)
 	if err != nil {
@@ -100,7 +100,6 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 	}, nil
 }
 
-// CreateDocument create document
 // GetDocumentByID get document by ID
 func (s *DocumentService) GetDocumentByID(id string) (*DocumentResponse, error) {
 	document, err := s.documentDAO.GetByID(id)
