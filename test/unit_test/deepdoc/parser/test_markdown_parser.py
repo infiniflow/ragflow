@@ -206,6 +206,18 @@ class TestMarkdownTableDedup:
         assert "| Name | Value |" in remainder
         assert "```markdown" in remainder
 
+    def test_html_table_inside_code_fence_is_left_intact(self, markdown_parser_module):
+        """An HTML example inside a fence must keep its attributes and its body:
+        the tag-stripping and html-table passes have to respect fences too."""
+        text = '# Guide\n\nEmbed a table like this:\n\n```html\n<table border="1">\n<tr><td>A</td></tr>\n</table>\n```\n\nDone.\n'
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert tables == []
+        assert 'border="1"' in remainder
+        assert "<td>A</td>" in remainder
+
     def test_real_table_still_extracted_alongside_a_fenced_example(self, markdown_parser_module):
         """Shielding fences must not stop genuine tables outside them from being split."""
         text = "```markdown\n| Name | Value |\n| --- | --- |\n| A | 1 |\n```\n\n| X | Y |\n| --- | --- |\n| 9 | 8 |\n\ntail\n"

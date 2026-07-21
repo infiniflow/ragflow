@@ -90,7 +90,12 @@ class RAGFlowMarkdownParser:
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
         table_with_attributes_pattern = re.compile(rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE)
 
+        tag_fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
+
         def replace_tag(m):
+            if any(start <= m.start() < end for start, end in tag_fenced_spans):
+                # an html example inside a fence keeps its attributes verbatim.
+                return m.group()
             tag_name = re.match(r"<(\w+)", m.group()).group(1)
             return "<{}>".format(tag_name)
 
@@ -122,7 +127,10 @@ class RAGFlowMarkdownParser:
                 nonlocal working_text
                 new_text = ""
                 last_end = 0
+                fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
                 for match in html_table_pattern.finditer(working_text):
+                    if any(start <= match.start() < end for start, end in fenced_spans):
+                        continue
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
