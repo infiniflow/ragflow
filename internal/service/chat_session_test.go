@@ -822,7 +822,9 @@ func TestCompletion_Success(t *testing.T) {
 	pipeline := &fakePipeline{
 		resultChan: makeResultChan(
 			AsyncChatResult{Answer: "Hello", Reference: map[string]interface{}{"chunks": []interface{}{}}},
-			AsyncChatResult{Answer: " world", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+			// The real pipeline's final result carries the complete answer,
+			// not a trailing delta.
+			AsyncChatResult{Answer: "Hello world", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
 		),
 	}
 
