@@ -34,13 +34,15 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
 )
 
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
 	deleted                int
 	err                    error
-	doc                    *service.DocumentResponse
+	doc                    *document.DocumentResponse
 	docErr                 error
 	updateCalled           bool
 	updatedID              string
@@ -71,7 +73,7 @@ type fakeDocumentService struct {
 	ingestCode             common.ErrorCode
 	ingestErr              error
 	ingestUserID           string
-	ingestReq              *service.IngestDocumentRequest
+	ingestReq              *document.IngestDocumentRequest
 	listOpts               dao.DocumentListOptions
 	filterOpts             dao.DocumentListOptions
 	filterResult           map[string]interface{}
@@ -80,7 +82,7 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 }
 
-func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error) {
+func (f *fakeDocumentService) Ingest(userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
 	f.ingestUserID = userID
 	f.ingestReq = req
 	if f.ingestCode != 0 || f.ingestErr != nil {
@@ -91,57 +93,48 @@ func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentR
 
 const uploadTestDatasetID = "123e4567-e89b-12d3-a456-426614174000"
 
-func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(datasetID string, selector *service.DocumentMetadataSelector, updates []service.DocumentMetadataUpdate, deletes []service.DocumentMetadataDelete) (*service.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
-	return nil, common.CodeSuccess, nil
-}
-func (f *fakeDocumentService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
-	return nil, common.CodeSuccess, nil
-}
-func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
 
-func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*service.ArtifactResponse, error) {
+func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*document.ArtifactResponse, error) {
 	if filename == "error.txt" {
-		return nil, service.ErrArtifactNotFound
+		return nil, document.ErrArtifactNotFound
 	}
 	if filename == "unexpected.txt" {
 		return nil, fmt.Errorf("unexpected error")
 	}
-	return &service.ArtifactResponse{
+	return &document.ArtifactResponse{
 		Data:            []byte("artifact content"),
 		ContentType:     "text/plain",
 		SafeFilename:    "safe.txt",
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
 		return nil, fmt.Errorf("not found")
 	}
-	return &service.DocumentPreview{
+	return &document.DocumentPreview{
 		Data:        []byte("preview content"),
 		ContentType: "text/plain",
 		FileName:    "preview.txt",
 	}, nil
 }
-func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error) {
+func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*document.DownloadDocumentResp, error) {
 	if docID == "not-found" {
 		return nil, fmt.Errorf("not found")
 	}
-	return &service.DownloadDocumentResp{
+	return &document.DownloadDocumentResp{
 		Data:        []byte("document data"),
 		ContentType: "application/pdf",
 		FileName:    "doc.pdf",
 	}, nil
 }
-func (f *fakeDocumentService) CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error) {
-	return nil, nil
-}
-func (f *fakeDocumentService) GetDocumentByID(id string) (*service.DocumentResponse, error) {
+func (f *fakeDocumentService) GetDocumentByID(id string) (*document.DocumentResponse, error) {
 	if f.docErr != nil {
 		return nil, f.docErr
 	}
@@ -150,7 +143,7 @@ func (f *fakeDocumentService) GetDocumentByID(id string) (*service.DocumentRespo
 	}
 	return nil, fmt.Errorf("document not found")
 }
-func (f *fakeDocumentService) UpdateDocument(id string, req *service.UpdateDocumentRequest) error {
+func (f *fakeDocumentService) UpdateDocument(id string, req *document.UpdateDocumentRequest) error {
 	f.updateCalled = true
 	f.updatedID = id
 	return nil
@@ -169,7 +162,7 @@ func (f *fakeDocumentService) ParseDocuments(datasetID, userID string, docIDs []
 func (f *fakeDocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
 	return f.stopResult, f.stopErr
 }
-func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error) {
+func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
 func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
@@ -207,7 +200,7 @@ func (f *fakeDocumentService) GetThumbnails(userID string, docIDs []string) (map
 func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error) {
+func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
 func (f *fakeDocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
@@ -315,11 +308,11 @@ func TestSetMetaHandler_NotAccessible(t *testing.T) {
 	setupDocumentPermissionDB(t, false)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"poc\":\"blocked\"}"}`)
@@ -347,11 +340,11 @@ func TestSetMetaHandler_Accessible(t *testing.T) {
 	setupDocumentPermissionDB(t, true)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"category\":\"tech\",\"year\":2026}"}`)
@@ -382,11 +375,11 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 	setupDocumentPermissionDB(t, false)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
@@ -415,11 +408,11 @@ func TestDeleteDocumentHandler_Accessible(t *testing.T) {
 	setupDocumentPermissionDB(t, true)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
@@ -448,11 +441,11 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 	setupDocumentPermissionDB(t, false)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"blocked"}`)
@@ -481,11 +474,11 @@ func TestUpdateDocumentHandler_Accessible(t *testing.T) {
 	setupDocumentPermissionDB(t, true)
 
 	fake := &fakeDocumentService{
-		doc: &service.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"allowed"}`)
@@ -589,7 +582,7 @@ func setupDocumentIngestRoute(userID string, svc *fakeDocumentService) *gin.Engi
 	gin.SetMode(gin.TestMode)
 	h := &DocumentHandler{
 		documentService: svc,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -606,7 +599,7 @@ func TestDeleteDocumentsHandler_Success(t *testing.T) {
 	fake := &fakeDocumentService{deleted: 3}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/documents", `{"ids": ["doc-1", "doc-2", "doc-3"]}`)
@@ -642,7 +635,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
@@ -683,7 +676,7 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", nil, "ok.txt", []byte("abc"))
@@ -717,7 +710,7 @@ func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", nil, "a.txt", []byte("abc"))
@@ -744,7 +737,7 @@ func TestDeleteDocumentsHandler_DeleteAll(t *testing.T) {
 	fake := &fakeDocumentService{deleted: 5}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/documents", `{"delete_all": true}`)
@@ -763,7 +756,7 @@ func TestDeleteDocumentsHandler_MutuallyExclusive(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/documents", `{"ids": ["doc-1"], "delete_all": true}`)
@@ -788,7 +781,7 @@ func TestDeleteDocumentsHandler_NoIDsNoDeleteAll(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/documents", `{}`)
@@ -813,7 +806,7 @@ func TestDeleteDocumentsHandler_ServiceError(t *testing.T) {
 	fake := &fakeDocumentService{err: fmt.Errorf("permission denied")}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/documents", `{"ids": ["doc-1"]}`)
@@ -838,7 +831,7 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets//documents", `{"ids": ["doc-1"]}`)
@@ -862,7 +855,7 @@ func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
@@ -941,7 +934,7 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
@@ -972,7 +965,7 @@ func TestStopParseDocumentsHandler_EmptyDocIDs(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": []}`)
@@ -997,7 +990,7 @@ func TestStopParseDocumentsHandler_BadJSON(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `not json`)
@@ -1074,7 +1067,7 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=DONE&types=doc&desc=false", "")
@@ -1132,7 +1125,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
@@ -1164,7 +1157,7 @@ func TestStopParseDocumentsHandler_Success(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
@@ -1200,7 +1193,7 @@ func TestStopParseDocumentsHandler_ServiceError(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
@@ -1230,7 +1223,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	fake := &fakeDocumentService{}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
@@ -1343,7 +1336,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	}
 	h := &DocumentHandler{
 		documentService: fake,
-		datasetService:  service.NewDatasetService(),
+		datasetService:  dataset.NewDatasetService(),
 	}
 
 	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")

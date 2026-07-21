@@ -14,7 +14,9 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -69,15 +71,17 @@ type AgentComponent struct {
 
 // AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
-	ModelID               string
-	SystemPrompt          string
-	UserPrompt            string
-	TopP                  *float64
-	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
-	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
-	MaxRounds             int
-	OptimizeMultiTurn     bool // when true (default), multi-turn history is condensed via full_question LLM call
-	OptimizeHistoryWindow int  // number of history turns to include in the optimization prompt (default 3)
+	ModelID                  string
+	SystemPrompt             string
+	UserPrompt               string
+	Thinking                 string
+	TopP                     *float64
+	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
+	MaxRounds                int
+	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
+	OptimizeMultiTurn        bool
+	OptimizeHistoryWindow    int
 	// Meta is the OpenAI-style function-call schema the Agent exposes
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
@@ -95,7 +99,10 @@ type AgentParam struct {
 	BaseURL string
 }
 
-const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
+const (
+	agentUserPromptSchemaDefault         = "This is the order you need to send to the agent."
+	defaultAgentMessageHistoryWindowSize = 13
+)
 
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
@@ -135,7 +142,7 @@ var agentRunner = runEinoReActAgent
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(p)
+	chatModel, err := buildAgentChatModel(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
@@ -143,13 +150,14 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	input := buildAgentInputMessages(ctx, p)
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
-		MessageModifier: func(ctx context.Context, msgs []*schema.Message) []*schema.Message {
+		MessageModifier: func(_ context.Context, msgs []*schema.Message) []*schema.Message {
 			if p.SystemPrompt != "" {
 				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
 			}
@@ -161,14 +169,118 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, fmt.Errorf("create react agent: %w", err)
 	}
 
-	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
-	msg, err := agent.Generate(ctx, input, opt)
+	stream, err := agent.Stream(ctx, input, opt)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	emitDone := emitAgentModelStreams(ctx, future)
+
+	chunks := make([]*schema.Message, 0)
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if chunk == nil {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	if emitErr := <-emitDone; emitErr != nil {
+		return nil, emitErr
+	}
+	if len(chunks) == 0 {
+		return &schema.Message{Role: schema.Assistant}, nil
+	}
+	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+// buildAgentInputMessages assembles the Python-compatible Agent prompt: the
+// configured history window followed by the current user prompt. The current
+// in-flight user entry is excluded through SnapshotPriorHistory, because the
+// canvas service appends it to state before invoking the workflow.
+func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
+	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
+	messages := []schema.Message{}
+	if p.MessageHistoryWindowSize > 0 {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			// Python takes the last 2*N entries from history, which already
+			// contains the current user input, and then removes that final
+			// entry before formatting the configured prompt.
+			priorLimit := p.MessageHistoryWindowSize*2 - 1
+			messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
+		}
+	}
+	if len(messages) > 0 && messages[len(messages)-1].Role == current.Role {
+		messages[len(messages)-1] = current
+	} else {
+		messages = append(messages, current)
+	}
+
+	input := make([]*schema.Message, len(messages))
+	for i := range messages {
+		input[i] = &messages[i]
+	}
+	return input
+}
+
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		var firstErr error
+		iter := future.GetMessageStreams()
+		for {
+			msgStream, hasNext, err := iter.Next()
+			if err != nil {
+				firstErr = err
+				break
+			}
+			if !hasNext {
+				break
+			}
+			if msgStream == nil {
+				continue
+			}
+			for {
+				msg, err := msgStream.Recv()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					break
+				}
+				if msg == nil {
+					continue
+				}
+				if msg.Role != "" && msg.Role != schema.Assistant {
+					continue
+				}
+				if msg.Content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				if runtime.AgentMessageEventsEmitted(ctx) {
+					continue
+				}
+				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
+			}
+			msgStream.Close()
+		}
+		done <- firstErr
+	}()
+	return done
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -437,6 +549,9 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // Invoke runs the ReAct loop via the configured agentRunner and returns
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	runtime.ResetAgentMessageEmission(ctx)
+	defer runtime.FinalizeAgentMessage(ctx)
+
 	p := mergeAgentParam(c.param, inputs)
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -467,7 +582,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
-	} else if shouldFallbackToSysQuery(p.UserPrompt) && state != nil {
+	} else if shouldFallbackToSysQuery(p.UserPrompt) && strings.TrimSpace(p.SystemPrompt) == "" && state != nil {
 		if query, ok := stringFromState(state, "query"); ok {
 			p.UserPrompt = query
 		}
@@ -488,12 +603,12 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 
 	// Multi-turn conversation optimization. When the canvas state
 	// carries prior history and OptimizeMultiTurn is enabled
-	// (default), rephrase the user prompt into a self-contained
-	// question via a dedicated LLM call. The rephrased prompt is
-	// what the Agent runner actually consumes.
+	// explicitly, rephrase the user prompt into a self-contained question via
+	// a dedicated LLM call. The rephrased prompt is what the Agent runner
+	// actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.History); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
@@ -502,15 +617,12 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
-	// the canvas state's History so downstream turns (history
-	// window) see the prior tool usage as prior assistant turns.
+	// the canvas state's Memory. Conversation History is reserved for
+	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
-				state.History = append(state.History, map[string]any{
-					"role":    "assistant",
-					"content": summary,
-				})
+				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
 	}
@@ -540,6 +652,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		zap.String("modelID", p.ModelID),
 		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
+	thinking := msg.ReasoningContent
+
 	var groundingStatus string
 	if p.Cite {
 		chunks := chunksFromState(ctx)
@@ -559,11 +673,15 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
+		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
+	}
+	if !runtime.AgentMessageEventsEmitted(ctx) {
+		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
 }
@@ -594,8 +712,8 @@ func (c *AgentComponent) Inputs() map[string]string {
 		"tools":                   "List of tool names to make available to the ReAct agent.",
 		"tool_params":             "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
 		"max_rounds":              "Maximum ReAct rounds (default 3).",
-		"optimize_multi_turn":     "When true (default), multi-turn history is condensed via full_question LLM call.",
-		"optimize_history_window": "Number of history turns to include in the optimization prompt (default 3).",
+		"optimize_multi_turn":     "When true, multi-turn history is condensed via a question-rewrite LLM call.",
+		"optimize_history_window": "Number of history entries to include in the optimization prompt (default 3).",
 		"driver":                  "Provider driver name",
 		"api_key":                 "Override API key for this call.",
 		"base_url":                "Override the driver default endpoint URL.",
@@ -607,6 +725,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
 		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
@@ -615,7 +734,7 @@ func (c *AgentComponent) Outputs() map[string]string {
 
 // buildAgentChatModel constructs an EinoChatModel from AgentParam by
 // resolving the driver through the RAGFlow provider manager.
-func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
+func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatModel, error) {
 	driver := p.Driver
 	modelID := p.ModelID
 
@@ -641,14 +760,7 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	if driver == "" {
 		driver = "dummy"
 	}
-	baseURL := baseURLMapForDriver(driver, p.BaseURL)
-	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
-	// The factory's NewModelDriver stores URLSuffix verbatim; the
-	// driver then appends URLSuffix.Chat to baseURL to build the
-	// chat-completions endpoint, so an empty suffix leaves the URL
-	// pointing at the v1 root (404). Seed the right suffix per
-	// driver so the agent's ReAct loop hits a working endpoint.
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, chatURLSuffixFor(driver))
+	d, err := newChatModelDriver(driver, p.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
 	}
@@ -665,8 +777,21 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	// would be dead weight. When AgentParam grows Temperature/
 	// MaxTokens, switch to always-build.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil {
+	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
 		chatCfg = &models.ChatConfig{TopP: p.TopP}
+		switch p.Thinking {
+		case "enabled":
+			t := true
+			chatCfg.Thinking = &t
+		case "disabled":
+			f := false
+			chatCfg.Thinking = &f
+		}
+		if runtime.HasAgentMessageEmitter(ctx) {
+			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
+				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
+			}
+		}
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -976,6 +1101,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+		p.Thinking = v
+	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
 	}
@@ -1153,7 +1281,7 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
-		var p AgentParam
+		p := AgentParam{MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize}
 		if v, ok := stringFrom(params, "model_id"); ok {
 			p.ModelID = v
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
@@ -1182,8 +1310,14 @@ func init() {
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
 			p.ToolParams = mergeToolParams(p.ToolParams, v)
 		}
+		if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
+			p.Thinking = v
+		}
 		if v, ok := intFrom(params, "max_rounds"); ok {
 			p.MaxRounds = v
+		}
+		if v, ok := intFrom(params, "message_history_window_size"); ok {
+			p.MessageHistoryWindowSize = v
 		}
 		if v, ok := stringFrom(params, "driver"); ok {
 			p.Driver = v

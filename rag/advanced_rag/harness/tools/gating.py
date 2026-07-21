@@ -10,9 +10,9 @@ SEARCH_PHASES = {
     "locate": {
         "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
-            "toc_navigate",
+            "dataset_navigate",
+            "catalog_navigate",
             "mindmap_navigate",
-            "page_index_navigate",
             "wiki_query",
             "hybrid_search",
             "bm25_search",
@@ -24,7 +24,6 @@ SEARCH_PHASES = {
         "goal": "Explore deeply within the already located region.",
         "tools_priority": [
             "hybrid_search",
-            "vector_search",
             "bm25_search",
             "graph_explore",
             "inspector_open_context",
@@ -67,14 +66,17 @@ def compilation_available(tool_name: str, compilation_map: dict) -> bool:
     comp_type = tool["compilation_type"]
     if not compilation_map:
         return False
-    return any(comp_type in comps for comps in compilation_map.values())
+    comp_types = set(comp_type) if isinstance(comp_type, (list, tuple, set)) else {comp_type}
+    return any(bool(comp_types & set(comps)) for comps in compilation_map.values())
 
 
 def tool_fits_context(tool_name: str, context: OrchestratorContext) -> bool:
     """Check if a tool is sensible given current search context."""
     if tool_name.startswith("inspector_") and not context.has_any_chunks():
         return False
-    if tool_name == "toc_navigate" and not context.current_claim:
+    if tool_name == "catalog_navigate" and not context.current_claim:
+        return False
+    if tool_name == "dataset_navigate" and not context.current_claim:
         return False
     if tool_name == "graph_explore" and not context.last_entity:
         return False

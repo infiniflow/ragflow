@@ -353,12 +353,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         fails = []
         question, answer = "", ""
         res = []
-        reader = csv.reader(lines, delimiter=delimiter)
+        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
+        prev_line_num = 0
 
+        # line_num tracks the physical span when quoted fields cross lines.
         for i, row in enumerate(reader):
+            raw = "\n".join(lines[prev_line_num : reader.line_num])
+            prev_line_num = reader.line_num
             if len(row) != 2:
                 if question:
-                    answer += "\n" + lines[i]
+                    answer += "\n" + raw
                 else:
                     fails.append(str(i + 1))
             elif len(row) == 2:
@@ -419,8 +423,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        qai_list, tbls = docx_parser(filename, binary,
-                                     from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
+        qai_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         res = tokenize_table(tbls, doc, eng, language=lang)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))

@@ -116,6 +116,11 @@ class RAGTools:
         # ``[ID:n]`` markers index), so the caller can resolve references.
         self.kbinfos: dict[str, list] = {"chunks": [], "doc_aggs": []}
 
+        # Per-request retrieval cache keyed by the effective query + scope, so
+        # the same question is never retrieved twice within one turn (e.g.
+        # pre_search vs. an identical claim search in orchestrator_loop).
+        self.search_cache: dict = {}
+
         # The two tools the outer LLM may bind. They are NOT auto-bound here —
         # the agentic-search flow drives the graph directly — but callers that
         # want a tool surface can do ``chat_mdl.bind_tools(tools=rag_tools.tools)``.
@@ -217,8 +222,8 @@ class RAGTools:
             "them all together as one comma-separated list, in the SAME language as the question.\n"
             '   Example — question "In which year did Apple acquire Beats?": keywords = '
             '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
-            'the year is the ANSWER, so it must NOT appear).\n\n'
-            'Output ONLY JSON, no prose, no code fences: '
+            "the year is the ANSWER, so it must NOT appear).\n\n"
+            "Output ONLY JSON, no prose, no code fences: "
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
         )
         user = f"Conversation:\n{transcript}\n\nOutput JSON:"

@@ -23,7 +23,11 @@ export function BasicInfoStep() {
         label={t('setting.groupDescription')}
         horizontal
       >
-        <Textarea placeholder={t('common.descriptionPlaceholder')} rows={3} />
+        <Textarea
+          placeholder={t('common.descriptionPlaceholder')}
+          rows={3}
+          resize="vertical"
+        />
       </RAGFlowFormItem>
 
       <RAGFlowFormItem name="avatar" label={t('setting.avatar')} horizontal>

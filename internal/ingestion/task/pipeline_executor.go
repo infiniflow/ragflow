@@ -40,6 +40,7 @@ type PipelineResult struct {
 	Metadata         map[string]any
 	ChunkCount       int
 	TokenConsumption int
+	Duration         float64 // pipeline wall-clock seconds
 }
 
 type PipelineExecutor struct {
@@ -52,7 +53,7 @@ type PipelineExecutor struct {
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, defaultRunPipeline passes WithRequireResume to the pipeline
+	requireResume   bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -102,8 +103,8 @@ func NewPipelineExecutor(
 		),
 		logCreateFunc: dao.NewPipelineOperationLogDAO().Create,
 	}
-	svc.loadDSLFunc = svc.defaultLoadDSL
-	svc.runPipelineFunc = svc.defaultRunPipeline
+	svc.loadDSLFunc = svc.loadDSLFromCanvas
+	svc.runPipelineFunc = svc.runPipelineWithDSL
 	return svc, nil
 }
 
@@ -148,6 +149,7 @@ func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
 
 func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error) {
+	start := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -170,7 +172,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, nil
 	}
 
-	result, err := s.processOutput(ctx, pipelineOutput)
+	result, err := s.processOutput(ctx, pipelineOutput, start)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +183,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	return result, nil
 }
 
-func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any) (*PipelineResult, error) {
+func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
 	if pipelineOutput == nil {
 		return nil, nil
 	}
@@ -206,6 +208,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
+	tableMeta := AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	if tableMeta != nil {
+		if metadata == nil {
+			metadata = make(map[string]any)
+		}
+		for k, v := range tableMeta {
+			if _, exists := metadata[k]; !exists {
+				metadata[k] = v
+			}
+		}
+	}
+
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
@@ -216,6 +230,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		Metadata:         metadata,
 		ChunkCount:       len(chunks),
 		TokenConsumption: embeddingTokenConsumption,
+		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
 
@@ -242,4 +257,105 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 	if err := s.logCreateFunc(log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
+}
+
+func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID string) (string, string, error) {
+	if s == nil || s.taskCtx == nil {
+		return "", "", fmt.Errorf("pipeline executor: nil task context")
+	}
+	if canvasID == "" {
+		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
+	}
+	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	if err != nil {
+		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
+	}
+
+	canvasTitle := ""
+	if canvas.Title != nil {
+		canvasTitle = *canvas.Title
+	}
+	common.Info(fmt.Sprintf("load canvas %s, name %s", canvasID, canvasTitle))
+
+	raw, err := json.Marshal(canvas.DSL)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", canvasID, err)
+	}
+	return string(raw), canvasID, nil
+}
+
+// warnUnknownComponentParams logs a warning for any component id in the
+// parserConfig whose id is absent from the pipeline DSL. The runtime merge
+// (component params -> override_params) silently drops such entries, so we
+// surface them here for operability. API-side validation
+// already rejects unknown ids on write; this is purely a defensive guard
+// for legacy/stale rows.
+func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
+	if len(parserConfig) == 0 {
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams([]byte(dsl))
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
+		return
+	}
+	dslCPNs := make(map[string]struct{}, len(schemas))
+	for _, s := range schemas {
+		dslCPNs[s.CpnID] = struct{}{}
+	}
+	for cpnID := range parserConfig {
+		if _, ok := dslCPNs[cpnID]; !ok {
+			common.Warn(fmt.Sprintf(
+				"parser_config references cpnID %q not present in the pipeline DSL; it will be ignored at runtime", cpnID))
+		}
+	}
+}
+
+func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
+	if s == nil || s.taskCtx == nil {
+		return nil, dsl, fmt.Errorf("pipeline executor: nil task context")
+	}
+
+	parserConfig := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
+
+	// Surface component params whose cpnID is absent from the DSL. The
+	// runtime merge (override_params) silently drops such entries;
+	// API-side validation already rejects unknown ids on write, so this is a
+	// defensive guard for legacy/stale rows.
+	warnUnknownComponentParams(dsl, parserConfig)
+
+	pipelineID := "pipeline_" + s.taskCtx.Doc.ID
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		pipelineID = s.taskCtx.IngestionTask.ID
+	}
+	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
+		pipelinepkg.WithProgressSink(s.progressSink),
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
+	if err != nil {
+		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
+	}
+	inputs := map[string]any{}
+	if s.taskCtx.Doc.ID != "" {
+		inputs["doc_id"] = s.taskCtx.Doc.ID
+	}
+	if s.taskCtx.File != nil {
+		inputs["file"] = s.taskCtx.File
+	}
+	inputs["tenant_id"] = s.taskCtx.Tenant.ID
+	inputs["kb_id"] = s.taskCtx.KB.ID
+
+	// Component params from Doc.ParserConfig — including the tenant LLM id
+	// injected into Extractor components above — are passed to Run as
+	// override_params, keyed by cpnID with override-wins. The DSL itself is
+	// compiled unchanged.
+	output, err := pipe.Run(ctx, inputs, parserConfig)
+	if err != nil {
+		return nil, dsl, err
+	}
+	payload, err := pipelinepkg.ExtractPayload(dsl, output)
+	if err != nil {
+		return nil, dsl, err
+	}
+	return payload, dsl, nil
 }

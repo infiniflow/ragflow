@@ -447,6 +447,9 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 //	resp, err := service.UpdateMemory("tenant123", "memory456", req)
 func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
+	if ok, err := s.memoryDAO.Accessible(tenantID, memoryID); !ok || err != nil {
+		return nil, err
+	}
 
 	currentMemory, err := s.memoryDAO.GetByID(memoryID)
 	if err != nil {
@@ -1263,7 +1266,7 @@ func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.M
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}

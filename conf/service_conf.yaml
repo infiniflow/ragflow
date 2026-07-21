@@ -62,9 +62,10 @@ otel:
   port: 4318
   secure: false
   sample_ratio: 1.0
-  stdout: true
-task_executor:
-  message_queue_type: 'nats'
+  stdout: false
+  enable: false
+ingestor:
+  mq_type: 'nats'
 file_syncer:
   max_concurrent_syncs: 4
   sync_interval: 3

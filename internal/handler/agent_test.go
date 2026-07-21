@@ -708,14 +708,14 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // SSE tests. It emits a pre-configured sequence of canvas.RunEvent
 // values on its RunAgent channel and then closes — enough to verify
 // the SSE wire format (Content-Type, one `data: {...}\n\n` frame per
-// event, trailing `data: [DONE]\n\n`) without standing up the eino
+// event, trailing `data:[DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
 	events []canvas.RunEvent
 	err    error
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -729,7 +729,7 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (
 
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
-// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
+// `data: {...}\n\n` with a trailing `data:[DONE]\n\n` terminator.
 // The frame shape is the Python agent-canvas envelope
 // {event,message_id,task_id,session_id,data:{content}}. See
 // service.WriteChatbotRunEvent.
@@ -765,7 +765,58 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		!strings.Contains(body, `"content":"hi back"`) {
 		t.Errorf("body should contain flat agent event with content, got %q", body)
 	}
-	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
+		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+func TestAgentChatCompletions_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","stream":true,"query":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", MessageID: "msg-1", TaskID: "task-1", SessionID: "sess-1", Data: `{"content":"hi back"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	body := w.Body.String()
+	if got := strings.Count(body, "data:[DONE]\n\n"); got != 1 {
+		t.Fatalf("expected exactly one [DONE] terminator, got %d in %q", got, body)
+	}
+	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
+		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+func TestRunAgent_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "canvas_id", Value: "a1"}}
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/a1/run",
+		strings.NewReader(`{"user_input":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", MessageID: "msg-1", TaskID: "task-1", SessionID: "sess-1", Data: `{"content":"hi back"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.RunAgent(c)
+
+	body := w.Body.String()
+	if got := strings.Count(body, "data:[DONE]\n\n"); got != 1 {
+		t.Fatalf("expected exactly one [DONE] terminator, got %d in %q", got, body)
+	}
+	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
 	}
 }
@@ -804,7 +855,7 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 		!strings.Contains(body, `"hello back"`) {
 		t.Errorf("body should contain agent event with content in data, got %q", body)
 	}
-	if strings.Contains(body, "data: [DONE]") {
+	if strings.Contains(body, "data:[DONE]") {
 		t.Errorf("body should not contain [DONE] terminator in non-streaming mode, got %q", body)
 	}
 }
@@ -882,15 +933,19 @@ func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T)
 	}
 }
 
-// captureChatRunner records the userInput it was called with and
+// captureChatRunner records the userInput and files it was called with and
 // returns an empty (closed) channel. Used to assert on argument
 // derivation without exercising the runner.
 type captureChatRunner struct {
-	captured *any
+	captured      *any
+	capturedFiles *[]map[string]interface{}
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
+	if c.capturedFiles != nil {
+		*c.capturedFiles = files
+	}
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -1136,4 +1191,71 @@ type stubDocService struct {
 
 func (s *stubDocService) Accessible(_, _ string) bool {
 	return s.accessible
+}
+
+// TestAgentChatCompletions_FilesDeserialized verifies that when the
+// JSON request body contains a `files` field, the
+// agentChatCompletionsRequest struct deserializes it correctly.
+// Mirrors Python's req.get("files", []) at agent_api.py:1313.
+func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{
+		"agent_id": "a1",
+		"query": "hi",
+		"files": [
+			{"id": "file-1", "name": "resume.txt", "mime_type": "text/plain", "created_by": "u1"}
+		]
+	}`
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	var capturedFiles []map[string]interface{}
+	runner := &captureChatRunner{captured: &captured, capturedFiles: &capturedFiles}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if len(capturedFiles) != 1 {
+		t.Fatalf("capturedFiles length = %d, want 1", len(capturedFiles))
+	}
+	if id, _ := capturedFiles[0]["id"].(string); id != "file-1" {
+		t.Errorf("capturedFiles[0][\"id\"] = %q, want %q", id, "file-1")
+	}
+	if name, _ := capturedFiles[0]["name"].(string); name != "resume.txt" {
+		t.Errorf("capturedFiles[0][\"name\"] = %q, want %q", name, "resume.txt")
+	}
+	mime, _ := capturedFiles[0]["mime_type"].(string)
+	if mime != "text/plain" {
+		t.Errorf("capturedFiles[0][\"mime_type\"] = %q, want %q", mime, "text/plain")
+	}
+}
+
+// TestAgentChatCompletions_EmptyFilesNil verifies that when the JSON
+// request body does NOT include `files`, the handler passes nil to
+// RunAgent (no crash, no spurious slice). Mirrors Python's behavior
+// where req.get("files", []) defaults to [].
+func TestAgentChatCompletions_EmptyFilesNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	var capturedFiles []map[string]interface{}
+	runner := &captureChatRunner{captured: &captured, capturedFiles: &capturedFiles}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if capturedFiles != nil {
+		t.Errorf("capturedFiles = %v, want nil when files not in request", capturedFiles)
+	}
 }

@@ -479,7 +479,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 			modelName = *e.chatModel.ModelName
 		}
 		resp, err := e.chatModel.ModelDriver.ChatWithMessages(
-			modelName, msgs, e.chatModel.APIConfig, cfg,
+			modelName, msgs, e.chatModel.APIConfig, cfg, nil,
 		)
 		if err != nil {
 			return nil, err
@@ -495,7 +495,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 		if rerr != nil {
 			repaired = raw
 		}
-		if err := json.Unmarshal([]byte(repaired), &scores); err != nil {
+		if err = json.Unmarshal([]byte(repaired), &scores); err != nil {
 			lastErr = err.Error()
 			common.Warn("TOC enhancer: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ import (
 // provider. The buffer regression below exercises it through a table so a new
 // provider only needs one row.
 type chatStreamer interface {
-	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
+	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 }
 
 // largeSSEStreamServer streams a single SSE "data:" line whose content delta is
@@ -79,6 +80,7 @@ func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
 				// them while avoiding a nil-config deref in providers that read
 				// modelConfig unconditionally.
 				&ChatConfig{},
+				nil,
 				func(c *string, _ *string) error {
 					if c != nil && *c != "[DONE]" {
 						got.WriteString(*c)

@@ -110,11 +110,19 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForPipeline_ReturnsErrorOnNonStringText(t *testing.T) {
+// TestProcessChunksForPipeline_GeneratesIDOnNonStringText pins the id fallback:
+// when ck["id"] is absent and ck["text"] is a non-string (e.g. from a
+// malformed input), the type assertion silently yields "" and
+// component.ChunkID computes a valid id from empty text, rather than erroring.
+func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
-	if err == nil {
-		t.Fatal("expected error when chunk text is not a string (upstream contract violation)")
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	id, ok := chunks[0]["id"].(string)
+	if !ok || id == "" {
+		t.Errorf("id should be generated even for non-string text, got %v", chunks[0]["id"])
 	}
 }
 

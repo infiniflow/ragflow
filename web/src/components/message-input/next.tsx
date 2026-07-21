@@ -23,8 +23,8 @@ import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 
 export type NextMessageInputOnPressEnterParameter = {
-  enableThinking: string;
-  enableInternet: boolean;
+  enableThinking?: string;
+  enableInternet?: boolean;
 };
 
 interface NextMessageInputProps {

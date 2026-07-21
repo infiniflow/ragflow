@@ -83,6 +83,9 @@ func TestOptions_DefaultMaxIterations(t *testing.T) {
 	if opts.maxIterations <= 0 {
 		t.Errorf("default max iterations: got %d, want > 0", opts.maxIterations)
 	}
+	if opts.maxIterationsSet {
+		t.Error("default max iterations should be a safety cap, not an explicit user cap")
+	}
 }
 
 // TestOptions_WithLoopMaxIterations_ZeroKeepsDefault asserts that
@@ -92,6 +95,9 @@ func TestOptions_WithLoopMaxIterations_ZeroKeepsDefault(t *testing.T) {
 	opts := getLoopOptions([]LoopOption{WithLoopMaxIterations(0)})
 	if opts.maxIterations <= 0 {
 		t.Errorf("explicit zero: got %d, want > 0 (default)", opts.maxIterations)
+	}
+	if opts.maxIterationsSet {
+		t.Error("explicit zero should keep the default safety cap")
 	}
 }
 
@@ -103,6 +109,9 @@ func TestOptions_WithLoopMaxIterations_NegativeKeepsDefault(t *testing.T) {
 	if opts.maxIterations <= 0 {
 		t.Errorf("negative: got %d, want > 0 (default)", opts.maxIterations)
 	}
+	if opts.maxIterationsSet {
+		t.Error("negative max iterations should keep the default safety cap")
+	}
 }
 
 // TestOptions_WithLoopMaxIterations_Positive asserts the positive
@@ -111,6 +120,9 @@ func TestOptions_WithLoopMaxIterations_Positive(t *testing.T) {
 	opts := getLoopOptions([]LoopOption{WithLoopMaxIterations(42)})
 	if opts.maxIterations != 42 {
 		t.Errorf("got %d, want 42", opts.maxIterations)
+	}
+	if !opts.maxIterationsSet {
+		t.Error("positive max iterations should be marked as an explicit user cap")
 	}
 }
 

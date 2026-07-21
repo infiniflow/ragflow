@@ -147,7 +147,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg)
+	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}
@@ -155,7 +155,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	// Langfuse) can compute the run total. Mirrors Python's
 	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
 	if resp != nil && resp.Usage != nil {
-		m.inner.LastUsage = &ChatUsage{
+		m.inner.LastUsage = &TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, m.inner)
@@ -276,34 +276,53 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if m.inner.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	if len(m.tools) > 0 {
-		msg, err := m.Generate(ctx, msgs, opts...)
-		if err != nil {
-			return nil, err
-		}
-		return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+	internalMessage := toInternalMessages(msgs)
+	chatCfg, err := m.chatConfigForGenerate()
+	if err != nil {
+		return nil, err
 	}
-	internal := toInternalMessages(msgs)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
-	sender := func(content *string, _ *string) error {
+	sender := func(content *string, reasoning *string) error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
-		if content == nil {
+		if content == nil && reasoning == nil {
 			return nil
 		}
-		// Copy the string — the underlying buffer may be reused.
-		chunk := *content
-		if closed := sw.Send(&schema.Message{Role: schema.Assistant, Content: chunk}, nil); closed {
+		// Provider drivers use the OpenAI-compatible [DONE] sentinel to
+		// signal the end of their transport stream. It is not assistant
+		// content and must not reach Eino's message stream or callback.
+		if content != nil && *content == "[DONE]" {
+			return nil
+		}
+		msg := &schema.Message{Role: schema.Assistant}
+		if content != nil {
+			msg.Content = *content
+		}
+		if reasoning != nil {
+			msg.ReasoningContent = *reasoning
+		}
+		if m.chatCfg != nil && m.chatCfg.StreamCallback != nil {
+			m.chatCfg.StreamCallback(msg.Content, msg.ReasoningContent)
+		}
+		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
 		return nil
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg, sender); err != nil {
+		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
 			_ = sw.Send(nil, err)
+			return
+		}
+		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
+			msg := &schema.Message{
+				Role:      schema.Assistant,
+				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),
+			}
+			_ = sw.Send(msg, nil)
 		}
 	}()
 	return sr, nil

@@ -61,7 +61,7 @@ export default {
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       bedrockCredentialsHint:
-        '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
+        '提示：ACCESS KEY / SECRET KEY 可留空，以启用 AWS IAM 自动验证。',
       zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
@@ -445,6 +445,7 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
+      nextConfiguration: '下个配置',
       knowledgeGraph: '知识图谱',
       compilation: '编译',
       export: '导出',
@@ -462,7 +463,6 @@ export default {
       graph: '图谱',
       graphPlaceholder: '图谱视图占位',
       llmWiki: 'LLM Wiki',
-      skills: '技能',
       contents: '导航',
       topics: '主题',
       concept: '概念',
@@ -738,10 +738,12 @@ export default {
       此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件是<b> excel </b>格式，则应由两个列组成
-      没有标题：一个提出问题，另一个用于答案，
-      答案列之前的问题列。多张纸是
-      只要列正确结构，就可以接受。
+      如果文件是<b> excel </b>格式，
+      则文件应包含两列且不包含表头：
+      一列用于存放问题，另一列用于存放答案，
+      并且问题列必须位于答案列之前。
+      可以包含多个工作表（sheet），
+      只要每个工作表中的列结构都符合要求即可。
     </li>
     <li>
       如果文件是<b> csv/txt </b>格式
@@ -911,7 +913,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         raptor: 'RAPTOR',
       },
       representationUnsupported: '暂不支持该表征类型。',
-      representationEmpty: '暂无表征模板。',
+      representationEmpty: '暂无Artifact模板。',
       enable: '启用',
       disable: '禁用',
       delete: '删除',
@@ -1093,7 +1095,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      tavilyApiKeyMessage: '请输入你的 Tavily API KEY',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
@@ -1269,7 +1271,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
       jiraBaseUrlTip:
-        'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',
+        'Jira 的 BASE URL，例如：https://your-domain.atlassian.net。',
       jiraProjectKeyTip: '可选：仅同步指定的项目（如 RAG）。',
       jiraJqlTip: '可选：自定义 JQL 过滤条件，留空则使用项目 / 时间范围。',
       jiraBatchSizeTip: '每次向 Jira 请求的 Issue 数量上限。',
@@ -1450,12 +1452,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
-      apiKey: 'API-Key',
-      apiKeyMessage: '请输入api key',
-      apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
+      apiKey: 'API KEY',
+      apiKeyMessage: '请输入API KEY',
+      apiKeyTip: 'API KEY可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
       hideModels: '隐藏模型',
-      baseUrl: 'Base-Url',
+      baseUrl: 'BASE URL',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
@@ -1532,19 +1534,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
-      instanceNameSaveTip: '请输入实例名称并保存。保存后不可修改。',
-      instanceNameSavePrompt: '请先保存实例名称，再编辑其他字段。',
-      instanceNameLockedHint: '实例名称已锁定',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
       modelType: '模型类型',
-      addLlmBaseUrl: '基础 Url',
+      addLlmBaseUrl: '基础 URL',
       vision: '是否支持 Vision',
       modelNameMessage: '请输入模型名称！',
       modelTypeMessage: '请输入模型类型！',
-      baseUrlNameMessage: '请输入基础 Url！',
+      baseUrlNameMessage: '请输入基础 URL',
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用腾讯云语音识别',
@@ -1553,22 +1552,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       endpointIDMessage: '请输入模型 ID',
       addArkApiKey: '火山 ARK_API_KEY',
       ArkApiKeyMessage: '请输入火山创建的ARK_API_KEY',
-      bedrockModelNameMessage: '请输入名称！',
+      bedrockModelNameMessage: '请输入名称',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: '请输入 ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: '请输入 SECRET KEY',
-      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeAccessKeySecret: 'ACCESS KEY 和 SECRET',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: '请输入 AWS Role ARN',
       awsAssumeRoleTip:
         '选择此模式后，EC2 实例将使用其已有的 IAM Role 访问 AWS 服务，无需额外的凭证。',
       bedrockRegion: 'AWS Region',
-      bedrockRegionMessage: '请选择！',
+      bedrockRegionMessage: '请选择',
       'us-east-1': '美国东部 (弗吉尼亚北部)',
       'us-west-2': '美国西部 (俄勒冈州)',
       'ap-southeast-1': '亚太地区 (新加坡)',
@@ -1578,22 +1577,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       'ap-southeast-2': '亚太地区 (悉尼)',
       addTencentCloudSID: '腾讯云 Secret ID',
       TencentCloudSIDMessage: '请输入 Secret ID',
-      addTencentCloudSK: '腾讯云 Secret Key',
-      TencentCloudSKMessage: '请输入 Secret Key',
+      addTencentCloudSK: '腾讯云 SECRET KEY',
+      TencentCloudSKMessage: '请输入 SECRET KEY',
       SparkModelNameMessage: '请选择星火模型！',
       addSparkAPIPassword: '星火 APIPassword',
       SparkAPIPasswordMessage: '请输入 APIPassword',
       addSparkAPPID: '星火 APPID',
       SparkAPPIDMessage: '请输入 APPID',
-      addSparkAPISecret: '星火 APISecret',
-      SparkAPISecretMessage: '请输入 APISecret',
+      addSparkAPISecret: '星火 API SECRET',
+      SparkAPISecretMessage: '请输入 API SECRET',
       addSparkAPIKey: '星火 APIKey',
       SparkAPIKeyMessage: '请输入 APIKey',
       yiyanModelNameMessage: '请输入模型名称',
       addyiyanAK: '一言 API KEY',
       yiyanAKMessage: '请输入 API KEY',
-      addyiyanSK: '一言 Secret KEY',
-      yiyanSKMessage: '请输入 Secret KEY',
+      addyiyanSK: '一言 SECRET KEY',
+      yiyanSKMessage: '请输入 SECRET KEY',
       FishAudioModelNameMessage: '请为你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       FishAudioAKMessage: '请输入 API KEY',
@@ -1658,11 +1657,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       },
       somark: {
         modelNameMessage: '请输入模型名称',
-        baseUrl: 'Base URL',
-        baseUrlMessage: '请输入 Base URL',
+        baseUrl: 'BASE URL',
+        baseUrlMessage: '请输入 BASE URL',
         baseUrlPlaceholder:
-          '使用 SoMark API 时填写 https://somark.tech/api/v1；私有化部署时填写本地部署的 Base URL',
-        apiKey: 'API Key',
+          '使用 SoMark API 时中国大陆填写 https://somark.cn/api/v1；中国大陆外（含中国台湾、中国香港、中国澳门及海外）填写 https://somark.ai/api/v1；私有化部署时填写本地部署的 BASE URL',
+        apiKey: 'API KEY',
         apiKeyPlaceholder: '使用 SoMark API 时填写；私有化部署无需填写',
         verifyPassed: '验证通过',
         verifyFailed: '验证失败',
@@ -1679,6 +1678,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         enableTextCrossPage: '文字跨页合并',
         enableTableCrossPage: '表格跨页合并',
         keepHeaderFooter: '保留页眉页脚',
+        purchaseUrl:
+          '购买 API：中国大陆 https://somark.cn/workbench/purchase；海外（含中国台湾、中国香港、中国澳门）https://somark.ai/studio/purchase',
       },
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
@@ -1731,6 +1732,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       selectFolder: '选择一个技能以查看详情',
       currentFolder: '技能',
       noContent: '无内容',
+      deleteAllTitle: '删除全部技能',
+      deleteAllDescription: '确定要删除全部技能吗？此操作无法撤销。',
+      deleteSkillTitle: '删除技能',
+      deleteSkillDescription: '确定要删除该技能吗？',
     },
     message: {
       registered: '注册成功',
@@ -2070,8 +2075,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
       bGPT: 'BGPT',
       bGPTDescription:
-        '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API key。',
-      bgptApiKey: 'API key',
+        '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API KEY。',
+      bgptApiKey: 'API KEY',
       bgptApiKeyTip: '可选。留空使用免费额度（前 50 条结果）。',
       bgptDaysBack: '天数限制',
       bgptDaysBackTip: '可选的时效过滤（例如 365 表示最近一年）。',

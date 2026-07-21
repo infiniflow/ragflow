@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -65,7 +66,7 @@ type agentFileService interface {
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
-	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
 }
 
 // documentAccessChecker is the minimal surface RerunAgent needs
@@ -104,7 +105,7 @@ func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandle
 
 // NewAgentHandler create agent handler
 
-func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
+func NewAgentHandler(agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
 		chatRunner:   agentService,
@@ -393,7 +394,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userInput := readUserInput(c)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
@@ -402,7 +403,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	doneSent := false
 	for ev := range events {
+		if ev.Type == "done" {
+			doneSent = true
+		}
 		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 			common.Debug("agent run: client disconnected",
 				zap.String("canvas_id", canvasID),
@@ -410,6 +415,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 				zap.Error(err),
 			)
 			return
+		}
+	}
+	if !doneSent {
+		if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
+			common.Debug("agent run: failed to write [DONE]",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
 		}
 	}
 }
@@ -813,7 +827,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 // api/apps/restful_apis/agent_api.py:1440-1676.
 //
 //   - When `stream` is true: streams SSE — one `data: {...}\n\n` frame per
-//     canvas RunEvent, terminated by `data: [DONE]\n\n`.
+//     canvas RunEvent, terminated by `data:[DONE]\n\n`.
 //   - When `stream` is omitted or false (default, matches the Python
 //     agent_chat_completion contract where `req.get("stream", False)`
 //     defaults to non-streaming): collects all canvas events and returns a
@@ -835,6 +849,7 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
+	Files        []map[string]interface{} `json:"files"`
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -991,7 +1006,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}, userInputMeta(userInput)...)...,
 	)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
@@ -1008,7 +1023,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 
 	if req.Stream {
 		// SSE streaming: one `data: {...}\n\n` frame per canvas RunEvent,
-		// terminated by `data: [DONE]\n\n`. We do NOT emit an SSE `event:`
+		// terminated by `data:[DONE]\n\n`. We do NOT emit an SSE `event:`
 		// line — the front-end's use-send-message.ts parser feeds each
 		// `data:` line directly into JSON.parse and expects the event type
 		// in the JSON object's top-level `event` field.
@@ -1016,8 +1031,12 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
 		emitted := false
+		doneSent := false
 		for ev := range events {
 			emitted = true
+			if ev.Type == "done" {
+				doneSent = true
+			}
 			common.Debug("agent chat completions: streaming event",
 				zap.String("agent_id", req.AgentID),
 				zap.String("session_id", req.SessionID),
@@ -1037,7 +1056,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			// Canvas produced no events (e.g. empty query). Echo the
 			// session_id so the client can resume the conversation
 			// (fixes #15169). The [DONE] terminator must be emitted
-			// here explicitly because the canvas never sends a
+			// after this branch because the canvas never sends a
 			// "done" event on this path.
 			common.Info("empty agent output - returning session_id",
 				zap.String("agent_id", req.AgentID),
@@ -1050,7 +1069,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				SessionID: req.SessionID,
 			}
 			_ = service.WriteChatbotRunEvent(c.Writer, event)
-			if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
+		}
+		if !doneSent {
+			if err := service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"}); err != nil {
 				common.Debug("agent chat completions: failed to write [DONE]",
 					zap.Error(err),
 				)

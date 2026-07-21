@@ -76,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.0
+    image: infiniflow/infinity:v0.7.2-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -185,7 +185,7 @@ services:
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
+    image: mysql:8.0.40
     env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
@@ -250,6 +250,21 @@ services:
       timeout: 10s
       retries: 120
 
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
+
   nats:
     profiles:
       - ragflow-go
@@ -269,21 +284,6 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
-
-  jaeger:
-    profiles:
-      - jaeger
-    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
-    ports:
-      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
-      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
-      - ${JAEGER_UI_PORT:-16686}:16686
-    env_file: .env
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    networks:
-      - ragflow
-    restart: unless-stopped
 
   tei-cpu:
     profiles:

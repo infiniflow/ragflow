@@ -1807,6 +1807,27 @@
             "url": "https://api.moonshot.cn/v1",
             "llm": [
                 {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2.6",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2.7-code",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "kimi-thinking-preview",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 131072,
@@ -7495,7 +7516,12 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": []
+            "llm": [{
+                "llm_name": "MinerU-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "PaddleOCR",
@@ -7503,14 +7529,24 @@
             "tags": "OCR",
             "status": "1",
             "url": "https://paddleocr.aistudio-app.com",
-            "llm": []
+            "llm": [{
+                "llm_name": "PaddleOCR-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "OpenDataLoader",
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": []
+            "llm": [{
+                "llm_name": "OpenDataLoader-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "SoMark",
@@ -7518,7 +7554,12 @@
             "tags": "OCR",
             "status": "1",
             "rank": "930",
-            "llm": []
+            "llm": [{
+                "llm_name": "SoMark-model",
+                "tags": "OCR",
+                "max_tokens": 8192,
+                "model_type": "ocr"
+            }]
         },
         {
             "name": "n1n",

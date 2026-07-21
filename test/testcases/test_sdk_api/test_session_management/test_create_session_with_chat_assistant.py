@@ -34,7 +34,7 @@ class _DummyStreamResponse:
 
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
