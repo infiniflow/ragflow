@@ -303,25 +303,14 @@ func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Con
 }
 
 // ListConnectors list connectors for a user
-// Equivalent to Python's ConnectorService.list(current_user.id)
 func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsResponse, error) {
-	// Get tenant IDs by user ID
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// For now, use the first tenant ID (primary tenant)
-	// This matches the Python implementation behavior
-	var tenantID string
-	if len(tenantIDs) > 0 {
-		tenantID = tenantIDs[0]
-	} else {
-		tenantID = userID
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, fmt.Errorf("user_id is required")
 	}
 
 	// Query connectors by tenant ID
-	connectors, err := s.connectorDAO.ListByTenantID(tenantID)
+	connectors, err := s.connectorDAO.ListByTenantID(userID)
 	if err != nil {
 		return nil, err
 	}

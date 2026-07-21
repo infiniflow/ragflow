@@ -15,7 +15,6 @@ export function useWikiNavigation() {
   const [selectedTopic, setSelectedTopic] = useState<IArtifactTopic | null>(
     null,
   );
-  const [pageType, setPageType] = useState<WikiPageType>('entity');
 
   const {
     topics,
@@ -34,7 +33,6 @@ export function useWikiNavigation() {
   } = useFetchArtifactList({
     keywords: debouncedSearchString,
     topic: selectedTopic?.topic,
-    pageType,
     enabled: !!selectedTopic,
   });
 
@@ -64,10 +62,6 @@ export function useWikiNavigation() {
     resetScroll();
   }, [resetScroll]);
 
-  const handlePageTypeChange = useCallback((value: WikiPageType) => {
-    setPageType(value);
-  }, []);
-
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       if (selectedTopic) {
@@ -88,7 +82,6 @@ export function useWikiNavigation() {
       searchString,
       debouncedSearchString,
       selectedTopic,
-      pageType,
       topics,
       artifacts,
       loading,
@@ -96,14 +89,12 @@ export function useWikiNavigation() {
       handleSearchChange,
       handleSelectTopic,
       handleBackToTopics,
-      handlePageTypeChange,
       handleScroll,
     }),
     [
       searchString,
       debouncedSearchString,
       selectedTopic,
-      pageType,
       topics,
       artifacts,
       loading,
@@ -111,7 +102,6 @@ export function useWikiNavigation() {
       handleSearchChange,
       handleSelectTopic,
       handleBackToTopics,
-      handlePageTypeChange,
       handleScroll,
     ],
   );

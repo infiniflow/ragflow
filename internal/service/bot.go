@@ -26,7 +26,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
+	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
@@ -47,6 +49,15 @@ type BotService struct {
 	api4ConversationDAO *dao.API4ConversationDAO
 	agentService        *AgentService
 	llmService          *LLMService
+	pipeline            *ChatPipelineService
+	// persistLocks serialises persistChatbotTurn's read-modify-write
+	// on a single api_4_conversation row. ChatbotCompletion fetches
+	// the session before streaming starts, so without this lock two
+	// concurrent requests on the same session_id would each append
+	// their turn to the same stale base and the last Update would
+	// silently drop the other exchange. Striped to a fixed size so
+	// the lock set does not grow with the number of sessions.
+	persistLocks [64]sync.Mutex
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
@@ -59,6 +70,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
 		agentService:        agentSvc,
 		llmService:          llmSvc,
+		pipeline:            NewChatPipelineService(),
 	}
 }
 
@@ -190,6 +202,28 @@ type ChatbotCompletionRequest struct {
 	Question  string         `json:"question"`
 	Stream    bool           `json:"stream"`
 	Inputs    map[string]any `json:"inputs"`
+	// Quote controls citation generation. Nil means "absent" —
+	// python bot_api.py defaults it to False for chatbot
+	// completions, so the service layer mirrors that.
+	Quote *bool `json:"quote"`
+	// Reasoning / Internet arrive as bool OR 0/1 number depending
+	// on the widget; the service layer normalises them before
+	// handing them to the chat pipeline.
+	Reasoning any `json:"reasoning"`
+	Internet  any `json:"internet"`
+	// DocIDs is an optional comma-separated document filter,
+	// same shape as the regular chat completion kwargs.
+	DocIDs string `json:"doc_ids"`
+}
+
+// persistLock returns the striped mutex guarding one session row's
+// read-modify-write in persistChatbotTurn. The modulo runs on the
+// unsigned hash — converting to int first would go negative on
+// 32-bit architectures and panic with an out-of-bounds index.
+func (s *BotService) persistLock(sessionID string) *sync.Mutex {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(sessionID))
+	return &s.persistLocks[h.Sum32()%uint32(len(s.persistLocks))]
 }
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the

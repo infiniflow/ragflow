@@ -131,7 +131,7 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
-		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
+		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided.")
 	}
 
 	name, err := validateCreateChatName(req["name"])
@@ -174,13 +174,13 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
 		if _, ok := mapFromValue(promptConfigValue); !ok {
-			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
+			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object.")
 		}
 	}
 
 	if metaDataFilterValue, ok := req["meta_data_filter"]; ok && metaDataFilterValue != nil {
 		if _, ok := mapFromValue(metaDataFilterValue); !ok {
-			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object")
+			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object.")
 		}
 	}
 
@@ -225,6 +225,9 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 	if _, ok := req["vector_similarity_weight"]; !ok {
 		req["vector_similarity_weight"] = 0.3
 	}
+	if _, ok := req["do_refer"]; !ok {
+		req["do_refer"] = "1"
+	}
 	if _, ok := req["icon"]; !ok {
 		req["icon"] = ""
 	}
@@ -240,7 +243,7 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 		return nil, common.CodeServerError, err
 	}
 	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
+		return nil, common.CodeDataError, errors.New("Duplicated chat name in creating chat.")
 	}
 
 	chat := buildCreateChatEntity(req, userID)
@@ -262,18 +265,18 @@ func (s *ChatService) Create(userID string, req map[string]interface{}) (map[str
 
 func validateCreateChatName(value interface{}) (string, error) {
 	if value == nil {
-		return "", errors.New("`name` is required")
+		return "", errors.New("`name` is required.")
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", errors.New("chat name must be a string")
+		return "", errors.New("Chat name must be a string.")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("`name` is required")
+		return "", errors.New("`name` is required.")
 	}
 	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+		return "", fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
 	}
 	return name, nil
 }
@@ -311,7 +314,7 @@ func (s *ChatService) validateCreateDatasetIDs(value interface{}, tenantID strin
 		kbs = append(kbs, kb)
 	}
 
-	if err := validateDatasetEmbeddingModels(kbs); err != nil {
+	if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
 		return nil, err
 	}
 	return normalizedIDs, nil
@@ -767,7 +770,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 	}
 
 	if !patch && isTruthy(req["tenant_id"]) {
-		return nil, errors.New("`tenant_id` must not be provided")
+		return nil, errors.New("`tenant_id` must not be provided.")
 	}
 
 	if value, ok := req["name"]; ok {
@@ -827,7 +830,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 	if value, ok := req["prompt_config"]; ok {
 		promptConfig, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`prompt_config` should be an object")
+			return nil, errors.New("`prompt_config` should be an object.")
 		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
@@ -850,7 +853,7 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		} else {
 			metaDataFilter, ok := mapFromValue(value)
 			if !ok {
-				return nil, errors.New("`meta_data_filter` should be an object")
+				return nil, errors.New("`meta_data_filter` should be an object.")
 			}
 			req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
 		}
@@ -871,8 +874,8 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 				return nil, err
 			}
 			for _, existingName := range existingNames {
-				if existingName == name {
-					return nil, errors.New("duplicated chat name")
+				if strings.EqualFold(existingName, name) {
+					return nil, errors.New("Duplicated chat name.")
 				}
 			}
 		}
@@ -897,23 +900,23 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
 	if value == nil {
 		if required {
-			return "", false, errors.New("`name` is required")
+			return "", false, errors.New("`name` is required.")
 		}
 		return "", false, nil
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", false, errors.New("chat name must be a string")
+		return "", false, errors.New("Chat name must be a string.")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		if required {
-			return "", false, errors.New("`name` is required")
+			return "", false, errors.New("`name` is required.")
 		}
-		return "", false, errors.New("`name` cannot be empty")
+		return "", false, errors.New("`name` cannot be empty.")
 	}
 	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+		return "", false, fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
 	}
 	return name, true, nil
 }
