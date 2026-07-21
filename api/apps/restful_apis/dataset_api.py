@@ -672,6 +672,28 @@ async def get_wiki_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/artifacts/alteration", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_wiki_alteration(tenant_id, dataset_id):
+    """Return document drift for the dataset Artifact wiki.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts/alteration
+    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
+    """
+    try:
+        success, result = await dataset_api_service.get_wiki_alteration(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/artifacts", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

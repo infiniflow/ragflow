@@ -1502,6 +1502,124 @@ def _wiki_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
 
+def _compilation_template_kind(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+        return "timeline"
+    return normalized
+
+
+def _normalize_compilation_template_group_ids(raw) -> list[str]:
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    ids: list[str] = []
+    seen: set[str] = set()
+    for group_id in raw:
+        if not isinstance(group_id, str):
+            continue
+        group_id = group_id.strip()
+        if group_id and group_id not in seen:
+            seen.add(group_id)
+            ids.append(group_id)
+    return ids
+
+
+def _extract_pipeline_compiler_group_ids(dsl) -> list[str]:
+    if isinstance(dsl, str):
+        try:
+            dsl = json.loads(dsl)
+        except Exception:
+            return []
+    if not isinstance(dsl, dict):
+        return []
+    components = dsl.get("components")
+    if not isinstance(components, dict):
+        return []
+
+    group_ids: list[str] = []
+    seen: set[str] = set()
+    for component in components.values():
+        if not isinstance(component, dict):
+            continue
+        obj = component.get("obj") if isinstance(component.get("obj"), dict) else {}
+        component_name = obj.get("component_name") or component.get("component_name") or component.get("name")
+        if not isinstance(component_name, str) or component_name.lower() != "compiler":
+            continue
+        candidates = [
+            obj.get("params") if isinstance(obj.get("params"), dict) else {},
+            obj,
+            component.get("params") if isinstance(component.get("params"), dict) else {},
+            component,
+        ]
+        for candidate in candidates:
+            for key in ("compilation_template_group_ids", "compilation_template_group_id"):
+                for group_id in _normalize_compilation_template_group_ids(candidate.get(key)):
+                    if group_id not in seen:
+                        seen.add(group_id)
+                        group_ids.append(group_id)
+    return group_ids
+
+
+def _template_is_wiki(template: dict | None) -> bool:
+    if not isinstance(template, dict):
+        return False
+    config = template.get("config") if isinstance(template.get("config"), dict) else {}
+    raw_kind = config.get("kind") or template.get("kind") or ""
+    return _compilation_template_kind(raw_kind) == "artifacts"
+
+
+def _group_has_wiki_template(group_id: str, tenant_id: str, group_cache: dict[str, bool]) -> bool:
+    if group_id in group_cache:
+        return group_cache[group_id]
+    from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+
+    group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
+    has_wiki = any(_template_is_wiki(template) for template in (group or {}).get("templates") or [])
+    group_cache[group_id] = has_wiki
+    return has_wiki
+
+
+def _parser_config_has_wiki_template(parser_config, tenant_id: str, template_cache: dict[str, bool]) -> bool:
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from rag.svr.task_executor_refactor.chunk_post_processor import _parser_config_compilation_template_ids
+
+    for template_id in _parser_config_compilation_template_ids(parser_config, tenant_id):
+        if template_id not in template_cache:
+            template_cache[template_id] = _template_is_wiki(CompilationTemplateService.get_saved(template_id, tenant_id))
+        if template_cache[template_id]:
+            return True
+    return False
+
+
+def _pipeline_has_wiki_compiler(
+    pipeline_id: str,
+    tenant_id: str,
+    pipeline_cache: dict[str, bool],
+    group_cache: dict[str, bool],
+) -> bool:
+    pipeline_id = (pipeline_id or "").strip()
+    if not pipeline_id:
+        return False
+    if pipeline_id in pipeline_cache:
+        return pipeline_cache[pipeline_id]
+
+    from api.db.services.canvas_service import UserCanvasService
+
+    ok, canvas = UserCanvasService.get_by_id(pipeline_id)
+    if not ok or not canvas:
+        pipeline_cache[pipeline_id] = False
+        return False
+
+    group_ids = _extract_pipeline_compiler_group_ids(getattr(canvas, "dsl", None))
+    has_wiki = any(_group_has_wiki_template(group_id, tenant_id, group_cache) for group_id in group_ids)
+    pipeline_cache[pipeline_id] = has_wiki
+    return has_wiki
+
+
 def _skill_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
@@ -1541,6 +1659,103 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
 
     total = settings.docStoreConn.get_total(res)
     return True, {"has": bool(total)}
+
+
+async def get_wiki_alteration(dataset_id: str, tenant_id: str):
+    """Return doc-level drift between current dataset docs and compiled wiki provenance."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    docs, _ = await thread_pool_exec(
+        DocumentService.get_by_kb_id,
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    current_doc_ids = {str(doc.get("id")) for doc in docs or [] if doc.get("id")}
+
+    wiki_involved_doc_ids: set[str] = set()
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
+    if pack is not None:
+        index_nm, _ = pack
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        select_fields = ["id", "source_doc_ids"]
+        offset = 0
+        page_size = 1000
+        while True:
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields=select_fields,
+                    highlight_fields=[],
+                    condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
+                    match_expressions=[],
+                    order_by=OrderByExpr(),
+                    offset=offset,
+                    limit=page_size,
+                    index_names=index_nm,
+                    knowledgebase_ids=[dataset_id],
+                )
+                rows = settings.docStoreConn.get_fields(res, select_fields) or {}
+            except Exception:
+                logging.exception("get_wiki_alteration: docStore search failed for kb=%s", dataset_id)
+                rows = {}
+
+            if not rows:
+                break
+            for row in rows.values():
+                source_doc_ids = row.get("source_doc_ids")
+                if isinstance(source_doc_ids, str):
+                    source_doc_ids = [source_doc_ids]
+                if not isinstance(source_doc_ids, list):
+                    continue
+                wiki_involved_doc_ids.update(str(doc_id) for doc_id in source_doc_ids if doc_id)
+
+            offset += page_size
+            total = settings.docStoreConn.get_total(res)
+            if not total or offset >= int(total):
+                break
+
+    template_cache: dict[str, bool] = {}
+    group_cache: dict[str, bool] = {}
+    pipeline_cache: dict[str, bool] = {}
+    eligible_wiki_doc_ids: set[str] = set()
+    for doc in docs or []:
+        doc_id = str(doc.get("id") or "")
+        if not doc_id:
+            continue
+        parser_config = doc.get("parser_config") or {}
+        if _parser_config_has_wiki_template(parser_config, kb.tenant_id, template_cache):
+            eligible_wiki_doc_ids.add(doc_id)
+            continue
+        if _pipeline_has_wiki_compiler(
+            doc.get("pipeline_id") or "",
+            kb.tenant_id,
+            pipeline_cache,
+            group_cache,
+        ):
+            eligible_wiki_doc_ids.add(doc_id)
+
+    removed_doc_ids = sorted(wiki_involved_doc_ids - current_doc_ids)
+    newly_uploaded_doc_ids = sorted(eligible_wiki_doc_ids - wiki_involved_doc_ids)
+    return True, {
+        "removed": len(removed_doc_ids),
+        "newly_uploaded": len(newly_uploaded_doc_ids),
+        "removed_doc_ids": removed_doc_ids,
+        "newly_uploaded_doc_ids": newly_uploaded_doc_ids,
+        "involved_doc_ids": sorted(wiki_involved_doc_ids),
+        "eligible_doc_ids": sorted(eligible_wiki_doc_ids),
+    }
 
 
 async def list_wiki_pages(

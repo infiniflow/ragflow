@@ -112,6 +112,82 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
+def _normalize_compilation_template_group_ids(raw) -> list[str]:
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    ids: list[str] = []
+    seen: set[str] = set()
+    for group_id in raw:
+        if not isinstance(group_id, str):
+            continue
+        group_id = group_id.strip()
+        if group_id and group_id not in seen:
+            seen.add(group_id)
+            ids.append(group_id)
+    return ids
+
+
+def _extract_pipeline_compiler_group_ids(dsl) -> list[str]:
+    if isinstance(dsl, str):
+        try:
+            dsl = json.loads(dsl)
+        except Exception:
+            return []
+    if not isinstance(dsl, dict):
+        return []
+    components = dsl.get("components")
+    if not isinstance(components, dict):
+        return []
+
+    group_ids: list[str] = []
+    seen: set[str] = set()
+    for component in components.values():
+        if not isinstance(component, dict):
+            continue
+        obj = component.get("obj") if isinstance(component.get("obj"), dict) else {}
+        component_name = obj.get("component_name") or component.get("component_name") or component.get("name")
+        if not isinstance(component_name, str) or component_name.lower() != "compiler":
+            continue
+        candidates = [
+            obj.get("params") if isinstance(obj.get("params"), dict) else {},
+            obj,
+            component.get("params") if isinstance(component.get("params"), dict) else {},
+            component,
+        ]
+        for candidate in candidates:
+            for key in ("compilation_template_group_ids", "compilation_template_group_id"):
+                for group_id in _normalize_compilation_template_group_ids(candidate.get(key)):
+                    if group_id not in seen:
+                        seen.add(group_id)
+                        group_ids.append(group_id)
+    return group_ids
+
+
+def _pipeline_compilation_template_ids(pipeline_id: str, tenant_id: str) -> list[str]:
+    pipeline_id = (pipeline_id or "").strip()
+    if not pipeline_id:
+        return []
+    from api.db.services.canvas_service import UserCanvasService
+    from api.db.services.compilation_template_group_service import (
+        CompilationTemplateGroupService,
+    )
+
+    ok, canvas = UserCanvasService.get_by_id(pipeline_id)
+    if not ok or not canvas:
+        return []
+    template_ids: list[str] = []
+    seen: set[str] = set()
+    for group_id in _extract_pipeline_compiler_group_ids(getattr(canvas, "dsl", None)):
+        for template_id in CompilationTemplateGroupService.resolve_template_ids(group_id, tenant_id):
+            if template_id in seen:
+                continue
+            seen.add(template_id)
+            template_ids.append(template_id)
+    return template_ids
+
+
 def _wiki_topic_from_page(page: Dict, fallback: str = "") -> str:
     for key in ("topic", "title", "page_type"):
         value = page.get(key)
@@ -677,9 +753,27 @@ async def run_wiki(
         suffix=[],
     )
     eligible = []
+    pipeline_template_ids_cache: dict[str, list[str]] = {}
     for d in all_docs or []:
         pc = d.get("parser_config") or {}
+        template_ids: list[str] = []
+        seen_template_ids: set[str] = set()
         for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
+            if template_id in seen_template_ids:
+                continue
+            seen_template_ids.add(template_id)
+            template_ids.append(template_id)
+        pipeline_id = (d.get("pipeline_id") or "").strip()
+        if pipeline_id:
+            if pipeline_id not in pipeline_template_ids_cache:
+                pipeline_template_ids_cache[pipeline_id] = _pipeline_compilation_template_ids(pipeline_id, ctx.tenant_id)
+            for template_id in pipeline_template_ids_cache[pipeline_id]:
+                if template_id in seen_template_ids:
+                    continue
+                seen_template_ids.add(template_id)
+                template_ids.append(template_id)
+
+        for template_id in template_ids:
             template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             config = template.get("config") if template else {}
             kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
