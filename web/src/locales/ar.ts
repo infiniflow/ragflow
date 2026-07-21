@@ -951,7 +951,7 @@ export default {
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'The BASE URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+        'The Base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
@@ -987,7 +987,7 @@ export default {
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
-        'BASE URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
       jiraProjectKeyTip:
         'Optional: limit syncing to a single project key (e.g., ENG).',
       jiraJqlTip:
