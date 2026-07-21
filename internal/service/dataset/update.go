@@ -17,6 +17,7 @@ import (
 
 func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
+	tenantID = strings.TrimSpace(tenantID)
 	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
@@ -36,6 +37,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	}
 
 	updates := make(map[string]interface{})
+	var pagerankUpdate *int64
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -171,16 +173,9 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		if !d.docEngine.SupportsPageRank() {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
-		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-		if *req.Pagerank > 0 {
-			err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": kb.ID}, map[string]interface{}{common.PAGERANK_FLD: *req.Pagerank}, indexName, kb.ID)
-		} else {
-			err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, kb.ID)
-		}
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		updates["pagerank"] = *req.Pagerank
+		pagerank := *req.Pagerank
+		pagerankUpdate = &pagerank
+		updates["pagerank"] = pagerank
 	}
 
 	if parserIDProvided && parserID != kb.ParserID {
@@ -232,6 +227,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		return nil, common.CodeDataError, errors.New("No properties were modified")
 	}
 
+	connectorLinks := make([]dao.DatasetConnectorLink, 0, len(connectors))
 	if len(updates) > 0 {
 		if err = d.kbDAO.UpdateByID(kb.ID, updates); err != nil {
 			if dao.IsDuplicateKeyErr(err) {
@@ -256,9 +252,47 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 				AutoParse: connector.AutoParse,
 			})
 		}
-		if err = d.connectorDAO.LinkDatasetConnectors(kb.ID, connectorLinks); err != nil {
-			return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	txCode := common.CodeSuccess
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, kb.ID, tenantID)
+		if authErr != nil {
+			txCode = code
+			return authErr
 		}
+
+		if pagerankUpdate != nil {
+			indexName := fmt.Sprintf("ragflow_%s", lockedKB.TenantID)
+			if *pagerankUpdate > 0 {
+				err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": lockedKB.ID}, map[string]interface{}{common.PAGERANK_FLD: *pagerankUpdate}, indexName, lockedKB.ID)
+			} else {
+				err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, lockedKB.ID)
+			}
+			if err != nil {
+				txCode = common.CodeServerError
+				return err
+			}
+		}
+
+		if len(updates) > 0 {
+			if err = tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(updates).Error; err != nil {
+				txCode = common.CodeServerError
+				return errors.New("Update dataset error.(Database error)")
+			}
+		}
+
+		if connectorsProvided {
+			if err = d.connectorDAO.LinkDatasetConnectorsTx(tx, lockedKB.ID, connectorLinks); err != nil {
+				txCode = common.CodeServerError
+				return errors.New("Database operation failed")
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, txCode, err
 	}
 
 	updatedKB, err := d.kbDAO.GetByID(kb.ID)
@@ -273,4 +307,37 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	}
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+	var kb entity.Knowledgebase
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
+		First(&kb).Error
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Dataset not found")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	if kb.TenantID == userID {
+		return &kb, common.CodeSuccess, nil
+	}
+	if kb.Permission != string(entity.TenantPermissionTeam) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	}
+
+	var relation entity.UserTenant
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
+		First(&relation).Error
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	return &kb, common.CodeSuccess, nil
 }

@@ -93,74 +93,79 @@ type DatasetConnectorLink struct {
 // LinkDatasetConnectors syncs connector2kb rows for a dataset.
 func (dao *ConnectorDAO) LinkDatasetConnectors(kbID string, connectors []DatasetConnectorLink) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var existing []entity.Connector2Kb
-		if err := tx.Where("kb_id = ?", kbID).Find(&existing).Error; err != nil {
+		return dao.LinkDatasetConnectorsTx(tx, kbID, connectors)
+	})
+}
+
+// LinkDatasetConnectorsTx syncs connector2kb rows using the caller's transaction.
+func (dao *ConnectorDAO) LinkDatasetConnectorsTx(tx *gorm.DB, kbID string, connectors []DatasetConnectorLink) error {
+	var existing []entity.Connector2Kb
+	if err := tx.Where("kb_id = ?", kbID).Find(&existing).Error; err != nil {
+		return err
+	}
+
+	oldConnectorIDs := make(map[string]entity.Connector2Kb, len(existing))
+	for _, row := range existing {
+		oldConnectorIDs[row.ConnectorID] = row
+	}
+
+	nextConnectorIDs := make(map[string]struct{}, len(connectors))
+	for _, connector := range connectors {
+		nextConnectorIDs[connector.ID] = struct{}{}
+		autoParse := connector.AutoParse
+		if autoParse == "" {
+			autoParse = "1"
+		}
+
+		if _, ok := oldConnectorIDs[connector.ID]; ok {
+			if err := tx.Model(&entity.Connector2Kb{}).
+				Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).
+				Update("auto_parse", autoParse).Error; err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := tx.Create(&entity.Connector2Kb{
+			ID:          utility.GenerateUUID(),
+			ConnectorID: connector.ID,
+			KbID:        kbID,
+			AutoParse:   autoParse,
+		}).Error; err != nil {
 			return err
 		}
 
-		oldConnectorIDs := make(map[string]entity.Connector2Kb, len(existing))
-		for _, row := range existing {
-			oldConnectorIDs[row.ConnectorID] = row
+		if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
+			return err
 		}
 
-		nextConnectorIDs := make(map[string]struct{}, len(connectors))
-		for _, connector := range connectors {
-			nextConnectorIDs[connector.ID] = struct{}{}
-			autoParse := connector.AutoParse
-			if autoParse == "" {
-				autoParse = "1"
-			}
-
-			if _, ok := oldConnectorIDs[connector.ID]; ok {
-				if err := tx.Model(&entity.Connector2Kb{}).
-					Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).
-					Update("auto_parse", autoParse).Error; err != nil {
-					return err
-				}
-				continue
-			}
-
-			if err := tx.Create(&entity.Connector2Kb{
-				ID:          utility.GenerateUUID(),
-				ConnectorID: connector.ID,
-				KbID:        kbID,
-				AutoParse:   autoParse,
-			}).Error; err != nil {
-				return err
-			}
-
-			if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
-				return err
-			}
-
-			var fullConnector entity.Connector
-			if err := tx.Where("id = ?", connector.ID).First(&fullConnector).Error; err != nil {
-				return err
-			}
-			if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
-				if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
-					return err
-				}
-			}
+		var fullConnector entity.Connector
+		if err := tx.Where("id = ?", connector.ID).First(&fullConnector).Error; err != nil {
+			return err
 		}
-
-		for connectorID := range oldConnectorIDs {
-			if _, ok := nextConnectorIDs[connectorID]; ok {
-				continue
-			}
-			if err := tx.Where("kb_id = ? AND connector_id = ?", kbID, connectorID).
-				Delete(&entity.Connector2Kb{}).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&entity.SyncLogs{}).
-				Where("connector_id = ? AND kb_id = ? AND status IN ?", connectorID, kbID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
-				Update("status", string(entity.TaskStatusCancel)).Error; err != nil {
+		if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
+			if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
 				return err
 			}
 		}
+	}
 
-		return nil
-	})
+	for connectorID := range oldConnectorIDs {
+		if _, ok := nextConnectorIDs[connectorID]; ok {
+			continue
+		}
+		if err := tx.Where("kb_id = ? AND connector_id = ?", kbID, connectorID).
+			Delete(&entity.Connector2Kb{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&entity.SyncLogs{}).
+			Where("connector_id = ? AND kb_id = ? AND status IN ?", connectorID, kbID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+			Update("status", string(entity.TaskStatusCancel)).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // GetByID get connector by ID
