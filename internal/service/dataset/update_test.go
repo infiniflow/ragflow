@@ -237,6 +237,40 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+
+	permission := string(entity.TenantPermissionMe)
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "user-1", service.UpdateDatasetRequest{
+		Permission: &permission,
+	})
+	if err == nil {
+		t.Fatal("expected permission change error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if err.Error() != "Only dataset owner can change permission" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get dataset: %v", err)
+	}
+	if persisted.Permission != string(entity.TenantPermissionTeam) {
+		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -250,7 +284,7 @@ func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "String should have at least 1 character" {
+	if err.Error() != "`name` is required." {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -327,6 +361,37 @@ func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsCrossTenantConnector(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-2")
+
+	autoParse := "0"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
+	})
+	if err == nil {
+		t.Fatal("expected connector tenant mismatch error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !dao.IsConnectorNotAccessibleErr(err) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.Connector2Kb{}).
+		Where("kb_id = ? AND connector_id = ?", "kb-1", "connector-1").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count connector link: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no connector link, got %d", count)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -364,9 +429,9 @@ func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
-	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+	insertDatasetUpdateTenantModel(t, "aabbccdd11223344aabbccdd11223344", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
-	embeddingModelID := "model-1"
+	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModelID,
 	})
@@ -412,10 +477,190 @@ func TestDatasetServiceUpdateDatasetRejectsEmptyConnectorID(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsInvalidEmbeddingModelFormat(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	cases := []struct {
+		name            string
+		embeddingModel  string
+		expectedMessage string
+	}{
+		{"empty", "", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"whitespace", " ", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"},
+		{"empty_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"},
+		{"empty_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"},
+	}
+
+	svc := testDatasetUpdateService(t)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			embdModel := tc.embeddingModel
+			_, code, err := svc.UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+				EmbeddingModel: &embdModel,
+			})
+			if err == nil {
+				t.Fatal("expected embedding model format error")
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("expected data error code, got %d", code)
+			}
+			if err.Error() != tc.expectedMessage {
+				t.Fatalf("unexpected error: got %q, want %q", err.Error(), tc.expectedMessage)
+			}
+		})
+	}
+}
+
+func TestDatasetServiceUpdateDatasetRejectsDuplicateNameCaseInsensitive(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
+
+	uppercaseName := "EXISTING"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Name: &uppercaseName,
+	})
+	if err == nil {
+		t.Fatal("expected case-insensitive duplicate name error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetPreservesUnmodifiedFields(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	description := "original description"
+	language := "English"
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Updates(map[string]interface{}{
+		"description": description,
+		"language":    language,
+	})
+
+	newName := "Renamed Only"
+	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Name: &newName,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["name"] != newName {
+		t.Fatalf("expected updated name %q, got %#v", newName, result["name"])
+	}
+	if result["description"] != description {
+		t.Fatalf("expected description preserved, got %#v", result["description"])
+	}
+	if result["language"] != language {
+		t.Fatalf("expected language preserved, got %#v", result["language"])
+	}
+	if result["embedding_model"] != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("expected embedding_model preserved, got %#v", result["embedding_model"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.Name != newName {
+		t.Fatalf("expected persisted name %q, got %q", newName, persisted.Name)
+	}
+	if persisted.Description == nil || *persisted.Description != description {
+		t.Fatalf("expected persisted description %q, got %#v", description, persisted.Description)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetPreservesParserConfigOnEmptyUpdate(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"chunk_token_num": float64(512),
+		"delimiter":       "\n",
+	})
+
+	name := "Updated Name"
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Name: &name,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.ParserConfig["chunk_token_num"] != float64(512) {
+		t.Fatalf("expected chunk_token_num preserved, got %#v", persisted.ParserConfig["chunk_token_num"])
+	}
+	if persisted.ParserConfig["delimiter"] != "\n" {
+		t.Fatalf("expected delimiter preserved, got %#v", persisted.ParserConfig["delimiter"])
+	}
+}
+
+func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "11111111111141118111111111111111", "tenant-1", "Test")
+
+	svc := NewDatasetService()
+	normalizedID := "11111111111141118111111111111111"
+	_, code, err := svc.DeleteDatasets([]string{normalizedID}, false, "tenant-2")
+	if err == nil {
+		t.Fatal("expected unauthorized error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "lacks permission") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := NewDatasetService()
+	_, code, err := svc.DeleteDatasets([]string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, "tenant-1")
+	if err == nil {
+		t.Fatal("expected unauthorized error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !strings.Contains(err.Error(), "lacks permission") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupServiceTestDB(t)
+	migrateDatasetUpdateTestTables(t, db)
+	return db
+}
+
+func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
 	if err := db.AutoMigrate(
 		&entity.Connector{},
 		&entity.Connector2Kb{},
@@ -423,11 +668,12 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.TenantModelGroup{},
+		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
-	return db
 }
 
 func testDatasetUpdateService(t *testing.T) *DatasetService {
@@ -468,6 +714,20 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
 		t.Fatalf("insert test canvas: %v", err)
+	}
+}
+
+func insertDatasetUpdateTeamMember(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "normal",
+		InvitedBy: tenantID,
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user tenant: %v", err)
 	}
 }
 
@@ -534,13 +794,9 @@ func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, mo
 	}
 }
 
-// seedDatasetUpdateCanvas migrates user_canvas on the active test DB and
-// inserts a canvas row with the given DSL.
+// seedDatasetUpdateCanvas inserts a canvas row with the given DSL.
 func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 	t.Helper()
-	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
-		t.Fatalf("migrate user_canvas: %v", err)
-	}
 	var dslMap map[string]any
 	if err := json.Unmarshal(dslJSON, &dslMap); err != nil {
 		t.Fatalf("unmarshal seed dsl: %v", err)

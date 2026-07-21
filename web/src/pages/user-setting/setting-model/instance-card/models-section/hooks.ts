@@ -101,11 +101,7 @@ export function useResolveCreds(
     const fv = getFormValues?.() ?? {};
     return {
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
-      baseUrl:
-        (fv.base_url as string) ??
-        (fv.api_base as string) ??
-        instance?.base_url ??
-        '',
+      baseUrl: (fv.base_url as string) ?? instance?.base_url ?? '',
     };
   }, [getFormValues, instance]);
 

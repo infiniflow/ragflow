@@ -288,7 +288,7 @@ func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID strin
 		}
 	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("these documents do not belong to dataset %s: %v", datasetID, invalid)
+		return nil, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
 	}
 	return docs, nil
 }

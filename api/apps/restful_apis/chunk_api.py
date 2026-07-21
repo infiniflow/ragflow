@@ -166,10 +166,7 @@ def _get_dataset_tenant_id(dataset_id):
 def _compilation_template_kind(kind) -> str:
     if not isinstance(kind, str):
         return ""
-    normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
-        return "timeline"
-    return normalized
+    return kind.strip().lower().replace("-", "_")
 
 
 def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
@@ -581,6 +578,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     """
     from rag.nlp import search
     from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+    from api.db.services.compilation_template_service import CompilationTemplateService
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -624,6 +622,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     seen_configured_ids: set[str] = set()
     template_meta: dict[str, dict] = {}
     template_meta_by_kind: dict[str, list[dict]] = {}
+    template_meta_by_id: dict[str, dict] = {}
     for group_id in group_ids:
         group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
         if not group:
@@ -648,6 +647,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
                 "kind_norm": kind_norm,
             }
             template_meta[template_id] = meta
+            template_meta_by_id[template_id] = meta
             template_meta_by_kind.setdefault(kind_norm, []).append(meta)
 
     # Load every graph row for this doc in one shot. Each row corresponds
@@ -740,6 +740,24 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             bucket_id = tid
             row_kind_norm = _compilation_template_kind(kind_val)
             meta = template_meta.get(bucket_id)
+            if not meta:
+                # Pipeline Compiler receives template groups as component
+                # parameters and does not persist those group ids in the
+                # document parser_config. Resolve the exact template id
+                # directly so Pipeline-produced rows do not fall back to
+                # exposing the opaque id as the display name.
+                if bucket_id not in template_meta_by_id:
+                    saved_template = CompilationTemplateService.get_saved(bucket_id, tenant_id)
+                    if saved_template:
+                        template_meta_by_id[bucket_id] = {
+                            "template_id": bucket_id,
+                            "template_name": saved_template.get("name") or bucket_id,
+                            "kind": saved_template.get("kind") or kind_val,
+                            "kind_norm": _compilation_template_kind(saved_template.get("kind")),
+                        }
+                    else:
+                        template_meta_by_id[bucket_id] = {}
+                meta = template_meta_by_id[bucket_id] or None
             if not meta:
                 kind_matches = template_meta_by_kind.get(row_kind_norm) or []
                 if len(kind_matches) == 1:

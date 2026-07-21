@@ -29,13 +29,10 @@ func (p *PPTParser) String() string {
 }
 
 // ParseWithResult delegates to PPTXParser's structured output
-// for the legacy PPT format. The two file families differ only
-// in the binary container; the python parser.py:slides branch
-// treats them uniformly.
+// for the legacy PPT format using the "ppt" container format
+// hint (OLE binary). The two file families differ only in the
+// binary container; the python parser.py:slides branch treats
+// them uniformly.
 func (p *PPTParser) ParseWithResult(filename string, data []byte) ParseResult {
-	res := NewPPTXParser().ParseWithResult(filename, data)
-	if res.File != nil {
-		res.File["format"] = "ppt"
-	}
-	return res
+	return (&PPTXParser{format: "ppt"}).ParseWithResult(filename, data)
 }

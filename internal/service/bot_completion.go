@@ -39,6 +39,7 @@ import (
 	"errors"
 	"net/http"
 	"ragflow/internal/utility"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -47,7 +48,6 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 )
 
 // ChatbotSSEFrame is one envelope pushed to the SSE writer by the
@@ -68,6 +68,19 @@ type ChatbotSSEFrame struct {
 	SessionID string         `json:"-"`
 	Done      bool           `json:"-"`
 	Err       error          `json:"-"`
+	// Final marks the last answer frame of a turn. It is
+	// rendered as `"final": true` in the data payload so the
+	// front-end replaces (instead of appends to) the
+	// accumulated text — required because the final pipeline
+	// result is decorated (citation markers inserted mid-text)
+	// and no longer a strict superset of the streamed deltas.
+	Final bool `json:"-"`
+	// StartToThink / EndToThink bracket the reasoning segment,
+	// rendered as start_to_think / end_to_think so the
+	// front-end can wrap it in <think> markers like the python
+	// side does.
+	StartToThink bool `json:"-"`
+	EndToThink   bool `json:"-"`
 }
 
 // WriteChatbotFrame emits one python-style SSE frame and flushes the
@@ -100,6 +113,15 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 			"audio_binary": nil,
 			"id":           nil,
 			"session_id":   f.SessionID,
+		}
+		if f.Final {
+			data["final"] = true
+		}
+		if f.StartToThink {
+			data["start_to_think"] = true
+		}
+		if f.EndToThink {
+			data["end_to_think"] = true
 		}
 		// Forward the canvas event type so the front-end can
 		// distinguish interactive form pauses ("user_inputs",
@@ -262,12 +284,13 @@ func WriteAgentbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 // ChatbotCompletion streams an SSE response for
 // /api/v1/chatbots/<dialog_id>/completions.
 //
-// The full LLM session-lifecycle implementation is added below. It
-// is a v1 port: it yields a single frame per turn (the Go LLMBundle
-// chat call is non-streaming). A request without session_id only
-// creates the prologue-seeded session and streams the prologue back;
-// the LLM runs exclusively for follow-up turns that carry a
-// session_id.
+// The completion runs through ChatPipelineService.AsyncChat — the
+// same RAG pipeline that serves the regular chat endpoints — so
+// knowledge-base retrieval, the dialog's configured empty_response
+// fallback, citations and the system prompt all behave identically
+// to the in-app chat. Mirrors the python
+// api/db/services/conversation_service.py::async_iframe_completion,
+// which delegates to the same async_chat used by regular sessions.
 //
 // Authorisation: dialog must exist, belong to the requester's tenant,
 // and have status == common.StatusDialogValid.
@@ -307,20 +330,13 @@ func (s *BotService) ChatbotCompletion(
 	// same value, so write/read stay symmetric. We keep this
 	// behaviour and add the comment so a future reader doesn't
 	// "fix" it to a tenant-id lookup and break the symmetry.
-	var session *entity.API4Conversation
-	if req.SessionID != "" {
-		session, err = s.api4ConversationDAO.GetBySessionID(req.SessionID, dialogID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if session == nil || session.UserID != tenantID {
-			return nil, common.CodeDataError, errors.New("session not found")
-		}
-	} else {
-		// Seed a new session. The Message column is json.RawMessage;
-		// pre-serialise the prologue turn as a JSON array of
-		// {role,content,created_at} dicts — same shape the python
-		// conversation_service.py:253-272 writes. Plan Risk R4.
+	if req.SessionID == "" {
+		// No session yet: seed one with the prologue and return it
+		// immediately WITHOUT running the pipeline. Mirrors python
+		// async_iframe_completion (conversation_service.py:324-334):
+		// the share page calls this endpoint once with an empty
+		// question to obtain a session_id, then sends the real
+		// questions with that session_id.
 		prologue := stringFromMap(dialog.PromptConfig, "prologue")
 		seedMsg, _ := json.Marshal([]map[string]any{
 			{
@@ -329,7 +345,7 @@ func (s *BotService) ChatbotCompletion(
 				"created_at": time.Now().Unix(),
 			},
 		})
-		session = &entity.API4Conversation{
+		session := &entity.API4Conversation{
 			ID:       utility.GenerateUUID(),
 			DialogID: dialogID,
 			UserID:   tenantID,
@@ -344,8 +360,8 @@ func (s *BotService) ChatbotCompletion(
 		// session_id is the share page's opening handshake — the
 		// front-end sends an empty question only to obtain a session.
 		// Persist the prologue-seeded session and stream the prologue
-		// back WITHOUT invoking the LLM; running the model here would
-		// fabricate a reply to a message the user never sent.
+		// back WITHOUT invoking the pipeline; running the model here
+		// would fabricate a reply to a message the user never sent.
 		out := make(chan ChatbotSSEFrame, 2)
 		go func() {
 			defer close(out)
@@ -359,135 +375,286 @@ func (s *BotService) ChatbotCompletion(
 		return out, common.CodeSuccess, nil
 	}
 
-	// 3. Resolve the chat LLM via ModelProviderService. The python
-	// async_iframe_completion resolves the same way through
-	// LLMBundle(tenant_id, dialog.llm_id); the Go equivalent is
-	// GetChatModelConfig → NewChatModel → driver.ChatWithMessages.
-	//
-	// If llmService is unwired (test boot path) or the dialog has
-	// no LLM configured, we surface a sanitized CodeDataError
-	// rather than echoing the bare error string into the SSE
-	// envelope — see WriteChatbotFrame's sanitization contract.
+	session, err := s.api4ConversationDAO.GetBySessionID(req.SessionID, dialogID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if session == nil || session.UserID != tenantID {
+		return nil, common.CodeDataError, errors.New("session not found")
+	}
+
+	// 3. Guard rails mirroring the previous implementation: surface
+	// a sanitised error before any SSE byte is written when the
+	// service is unwired (test boot path) or the dialog has no LLM
+	// configured — see WriteChatbotFrame's sanitization contract.
+	// NewBotService wires both dependencies; the nil checks only
+	// guard a hand-rolled zero-value BotService against panicking.
 	if s.llmService == nil {
 		return nil, common.CodeServerError, errors.New("bot: llm service not wired")
+	}
+	if s.pipeline == nil {
+		return nil, common.CodeServerError, errors.New("bot: chat pipeline not wired")
 	}
 	if dialog.LLMID == "" {
 		return nil, common.CodeDataError, errors.New("no LLM configured for this chatbot")
 	}
-	modelProvider := NewModelProviderService()
-	driver, modelName, apiConfig, _, err := modelProvider.GetChatModelConfig(tenantID, dialog.LLMID)
-	if err != nil {
-		return nil, common.CodeDataError, errors.New("no LLM configured for this chatbot")
+
+	// 4. Build the pipeline input. The Message column on
+	// api_4_conversation is a json.RawMessage array of
+	// {role, content, created_at} dicts; the pipeline expects the
+	// same filtered shape python builds in async_iframe_completion
+	// (drop system turns, drop the leading assistant prologue,
+	// append the new user turn last).
+	messageID := utility.GenerateUUID()
+	messages := buildChatbotPipelineMessages(session.Message, req.Question, messageID)
+
+	// python bot_api.py:72-73 defaults quote to False for chatbot
+	// completions when the caller omits it.
+	kwargs := map[string]interface{}{
+		"quote": req.Quote != nil && *req.Quote,
 	}
-	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	if reasoning, ok := normalizeBotBoolFlag(req.Reasoning); ok {
+		kwargs["reasoning"] = reasoning
+	}
+	if req.Internet != nil {
+		kwargs["internet"] = req.Internet
+	}
+	if req.DocIDs != "" {
+		kwargs["doc_ids"] = req.DocIDs
+	}
 
-	// 4. Build the prompt from prior conversation history plus the
-	// new user turn. Without this, a resumed session_id would
-	// authorise reuse but the LLM call would still be stateless
-	// turn-to-turn — a Python parity regression for any multi-turn
-	// chatbot client. The Message column on api_4_conversation is a
-	// json.RawMessage array of {role, content, created_at} dicts,
-	// matching the python conversation_service.py:253-272 shape.
-	messages := historyToMessages(session.Message)
-	messages = append(messages, modelModule.Message{Role: "user", Content: req.Question})
+	results, err := s.pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 
-	// 5. Yield frames on a channel.
-	out := make(chan ChatbotSSEFrame, 4)
+	// 5. Translate pipeline results into chatbot frames. The
+	// pipeline streams deltas; the python iframe contract sends the
+	// full accumulated answer in every frame, so we accumulate here
+	// (the front-end accepts both shapes, but full-text frames are
+	// byte-parity with python). The final pipeline result carries
+	// the decorated full answer plus the retrieval reference.
+	out := make(chan ChatbotSSEFrame, 16)
 	go func() {
 		defer close(out)
-		resp, callErr := chatModel.ModelDriver.ChatWithMessages(
-			modelName, messages, chatModel.APIConfig, &modelModule.ChatConfig{}, nil,
+		var (
+			fullAnswer string
+			finalRef   map[string]any
+			errored    bool
 		)
-		if callErr != nil {
-			// Log the real error with structured context so
-			// ops can debug, but do NOT echo the raw
-			// err.Error() to the client (security M2:
-			// internal gorm/SQL/file-path leaks).
-			common.Error("bot: ChatbotCompletion LLM call failed",
-				callErr,
-				zap.String("dialog_id", dialogID),
-				zap.String("session_id", session.ID),
-				zap.String("llm_id", dialog.LLMID),
-			)
+		for res := range results {
+			if res.Final {
+				if res.Answer != "" {
+					// Decorated full answer (citations
+					// resolved). Replaces the accumulated
+					// deltas; the empty_response fallback
+					// path yields an empty final answer, in
+					// which case the accumulated fallback
+					// text stands.
+					fullAnswer = res.Answer
+				}
+				if res.Reference != nil {
+					finalRef = res.Reference
+				}
+				if strings.HasPrefix(fullAnswer, "**ERROR**") {
+					errored = true
+				}
+				out <- ChatbotSSEFrame{
+					Data:      fullAnswer,
+					Reference: referenceOrEmpty(finalRef),
+					SessionID: session.ID,
+					Final:     true,
+				}
+				continue
+			}
+			if res.StartToThink || res.EndToThink {
+				out <- ChatbotSSEFrame{
+					Data:         fullAnswer,
+					Reference:    map[string]any{},
+					SessionID:    session.ID,
+					StartToThink: res.StartToThink,
+					EndToThink:   res.EndToThink,
+				}
+				continue
+			}
+			fullAnswer += res.Answer
+			if len(res.Reference) > 0 {
+				// The pipeline only populates Reference on the final
+				// result today; tracking it here keeps finalRef
+				// correct if a mid-stream result ever carries one.
+				// Intermediate frames still send an empty reference
+				// object for wire parity with python
+				// async_iframe_completion — only the final frame
+				// carries the retrieval reference.
+				finalRef = res.Reference
+			}
 			out <- ChatbotSSEFrame{
-				Err:       errors.New("an internal error occurred"),
+				Data:      fullAnswer,
+				Reference: map[string]any{},
 				SessionID: session.ID,
 			}
-			out <- ChatbotSSEFrame{Done: true}
-			return
-		}
-		answer := ""
-		if resp != nil && resp.Answer != nil {
-			answer = *resp.Answer
 		}
 
-		// Persist the new turn pair (user + assistant) back to
-		// api_4_conversation so the NEXT call to ChatbotCompletion
-		// with the same session_id sees this turn in messages.
-		// Update errors are logged but do NOT fail the SSE stream
-		// — the answer has already been produced. The next call
-		// will rebuild from the prior (pre-this-turn) snapshot,
-		// losing at most the latest exchange; acceptable for v1.
-		newTurns := append(historyFromMessages(messages),
-			map[string]any{"role": "assistant", "content": answer, "created_at": time.Now().Unix()},
-		)
-		if updated, mErr := json.Marshal(newTurns); mErr == nil {
-			session.Message = updated
-			if uErr := s.api4ConversationDAO.Update(session); uErr != nil {
+		// 6. Persist the completed turn pair (user + assistant)
+		// plus the retrieval reference, mirroring python
+		// API4ConversationService.append_message after the stream.
+		// Persistence errors are logged but do NOT fail the SSE
+		// stream — the answer has already been produced. On a
+		// pipeline-level error ("**ERROR**" answer) nothing is
+		// persisted, matching the python exception path.
+		if !errored {
+			if pErr := s.persistChatbotTurn(session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
 				common.Error("bot: ChatbotCompletion session update failed",
-					uErr,
+					pErr,
 					zap.String("dialog_id", dialogID),
 					zap.String("session_id", session.ID),
 				)
 			}
-		}
-
-		out <- ChatbotSSEFrame{
-			Data:      answer,
-			Reference: map[string]any{},
-			SessionID: session.ID,
 		}
 		out <- ChatbotSSEFrame{Done: true}
 	}()
 	return out, common.CodeSuccess, nil
 }
 
-// historyToMessages reads the session.Message JSON array of
-// {role, content, ...} dicts and projects it onto modelModule.Message
-// for the LLM driver. Tolerates an empty / malformed Message column
-// by returning an empty slice — the caller appends the new user turn
-// so the LLM still receives the current prompt.
-func historyToMessages(raw json.RawMessage) []modelModule.Message {
-	if len(raw) == 0 {
-		return nil
-	}
-	var turns []map[string]any
-	if err := json.Unmarshal(raw, &turns); err != nil {
-		return nil
-	}
-	out := make([]modelModule.Message, 0, len(turns))
-	for _, t := range turns {
-		role, _ := t["role"].(string)
-		content, _ := t["content"].(string)
-		if role == "" || content == "" {
+// buildChatbotPipelineMessages projects the session.Message JSON
+// array plus the new user question onto the message shape
+// ChatPipelineService.AsyncChat expects. Mirrors the filtering in
+// python async_iframe_completion (conversation_service.py:341-356):
+// system turns are dropped and a leading assistant turn (the seeded
+// prologue) is dropped so the first message the LLM sees is a user
+// turn. Tolerates an empty / malformed Message column by starting
+// from just the new question.
+func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID string) []map[string]interface{} {
+	turns := parseChatbotTurns(raw)
+	turns = append(turns, map[string]any{
+		"role":    "user",
+		"content": question,
+		"id":      messageID,
+	})
+	msg := make([]map[string]interface{}, 0, len(turns))
+	for _, m := range turns {
+		role, _ := m["role"].(string)
+		if role == "system" {
 			continue
 		}
-		out = append(out, modelModule.Message{Role: role, Content: content})
+		if role == "assistant" && len(msg) == 0 {
+			continue
+		}
+		msg = append(msg, m)
 	}
-	return out
+	return msg
 }
 
-// historyFromMessages is the inverse projection — used to write the
-// updated turn list back to the api_4_conversation.Message column.
-func historyFromMessages(msgs []modelModule.Message) []map[string]any {
-	out := make([]map[string]any, 0, len(msgs))
-	now := time.Now().Unix()
-	for i, m := range msgs {
-		out = append(out, map[string]any{
-			"role":       m.Role,
-			"content":    m.Content,
-			"created_at": now + int64(i), // preserve order, monotonic
-		})
+// parseChatbotTurns decodes the session.Message JSON array.
+// Returns an empty (non-nil) slice on empty or malformed input so
+// callers can always append.
+func parseChatbotTurns(raw json.RawMessage) []map[string]any {
+	turns := make([]map[string]any, 0)
+	if len(raw) == 0 {
+		return turns
 	}
-	return out
+	if err := json.Unmarshal(raw, &turns); err != nil || turns == nil {
+		return make([]map[string]any, 0)
+	}
+	return turns
+}
+
+// persistChatbotTurn appends the finished user/assistant turn pair
+// and the retrieval reference to the api_4_conversation row so the
+// next ChatbotCompletion call with the same session_id sees this
+// turn in its history. Mirrors python
+// API4ConversationService.append_message.
+func (s *BotService) persistChatbotTurn(
+	session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
+) error {
+	// Serialise the read-modify-write per session and re-read the row
+	// inside the lock: the caller's session was loaded before the
+	// stream ran, so a concurrent request on the same session_id may
+	// already have appended its own turn. Without the lock + re-read
+	// the last Update would silently drop the other exchange.
+	lock := s.persistLock(session.ID)
+	lock.Lock()
+	defer lock.Unlock()
+	fresh, err := s.api4ConversationDAO.GetBySessionID(session.ID, session.DialogID)
+	if err != nil {
+		return err
+	}
+	if fresh != nil {
+		session = fresh
+	}
+
+	now := time.Now().Unix()
+	turns := parseChatbotTurns(session.Message)
+	// Both turns of the pair share messageID by design: a Q&A exchange
+	// is addressed as a unit — mirrors the in-app chat convention
+	// where the answer id is derived from the question id so the pair
+	// is deleted together (web/src/hooks/logic-hooks.ts
+	// buildMessageUuid).
+	turns = append(turns,
+		map[string]any{
+			"role":       "user",
+			"content":    question,
+			"id":         messageID,
+			"created_at": now,
+		},
+		map[string]any{
+			"role":       "assistant",
+			"content":    answer,
+			"id":         messageID,
+			"created_at": now,
+		},
+	)
+	rawMsg, err := json.Marshal(turns)
+	if err != nil {
+		return err
+	}
+	session.Message = rawMsg
+
+	refs := make([]any, 0)
+	if len(session.Reference) > 0 {
+		// Tolerate malformed / missing reference history — the
+		// message turns above are the authoritative history;
+		// a lost reference list degrades citation display only.
+		_ = json.Unmarshal(session.Reference, &refs)
+	}
+	if reference == nil {
+		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
+	}
+	refs = append(refs, reference)
+	rawRef, err := json.Marshal(refs)
+	if err != nil {
+		return err
+	}
+	session.Reference = rawRef
+
+	return s.api4ConversationDAO.Update(session)
+}
+
+// normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet
+// flags to a bool. Widgets send them as true/false or 0/1 numbers;
+// ok=false means the value was absent or unrecognised and the caller
+// should leave the pipeline default in place.
+func normalizeBotBoolFlag(v any) (value, ok bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case float64:
+		if x == 0 || x == 1 {
+			return x == 1, true
+		}
+	case int:
+		if x == 0 || x == 1 {
+			return x == 1, true
+		}
+	}
+	return false, false
+}
+
+// referenceOrEmpty returns ref or an empty map so SSE frames always
+// carry a JSON object in the reference field, never null.
+func referenceOrEmpty(ref map[string]any) map[string]any {
+	if ref == nil {
+		return map[string]any{}
+	}
+	return ref
 }

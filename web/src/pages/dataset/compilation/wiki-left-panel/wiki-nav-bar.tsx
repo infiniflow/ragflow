@@ -10,50 +10,13 @@ import { SearchInput } from '@/components/ui/input';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CreateDirectoryDialog } from '../create-directory-dialog';
 import { useCreateDirectory } from '../hooks/use-create-directory';
-import { useWikiNavigation, WikiPageType } from './hooks/use-wiki-navigation';
+import { useWikiNavigation } from './hooks/use-wiki-navigation';
 import { WikiArtifactList } from './wiki-artifact-list';
 import { WikiTopicList } from './wiki-topic-list';
-
-type PageTypeFilterProps = {
-  value: WikiPageType;
-  onChange: (value: WikiPageType) => void;
-};
-
-function PageTypeFilter({ value, onChange }: PageTypeFilterProps) {
-  const { t } = useTranslation();
-
-  const handleConceptClick = useCallback(() => {
-    onChange('concept');
-  }, [onChange]);
-
-  const handleEntityClick = useCallback(() => {
-    onChange('entity');
-  }, [onChange]);
-
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant={value === 'concept' ? 'default' : 'outline'}
-        size="sm"
-        onClick={handleConceptClick}
-      >
-        {t('knowledgeDetails.concept')}
-      </Button>
-      <Button
-        variant={value === 'entity' ? 'default' : 'outline'}
-        size="sm"
-        onClick={handleEntityClick}
-      >
-        {t('knowledgeDetails.entity')}
-      </Button>
-    </div>
-  );
-}
 
 type WikiNavBarProps = {
   selectedArtifact: IArtifact | null;
@@ -69,7 +32,6 @@ export function WikiNavBar({
     scrollRef,
     searchString,
     selectedTopic,
-    pageType,
     topics,
     artifacts,
     loading,
@@ -77,7 +39,6 @@ export function WikiNavBar({
     handleSearchChange,
     handleSelectTopic,
     handleBackToTopics,
-    handlePageTypeChange,
     handleScroll,
   } = useWikiNavigation();
   const {
@@ -96,7 +57,6 @@ export function WikiNavBar({
         value={searchString}
         onChange={handleSearchChange}
       />
-      <PageTypeFilter value={pageType} onChange={handlePageTypeChange} />
       <section>
         <div className="flex items-center justify-between">
           <Breadcrumb>
