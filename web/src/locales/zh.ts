@@ -1266,7 +1266,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
       jiraBaseUrlTip:
-        'Jira 的 BASE URL，例如：https://your-domain.atlassian.net。',
+        'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',
       jiraProjectKeyTip: '可选：仅同步指定的项目（如 RAG）。',
       jiraJqlTip: '可选：自定义 JQL 过滤条件，留空则使用项目 / 时间范围。',
       jiraBatchSizeTip: '每次向 Jira 请求的 Issue 数量上限。',
@@ -1452,7 +1452,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       apiKeyTip: 'API KEY可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
       hideModels: '隐藏模型',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
@@ -1652,10 +1652,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       },
       somark: {
         modelNameMessage: '请输入模型名称',
-        baseUrl: 'BASE URL',
-        baseUrlMessage: '请输入 BASE URL',
+        baseUrl: 'Base URL',
+        baseUrlMessage: '请输入 Base URL',
         baseUrlPlaceholder:
-          '使用 SoMark API 时中国大陆填写 https://somark.cn/api/v1；中国大陆外（含中国台湾、中国香港、中国澳门及海外）填写 https://somark.ai/api/v1；私有化部署时填写本地部署的 BASE URL',
+          '使用 SoMark API 时中国大陆填写 https://somark.cn/api/v1；中国大陆外（含中国台湾、中国香港、中国澳门及海外）填写 https://somark.ai/api/v1；私有化部署时填写本地部署的 Base URL',
         apiKey: 'API KEY',
         apiKeyPlaceholder: '使用 SoMark API 时填写；私有化部署无需填写',
         verifyPassed: '验证通过',

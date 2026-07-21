@@ -1257,7 +1257,7 @@ export default {
         'API ключ можно получить, зарегистрировавшись у соответствующего поставщика LLM.',
       showMoreModels: 'Показать модели',
       hideModels: 'Скрыть модели',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'Если ваш API ключ от OpenAI, просто проигнорируйте это. Любые другие промежуточные провайдеры дадут этот базовый url вместе с API ключом.',
       tongyiBaseUrlTip:
