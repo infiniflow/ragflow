@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"net/url"
 	"testing"
 
 	"ragflow/internal/dao"
@@ -13,12 +14,19 @@ import (
 // setupServiceTestDB initializes an in-memory SQLite database for tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to access sqlite db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
