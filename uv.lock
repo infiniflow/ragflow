@@ -3500,11 +3500,11 @@ wheels = [
 
 [[package]]
 name = "markdown"
-version = "3.6"
+version = "3.10.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/22/02/4785861427848cc11e452cc62bb541006a1087cf04a1de83aedd5530b948/Markdown-3.6.tar.gz", hash = "sha256:ed4f41f6daecbeeb96e576ce414c41d2d876daa9a16cb35fa8ed8c2ddfad0224" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/2b/f4/69fa6ed85ae003c2378ffa8f6d2e3234662abd02c10d216c0ba96081a238/markdown-3.10.2.tar.gz", hash = "sha256:994d51325d25ad8aa7ce4ebaec003febcce822c3f8c911e3b17c52f7f589f950" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/fc/b3/0c0c994fe49cd661084f8d5dc06562af53818cc0abefaca35bdc894577c3/Markdown-3.6-py3-none-any.whl", hash = "sha256:48f276f4d8cfb8ce6527c8f79e2ee29708508bf4d40aa410fbc3b4ee832c850f" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/de/1f/77fa3081e4f66ca3576c896ae5d31c3002ac6607f9747d2e3aa49227e464/markdown-3.10.2-py3-none-any.whl", hash = "sha256:e91464b71ae3ee7afd3017d9f358ef0baf158fd9a298db92f1d4761133824c36" },
 ]
 
 [[package]]
@@ -4039,12 +4039,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "coloredlogs" },
+    { name = "flatbuffers" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy" },
 ]
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/03/05/40d561636e4114b54aa06d2371bfbca2d03e12cfdf5d4b85814802f18a75/onnxruntime_gpu-1.23.2-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1e8f75af5da07329d0c3a5006087f4051d8abd133b4be7c9bae8cdab7bea4c26" },
@@ -8235,7 +8235,7 @@ requires-dist = [
     { name = "line-bot-sdk", specifier = ">=3.0.0" },
     { name = "litellm", specifier = "==1.82.5" },
     { name = "mammoth", specifier = ">=1.11.0" },
-    { name = "markdown", specifier = "==3.6" },
+    { name = "markdown", specifier = ">=3.8.1,<4.0.0" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
     { name = "markdownify", specifier = ">=1.2.0" },
     { name = "mcp", specifier = ">=1.19.0" },
