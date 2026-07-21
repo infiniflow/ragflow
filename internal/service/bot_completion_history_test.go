@@ -15,12 +15,12 @@
 //
 
 // Tests for the message-building / flag-normalisation helpers used
-// by BotService.ChatbotCompletion. Locks in review Finding 8 — a
-// resumed session_id must carry prior turns (assistant prologue +
-// earlier user/assistant exchanges) into the next pipeline call so
-// multi-turn chatbot clients retain context, and the filtering must
-// match python async_iframe_completion (drop system turns and the
-// leading assistant prologue).
+// by BotService.ChatbotCompletion. A resumed session_id must carry
+// prior turns (assistant prologue + earlier user/assistant
+// exchanges) into the next pipeline call so multi-turn chatbot
+// clients retain context, and the filtering must match python
+// async_iframe_completion (drop system turns and the leading
+// assistant prologue).
 
 package service
 
@@ -29,8 +29,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -340,6 +342,191 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	msgs := parseChatbotTurns(row.Message)
 	if len(msgs) != 1 || msgs[0]["role"] != "assistant" || msgs[0]["content"] != prologue {
 		t.Errorf("persisted messages = %+v, want single prologue assistant turn", msgs)
+	}
+}
+
+func TestParseChatbotTurns(t *testing.T) {
+	// Empty / malformed input must yield an empty (non-nil) slice so
+	// callers can always append.
+	for _, raw := range []json.RawMessage{
+		nil,
+		json.RawMessage(`[]`),
+		json.RawMessage(`null`),
+		json.RawMessage(`not json`),
+	} {
+		turns := parseChatbotTurns(raw)
+		if turns == nil {
+			t.Errorf("parseChatbotTurns(%q) returned a nil slice", string(raw))
+		}
+		if len(turns) != 0 {
+			t.Errorf("parseChatbotTurns(%q) = %+v, want empty", string(raw), turns)
+		}
+	}
+
+	turns := parseChatbotTurns(json.RawMessage(`[{"role":"user","content":"hi"}]`))
+	if len(turns) != 1 || turns[0]["role"] != "user" || turns[0]["content"] != "hi" {
+		t.Errorf("valid input: got %+v", turns)
+	}
+}
+
+func TestReferenceOrEmpty(t *testing.T) {
+	got := referenceOrEmpty(nil)
+	if got == nil || len(got) != 0 {
+		t.Errorf("nil reference must yield an empty non-nil map, got %v", got)
+	}
+	ref := map[string]any{"chunks": []any{map[string]any{"chunk_id": "c1"}}}
+	got = referenceOrEmpty(ref)
+	chunks, _ := got["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Errorf("non-nil reference must pass through, got %+v", got)
+	}
+}
+
+// TestPersistChatbotTurn_AppendsPairAndReference covers the turn
+// persistence after a completed stream: the user/assistant pair is
+// appended to the existing history, shares one message id, and the
+// retrieval reference is appended to the reference list.
+func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seed, _ := json.Marshal([]map[string]any{
+		{"role": "assistant", "content": "Hello!", "created_at": 1},
+	})
+	sess := &entity.API4Conversation{
+		ID:       "sess-p1",
+		DialogID: "dlg-p1",
+		UserID:   "tenant-1",
+		Message:  seed,
+	}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	ref := map[string]any{
+		"chunks":   []any{map[string]any{"chunk_id": "c1"}},
+		"doc_aggs": []any{},
+	}
+	if err := svc.persistChatbotTurn(sess, "What is Go?", "A language.", "msg-p1", ref); err != nil {
+		t.Fatalf("persistChatbotTurn: %v", err)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p1", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 3 {
+		t.Fatalf("want 3 turns (prologue + pair), got %d: %+v", len(turns), turns)
+	}
+	// The Q&A pair shares the message id so the exchange is addressed
+	// as a unit, matching the in-app chat pairing convention.
+	if turns[1]["role"] != "user" || turns[1]["content"] != "What is Go?" || turns[1]["id"] != "msg-p1" {
+		t.Errorf("user turn: %+v", turns[1])
+	}
+	if turns[2]["role"] != "assistant" || turns[2]["content"] != "A language." || turns[2]["id"] != "msg-p1" {
+		t.Errorf("assistant turn: %+v", turns[2])
+	}
+
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("want 1 reference entry, got %d: %+v", len(refs), refs)
+	}
+	chunks, _ := refs[0]["chunks"].([]any)
+	if len(chunks) != 1 {
+		t.Errorf("reference chunks: %+v", refs[0])
+	}
+}
+
+// TestPersistChatbotTurn_NilReferenceDefaultsToEmpty ensures a turn
+// without retrieval results still records an empty reference object,
+// keeping the reference list index-aligned with the turn pairs.
+func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	sess := &entity.API4Conversation{ID: "sess-p2", DialogID: "dlg-p1", UserID: "tenant-1"}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	if err := svc.persistChatbotTurn(sess, "q", "a", "msg-p2", nil); err != nil {
+		t.Fatalf("persistChatbotTurn: %v", err)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p2", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("want 1 reference entry, got %+v", refs)
+	}
+	if chunks, ok := refs[0]["chunks"].([]any); !ok || len(chunks) != 0 {
+		t.Errorf("default reference must carry empty chunks: %+v", refs[0])
+	}
+	if aggs, ok := refs[0]["doc_aggs"].([]any); !ok || len(aggs) != 0 {
+		t.Errorf("default reference must carry empty doc_aggs: %+v", refs[0])
+	}
+}
+
+// TestPersistChatbotTurn_ConcurrentSameSession guards the
+// read-modify-write race on session.Message: two requests persisting
+// to the same session_id at the same time must both land — without
+// the persist lock + re-read the last Update would silently drop one
+// exchange.
+func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	// In-memory sqlite opens a fresh database per connection, so pin
+	// the pool to a single connection for the concurrent goroutines.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	sess := &entity.API4Conversation{ID: "sess-p3", DialogID: "dlg-p1", UserID: "tenant-1"}
+	if err := dao.NewAPI4ConversationDAO().Create(sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	// Both callers hold the same stale snapshot loaded before their
+	// streams started — exactly the race the lock fixes.
+	var wg sync.WaitGroup
+	for i, turn := range [][2]string{{"q1", "a1"}, {"q2", "a2"}} {
+		wg.Add(1)
+		go func(i int, q, a string) {
+			defer wg.Done()
+			if err := svc.persistChatbotTurn(sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil); err != nil {
+				t.Errorf("persistChatbotTurn %d: %v", i, err)
+			}
+		}(i, turn[0], turn[1])
+	}
+	wg.Wait()
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID("sess-p3", "dlg-p1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 4 {
+		t.Fatalf("want both exchanges persisted (4 turns), got %d: %+v", len(turns), turns)
+	}
+	var refs []map[string]any
+	if err := json.Unmarshal(row.Reference, &refs); err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("want 2 reference entries, got %d: %+v", len(refs), refs)
 	}
 }
 

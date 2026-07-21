@@ -387,8 +387,13 @@ func (s *BotService) ChatbotCompletion(
 	// a sanitised error before any SSE byte is written when the
 	// service is unwired (test boot path) or the dialog has no LLM
 	// configured — see WriteChatbotFrame's sanitization contract.
+	// NewBotService wires both dependencies; the nil checks only
+	// guard a hand-rolled zero-value BotService against panicking.
 	if s.llmService == nil {
 		return nil, common.CodeServerError, errors.New("bot: llm service not wired")
+	}
+	if s.pipeline == nil {
+		return nil, common.CodeServerError, errors.New("bot: chat pipeline not wired")
 	}
 	if dialog.LLMID == "" {
 		return nil, common.CodeDataError, errors.New("no LLM configured for this chatbot")
@@ -418,11 +423,7 @@ func (s *BotService) ChatbotCompletion(
 		kwargs["doc_ids"] = req.DocIDs
 	}
 
-	pipeline := s.pipeline
-	if pipeline == nil {
-		pipeline = NewChatPipelineService()
-	}
-	results, err := pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
+	results, err := s.pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -478,6 +479,13 @@ func (s *BotService) ChatbotCompletion(
 			}
 			fullAnswer += res.Answer
 			if len(res.Reference) > 0 {
+				// The pipeline only populates Reference on the final
+				// result today; tracking it here keeps finalRef
+				// correct if a mid-stream result ever carries one.
+				// Intermediate frames still send an empty reference
+				// object for wire parity with python
+				// async_iframe_completion — only the final frame
+				// carries the retrieval reference.
 				finalRef = res.Reference
 			}
 			out <- ChatbotSSEFrame{
@@ -559,8 +567,29 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 func (s *BotService) persistChatbotTurn(
 	session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
 ) error {
+	// Serialise the read-modify-write per session and re-read the row
+	// inside the lock: the caller's session was loaded before the
+	// stream ran, so a concurrent request on the same session_id may
+	// already have appended its own turn. Without the lock + re-read
+	// the last Update would silently drop the other exchange.
+	lock := s.persistLock(session.ID)
+	lock.Lock()
+	defer lock.Unlock()
+	fresh, err := s.api4ConversationDAO.GetBySessionID(session.ID, session.DialogID)
+	if err != nil {
+		return err
+	}
+	if fresh != nil {
+		session = fresh
+	}
+
 	now := time.Now().Unix()
 	turns := parseChatbotTurns(session.Message)
+	// Both turns of the pair share messageID by design: a Q&A exchange
+	// is addressed as a unit — mirrors the in-app chat convention
+	// where the answer id is derived from the question id so the pair
+	// is deleted together (web/src/hooks/logic-hooks.ts
+	// buildMessageUuid).
 	turns = append(turns,
 		map[string]any{
 			"role":       "user",
