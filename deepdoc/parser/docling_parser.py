@@ -174,6 +174,20 @@ class DoclingParser(RAGFlowPdfParser):
         if not poss:
             return (None, None) if need_position else None
 
+        # a position tag is emitted even when page rendering failed (__images__ leaves
+        # page_images empty), and a tag can name a page beyond the rendered range, so
+        # indexing page_images below would raise IndexError. mirror
+        # cropout_docling_table and the sibling parsers: bail out when there are no
+        # page images and drop positions that fall outside them.
+        if not getattr(self, "page_images", None):
+            self.logger.warning("[Docling] crop called without page images; skipping image generation.")
+            return (None, None) if need_position else None
+
+        page_count = len(self.page_images)
+        poss = [p for p in poss if p[0] and all(0 <= pn < page_count for pn in p[0])]
+        if not poss:
+            return (None, None) if need_position else None
+
         GAP = 6
         pos = poss[0]
         poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
