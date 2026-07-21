@@ -306,6 +306,22 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 	})
 }
 
+// UniqueDocumentName returns a non-colliding document name within the dataset,
+// mirroring Python duplicate_name(DocumentService.query, name=..., kb_id=...).
+// Returns an error when the existing-name lookup fails so callers never write
+// blind and risk duplicated document names.
+func (s *DocumentService) UniqueDocumentName(kbID, name string) (string, error) {
+	names, err := s.documentDAO.ListNamesByKbID(kbID)
+	if err != nil {
+		return "", err
+	}
+	taken := make(map[string]bool, len(names))
+	for _, n := range names {
+		taken[n] = true
+	}
+	return uniqueUploadName(name, taken), nil
+}
+
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
 // an error.
 func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {

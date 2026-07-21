@@ -198,8 +198,18 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 				continue
 			}
 
+			// Mirror Python duplicate_name: generate a non-colliding document
+			// name within the dataset so that linking does not silently create
+			// duplicate-name documents in the same KB.
+			docName, err := s.documentSvc.UniqueDocumentName(kbID, file.Name)
+			if err != nil {
+				common.Warn("convertFiles: UniqueDocumentName failed",
+					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
+				continue
+			}
+
 			parserID := kb.ParserID
-			suffix := strings.TrimPrefix(filepath.Ext(file.Name), ".")
+			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
 				ID:           utility.GenerateUUID(),
 				KbID:         kb.ID,
@@ -207,7 +217,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 				ParserConfig: kb.ParserConfig,
 				CreatedBy:    userID,
 				Type:         file.Type,
-				Name:         &file.Name,
+				Name:         &docName,
 				Suffix:       suffix,
 				Size:         file.Size,
 			}
