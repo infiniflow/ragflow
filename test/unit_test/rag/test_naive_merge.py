@@ -247,12 +247,18 @@ def test_strict_cap_with_overlap_drops_overlap_at_overflow_boundary():
 
 
 @pytest.mark.p2
-def test_strict_cap_single_overlong_section_is_sub_split_on_whitespace():
-    big_section = " ".join(["alpha"] * 80)
+def test_strict_cap_single_overlong_section_is_sub_split_on_whitespace(monkeypatch):
+    # Override tokenizer in nlp to treat characters as tokens for testing character fallback
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(nlp, "num_tokens_from_string", char_count_tokens)
+
+    big_section = "a" * 80  # unbroken, token-dense string
     chunks = _nonempty(naive_merge([big_section], chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
     assert len(chunks) >= 2
-    assert all(_tok(c) <= 50 for c in chunks)
-    assert "".join(chunks).split() == ["alpha"] * 80
+    assert all(char_count_tokens(c) <= 50 for c in chunks)
+    assert "".join(chunks) == big_section
 
 
 @pytest.mark.p2
