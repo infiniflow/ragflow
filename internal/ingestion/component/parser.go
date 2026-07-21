@@ -298,6 +298,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
 }
@@ -310,6 +311,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "pages":          []schema.Page (sorted by PageNumber),
 //	  "name":           string (from inputs["doc_id"]),
 //	  "output_format": "text",
+//	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
 //	}
@@ -470,7 +472,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		return nil, fmt.Errorf("Parser: %w", err)
 	}
 	sortPagesByNumber(parsed)
-	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
+	lang, _ := getString(inputs, "lang")
+	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
