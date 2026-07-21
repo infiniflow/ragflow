@@ -270,6 +270,18 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 			indexName := fmt.Sprintf("ragflow_%s", lockedKB.TenantID)
 			if *pagerankUpdate > 0 {
 				err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": lockedKB.ID}, map[string]interface{}{common.PAGERANK_FLD: *pagerankUpdate}, indexName, lockedKB.ID)
+	txCode := common.CodeSuccess
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, kb.ID, tenantID)
+		if authErr != nil {
+			txCode = code
+			return authErr
+		}
+
+		if pagerankUpdate != nil {
+			indexName := fmt.Sprintf("ragflow_%s", lockedKB.TenantID)
+			if *pagerankUpdate > 0 {
+				err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": lockedKB.ID}, map[string]interface{}{common.PAGERANK_FLD: *pagerankUpdate}, indexName, lockedKB.ID)
 			} else {
 				err = d.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, lockedKB.ID)
 			}
@@ -293,21 +305,12 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 			}
 		}
 
-		updatedKB = &entity.Knowledgebase{}
-		if err = tx.Where("id = ? AND status = ?", lockedKB.ID, string(entity.StatusValid)).First(updatedKB).Error; err != nil {
-			txCode = common.CodeDataError
-			return errors.New("Dataset updated failed")
-		}
-
-		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(tx, lockedKB.ID)
-		if err != nil {
-			txCode = common.CodeServerError
-			return errors.New("Database operation failed")
-		}
-
 		return nil
 	})
 	if err != nil {
+		if txCode == common.CodeSuccess {
+			txCode = common.CodeServerError
+		}
 		return nil, txCode, err
 	}
 
