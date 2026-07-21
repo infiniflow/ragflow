@@ -52,6 +52,26 @@ func (v *VolcEngine) Name() string {
 	return "volcengine"
 }
 
+// getAPIKey extracts the actual API key from VolcEngine's stored format.
+// VolcEngine stores the api_key as a JSON string like:
+//
+//	{"ark_api_key": "...", "endpoint_id": "..."}
+//
+// Falls back to the raw key string if JSON parsing fails.
+func (v *VolcEngine) getAPIKey(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	var volcConfig struct {
+		ArkAPIKey string `json:"ark_api_key"`
+	}
+	if err := json.Unmarshal([]byte(key), &volcConfig); err == nil && volcConfig.ArkAPIKey != "" {
+		return volcConfig.ArkAPIKey
+	}
+	return key
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -169,7 +189,7 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -375,7 +395,7 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -580,7 +600,7 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			}
 
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 			resp, err := v.baseModel.httpClient.Do(req)
 			if err != nil {
@@ -648,6 +668,81 @@ func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, a
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
+// volcengineModelData is a VolcEngine-specific model list item with
+// extra fields for model type inference.
+type volcengineModelData struct {
+	ID         string   `json:"id"`
+	Object     string   `json:"object"`
+	OwnedBy    string   `json:"owned_by"`
+	Status     string   `json:"status"`
+	Domain     string   `json:"domain"`
+	TaskType   []string `json:"task_type"`
+	Modalities struct {
+		InputModalities  []string `json:"input_modalities"`
+		OutputModalities []string `json:"output_modalities"`
+	} `json:"modalities"`
+}
+
+// volcengineModelList is the VolcEngine-specific model list response.
+type volcengineModelList struct {
+	Object string                `json:"object"`
+	Models []volcengineModelData `json:"data"`
+}
+
+// inferVolcengineModelTypes infers model types from a VolcEngine model's
+// domain, task_type, and modalities fields.
+func inferVolcengineModelTypes(m volcengineModelData) []string {
+	var types []string
+	outputModalities := m.Modalities.OutputModalities
+	inputModalities := m.Modalities.InputModalities
+
+	if m.Domain == "Embedding" {
+		types = append(types, "embedding")
+		return types
+	}
+
+	taskSet := make(map[string]bool, len(m.TaskType))
+	for _, t := range m.TaskType {
+		taskSet[t] = true
+	}
+	if taskSet["TextEmbedding"] || taskSet["ImageEmbedding"] {
+		types = append(types, "embedding")
+		return types
+	}
+
+	for _, out := range outputModalities {
+		switch out {
+		case "text":
+			types = append(types, "chat")
+		case "embeddings":
+			types = append(types, "embedding")
+		case "audio":
+			types = append(types, "tts")
+		}
+	}
+	for _, in := range inputModalities {
+		switch in {
+		case "image":
+			for _, out := range outputModalities {
+				if out == "text" {
+					types = append(types, "image2text")
+				}
+			}
+		case "audio":
+			for _, out := range outputModalities {
+				if out == "text" {
+					types = append(types, "speech2text")
+				}
+			}
+		}
+	}
+
+	if len(types) == 0 {
+		types = append(types, "chat")
+	}
+	return types
+}
+
 func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -657,16 +752,13 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
+
 	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), modelsSuffix)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -676,7 +768,7 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -693,13 +785,44 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	// Parse response
-	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	// Parse VolcEngine-specific response with extra fields
+	var volcList volcengineModelList
+	if err = json.Unmarshal(body, &volcList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return ParseListModel(modelList), nil
+	// Convert to standard ModelList for enrichment from static config
+	var standardModels []ModelListItem
+	volcModelInfo := make(map[string]volcengineModelData)
+	for _, m := range volcList.Models {
+		if m.Status == "Shutdown" {
+			continue
+		}
+		volcModelInfo[m.ID] = m
+		standardModels = append(standardModels, ModelListItem{
+			ID:      m.ID,
+			Object:  m.Object,
+			OwnedBy: m.OwnedBy,
+		})
+	}
+
+	if len(standardModels) == 0 {
+		return []ListModelResponse{}, nil
+	}
+
+	enrichedModels := ParseListModel(ModelList{
+		Object: volcList.Object,
+		Models: standardModels,
+	})
+
+	// Override model_types with VolcEngine-specific inference
+	for i := range enrichedModels {
+		if vm, ok := volcModelInfo[enrichedModels[i].Name]; ok {
+			enrichedModels[i].ModelTypes = inferVolcengineModelTypes(vm)
+		}
+	}
+
+	return enrichedModels, nil
 }
 
 func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -726,7 +849,7 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
