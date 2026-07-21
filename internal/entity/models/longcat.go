@@ -303,8 +303,8 @@ type longCatModelInfo struct {
 }
 
 type longCatListModelsResponse struct {
-	Data  []DSModel   `json:"data"`
-	Error interface{} `json:"error"`
+	Data  []ModelListItem `json:"data"`
+	Error interface{}     `json:"error"`
 }
 
 const longCatMaxListModelsResponseBytes = 1 << 20

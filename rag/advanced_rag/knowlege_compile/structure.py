@@ -110,10 +110,7 @@ class PooledChatModel:
 def _struct_normalize_kind(kind) -> str:
     if not isinstance(kind, str):
         return ""
-    normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
-        return "timeline"
-    return normalized
+    return kind.strip().lower().replace("-", "_")
 
 
 def _struct_localize(value, language: str = "en") -> str:
@@ -1869,6 +1866,7 @@ async def _struct_rebuild_graph_json(
         [kb_id],
     )
     rows = settings.docStoreConn.get_fields(res, fields)
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
@@ -1886,6 +1884,86 @@ async def _struct_rebuild_graph_json(
         "entities": _struct_merge_graph_entities(entities),
         "relations": relations,
     }
+
+
+async def cleanup_timeline_isolated_entities(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    compilation_template_id: str | None = None,
+) -> int:
+    """Remove timeline entity rows that are not used by any relation.
+
+    This runs after all structure flushes for the document have completed;
+    otherwise an entity can look isolated in one flush and be referenced by a
+    relation from a later flush. The cleanup is intentionally limited to the
+    ``timeline`` compile kind.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    fields = [
+        "content_with_weight",
+        "knowledge_graph_kwd",
+        "from_entity_kwd",
+        "to_entity_kwd",
+    ]
+    condition: dict = {
+        "doc_id": [doc_id],
+        "compile_kwd": ["timeline"],
+        "knowledge_graph_kwd": ["entity", "relation"],
+    }
+    if compilation_template_id:
+        condition["compilation_template_ids"] = [compilation_template_id]
+
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        condition,
+        [],
+        OrderByExpr(),
+        0,
+        10000,
+        index,
+        [kb_id],
+    )
+    rows = settings.docStoreConn.get_fields(res, fields) or {}
+    connected_names: set[str] = set()
+    for row in rows.values():
+        if row.get("knowledge_graph_kwd") != "relation":
+            continue
+        edge = _chain_extract_edge(row)
+        if edge is not None:
+            connected_names.update(name.casefold() for name in edge if name)
+
+    orphan_ids = [row_id for row_id, row in rows.items() if row.get("knowledge_graph_kwd") == "entity" and _struct_entity_name(row).casefold() not in connected_names]
+    if orphan_ids:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"id": orphan_ids},
+            index,
+            kb_id,
+        )
+        logging.info(
+            "structure graph: removed %d isolated timeline entity row(s) for doc=%s template=%s",
+            len(orphan_ids),
+            doc_id,
+            compilation_template_id or "legacy",
+        )
+
+    # Refresh the compact graph after source-row cleanup. This also handles
+    # the no-relation case, where every timeline entity is isolated.
+    await rebuild_structure_graph_json(
+        tenant_id,
+        kb_id,
+        doc_id,
+        "timeline",
+        compilation_template_id,
+    )
+    return len(orphan_ids)
 
 
 async def _struct_upsert_graph_json(
@@ -2423,5 +2501,6 @@ async def merge_compiled_structures(
 __all__ = [
     "compile_structure_from_text",
     "merge_compiled_structures",
+    "cleanup_timeline_isolated_entities",
     "rebuild_structure_graph_json",
 ]

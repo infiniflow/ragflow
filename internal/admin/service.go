@@ -1649,9 +1649,7 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
-
-	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
-	return CheckLicense()
+	return UpdateServer(message.ServerName, status)
 }
 
 // InitDefaultAdmin initialize default admin user

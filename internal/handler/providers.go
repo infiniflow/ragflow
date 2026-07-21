@@ -301,7 +301,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, req.BaseURL, userID)
+	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, req.BaseURL, req.InstanceID, userID, service.ListModelNames(req.ModelInfo))
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -334,9 +334,9 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 	apikey, _ := instanceInfo["api_key"].(string)
 	region, _ := instanceInfo["region"].(string)
 	baseURL, _ := instanceInfo["base_url"].(string)
+	instanceID, _ := instanceInfo["id"].(string)
 
-	// Get tenant ID from user
-	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, baseURL, userID)
+	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, baseURL, instanceID, userID, nil)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return

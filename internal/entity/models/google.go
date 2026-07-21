@@ -26,12 +26,12 @@ import (
 )
 
 type googleModelPage struct {
-	items         []DSModel
+	items         []ModelListItem
 	nextPageToken string
 }
 
 func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]ListModelResponse, error) {
-	var models []DSModel
+	var models []ModelListItem
 	pageToken := ""
 
 	for {
@@ -60,14 +60,14 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 			return googleModelPage{}, err
 		}
 
-		var modelNames []DSModel
+		var modelNames []ModelListItem
 		for _, m := range models.Items {
 			modelName := strings.TrimSpace(m.DisplayName)
 			if modelName == "" {
 				modelName = strings.TrimSpace(m.Name)
 			}
 			if modelName != "" {
-				modelNames = append(modelNames, DSModel{
+				modelNames = append(modelNames, ModelListItem{
 					ID:      modelName,
 					OwnedBy: "Google",
 				})

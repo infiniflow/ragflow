@@ -96,6 +96,17 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 				"number_of_shards":   1,
 				"number_of_replicas": 0,
 			},
+			"mappings": map[string]interface{}{
+				"properties": map[string]interface{}{
+					// tag_feas must be an object of numeric values (the
+					// "rank_features" ES type) so tag-based ranking works and
+					// inserts succeed. Without this, dynamic mapping could
+					// infer an incompatible type when a JSON string is sent.
+					"tag_feas": map[string]interface{}{
+						"type": "rank_features",
+					},
+				},
+			},
 		}
 	}
 
@@ -222,10 +233,38 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 		return nil, fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	// Check for errors in bulk response
+	// Check for errors in bulk response. ES reports a 200 at the
+	// top level even when individual bulk items fail, so we must
+	// inspect the items and surface the reasons instead of returning
+	// success while the chunks were silently dropped.
 	if errors, ok := bulkResponse["errors"].(bool); ok && errors {
-		common.Warn("Bulk request had some errors")
-		// Could iterate through items to find specific errors if needed
+		var reasons []string
+		if items, ok := bulkResponse["items"].([]interface{}); ok {
+			for _, it := range items {
+				im, ok := it.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, op := range im {
+					om, ok := op.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if errObj, ok := om["error"].(map[string]interface{}); ok {
+						if reason, ok := errObj["reason"].(string); ok && reason != "" {
+							reasons = append(reasons, reason)
+						}
+					}
+				}
+			}
+		}
+		if len(reasons) > 5 {
+			reasons = reasons[:5]
+		}
+		common.Error("Elasticsearch bulk request had item errors",
+			fmt.Errorf("index %s: %d failed items; first reasons: %v", baseName, len(reasons), reasons))
+		return nil, fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first reasons: %v",
+			len(reasons), baseName, reasons)
 	}
 
 	common.Info("ElasticsearchConnection.InsertChunks result", zap.String("index_name", baseName), zap.Int("count", len(chunks)))
@@ -660,7 +699,7 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 			sanitized := sanitizeString(val)
 			params[fmt.Sprintf("pp_%s", k)] = sanitized
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
-		case int, float64:
+		case int, int8, int16, int32, int64, float32, float64:
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=%v;", k, val))
 		case []interface{}:
 			params[fmt.Sprintf("pp_%s", k)] = val
@@ -669,6 +708,9 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 	}
 
 	scriptSource := strings.Join(scripts, "")
+	if scriptSource == "" {
+		return fmt.Errorf("no supported update fields for update by query")
+	}
 
 	// Build update by query body
 	updateBody := map[string]interface{}{

@@ -42,7 +42,6 @@ export function useDefaultParserValues() {
       metadata: [],
       built_in_metadata: [],
       enable_metadata: false,
-      compilation_template_group_id: [],
     };
 
     return defaultParserValues as IParserConfig;

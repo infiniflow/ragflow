@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +36,6 @@ import (
 	_ "image/gif"
 	_ "image/png"
 
-	"github.com/cespare/xxhash/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -45,6 +43,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
@@ -88,7 +87,7 @@ type ChunkService struct {
 	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
 	// uses service.DocumentService.StartParseDocuments; tests inject a fake
 	// to avoid the MQ publisher.
-	startParseDocumentsFunc func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts service.StartParseOptions) error
+	startParseDocumentsFunc func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error
 	// cancelIngestionTaskFunc overrides the document-parsing cancellation.
 	// Production uses service.DocumentService.CancelDocParse; tests inject
 	// a fake to avoid the MQ publisher.
@@ -603,7 +602,7 @@ const (
 func (s *ChunkService) cancelAllTasksOfDoc(doc *entity.Document) error {
 	cancel := s.cancelIngestionTaskFunc
 	if cancel == nil {
-		cancel = service.NewDocumentService().CancelDocParse
+		cancel = document.NewDocumentService().CancelDocParse
 	}
 	return cancel(doc)
 }
@@ -749,13 +748,13 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 
 	// Batch pre-check: refuse the whole request if any document's ingestion
 	// task is non-terminal (RUNNING/STOPPING), so we never partially clean.
-	if err := (service.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
+	if err := (document.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
 		return nil, common.CodeDataError, err
 	}
 
 	startParse := s.startParseDocumentsFunc
 	if startParse == nil {
-		docSvc := service.NewDocumentService()
+		docSvc := document.NewDocumentService()
 		startParse = docSvc.StartParseDocuments
 	}
 
@@ -763,7 +762,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 
 	for _, docID := range docIDs {
 		doc := docByID[docID]
-		if err := startParse(doc, kb, userID, service.StartParseOptions{RerunWithDelete: true}); err != nil {
+		if err := startParse(doc, kb, userID, document.StartParseOptions{RerunWithDelete: true}); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -1280,7 +1279,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 		}
 	}
 
-	chunkID := strconv.FormatUint(xxhash.Sum64([]byte(req.Content+req.DocumentID)), 16)
+	chunkID := common.ChunkID(req.DocumentID, req.Content)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	contentLtks, err := s.tokenize(req.Content)
 	if err != nil {
