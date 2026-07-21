@@ -227,6 +227,156 @@ func TestHierarchyTitleChunker_InvokeDeterministic(t *testing.T) {
 // preceding text run on the first non-text and is a no-op for the next
 // non-text, yielding [..., N1, N2, run, ...]; the old loop flushed the
 // trailing run early, yielding [..., N1, run, N2].
+// TestHierarchyTitleChunker_ColonTitlePromotion verifies that a line
+// ending with colon, having sentence-ending punctuation before it, and
+// at least 32 chars between them, is promoted to heading level (mirroring
+// Python make_colon_as_title intent). Two colon headings produce 2 chunks
+// while without the fix all text would merge into 1 chunk.
+func TestHierarchyTitleChunker_ColonTitlePromotion(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}}, // won't match our plain text
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Introductory section providing background. The scope and purpose of this document are defined as follows:", "doc_type_kwd": "text"},
+		{"text": "Body one.", "doc_type_kwd": "text"},
+		{"text": "Another section continuing the discussion. The key provisions are outlined below:", "doc_type_kwd": "text"},
+		{"text": "Body two.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without fix: 1 chunk (all body). With fix: 2 chunks (colon heading + body each).
+	if len(chunks) != 2 {
+		t.Fatalf("len(chunks) = %d, want 2 (colon titles should each produce a chunk)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_ColonTitleShortLine_Negative verifies that
+// short colon-ended lines (e.g. "Note:") are NOT promoted, avoiding
+// false positives.
+func TestHierarchyTitleChunker_ColonTitleShortLine_Negative(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Note:", "doc_type_kwd": "text"},
+		{"text": "Body text.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Short colon line must NOT be promoted: all body → 1 chunk.
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (short colon line must not be promoted)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_ShortNumericLineFilter verifies that
+// purely numeric short lines are filtered to body level even when
+// they match a heading regex (mirroring Python tree_merge's
+// line filter: len(t.split("@")[0].strip()) > 1 + not purely numeric).
+func TestHierarchyTitleChunker_ShortNumericLineFilter(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^[0-9]+$`}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "1", "doc_type_kwd": "text"},
+		{"text": "Introduction paragraph.", "doc_type_kwd": "text"},
+		{"text": "2", "doc_type_kwd": "text"},
+		{"text": "Methodology paragraph.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without fix: "1" and "2" match ^[0-9]+$ → 2 chunks
+	// With fix: "1" and "2" are purely numeric → filtered to body → 1 chunk
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (purely numeric lines filtered to body)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_CKTypeHeadingFallback verifies that
+// records with ck_type "heading" (from office_oxide DOCX parsing)
+// are treated as heading nodes in the tree, even when their text
+// doesn't match any regex pattern. Without the fix, such records
+// are treated as body text — all content merges into one chunk.
+func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}, {`^## `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Introduction", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Intro body.", "doc_type_kwd": "text"},
+		{"text": "Background", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Background body.", "doc_type_kwd": "text"},
+		{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Final words.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.docx",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without the fix: 1 chunk (all text merged as body under root).
+	// With the fix: 3 chunks (one per heading + its body).
+	if len(chunks) != 3 {
+		t.Fatalf("len(chunks) = %d, want 3 (3 ck_type=headings should produce 3 chunks)", len(chunks))
+	}
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if text == "" {
+			t.Error("chunk text is empty")
+		}
+	}
+}
+
+// TestHierarchyTitleChunker_ConsecutiveNonTextOrder pins Gap G: two
 func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	c, err := NewHierarchyTitleChunker(map[string]any{
 		"hierarchy": 1,

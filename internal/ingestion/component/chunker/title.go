@@ -221,6 +221,7 @@ var (
 	notTitleException = regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+条`)
 	notTitlePunct     = regexp.MustCompile(`[,;，。；！!]`)
 	layoutHeadingRe   = regexp.MustCompile(`(?i)(section|title|head)`)
+	numericOnly       = regexp.MustCompile(`^[0-9]+$`)
 )
 
 // notTitle mirrors rag/nlp.not_title. Returns true when the line looks
@@ -271,6 +272,29 @@ func matchLayoutLevel(text, layout string, fallbackLevel int) int {
 //     BODY_LEVEL.
 //
 // fallback_level is len(selected_group) + 1, exactly as in python.
+// isColonTitle mirrors Python make_colon_as_title intent: returns true
+// when a line ends with colon, has sentence-ending punctuation before
+// the colon, and the text between them is at least 32 runes long.
+func isColonTitle(s string) bool {
+	if s == "" {
+		return false
+	}
+	if !strings.HasSuffix(s, ":") && !strings.HasSuffix(s, "：") {
+		return false
+	}
+	body := strings.TrimSuffix(s, ":")
+	body = strings.TrimSuffix(body, "：")
+	if body == s {
+		return false
+	}
+	lastPunct := strings.LastIndexAny(body, "。？！!?;；.")
+	if lastPunct < 0 {
+		return false
+	}
+	between := strings.TrimSpace(body[lastPunct+1:])
+	return utf8.RuneCountInString(between) >= 32
+}
+
 func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 	lines := make([]string, len(records))
 	for i, r := range records {
@@ -284,8 +308,26 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = bodyLevel
 			continue
 		}
+		// Python tree_merge short/numeric line filter:
+		// sections = [s for s in sections if len(s.split("@")[0].strip()) > 1
+		//             and not re.match(r"[0-9]+$", s.split("@")[0].strip())]
+		if text := beforeAt(rec.text); len(text) <= 1 || numericOnly.MatchString(text) {
+			out[i] = bodyLevel
+			continue
+		}
 		if lvl := matchRegexLevel(rec.text, group); lvl != 0 {
 			out[i] = lvl
+			continue
+		}
+		if rec.ckType == "heading" {
+			out[i] = fallbackLevel
+			continue
+		}
+		// Python make_colon_as_title: promote lines ending with colon
+		// that have sentence-ending punctuation before it and at least
+		// 32 chars between the punctuation and the colon.
+		if text := beforeAt(rec.text); isColonTitle(text) {
+			out[i] = fallbackLevel
 			continue
 		}
 		out[i] = matchLayoutLevel(rec.text, rec.layout, fallbackLevel)
@@ -329,6 +371,7 @@ type lineRecord struct {
 	docType    string
 	imgID      *string
 	layout     string
+	ckType     string
 	pdfPos     []map[string]any
 	parentMeta map[string]any
 }
