@@ -306,10 +306,7 @@ function buildLocalConfig(
         instance_name: values.instance_name,
         llm_factory: llmFactory,
         model_info: buildModelInfoFromValues(values),
-        // Backend create/verify endpoints read `base_url`. Keep `api_base`
-        // for backward compatibility with older clients / payload splitters.
         base_url: values.base_url,
-        api_base: values.base_url,
         api_key: apiKey,
       };
     },

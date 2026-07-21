@@ -39,7 +39,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'api_base',
+        name: 'base_url',
         label: 'addLlmBaseUrl',
         type: 'inputSelect',
         required: true,
@@ -67,7 +67,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     ],
     verifyTransform: (values) => ({
       apiKey: values.api_key,
-      baseUrl: values.api_base,
+      baseUrl: values.base_url,
       modelInfo: [],
     }),
     submitTransform: (values) => {
@@ -77,8 +77,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.AzureOpenAI,
-        base_url: values.api_base,
-        api_base: values.api_base,
+        base_url: values.base_url,
         api_key: apiKey,
         model_info: [],
       };
@@ -465,7 +464,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.OpenDataLoader,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },
@@ -544,7 +543,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.PaddleOCR,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },
@@ -639,7 +638,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.MinerU,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },

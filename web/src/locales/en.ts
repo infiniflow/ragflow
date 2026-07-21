@@ -517,6 +517,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       graph: 'Graph',
       graphPlaceholder: 'Graph view placeholder',
       llmWiki: 'LLM Wiki',
+      navTree: 'Tree',
       contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
@@ -527,6 +528,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       directoryRule: 'Rule',
       directoryRulePlaceholder: 'Input',
       selectArtifact: 'Select an item from the contents to view details',
+      searchEntity: 'Search entity',
       sourceDocuments: 'Source documents',
       compilationTitleSuffix: "' dataset",
       name: 'Name',
@@ -1144,7 +1146,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       preview: 'Preview',
       embedded: 'Embedded',
       serviceApiEndpoint: 'Service API endpoint',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       apiReference: 'API documents',
       dateRange: 'Date range:',
       backendServiceApi: 'API server',
@@ -1169,9 +1171,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Embed the following iframe into your website at the desired location',
       partialTitle: 'Partial embed',
       extensionTitle: 'Chrome extension',
-      tokenError: 'Please create API KEY first.',
+      tokenError: 'Please create API Key first.',
       betaError:
-        'Please acquire a RAGFlow API KEY from the System Settings page first.',
+        'Please acquire a RAGFlow API Key from the System Settings page first.',
       searching: 'Searching...',
       parsing: 'Parsing',
       uploading: 'Uploading',
@@ -1202,8 +1204,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
-        'If an API KEY is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
-      tavilyApiKeyMessage: 'Please enter your Tavily API KEY',
+        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
@@ -1236,8 +1238,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     setting: {
       Verify: 'Verify',
-      keyValid: 'Your API KEY is valid.',
-      keyInvalid: 'Your API KEY is invalid.',
+      keyValid: 'Your API Key is valid.',
+      keyInvalid: 'Your API Key is invalid.',
       enableToolCall: 'Enable tool call',
       enableToolCallTip:
         'Allow this model to call tools when the selected model type supports tool calling.',
@@ -1571,9 +1573,9 @@ Example: Virtual Hosted Style`,
       restApiRequestDelayTip:
         'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
       restApiValidationApiKeyRequired:
-        'API KEY is required when Auth Type is API KEY (Header).',
+        'API Key is required when Auth Type is API Key (Header).',
       restApiValidationApiKeyHeaderNameRequired:
-        'API KEY header name is required when Auth Type is API KEY (Header).',
+        'API Key header name is required when Auth Type is API Key (Header).',
       restApiValidationBearerTokenRequired:
         'Bearer token is required when Auth Type is Bearer Token.',
       restApiValidationBasicUsernameRequired:
@@ -1755,15 +1757,15 @@ Example: Virtual Hosted Style`,
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
-      apiKey: 'API KEY',
-      apiKeyMessage: 'Please enter the API KEY',
+      apiKey: 'API Key',
+      apiKeyMessage: 'Please enter the API Key',
       apiKeyTip:
-        'The API KEY can be obtained by registering the corresponding LLM supplier.',
+        'The API Key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
       hideModels: 'Hide models',
       baseUrl: 'Base URL',
       baseUrlTip:
-        'If your API KEY is from OpenAI, just ignore it. Any other intermediate providers will give this Base URL with the API KEY.',
+        'If your API Key is from OpenAI, just ignore it. Any other intermediate providers will give this Base URL with the API Key.',
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1928,14 +1930,14 @@ Example: Virtual Hosted Style`,
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'please input your APIKey',
       yiyanModelNameMessage: 'Please input model name',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Please input your API KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Please input your API Key',
       addyiyanSK: 'yiyan SECRET KEY',
       yiyanSKMessage: 'Please input your SECRET KEY',
       FishAudioModelNameMessage:
         'Please give your speech synthesis model a name',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Please input your API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Please input your API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Please input the Reference ID (leave blank to use the default model).',
@@ -2006,7 +2008,7 @@ Example: Virtual Hosted Style`,
         baseUrlMessage: 'Please input the Base URL',
         baseUrlPlaceholder:
           'For SoMark API, use https://somark.cn/api/v1 in mainland China; use https://somark.ai/api/v1 outside mainland China (including Taiwan, China; Hong Kong, China; Macau, China; and overseas). For self-hosted deployment, use your local Base URL',
-        apiKey: 'API KEY',
+        apiKey: 'API Key',
         apiKeyPlaceholder:
           'Required for SoMark API; leave blank for self-hosted deployment',
         verifyPassed: 'Verified',
@@ -2075,6 +2077,20 @@ Example: Virtual Hosted Style`,
         'Are you sure you want to delete all skills? This action cannot be undone.',
       deleteSkillTitle: 'Delete skill',
       deleteSkillDescription: 'Are you sure you want to delete this skill?',
+    },
+    datasetNav: {
+      title: 'Navigation tree',
+      empty: 'No navigation nodes',
+      loading: 'Loading...',
+      selectNode: 'Select a child node to view details',
+      noDescription: 'No description',
+      docCount: '{{count}} documents',
+      deleteAllTitle: 'Delete navigation tree',
+      deleteAllDescription:
+        'Are you sure you want to delete the entire navigation tree? This action cannot be undone.',
+      deleteNodeTitle: 'Delete node',
+      deleteNodeDescription:
+        'Are you sure you want to delete this node and its children?',
     },
     message: {
       registered: 'Registered!',
@@ -2364,7 +2380,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       keenableSearch: 'Keenable',
       keenableSearchDescription:
-        'A web search component powered by Keenable, a search API built for AI agents. Works without an API KEY by default (keyless free tier); add a key to lift rate limits.',
+        'A web search component powered by Keenable, a search API built for AI agents. Works without an API Key by default (keyless free tier); add a key to lift rate limits.',
       keenableMode: 'Search mode',
       keenableSite: 'Site',
       keenableApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
@@ -2403,8 +2419,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
       bGPT: 'BGPT',
       bGPTDescription:
-        'Search scientific papers via BGPT and return structured evidence from full-text studies: methods, sample sizes, limitations, conflicts of interest, data availability, blind spots, and falsification prompts. Optional API KEY after the free tier.',
-      bgptApiKey: 'API KEY',
+        'Search scientific papers via BGPT and return structured evidence from full-text studies: methods, sample sizes, limitations, conflicts of interest, data availability, blind spots, and falsification prompts. Optional API Key after the free tier.',
+      bgptApiKey: 'API Key',
       bgptApiKeyTip:
         'Optional. Leave blank for the free tier (first 50 results).',
       bgptDaysBack: 'Days back',
@@ -2421,11 +2437,11 @@ Best for: Documents with flowing, contextually connected content — such as boo
       relevance: 'Relevance',
       google: 'Google',
       googleDescription:
-        'A component that searches from https://www.google.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API KEY from serpapi.com.',
+        'A component that searches from https://www.google.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API Key from serpapi.com.',
       bing: 'Bing',
       bingDescription:
-        'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API KEY from microsoft.com.',
-      apiKey: 'API KEY',
+        'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API Key from microsoft.com.',
+      apiKey: 'API Key',
       country: 'Country & region',
       language: 'Language',
       googleScholar: 'Google Scholar',
@@ -2504,7 +2520,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'A component that retrieves weather information, such as temperature and air quality, from https://www.qweather.com/.',
       lang: 'Language',
       type: 'Type',
-      webApiKey: 'Web API KEY',
+      webApiKey: 'Web API Key',
       userType: 'User type',
       timePeriod: 'Time period',
       qWeatherLangOptions: {
@@ -3140,7 +3156,7 @@ Important structured information may include: names, dates, locations, events, k
         bodyTemplate: 'Body template',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'API KEY',
+        apiKey: 'API Key',
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',

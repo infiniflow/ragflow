@@ -105,7 +105,7 @@ function pickDefaultUrl(
 
 /**
  * Fetch the catalog of available providers and derive the
- * `base_url` / `api_base` dropdown options for the current provider.
+ * `base_url` dropdown options for the current provider.
  * Used to pre-fill the URL field with the provider's default URL when
  * creating a new instance.
  */
@@ -157,7 +157,7 @@ export function useProviderBaseUrlOptions(providerName: string) {
  * lazy-loaded `showProviderInstance` details, and the provider's default
  * base URL.
  *
- * - Draft: empty form, with `base_url` / `api_base` pre-filled from the
+ * - Draft: empty form, with `base_url` pre-filled from the
  *   provider's `default` URL when available.
  * - Saved: prefer `instanceDetails` (which carries api_key / base_url);
  *   normalise api_key into the bare key plus any nested credential
@@ -176,7 +176,6 @@ export function useProviderInitialValues(
       const values: Record<string, any> = { instance_name: '' };
       if (defaultBaseUrl) {
         values.base_url = defaultBaseUrl;
-        values.api_base = defaultBaseUrl;
       }
       return values;
     }
@@ -200,10 +199,8 @@ export function useProviderInitialValues(
     }
     if (merged.base_url) {
       values.base_url = merged.base_url;
-      values.api_base = merged.base_url;
     } else if (defaultBaseUrl) {
       values.base_url = defaultBaseUrl;
-      values.api_base = defaultBaseUrl;
     }
     // The /providers/<p>/instances/<i> endpoint also returns `region`
     // for providers where it applies; surface it so the form / region
@@ -290,7 +287,7 @@ export function useFormResetOnDetailsLoad(
  *  maps provider-specific form field names (e.g. OpenDataLoader's
  *  `opendataloader_apiserver`) onto the `{ apiKey, baseUrl, modelInfo }`
  *  shape the verify endpoint expects. When absent the generic mapping
- *  (`values.api_key` / `values.base_url ?? values.api_base`) is used. */
+ *  (`values.api_key` / `values.base_url`) is used. */
 type VerifyTransform = (values: Record<string, any>) => {
   apiKey: string | object | Record<string, any>;
   baseUrl?: string;
@@ -503,7 +500,7 @@ export function useInstanceSaveState({
     // Provider-specific field mapping (e.g. OpenDataLoader's nested
     // `opendataloader_apiserver` / `opendataloader_api_key`). The
     // transform produces the canonical submit body shape
-    // (`instance_name`, `llm_factory`, `api_key`, `api_base`,
+    // (`instance_name`, `llm_factory`, `api_key`, `base_url`,
     // `model_info`); we then layer on the card's own state (typed /
     // edited name, model_info ref, update-only fields for saved cards).
     if (submitTransform) {
@@ -519,9 +516,8 @@ export function useInstanceSaveState({
           llm_factory: providerName,
           instance_name: trimmed,
           model_info: modelInfo,
-          // submitTransform historically emits api_base; backend create
-          // reads base_url. Map it here so draft Save all does not drop
-          // the URL (which then fails verify with "url cannot be None").
+          // Accept legacy api_base from older transforms so draft Save
+          // all does not drop the URL (which fails with "url cannot be None").
           base_url: transformed.base_url ?? transformed.api_base ?? '',
         };
       }
@@ -531,7 +527,7 @@ export function useInstanceSaveState({
         provider_name: providerName,
         instance_name: editedNameRef.current,
         id: resolvedId,
-        base_url: transformed.base_url ?? transformed.api_base ?? '',
+        base_url: transformed.base_url ?? '',
         region: values.region || 'default',
         model_info: modelInfo,
         verify: false,
@@ -545,7 +541,7 @@ export function useInstanceSaveState({
         llm_factory: providerName,
         instance_name: trimmed,
         api_key: buildApiKeyValue(values) ?? '',
-        base_url: values.base_url ?? values.api_base,
+        base_url: values.base_url,
       };
       if (modelInfoRef.current.length > 0) {
         payload.model_info = modelInfoRef.current;
@@ -562,7 +558,7 @@ export function useInstanceSaveState({
       instance_name: editedNameRef.current,
       id: resolvedId,
       api_key: apiKeyValue ?? '',
-      base_url: values.base_url ?? values.api_base,
+      base_url: values.base_url,
       region: values.region || 'default',
       model_info: modelInfoRef.current.length > 0 ? modelInfoRef.current : [],
       verify: false,
@@ -596,7 +592,7 @@ export function useInstanceSaveState({
       instance_name: instanceName,
       id: resolvedId,
       api_key: buildApiKeyValue(initialValues),
-      base_url: initialValues.base_url ?? initialValues.api_base,
+      base_url: initialValues.base_url,
       region: initialValues.region,
       // model_info baseline is `[]`; `markModelsEdited` rewrites it after
       // a model PATCH so the next top-save short-circuits. The first

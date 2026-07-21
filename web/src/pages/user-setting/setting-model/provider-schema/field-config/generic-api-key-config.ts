@@ -85,7 +85,6 @@ export const GenericApiKeyConfig: ProviderConfig = {
       instance_name: values.instance_name,
       api_key: apiKey,
       base_url: values.base_url || '',
-      api_base: values.base_url || '',
     };
   },
 };
