@@ -7,10 +7,10 @@ import (
 
 // Message represents a chat message with role and content
 //
-// Content is interface{} to support different formats:
-//   - string: plain text message (e.g., "Hello")
-//   - []interface{}: multimodal content array where each element is map[string]interface{}
-//     (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
+//	is interface{} to support different formats:
+//	 - string: plain text message (e.g., "Hello")
+//	 - []interface{}: multimodal content array where each element is map[string]interface{}
+//	   (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 type Message struct {
 	Role       string                   `json:"role"`
 	Content    interface{}              `json:"content"`
@@ -66,7 +66,7 @@ type ChatResponse struct {
 	Usage         *TokenUsage              `json:"usage,omitempty"`
 }
 
-// ChatUsage holds token usage split for one LLM call. Consumed by
+// TokenUsage holds token usage split for one LLM call. Consumed by
 // LLMBundle for accurate Langfuse reporting and run aggregation.
 // Mirrors Python's common.token_utils.usage_from_response() split.
 type TokenUsage struct {
@@ -130,9 +130,15 @@ type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
 }
 
+type ModelListItem struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by"`
+}
+
 type ModelList struct {
-	Object string    `json:"object"`
-	Models []DSModel `json:"data"`
+	Object string          `json:"object"`
+	Models []ModelListItem `json:"data"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints

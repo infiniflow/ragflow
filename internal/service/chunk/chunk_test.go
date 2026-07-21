@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"reflect"
 	"strings"
@@ -1361,9 +1362,9 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-	var calledOpts service.StartParseOptions
+	var calledOpts document.StartParseOptions
 	var calledDocID string
-	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts service.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
 		calledOpts = opts
 		calledDocID = doc.ID
 		return nil
@@ -1392,7 +1393,7 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 	insertChunkTestDoc(t, "doc-1", datasetID)
 
 	svc := newParseTestService(t)
-	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, service.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
 		return nil
 	}
 

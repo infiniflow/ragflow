@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
 	"reflect"
 	"sort"
@@ -1219,8 +1220,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			state.Sys["tenant_id"] = tid
 		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
-			fileSvc := NewFileService()
-			files, ferr := fileSvc.parseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
+			// Only used for ParseAgentUploads (read-only); nil DocRemover means
+			// this FileService MUST NOT be used for DeleteFiles.
+			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+			files, ferr := fileSvc.ParseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
@@ -1411,7 +1414,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-			return nil, fmt.Errorf("canvas invoke: %w: %w", ErrAgentStorageError, err)
+			return nil, fmt.Errorf("canvas invoke: %w", err)
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).

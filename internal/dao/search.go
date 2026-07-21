@@ -203,11 +203,18 @@ func (dao *SearchDAO) DeleteByID(tenantID, id string) error {
 
 // Accessible4Deletion checks if a search can be deleted by a specific user
 // Reference: Python search_service.py::accessible4deletion
-// Returns true if the search exists, is valid, and was created by the user
+// Returns true if the search exists, is valid, and was created by the user.
+// A missing or non-owned search returns (false, nil) so callers can distinguish
+// "not authorized" from a genuine database error (which is returned as the error).
 func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) (bool, error) {
-	var search entity.Search
-	err := DB.Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").First(&search).Error
-	return err == nil, err
+	var count int64
+	err := DB.Model(&entity.Search{}).
+		Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // GetByTenantIDAndID gets search by tenant ID and search ID
