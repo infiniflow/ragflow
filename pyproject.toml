@@ -130,7 +130,7 @@ dependencies = [
     "setuptools>=78.1.1,<81.0.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
-    "zhipuai==2.0.1",
+    "zai-sdk>=0.2.3,<1.0.0",
     "peewee>=3.17.1,<4.0.0",
     "langgraph==1.2.0",
     #    following modules aren't necessary
@@ -217,9 +217,6 @@ constraint-dependencies = [
     # through excessive resource consumption. (CVSS 8.9)
     # urllib3 < 2.7.0 is vulnerable, pulled in transitively via requests, minio, akshare, and others
     "urllib3>=2.7.0",
-
-
-
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
