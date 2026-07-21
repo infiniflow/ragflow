@@ -32,8 +32,6 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
 MAX_RETRIES = 3
-# Legacy alias. Kept so any stray import keeps working; new retry blocks should
-# reference MAX_RETRIES directly.
 ATTEMPT_TIME = MAX_RETRIES
 
 _PAGERANK_FEA_ADJUST_SCRIPT = """
@@ -756,6 +754,8 @@ class OSConnection(DocStoreConnection):
             except Exception as e:
                 logger.warning("OSConnection.delete got exception: " + str(e))
                 if re.search(r"(timeout|connection)", str(e).lower()):
+                    if attempt == MAX_RETRIES - 1:
+                        raise
                     time.sleep(2 ** attempt + 1)
                     continue
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):

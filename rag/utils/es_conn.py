@@ -28,8 +28,6 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 
 MAX_RETRIES = 3
-# Legacy alias. Kept so any stray import keeps working; new retry blocks should
-# reference MAX_RETRIES directly.
 ATTEMPT_TIME = MAX_RETRIES
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
