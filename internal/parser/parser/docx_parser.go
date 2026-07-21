@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
@@ -89,10 +90,11 @@ func (p *DOCXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	}
 
 	if p.outputFormat == "json" {
-		var sections []map[string]any
-		if irErr == nil {
-			sections = buildDOCXJSONSections(irJSON)
+		if irErr != nil {
+			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
 		}
+		var sections []map[string]any
+		sections = buildDOCXJSONSections(irJSON)
 		if len(sections) == 0 {
 			sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 		}
@@ -270,7 +272,7 @@ func docxIRTableToHTML(el docxIRElement) string {
 		sb.WriteString("<tr>")
 		for _, cell := range row.Cells {
 			sb.WriteString("<td>")
-			sb.WriteString(joinCellText(cell))
+			sb.WriteString(html.EscapeString(joinCellText(cell)))
 			sb.WriteString("</td>")
 		}
 		sb.WriteString("</tr>")

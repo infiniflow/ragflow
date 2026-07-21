@@ -288,7 +288,12 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 func decodeCTE(raw []byte, cte string) []byte {
 	switch strings.ToLower(strings.TrimSpace(cte)) {
 	case "base64":
-		d, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+		// Real-world MIME base64 is often line-wrapped (~76 chars per line).
+		// Remove all whitespace before decoding; base64.StdEncoding.DecodeString
+		// strictly rejects interior whitespace.
+		cleanRaw := bytes.ReplaceAll(raw, []byte("\n"), nil)
+		cleanRaw = bytes.ReplaceAll(cleanRaw, []byte("\r"), nil)
+		d, err := base64.StdEncoding.DecodeString(string(cleanRaw))
 		if err != nil {
 			return raw
 		}

@@ -122,6 +122,10 @@ func TestEmailParser_MsgNotSupported(t *testing.T) {
 func TestEmailParser_Base64Attachment(t *testing.T) {
 	attachmentContent := "Hello! This is the decoded content of the attachment."
 	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	// Simulate MIME line-wrapping (typically 76 chars per line).
+	if len(encoded) > 20 {
+		encoded = encoded[:20] + "\r\n" + encoded[20:]
+	}
 
 	boundary := "attachboundary"
 	raw := strings.Join([]string{
@@ -181,6 +185,10 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 	outerBoundary := "outermixed"
 	attachmentContent := "<html><body><h1>Bookmarks</h1><p>Test data</p></body></html>"
 	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	// Simulate MIME line-wrapping (typically 76 chars per line).
+	if len(encoded) > 20 {
+		encoded = encoded[:20] + "\r\n" + encoded[20:]
+	}
 
 	raw := strings.Join([]string{
 		"From: sender@test.com",

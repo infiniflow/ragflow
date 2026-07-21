@@ -32,9 +32,10 @@ import (
 //   - nil, error — provider manager uninitialized, provider unknown,
 //     or provider does not support custom base URLs
 func GetPreconfiguredDriver(driver string, baseURLOverride string) (ModelDriver, error) {
+	baseURLOverride = strings.TrimSpace(baseURLOverride)
 	if strings.EqualFold(driver, "dummy") {
 		baseURL := map[string]string(nil)
-		if strings.TrimSpace(baseURLOverride) != "" {
+		if baseURLOverride != "" {
 			baseURL = map[string]string{"default": strings.TrimRight(baseURLOverride, "/")}
 		}
 		return NewDummyModel(baseURL, URLSuffix{Chat: "chat/completions"}), nil
@@ -49,7 +50,7 @@ func GetPreconfiguredDriver(driver string, baseURLOverride string) (ModelDriver,
 		return nil, fmt.Errorf("provider %q is not configured", driver)
 	}
 	md := provider.ModelDriver
-	if strings.TrimSpace(baseURLOverride) != "" {
+	if baseURLOverride != "" {
 		md = md.NewInstance(map[string]string{
 			"default": strings.TrimRight(baseURLOverride, "/"),
 		})
