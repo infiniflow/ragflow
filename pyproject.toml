@@ -63,7 +63,7 @@ dependencies = [
     "json-repair==0.60.1",
     "langfuse>=4.0.1",
     "mammoth>=1.11.0",
-    "markdown==3.6",
+    "markdown>=3.8.1,<4.0.0",
     "markdown-to-json==2.1.1",
     "markdownify>=1.2.0",
     "mcp>=1.19.0",
