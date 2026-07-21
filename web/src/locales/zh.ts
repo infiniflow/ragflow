@@ -474,6 +474,7 @@ export default {
       directoryRulePlaceholder: '输入',
       entity: '实体',
       selectArtifact: '从目录中选择一个条目以查看详情',
+      searchEntity: '搜索实体',
       sourceDocuments: '来源文档',
       compilationTitleSuffix: '的数据集',
       files: '个文件',

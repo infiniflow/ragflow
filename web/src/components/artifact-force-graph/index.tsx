@@ -1,6 +1,6 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import {
   getNodeColor as defaultGetNodeColor,
@@ -27,6 +27,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   getNodeId = defaultGetNodeId,
   getNodeColor = defaultGetNodeColor,
   getNodeRadius = defaultGetNodeRadius,
+  highlightNodeId,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
@@ -52,13 +53,23 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
       .trim();
   }, []);
 
+  // Resolve the controlled id back to a node object reference (highlighting relies on the node's __neighbors/__links)
+  const pinnedNode = useMemo(
+    () =>
+      highlightNodeId
+        ? ((graphData.nodes.find((node) => node.id === highlightNodeId) ??
+            null) as ArtifactGraphNode | null)
+        : null,
+    [graphData, highlightNodeId],
+  );
+
   const {
     handleNodeHover,
     getNodeColor: nodeColor,
     getLinkColor,
     getLinkWidth,
     paintNode,
-  } = useGraphHighlight(getBaseLinkColor);
+  } = useGraphHighlight(getBaseLinkColor, pinnedNode);
 
   useEffect(() => {
     hasFittedRef.current = false;

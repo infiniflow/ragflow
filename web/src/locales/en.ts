@@ -528,6 +528,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       directoryRule: 'Rule',
       directoryRulePlaceholder: 'Input',
       selectArtifact: 'Select an item from the contents to view details',
+      searchEntity: 'Search entity',
       sourceDocuments: 'Source documents',
       compilationTitleSuffix: "' dataset",
       name: 'Name',

@@ -13,21 +13,27 @@ type PaintNodeFn = NonNullable<
   ComponentProps<typeof ForceGraph2D>['nodeCanvasObject']
 >;
 
-export const useGraphHighlight = (getBaseLinkColor: () => string) => {
+export const useGraphHighlight = (
+  getBaseLinkColor: () => string,
+  pinnedNode?: ArtifactGraphNode | null,
+) => {
   const [hoverNode, setHoverNode] = useState<ArtifactGraphNode | null>(null);
+
+  // Real hover takes precedence; falls back to the externally controlled pinned node when not hovering
+  const activeNode = hoverNode ?? pinnedNode ?? null;
 
   const highlightNodes = useMemo(() => {
     const nodes = new Set<ArtifactGraphNode>();
-    if (hoverNode) {
-      nodes.add(hoverNode);
-      hoverNode.__neighbors?.forEach((neighbor) => nodes.add(neighbor));
+    if (activeNode) {
+      nodes.add(activeNode);
+      activeNode.__neighbors?.forEach((neighbor) => nodes.add(neighbor));
     }
     return nodes;
-  }, [hoverNode]);
+  }, [activeNode]);
 
   const highlightLinks = useMemo(
-    () => new Set<ArtifactGraphLink>(hoverNode?.__links ?? []),
-    [hoverNode],
+    () => new Set<ArtifactGraphLink>(activeNode?.__links ?? []),
+    [activeNode],
   );
 
   const handleNodeHover = useCallback((node: ArtifactGraphNode | null) => {
@@ -36,20 +42,20 @@ export const useGraphHighlight = (getBaseLinkColor: () => string) => {
 
   const getNodeColor = useCallback(
     (node: ArtifactGraphNode) =>
-      hoverNode && !highlightNodes.has(node)
+      activeNode && !highlightNodes.has(node)
         ? withAlpha(node.__color, DimmedAlpha)
         : node.__color,
-    [hoverNode, highlightNodes],
+    [activeNode, highlightNodes],
   );
 
   const getLinkColor = useCallback(
     (link: ArtifactGraphLink) => {
       const baseColor = getBaseLinkColor();
-      return hoverNode && !highlightLinks.has(link)
+      return activeNode && !highlightLinks.has(link)
         ? withAlpha(baseColor, DimmedAlpha)
         : baseColor;
     },
-    [getBaseLinkColor, hoverNode, highlightLinks],
+    [getBaseLinkColor, activeNode, highlightLinks],
   );
 
   const getLinkWidth = useCallback(
@@ -61,7 +67,7 @@ export const useGraphHighlight = (getBaseLinkColor: () => string) => {
   const paintNode = useCallback<PaintNodeFn>(
     (node, ctx, globalScale) => {
       const dimmed =
-        hoverNode !== null && !highlightNodes.has(node as ArtifactGraphNode);
+        activeNode !== null && !highlightNodes.has(node as ArtifactGraphNode);
       if (dimmed) {
         ctx.globalAlpha = DimmedAlpha;
       }
@@ -70,7 +76,7 @@ export const useGraphHighlight = (getBaseLinkColor: () => string) => {
         ctx.globalAlpha = 1;
       }
     },
-    [highlightNodes, hoverNode],
+    [highlightNodes, activeNode],
   );
 
   return {

@@ -29,4 +29,6 @@ export interface ArtifactForceGraphProps<TNodeValue = IArtifactGraphEntity> {
     minWeight: number,
     maxWeight: number,
   ) => number;
+  /** Controlled highlighted node id (same id space as getNodeId output, slug by default); real hover takes precedence over this value */
+  highlightNodeId?: string | null;
 }
