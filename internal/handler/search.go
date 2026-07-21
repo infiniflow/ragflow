@@ -148,8 +148,8 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name" binding:"required"` // required field, max 255 bytes
-	Description *string `json:"description,omitempty"`   // optional description
+	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Description *string `json:"description,omitempty"` // optional description
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
@@ -329,7 +329,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		errMsg := err.Error()
 		switch errMsg {
 		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:

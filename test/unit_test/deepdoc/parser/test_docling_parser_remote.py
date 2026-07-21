@@ -83,15 +83,9 @@ def test_chunk_shape_helper_recognises_chunk_payloads(monkeypatch):
     """A response that is chunk-shaped (list, or dict with non-empty results/chunks)
     is classified as chunked regardless of which payload was sent."""
     module = _load_docling_parser(monkeypatch)
-    assert module.DoclingParser._looks_like_chunk_response(
-        [{"text": "chunk-1"}]
-    ) is True
-    assert module.DoclingParser._looks_like_chunk_response(
-        {"results": [{"text": "chunk-1"}, {"text": "chunk-2"}]}
-    ) is True
-    assert module.DoclingParser._looks_like_chunk_response(
-        {"chunks": [{"text": "chunk-1"}]}
-    ) is True
+    assert module.DoclingParser._looks_like_chunk_response([{"text": "chunk-1"}]) is True
+    assert module.DoclingParser._looks_like_chunk_response({"results": [{"text": "chunk-1"}, {"text": "chunk-2"}]}) is True
+    assert module.DoclingParser._looks_like_chunk_response({"chunks": [{"text": "chunk-1"}]}) is True
 
 
 @pytest.mark.p2

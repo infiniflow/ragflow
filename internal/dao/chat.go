@@ -184,7 +184,9 @@ func (dao *ChatDAO) ExistsByNameTenantStatus(name, tenantID, status string) (boo
 
 // Create creates a new chat/dialog
 func (dao *ChatDAO) Create(chat *entity.Chat) error {
-	return DB.Create(chat).Error
+	// Select("*") forces GORM to persist explicit zero values (e.g. similarity_threshold=0,
+	// vector_similarity_weight=0, top_n=0) instead of substituting the column defaults.
+	return DB.Select("*").Create(chat).Error
 }
 
 // UpdateByID updates a chat by ID
