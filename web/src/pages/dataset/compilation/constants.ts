@@ -1,5 +1,4 @@
 export enum ViewMode {
-  Graph = 'graph',
   LlmWiki = 'llm-wiki',
   Skills = 'skills',
 }

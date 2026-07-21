@@ -90,6 +90,21 @@ const svgIcons = [
   LLMFactory.RAGcon,
   LLMFactory.SoMark,
   LLMFactory.NewAPI,
+  LLMFactory.Astraflow,
+  LLMFactory.AstraflowCN,
+  LLMFactory.FuturMix,
+  LLMFactory.Xiaomi,
+  LLMFactory.YouDao,
+  LLMFactory.BAAI,
+  LLMFactory.NomicAI,
+  LLMFactory.SentenceTransformers,
+  LLMFactory.Grok,
+  LLMFactory.FastEmbed,
+  LLMFactory.HuaweiCloud,
+  LLMFactory.OrcaRouter,
+  LLMFactory.Qiniu,
+  LLMFactory.TokenHub,
+  LLMFactory.FunASR,
 ];
 
 export const LlmIcon = ({

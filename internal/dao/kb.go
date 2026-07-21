@@ -48,6 +48,11 @@ func IsNotFoundErr(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
+// IsDuplicateKeyErr returns true if the error is a unique-constraint violation.
+func IsDuplicateKeyErr(err error) bool {
+	return errors.Is(err, gorm.ErrDuplicatedKey)
+}
+
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
@@ -103,7 +108,7 @@ func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*entity.Knowledgebase, er
 // GetByName retrieves a knowledge base by name and tenant ID
 func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*entity.Knowledgebase, error) {
 	var kb entity.Knowledgebase
-	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
+	err := DB.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +172,7 @@ func (dao *KnowledgebaseDAO) Count(filters map[string]interface{}) (int64, error
 
 // GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
 // This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID string) ([]*entity.KnowledgebaseListItem, int64, error) {
+func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID, id, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
@@ -180,6 +185,14 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
 		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
 			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
+
+	if id != "" {
+		query = query.Where("knowledgebase.id = ?", id)
+	}
+
+	if name != "" {
+		query = query.Where("knowledgebase.name = ?", name)
+	}
 
 	if keywords != "" {
 		query = query.Where("LOWER(knowledgebase.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")

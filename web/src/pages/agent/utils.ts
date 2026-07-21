@@ -8,6 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
+import { getBackendLanguage } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -202,10 +203,10 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
-function transformParserParams(params: ParserFormSchemaType) {
+export function transformParserParams(params: ParserFormSchemaType) {
   const setups = params.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
-  >((pre, cur) => {
+  >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
@@ -318,15 +319,26 @@ function transformParserParams(params: ParserFormSchemaType) {
           break;
       }
 
-      pre[cur.fileFormat] = filteredSetup;
+      pre[cur.fileFormat] = {
+        ...filteredSetup,
+        order_index: index,
+      } as any;
     }
     return pre;
   }, {});
 
+  // The Go backend expects the setups map flattened into top-level params,
+  // while the Python backend reads them from the nested `setups` object.
+  // Default to the Python shape while the language probe is unresolved.
+  if (getBackendLanguage() === 'go') {
+    return { ...omit(params, ['setups']), ...setups };
+  }
   return { ...params, setups };
 }
 
-function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
+export function transformTokenChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -349,7 +361,9 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   };
 }
 
-function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
+export function transformTitleChunkerParams(
+  params: TitleChunkerFormSchemaType,
+) {
   const activeRules =
     (params.method === TitleChunkerMethod.Group
       ? params.groupRules
@@ -379,7 +393,7 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   };
 }
 
-function transformExtractorParams(params: ExtractorFormSchemaType) {
+export function transformExtractorParams(params: ExtractorFormSchemaType) {
   return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
 }
 

@@ -93,14 +93,10 @@ def _py_type_to_json(py_type: Any) -> dict[str, Any]:
 
 _PARAM_RE = re.compile(r"^\s*:param\s+(?P<name>\w+)\s*:\s*(?P<desc>.*?)\s*$")
 _GOOGLE_ARGS_HDR_RE = re.compile(r"^(Args|Arguments|Parameters)\s*:\s*$")
-_GOOGLE_SECTION_HDR_RE = re.compile(
-    r"^(Returns?|Yields?|Raises|Notes?|Examples?|Attributes?|Todo|See Also|Warning|Warnings|Tip)\s*:\s*$"
-)
+_GOOGLE_SECTION_HDR_RE = re.compile(r"^(Returns?|Yields?|Raises|Notes?|Examples?|Attributes?|Todo|See Also|Warning|Warnings|Tip)\s*:\s*$")
 # Google-style parameter line: leading indent, identifier, optional ``(type)``,
 # then ``: description``. The description can be empty (continuation lines fill it).
-_GOOGLE_PARAM_RE = re.compile(
-    r"^(?P<indent>\s+)(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<desc>.*)$"
-)
+_GOOGLE_PARAM_RE = re.compile(r"^(?P<indent>\s+)(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<desc>.*)$")
 
 
 def _parse_param_docs(docstring: str | None) -> tuple[str, dict[str, str]]:
@@ -269,10 +265,7 @@ def tool(
     # ``@tool`` (no parens) — ``fn`` is the function being decorated.
     if fn is not None:
         if not callable(fn):
-            raise TypeError(
-                "@tool used incorrectly. Use `@tool` or `@tool(timeout=N)`; "
-                f"got first positional argument of type {type(fn).__name__}."
-            )
+            raise TypeError(f"@tool used incorrectly. Use `@tool` or `@tool(timeout=N)`; got first positional argument of type {type(fn).__name__}.")
         return decorate(fn)
 
     # ``@tool(timeout=N)`` — return the decorator that will receive the function.
@@ -299,9 +292,7 @@ class FunctionToolSession:
         self.tools_map: dict[str, Callable[..., Any]] = {}
         for fn in tools:
             if not is_tool(fn):
-                raise TypeError(
-                    f"{getattr(fn, '__name__', fn)!r} is not a @tool-decorated callable"
-                )
+                raise TypeError(f"{getattr(fn, '__name__', fn)!r} is not a @tool-decorated callable")
             self.tools_map[fn.openai_schema["function"]["name"]] = fn
 
     @property
@@ -315,9 +306,7 @@ class FunctionToolSession:
         if name not in self.tools_map:
             raise KeyError(f"Tool {name!r} is not registered")
         if not isinstance(arguments, Mapping):
-            raise TypeError(
-                f"Tool arguments for {name} must be an object, got {type(arguments).__name__}"
-            )
+            raise TypeError(f"Tool arguments for {name} must be an object, got {type(arguments).__name__}")
         fn = self.tools_map[name]
         logging.info(f"[Function tool] Running the {name} tool with: {str(arguments)[:200]}")
         if asyncio.iscoroutinefunction(fn):

@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +36,6 @@ import (
 	_ "image/gif"
 	_ "image/png"
 
-	"github.com/cespare/xxhash/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -1281,7 +1279,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 		}
 	}
 
-	chunkID := strconv.FormatUint(xxhash.Sum64([]byte(req.Content+req.DocumentID)), 16)
+	chunkID := common.ChunkID(req.DocumentID, req.Content)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	contentLtks, err := s.tokenize(req.Content)
 	if err != nil {

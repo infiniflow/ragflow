@@ -95,7 +95,9 @@ describe('parseModelUuid — right-anchored', () => {
   });
 
   test('preserves embedded "@" in the model name (LM Studio)', () => {
-    expect(parseModelUuid('text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio')).toEqual({
+    expect(
+      parseModelUuid('text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio'),
+    ).toEqual({
       modelName: 'text-embedding-nomic-embed-text-v1.5@q8_0',
       factoryId: 'lmstudio',
     });

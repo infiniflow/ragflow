@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // ---------------------------------------------------------------------------
@@ -173,6 +174,21 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	}
 	close(ch)
 	return ch
+}
+
+type fakeChatModelConfigResolver struct {
+	tenantID string
+	llmID    string
+	err      error
+}
+
+func (f *fakeChatModelConfigResolver) GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	f.tenantID = tenantID
+	f.llmID = llmID
+	if f.err != nil {
+		return nil, "", nil, 0, f.err
+	}
+	return nil, "resolved-model", &modelModule.APIConfig{}, 8192, nil
 }
 
 type feedbackContextKey struct{}
@@ -1017,6 +1033,65 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	if got := ref["total"]; got != float64(1) {
 		t.Fatalf("final reference total = %v", got)
+	}
+}
+
+func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:        "session-1",
+		DialogID:  "dialog-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID:           "dialog-1",
+		TenantID:     "tenant-owner",
+		LLMID:        "old-model@default@Provider",
+		LLMSetting:   entity.JSONMap{},
+		PromptConfig: entity.JSONMap{"parameters": []interface{}{}},
+	}
+	store.dialogExists["tenant-owner|dialog-1"] = true
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "ok", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+	resolver := &fakeChatModelConfigResolver{}
+	modelID := "3d2d824e7e5d11f1a845455b140cef90"
+
+	svc := &ChatSessionService{
+		chatSessionDAO:   store,
+		userTenantDAO:    &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:         pipeline,
+		modelProviderSvc: resolver,
+	}
+
+	_, err := svc.ChatCompletions(
+		context.Background(),
+		"user-1",
+		"dialog-1",
+		"session-1",
+		[]map[string]interface{}{{"role": "user", "content": "hi"}},
+		"",
+		nil,
+		modelID,
+		nil,
+		nil,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatCompletions failed: %v", err)
+	}
+	if resolver.tenantID != "tenant-owner" || resolver.llmID != modelID {
+		t.Fatalf("resolver got tenantID=%q llmID=%q, want tenant-owner/%s", resolver.tenantID, resolver.llmID, modelID)
+	}
+	if store.dialogs["dialog-1"].LLMID != modelID {
+		t.Fatalf("dialog LLMID=%q, want model id %q", store.dialogs["dialog-1"].LLMID, modelID)
 	}
 }
 

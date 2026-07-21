@@ -172,6 +172,7 @@ export const IconMap = {
   [LLMFactory.TokenHub]: 'tokenhub',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
+  [LLMFactory.FunASR]: 'funasr',
 };
 
 export const ModelTypeToField: Record<string, string> = {
