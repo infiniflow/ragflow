@@ -124,10 +124,14 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
+	// Qwen3 family: disable thinking unless explicitly enabled (matches
+	// Python's _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		} else {
+			reqBody["enable_thinking"] = false
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -302,9 +306,13 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 	}
 
-	// Qwen3 family: disable thinking by default.
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
+	// Qwen3 family: disable thinking unless explicitly enabled.
+	if strings.Contains(strings.ToLower(modelName), "qwen3") {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		} else {
+			reqBody["enable_thinking"] = false
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
