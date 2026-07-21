@@ -11,7 +11,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
 #   async def fn(tools, **kwargs) -> dict  # {"chunks": [...], ...}
 
 
-def register_tool(name: str, schema: dict, fn: callable, requires_compilation: bool = False, compilation_type: str | None = None, processing_time: str = "fast") -> None:
+def register_tool(name: str, schema: dict, fn: callable, requires_compilation: bool = False, compilation_type: str | tuple[str, ...] | None = None, processing_time: str = "fast") -> None:
     TOOL_REGISTRY[name] = {
         "name": name,
         "function_schema": schema,
@@ -32,6 +32,7 @@ def get_function_schemas(tool_names: list[str]) -> list[dict]:
 
 
 # Common schema builders
+
 
 def _search_schema(name: str, desc: str) -> dict:
     return {

@@ -65,6 +65,7 @@ var GlobalMetadataKeys = []string{
 	"file",
 	"tenant_id",
 	"kb_id",
+	"lang",
 }
 
 // SeedIngestionGlobals copies the whitelisted run-level metadata from `in`

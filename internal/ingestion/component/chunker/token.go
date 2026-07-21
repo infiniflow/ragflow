@@ -813,7 +813,11 @@ func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc
 	if pattern == nil {
 		out := make([]schema.ChunkDoc, 0, len(segs))
 		for _, s := range segs {
-			out = append(out, schema.ChunkDoc{Text: s})
+			out = append(out, schema.ChunkDoc{
+				Text:    s,
+				DocType: "text",
+				CKType:  "text",
+			})
 		}
 		return out
 	}

@@ -32,6 +32,8 @@ export const fetchBackendLanguage = (): Promise<string> => promise;
 
 export const getBackendLanguage = (): string | null => backendLanguage;
 
+export const isGoBackend = (): boolean => backendLanguage === 'go';
+
 export const subscribeBackendLanguage = (listener: Listener): (() => void) => {
   listeners.add(listener);
   return () => {

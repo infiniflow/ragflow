@@ -16,7 +16,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
 export const FormSchema = z.object({
-  compilation_template_group_ids: z.array(z.string()).optional(),
+  compilation_template_group_ids: z.string().optional(),
   ...LlmSettingSchema,
 });
 

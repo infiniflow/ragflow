@@ -206,3 +206,129 @@ func TestLLM_Invoke_HistoryWindow_ZeroIsNoop(t *testing.T) {
 		t.Errorf("expected only 1 message (no history), got %d", len(stub.captured.Messages))
 	}
 }
+
+func TestAgentFactoryMessageHistoryWindow(t *testing.T) {
+	tests := []struct {
+		name   string
+		params map[string]any
+		want   int
+	}{
+		{
+			name:   "python default",
+			params: map[string]any{"model_id": "stub", "user_prompt": "now"},
+			want:   defaultAgentMessageHistoryWindowSize,
+		},
+		{
+			name: "dsl value",
+			params: map[string]any{
+				"model_id":                    "stub",
+				"user_prompt":                 "now",
+				"message_history_window_size": 12,
+			},
+			want: 12,
+		},
+		{
+			name: "explicitly disabled",
+			params: map[string]any{
+				"model_id":                    "stub",
+				"user_prompt":                 "now",
+				"message_history_window_size": 0,
+			},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component, err := New("Agent", tt.params)
+			if err != nil {
+				t.Fatalf("New(Agent): %v", err)
+			}
+			agent, ok := component.(*AgentComponent)
+			if !ok {
+				t.Fatalf("component type = %T, want *AgentComponent", component)
+			}
+			if got := agent.param.MessageHistoryWindowSize; got != tt.want {
+				t.Fatalf("message history window = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildAgentInputMessagesIncludesPriorConversation(t *testing.T) {
+	state := runtime.NewCanvasState("run-agent-history", "task-agent-history")
+	state.AppendHistory("user", "第 8 章下面的第一个副标题是什么？")
+	state.AppendHistory("assistant", map[string]any{"content": "第一个是解析器工厂。"})
+	state.AppendCurrentUser("第二个呢？")
+	ctx := runtime.WithState(context.Background(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{
+		SystemPrompt:             "请根据知识库回答。",
+		UserPrompt:               "第二个呢？",
+		MessageHistoryWindowSize: 12,
+	})
+	if len(messages) != 3 {
+		t.Fatalf("message count = %d, want 3", len(messages))
+	}
+	wantRoles := []schema.RoleType{schema.User, schema.Assistant, schema.User}
+	wantContent := []string{
+		"第 8 章下面的第一个副标题是什么？",
+		"第一个是解析器工厂。",
+		"第二个呢？",
+	}
+	for i := range messages {
+		if messages[i].Role != wantRoles[i] || messages[i].Content != wantContent[i] {
+			t.Fatalf("message[%d] = (%q, %q), want (%q, %q)",
+				i, messages[i].Role, messages[i].Content, wantRoles[i], wantContent[i])
+		}
+	}
+}
+
+func TestBuildAgentInputMessagesUsesConversationTurnWindow(t *testing.T) {
+	state := runtime.NewCanvasState("run-agent-window", "task-agent-window")
+	state.AppendHistory("user", "old question")
+	state.AppendHistory("assistant", "old answer")
+	state.AppendHistory("user", "recent question")
+	state.AppendHistory("assistant", "recent answer")
+	state.AppendCurrentUser("current question")
+	ctx := runtime.WithState(context.Background(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{
+		UserPrompt:               "current question",
+		MessageHistoryWindowSize: 1,
+	})
+	if len(messages) != 2 {
+		t.Fatalf("message count = %d, want Python's final prior entry plus current user", len(messages))
+	}
+	if messages[0].Content != "recent answer" || messages[1].Content != "current question" {
+		t.Fatalf("messages = %#v", messages)
+	}
+}
+
+func TestBuildAgentInputMessagesZeroWindowDisablesHistory(t *testing.T) {
+	state := runtime.NewCanvasState("run-agent-no-history", "task-agent-no-history")
+	state.AppendHistory("user", "ignored question")
+	state.AppendHistory("assistant", "ignored answer")
+	state.AppendCurrentUser("current question")
+	ctx := runtime.WithState(context.Background(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{UserPrompt: "current question"})
+	if len(messages) != 1 || messages[0].Content != "current question" {
+		t.Fatalf("messages = %#v, want current user only", messages)
+	}
+}
+
+func TestBuildAgentInputMessagesReplacesTrailingUserLikePython(t *testing.T) {
+	state := runtime.NewCanvasState("run-agent-trailing-user", "task-agent-trailing-user")
+	state.AppendHistory("user", "unanswered previous input")
+	state.AppendCurrentUser("current question")
+	ctx := runtime.WithState(context.Background(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{
+		UserPrompt:               "current question",
+		MessageHistoryWindowSize: 12,
+	})
+	if len(messages) != 1 || messages[0].Content != "current question" {
+		t.Fatalf("messages = %#v, want trailing user replaced by current prompt", messages)
+	}
+}
