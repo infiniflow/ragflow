@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
@@ -38,20 +39,33 @@ type DOCXFigure struct {
 }
 
 type DOCXParser struct {
-	libType string
+	libType      string
+	outputFormat string // from DSL config; "json" or "markdown"
 }
 
 func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
 }
 
-// ParseWithResult captures the office_oxide ToMarkdown output
-// and additionally extracts embedded images with their surrounding
-// text context so the downstream vision-figure dispatch can enrich
-// the markdown with LLM-generated image descriptions.
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "docx" family setup map. The output_format key drives whether
+// ParseWithResult produces JSON items (structured) or markdown.
+func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.outputFormat = v
+	}
+}
+
+// ParseWithResult produces structured JSON items (when
+// p.outputFormat == "json") or markdown (default) from a
+// docx document. Embedded images are extracted in both paths
+// for downstream vision-figure dispatch.
 //
-// Mirrors python naive.py: Docx() → naive_merge_docx() →
-// vision_figure_parser_docx_wrapper_naive().
+// JSON path mirrors python parser.py:_docx() output_format == "json".
+// Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
 func (p *DOCXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "docx")
 	if err != nil {
@@ -59,38 +73,43 @@ func (p *DOCXParser) ParseWithResult(filename string, data []byte) ParseResult {
 	}
 	defer doc.Close()
 
-	md, err := doc.ToMarkdown()
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
-	}
-
 	fileMeta := map[string]any{
 		"name":   filename,
 		"format": "docx",
 	}
 
-	// Extract embedded images with their text context from the
-	// office_oxide IR so the downstream vision dispatch can
-	// enrich them. The already-opened doc handle is reused
-	// (no second OpenFromBytes).
+	// Extract IR JSON for section building (JSON path) and
+	// embedded-image extraction (both paths).
 	irJSON, irErr := doc.ToIRJSON()
 	var figures []DOCXFigure
 	if irErr == nil {
 		figures = extractDOCXFiguresFromIR(irJSON)
 	}
 	if len(figures) > 0 {
-		figs := make([]map[string]any, 0, len(figures))
-		for _, f := range figures {
-			figs = append(figs, map[string]any{
-				"image":         f.Image,
-				"context_above": f.ContextAbove,
-				"context_below": f.ContextBelow,
-				"marker":        f.Marker,
-			})
-		}
-		fileMeta["figures"] = figs
+		fileMeta["figures"] = buildFiguresMap(figures)
 	}
 
+	if p.outputFormat == "json" {
+		if irErr != nil {
+			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
+		}
+		var sections []map[string]any
+		sections = buildDOCXJSONSections(irJSON)
+		if len(sections) == 0 {
+			sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+		}
+		return ParseResult{
+			OutputFormat: "json",
+			File:         fileMeta,
+			JSON:         sections,
+		}
+	}
+
+	// Default / markdown path.
+	md, err := doc.ToMarkdown()
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
+	}
 	return ParseResult{
 		OutputFormat: "markdown",
 		File:         fileMeta,
@@ -218,6 +237,101 @@ func joinDOCXIRRuns(runs []docxIRRun) string {
 	return b.String()
 }
 
+// buildFiguresMap converts the internal DOCXFigure slice to the
+// map form attached to fileMeta["figures"].
+func buildFiguresMap(figures []DOCXFigure) []map[string]any {
+	figs := make([]map[string]any, 0, len(figures))
+	for _, f := range figures {
+		figs = append(figs, map[string]any{
+			"image":         f.Image,
+			"context_above": f.ContextAbove,
+			"context_below": f.ContextBelow,
+			"marker":        f.Marker,
+		})
+	}
+	return figs
+}
+
+// joinCellText concatenates all paragraph texts inside a table cell,
+// joined by newlines.
+func joinCellText(cell docxIRCell) string {
+	var parts []string
+	for _, el := range cell.Content {
+		if text := joinDOCXIRRuns(el.Content); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// docxIRTableToHTML converts a table IR element to an HTML table string.
+func docxIRTableToHTML(el docxIRElement) string {
+	var sb strings.Builder
+	sb.WriteString("<table>")
+	for _, row := range el.Rows {
+		sb.WriteString("<tr>")
+		for _, cell := range row.Cells {
+			sb.WriteString("<td>")
+			sb.WriteString(html.EscapeString(joinCellText(cell)))
+			sb.WriteString("</td>")
+		}
+		sb.WriteString("</tr>")
+	}
+	sb.WriteString("</table>")
+	return sb.String()
+}
+
+// buildDOCXJSONSections converts an office_oxide IR JSON string into a
+// slice of structured items compatible with the chunker's JSON input
+// contract. Each item carries at least text and doc_type_kwd.
+func buildDOCXJSONSections(irJSON string) []map[string]any {
+	var ir docxIRDocument
+	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
+		return nil
+	}
+	var sections []map[string]any
+	for _, sec := range ir.Sections {
+		for _, el := range sec.Elements {
+			switch el.Type {
+			case "paragraph", "heading":
+				text := joinDOCXIRRuns(el.Content)
+				if strings.TrimSpace(text) == "" {
+					continue
+				}
+				item := map[string]any{
+					"text":         text,
+					"image":        nil,
+					"doc_type_kwd": "text",
+				}
+				if el.Type == "heading" {
+					item["ck_type"] = "heading"
+				}
+				sections = append(sections, item)
+
+			case "image":
+				b64 := base64.StdEncoding.EncodeToString(el.Data)
+				sections = append(sections, map[string]any{
+					"text":         "",
+					"image":        b64,
+					"doc_type_kwd": "image",
+				})
+
+			case "table":
+				html := docxIRTableToHTML(el)
+				if html == "<table></table>" {
+					continue
+				}
+				sections = append(sections, map[string]any{
+					"text":         html,
+					"image":        nil,
+					"doc_type_kwd": "table",
+				})
+			}
+		}
+	}
+	return sections
+}
+
 // --- office_oxide IR types (local copy, independent of deepdoc) ---
 
 type docxIRDocument struct {
@@ -230,14 +344,26 @@ type docxIRSection struct {
 }
 
 type docxIRElement struct {
-	Type    string      `json:"type"`
-	Content []docxIRRun `json:"content"`
-	Data    []byte      `json:"data"`
+	Type    string      `json:"type"`    // "paragraph", "heading", "table", "image"
+	Level   int         `json:"level"`   // heading level (1-6)
+	Style   string      `json:"style"`   // Word style name (e.g. "Normal", "Heading 1")
+	Content []docxIRRun `json:"content"` // rich text runs
+	Data    []byte      `json:"data"`    // raw image bytes (for "image" type)
+	Rows    []docxIRRow `json:"rows"`    // table rows
 }
 
 type docxIRRun struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type    string          `json:"type"` // "text", "image"
+	Text    string          `json:"text"`
+	Content []docxIRElement `json:"content"` // nested elements (used in table cells)
+}
+
+type docxIRRow struct {
+	Cells []docxIRCell `json:"cells"`
+}
+
+type docxIRCell struct {
+	Content []docxIRElement `json:"content"` // nested paragraphs inside table cell
 }
 
 func (p *DOCXParser) String() string {

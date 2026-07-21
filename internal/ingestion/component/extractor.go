@@ -326,17 +326,9 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	if driver == "" {
 		driver = "dummy"
 	}
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
-	urlSuffix := extractorChatURLSuffixFor(driver)
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("extractor: no driver for %q", driver)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -376,19 +368,6 @@ func splitExtractorLLIDPair(s string) (modelName, provider string, ok bool) {
 		return parts[0], parts[1], true
 	default:
 		return s, "", false
-	}
-}
-
-// extractorChatURLSuffixFor matches
-// internal/agent/component/llm.go:chatURLSuffixFor — anthropic
-// uses v1/messages, everything else falls through to the openai-
-// compatible chat/completions default.
-func extractorChatURLSuffixFor(driver string) models.URLSuffix {
-	switch strings.ToLower(driver) {
-	case "anthropic":
-		return models.URLSuffix{Chat: "v1/messages"}
-	default:
-		return models.URLSuffix{Chat: "chat/completions"}
 	}
 }
 
@@ -520,6 +499,10 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("input_chunks", len(in.chunks)),
+	)
 	if in.fieldName == "toc" {
 		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
 	}
@@ -564,6 +547,10 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("output_chunks", len(in.chunks)),
+	)
 	return map[string]any{
 		"chunks":        in.chunks,
 		"output_format": "chunks",

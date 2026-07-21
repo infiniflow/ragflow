@@ -81,7 +81,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
@@ -486,6 +489,19 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
+	// Debug log: summarize parser output for pipeline debugging.
+	if dispatched.OutputFormat == "json" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", "json"),
+			zap.Int("json_items", len(dispatched.JSON)),
+		)
+	} else if dispatched.OutputFormat != "" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", dispatched.OutputFormat),
+		)
+	}
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
