@@ -1245,6 +1245,44 @@ def _split_oversized_unit(text, chunk_token_num, token_count_fn=None):
     return pieces
 
 
+def _compute_chunk_update(last_ck: str, t: str, pos: str, chunk_token_num: int, overlapped_percent: float):
+    tnum = num_tokens_from_string(t)
+    if not pos or tnum < 8:
+        pos = ""
+
+    # First chunk ever — no previous content to overlap with.
+    if last_ck == "":
+        new_t = t + pos if t.find(pos) < 0 else t
+        final_t = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
+        return "first", final_t, num_tokens_from_string(final_t)
+
+    # Proactive merge: append only if the *projected* total still fits.
+    merged = last_ck + t
+    merged_pos = merged + pos if last_ck.find(pos) < 0 else merged
+    if num_tokens_from_string(merged_pos) <= chunk_token_num:
+        return "merge", merged_pos, num_tokens_from_string(merged_pos)
+    elif num_tokens_from_string(merged) <= chunk_token_num:
+        return "merge", merged, num_tokens_from_string(merged)
+
+    # Need a new chunk. Apply overlap prefix from the previous chunk —
+    # but only when the projected size (overlap + t) fits — otherwise drop
+    # the overlap for this boundary so the chunk stays within budget.
+    new_t = t
+    new_tnum = tnum
+    if overlapped_percent > 0:
+        overlap_text, overlap_tokens = _compute_overlap_prefix(last_ck, overlapped_percent)
+        if overlap_tokens + new_tnum <= chunk_token_num:
+            new_t = overlap_text + t
+            new_tnum = num_tokens_from_string(new_t)
+    if t.find(pos) < 0:
+        new_t_with_pos = new_t + pos
+        new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
+        if new_tnum_with_pos <= chunk_token_num:
+            new_t = new_t_with_pos
+            new_tnum = new_tnum_with_pos
+    return "append", new_t, new_tnum
+
+
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     if not sections:
         return []
@@ -1258,51 +1296,14 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     tk_nums = [0]
 
     def add_chunk(t, pos):
-        nonlocal cks, tk_nums, delimiter
-        tnum = num_tokens_from_string(t)
-        if not pos:
-            pos = ""
-        if tnum < 8:
-            pos = ""
-
-        # First chunk ever — no previous content to overlap with.
-        if cks[-1] == "":
-            new_t = t + pos if t.find(pos) < 0 else t
-            cks[-1] = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
-            return
-
-        # Proactive merge: append only if the *projected* total still fits.
-        merged = cks[-1] + t
-        merged_pos = merged + pos if cks[-1].find(pos) < 0 else merged
-        if num_tokens_from_string(merged_pos) <= chunk_token_num:
-            cks[-1] = merged_pos
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
-            return
-        elif num_tokens_from_string(merged) <= chunk_token_num:
-            cks[-1] = merged
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
-            return
-
-        # Need a new chunk. Apply overlap prefix from the previous chunk —
-        # but only when the projected size (overlap + t) still fits. Otherwise
-        # drop the overlap for this boundary so the chunk stays within budget.
-        new_t = t
-        new_tnum = tnum
-        if overlapped_percent > 0:
-            overlap_text, overlap_tokens = _compute_overlap_prefix(cks[-1], overlapped_percent)
-            if overlap_tokens + new_tnum <= chunk_token_num:
-                new_t = overlap_text + t
-                new_tnum = num_tokens_from_string(new_t)
-        if t.find(pos) < 0:
-            new_t_with_pos = new_t + pos
-            new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
-            # Only attach pos if it does not push us over budget.
-            if new_tnum_with_pos <= chunk_token_num:
-                new_t = new_t_with_pos
-                new_tnum = new_tnum_with_pos
-        cks.append(new_t)
-        tk_nums.append(new_tnum)
+        nonlocal cks, tk_nums
+        action, text, tk_num = _compute_chunk_update(cks[-1], t, pos, chunk_token_num, overlapped_percent)
+        if action in ("first", "merge"):
+            cks[-1] = text
+            tk_nums[-1] = tk_num
+        else:
+            cks.append(text)
+            tk_nums.append(tk_num)
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
@@ -1331,17 +1332,24 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     # whitespace atoms with a character-window fallback, mirroring the html path.
     dels = get_delimiters(delimiter)
     for sec, pos in sections:
-        if not dels or num_tokens_from_string(sec) < chunk_token_num:
-            add_chunk("\n" + sec, pos)
+        sec_text = "\n" + sec
+        if num_tokens_from_string(sec_text) <= chunk_token_num:
+            add_chunk(sec_text, pos)
             continue
-        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            text = "\n" + sub_sec
-            if num_tokens_from_string(text) <= chunk_token_num:
-                add_chunk(text, pos)
-                continue
-            for piece in _split_oversized_unit(text, chunk_token_num):
+        if dels:
+            for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
+                if not sub_sec or re.fullmatch(dels, sub_sec):
+                    continue
+                text = "\n" + sub_sec
+                if num_tokens_from_string(text) <= chunk_token_num:
+                    add_chunk(text, pos)
+                else:
+                    logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit", len(text), num_tokens_from_string(text))
+                    for piece in _split_oversized_unit(text, chunk_token_num):
+                        add_chunk(piece, pos)
+        else:
+            logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit (no delimiters)", len(sec_text), num_tokens_from_string(sec_text))
+            for piece in _split_oversized_unit(sec_text, chunk_token_num):
                 add_chunk(piece, pos)
 
     logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
@@ -1361,60 +1369,23 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     tk_nums = [0]
 
     def add_chunk(t, image, pos=""):
-        nonlocal cks, result_images, tk_nums, delimiter
-        tnum = num_tokens_from_string(t)
-        if not pos:
-            pos = ""
-        if tnum < 8:
-            pos = ""
-
-        # First chunk ever — no previous content to overlap with.
-        if cks[-1] == "":
-            new_t = t + pos if t.find(pos) < 0 else t
-            cks[-1] = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
+        nonlocal cks, result_images, tk_nums
+        action, text, tk_num = _compute_chunk_update(cks[-1], t, pos, chunk_token_num, overlapped_percent)
+        if action == "first":
+            cks[-1] = text
+            tk_nums[-1] = tk_num
             result_images[-1] = image
-            return
-
-        # Proactive merge: append only if the *projected* total still fits.
-        merged = cks[-1] + t
-        merged_pos = merged + pos if cks[-1].find(pos) < 0 else merged
-        if num_tokens_from_string(merged_pos) <= chunk_token_num:
-            cks[-1] = merged_pos
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
+        elif action == "merge":
+            cks[-1] = text
+            tk_nums[-1] = tk_num
             if result_images[-1] is None:
                 result_images[-1] = image
             else:
                 result_images[-1] = concat_img(result_images[-1], image)
-            return
-        elif num_tokens_from_string(merged) <= chunk_token_num:
-            cks[-1] = merged
-            tk_nums[-1] = num_tokens_from_string(cks[-1])
-            if result_images[-1] is None:
-                result_images[-1] = image
-            else:
-                result_images[-1] = concat_img(result_images[-1], image)
-            return
-
-        # Need a new chunk. Apply overlap prefix only when the projected size
-        # (overlap + t) fits — otherwise drop the overlap for this boundary so
-        # the chunk stays within budget.
-        new_t = t
-        new_tnum = tnum
-        if overlapped_percent > 0:
-            overlap_text, overlap_tokens = _compute_overlap_prefix(cks[-1], overlapped_percent)
-            if overlap_tokens + new_tnum <= chunk_token_num:
-                new_t = overlap_text + t
-                new_tnum = num_tokens_from_string(new_t)
-        if t.find(pos) < 0:
-            new_t_with_pos = new_t + pos
-            new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
-            if new_tnum_with_pos <= chunk_token_num:
-                new_t = new_t_with_pos
-                new_tnum = new_tnum_with_pos
-        cks.append(new_t)
-        result_images.append(image)
-        tk_nums.append(new_tnum)
+        else:
+            cks.append(text)
+            result_images.append(image)
+            tk_nums.append(tk_num)
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
@@ -1455,16 +1426,24 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         else:
             text_str = text or ""
             text_pos = ""
-        if not dels or num_tokens_from_string(text_str) < chunk_token_num:
-            add_chunk("\n" + text_str, image, text_pos)
+
+        text_seg = "\n" + text_str
+        if num_tokens_from_string(text_seg) <= chunk_token_num:
+            add_chunk(text_seg, image, text_pos)
             continue
-        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            text_seg = "\n" + sub_sec
-            if num_tokens_from_string(text_seg) <= chunk_token_num:
-                add_chunk(text_seg, image, text_pos)
-                continue
+        if dels:
+            for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
+                if not sub_sec or re.fullmatch(dels, sub_sec):
+                    continue
+                sub_text = "\n" + sub_sec
+                if num_tokens_from_string(sub_text) <= chunk_token_num:
+                    add_chunk(sub_text, image, text_pos)
+                else:
+                    logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit", len(sub_text), num_tokens_from_string(sub_text))
+                    for piece in _split_oversized_unit(sub_text, chunk_token_num):
+                        add_chunk(piece, image, text_pos)
+        else:
+            logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit (no delimiters)", len(text_seg), num_tokens_from_string(text_seg))
             for piece in _split_oversized_unit(text_seg, chunk_token_num):
                 add_chunk(piece, image, text_pos)
 
