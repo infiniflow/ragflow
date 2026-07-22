@@ -1431,6 +1431,7 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 	}
 
 	memoryList := make([]map[string]interface{}, 0, len(memories))
+	modelNameCache := make(map[string]string)
 	for _, m := range memories {
 		resp := formatRetDataFromMemoryListItem(m)
 		var createDateStr *string
@@ -1439,6 +1440,8 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
+			"llm_id":       resolveTenantModelDisplayName(resp.LLMID, modelNameCache),
+			"embd_id":      resolveTenantModelDisplayName(resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1457,6 +1460,39 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		MemoryList: memoryList,
 		TotalCount: total,
 	}, nil
+}
+
+// resolveTenantModelDisplayName turn modelID to modelName@instance@prvider
+func resolveTenantModelDisplayName(modelID string, cache map[string]string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" || strings.Contains(modelID, "@") {
+		return modelID
+	}
+
+	if displayName, ok := cache[modelID]; ok {
+		return displayName
+	}
+
+	displayName := modelID
+	defer func() {
+		cache[modelID] = displayName
+	}()
+
+	model, err := dao.NewTenantModelDAO().GetByID(modelID)
+	if err != nil {
+		return displayName
+	}
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	if err != nil {
+		return displayName
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	if err != nil {
+		return displayName
+	}
+
+	displayName = fmt.Sprintf("%s@%s@%s", model.ModelName, instance.InstanceName, provider.ProviderName)
+	return displayName
 }
 
 // GetMemoryConfig retrieves the full configuration of a memory by ID
