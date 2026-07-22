@@ -336,17 +336,22 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          _gitee_secret=$(mktemp)
+          printf '%s' "${GITEE_TOKEN}" > "${_gitee_secret}"
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=0 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --secret id=gitee_token,src="${_gitee_secret}" --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
+          rm -f "${_gitee_secret}"
 
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
@@ -909,17 +914,22 @@ jobs:
           fi
 
       - name: Build ragflow:nightly
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          _gitee_secret=$(mktemp)
+          printf '%s' "${GITEE_TOKEN}" > "${_gitee_secret}"
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=0 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --secret id=gitee_token,src="${_gitee_secret}" --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
+          rm -f "${_gitee_secret}"
 
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
