@@ -9,15 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
-import { t } from 'i18next';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import {
-  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   DataSourceKey,
   getCommonExtraDefaultValues,
+  getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
@@ -31,6 +31,7 @@ import {
 import { DataSourceLogsTable } from './log-table';
 
 const SourceDetailPage = () => {
+  const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
 
   const { data: detail } = useFetchDataSourceDetail();
@@ -54,7 +55,7 @@ const SourceDetailPage = () => {
   const customFields = useMemo(() => {
     return [
       {
-        label: 'Prune Freq',
+        label: t('setting.dataSourcePruneFreq'),
         name: 'prune_freq',
         type: FormFieldType.Number,
         required: false,
@@ -74,7 +75,7 @@ const SourceDetailPage = () => {
         },
       },
       {
-        label: 'Refresh Freq',
+        label: t('setting.dataSourceRefreshFreq'),
         name: 'refresh_freq',
         type: FormFieldType.Number,
         required: false,
@@ -91,7 +92,7 @@ const SourceDetailPage = () => {
         ),
       },
       {
-        label: 'Timeout Secs',
+        label: t('setting.dataSourceTimeoutSecs'),
         name: 'timeout_secs',
         type: FormFieldType.Number,
         required: false,
@@ -112,7 +113,7 @@ const SourceDetailPage = () => {
         ),
       },
     ];
-  }, []);
+  }, [t]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
   const { loading: testLoading, handleTest } = useTestDataSource();
@@ -164,13 +165,13 @@ const SourceDetailPage = () => {
   }, [actionMode, onSubmit, updateStatus]);
 
   const primaryActionLabel = useMemo(() => {
-    if (actionMode === 'stop') return 'Stop';
-    if (actionMode === 'resume') return 'Resume';
-    return 'Save';
-  }, [actionMode]);
+    if (actionMode === 'stop') return t('common.stop');
+    if (actionMode === 'resume') return t('common.resume');
+    return t('common.save');
+  }, [actionMode, t]);
 
   useEffect(() => {
-    const baseFields = DataSourceFormBaseFields.map((field) => {
+    const baseFields = getDataSourceFormBaseFields(t).map((field) => {
       if (field.name === 'name') {
         return {
           ...field,
@@ -185,7 +186,7 @@ const SourceDetailPage = () => {
     if (detail) {
       const fields = [
         ...baseFields,
-        ...getDataSourceFieldsWithExtras(detail.source as any),
+        ...getDataSourceFieldsWithExtras(t, detail.source as any),
         ...customFields,
       ] as FormFieldConfig[];
 
@@ -210,7 +211,7 @@ const SourceDetailPage = () => {
       setDefaultValues(defaultValueTemp);
       setIsDirty(false);
     }
-  }, [detail, customFields, onSubmit]);
+  }, [detail, customFields, onSubmit, t]);
 
   useEffect(() => {
     const instance = formRef.current;
