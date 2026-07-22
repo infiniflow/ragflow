@@ -67,7 +67,7 @@ GO_ONLY_SKIPS = {
         "test_dataset_delete_contract_matrix",
         # "test_memory_update_invalid_name",
         # "test_memory_crud_cycle",
-        "test_messages_add_list_recent_content_update_forget",
+        # "test_messages_add_list_recent_content_update_forget",
         "test_message_status_validation_requires_boolean",
         "test_message_search_route_contract",
         "test_memory_crud_and_config",
