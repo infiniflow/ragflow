@@ -156,4 +156,9 @@ type UpdateDatasetRequest struct {
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
 	ParseType *int `json:"parse_type,omitempty"`
+
+	// ParserConfigProvided reports whether the raw request body contained a
+	// "parser_config" key. An explicitly provided parser_config ({} or null) is a
+	// valid no-op that must succeed, unlike a truly empty request body.
+	ParserConfigProvided bool `json:"-"`
 }

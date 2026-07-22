@@ -118,17 +118,18 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 
 	kbID := utility.GenerateToken()
 	status := string(entity.StatusValid)
-	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
-		existing, err := d.kbDAO.GetByName(n, tid)
-		return err == nil && existing != nil
-	}, name, tenantID)
-	if err != nil {
-		return nil, common.CodeDataError, err
+	// Reject duplicate name within tenant to match the established API contract.
+	existing, err := d.kbDAO.GetByName(name, tenantID)
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	if existing != nil {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", name)
 	}
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
-		Name:         duplicateName,
+		Name:         name,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
@@ -141,6 +142,9 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 	}
 
 	if err = d.kbDAO.Create(kb); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", name)
+		}
 		return nil, common.CodeServerError, errors.New("Failed to save dataset")
 	}
 
@@ -374,7 +378,7 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID, id, name)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("Database operation failed")
 	}

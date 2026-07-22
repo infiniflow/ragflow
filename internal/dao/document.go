@@ -245,12 +245,9 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 			query = query.Where(column("id")+" IN ?", opts.DocIDs)
 		}
 	}
-	if opts.CreateTimeFrom > 0 {
-		query = query.Where(column("create_time")+" >= ?", opts.CreateTimeFrom)
-	}
-	if opts.CreateTimeTo > 0 {
-		query = query.Where(column("create_time")+" <= ?", opts.CreateTimeTo)
-	}
+	// Note: create_time_from / create_time_to are NOT applied at DB level.
+	// They are filtered post-query in the handler so total reflects the
+	// unfiltered count, matching the Python API contract.
 	return query
 }
 
