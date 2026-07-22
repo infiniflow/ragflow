@@ -5,9 +5,9 @@ import { useMemo } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
-  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   getCommonExtraDefaultValues,
+  getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
 } from './constant';
@@ -26,10 +26,10 @@ const AddDataSourceModal = ({
       return [];
     }
     return [
-      ...DataSourceFormBaseFields,
-      ...getDataSourceFieldsWithExtras(sourceData.id as any),
+      ...getDataSourceFormBaseFields(t),
+      ...getDataSourceFieldsWithExtras(t, sourceData.id as any),
     ] as FormFieldConfig[];
-  }, [sourceData]);
+  }, [sourceData, t]);
 
   const defaultValues = useMemo<FieldValues>(
     () =>
