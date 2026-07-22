@@ -50,7 +50,7 @@ export default {
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
-      openInNewTab: '在新标签页中聊天',
+      openInNewTab: '在新标签页中打开',
       previousPage: '上一页',
       nextPage: '下一页',
       previous: '上一步',
@@ -1089,7 +1089,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       descriptionPlaceholder: '我是一个聊天助手。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
-        '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
+        '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题。这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。对长查询效果较好，但会延长响应时间。`,
       reasoning: '推理',

@@ -84,24 +84,24 @@ export default function ExpandableContent({
         <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-bg-base to-transparent pointer-events-none" />
       )}
 
-      {isOverflowing && (
+      {isOverflowing && !isExpanded && (
         <Button
           size="sm"
           onClick={toggleExpand}
           className="absolute bottom-2 left-1/2 -translate-x-1/2"
         >
-          {isExpanded ? (
-            <>
-              <ChevronUp size={14} />
-              <span>{t('common.viewLess')}</span>
-            </>
-          ) : (
-            <>
-              <ChevronDown size={14} />
-              <span>{t('common.viewMore')}</span>
-            </>
-          )}
+          <ChevronDown size={14} />
+          <span>{t('common.viewMore')}</span>
         </Button>
+      )}
+
+      {isOverflowing && isExpanded && (
+        <div className="flex justify-center pt-2">
+          <Button size="sm" onClick={toggleExpand}>
+            <ChevronUp size={14} />
+            <span>{t('common.viewLess')}</span>
+          </Button>
+        </div>
       )}
     </div>
   );
