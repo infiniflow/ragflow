@@ -31,26 +31,26 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
 
-| Deprecated endpoint | Replacement endpoint |
-|---------------------|----------------------|
-| **POST** `/api/v1/chats_openai/{chat_id}/chat/completions` | **POST** `/api/v1/openai/{chat_id}/chat/completions` |
-| **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}` | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}` |
-| **POST** `/api/v1/chats/{chat_id}/completions` | **POST** `/api/v1/chat/completions` |
-| **POST** `/api/v1/sessions/related_questions` | **POST** `/api/v1/chat/recommandation` |
+| Deprecated endpoint                                                               | Replacement endpoint                                                                |
+|-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
+| **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
+| **POST** `/api/v1/chats/{chat_id}/completions`                                    | **POST** `/api/v1/chat/completions`                                                 |
+| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommandation`                                              |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
-| **GET** `/v1/system/healthz` | **GET** `/api/v1/system/healthz` |
-| **POST** `/v1/document/upload_info` | **POST** `/api/v1/documents/upload` |
-| **POST** `/api/v1/file/upload` | **POST** `/api/v1/files` |
-| **POST** `/api/v1/file/create` | **POST** `/api/v1/files` |
-| **GET** `/api/v1/file/list` | **GET** `/api/v1/files` |
-| **GET** `/api/v1/file/root_folder` | **GET** `/api/v1/files` |
-| **GET** `/api/v1/file/parent_folder` | **GET** `/api/v1/files/{file_id}/parent` |
-| **GET** `/api/v1/file/all_parent_folder` | **GET** `/api/v1/files/{file_id}/ancestors` |
-| **POST** `/api/v1/file/rm` | **DELETE** `/api/v1/files` |
-| **POST** `/api/v1/file/rename` | **POST** `/api/v1/files/move` |
-| **GET** `/api/v1/file/get/{file_id}` | **GET** `/api/v1/files/{file_id}` |
-| **POST** `/api/v1/file/mv` | **POST** `/api/v1/files/move` |
-| **POST** `/api/v1/file/convert` | **POST** `/api/v1/files/link-to-datasets` |
+| **GET** `/v1/system/healthz`                                                      | **GET** `/api/v1/system/healthz`                                                    |
+| **POST** `/v1/document/upload_info`                                               | **POST** `/api/v1/documents/upload`                                                 |
+| **POST** `/api/v1/file/upload`                                                    | **POST** `/api/v1/files`                                                            |
+| **POST** `/api/v1/file/create`                                                    | **POST** `/api/v1/files`                                                            |
+| **GET** `/api/v1/file/list`                                                       | **GET** `/api/v1/files`                                                             |
+| **GET** `/api/v1/file/root_folder`                                                | **GET** `/api/v1/files`                                                             |
+| **GET** `/api/v1/file/parent_folder`                                              | **GET** `/api/v1/files/{file_id}/parent`                                            |
+| **GET** `/api/v1/file/all_parent_folder`                                          | **GET** `/api/v1/files/{file_id}/ancestors`                                         |
+| **POST** `/api/v1/file/rm`                                                        | **DELETE** `/api/v1/files`                                                          |
+| **POST** `/api/v1/file/rename`                                                    | **POST** `/api/v1/files/move`                                                       |
+| **GET** `/api/v1/file/get/{file_id}`                                              | **GET** `/api/v1/files/{file_id}`                                                   |
+| **POST** `/api/v1/file/mv`                                                        | **POST** `/api/v1/files/move`                                                       |
+| **POST** `/api/v1/file/convert`                                                   | **POST** `/api/v1/files/link-to-datasets`                                           |
 
 ---
 
@@ -934,7 +934,7 @@ curl --request GET \
   Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
   - `unstart_count`: Number of documents not yet started parsing.
   - `running_count`: Number of documents currently being parsed.
-  - `cancel_count`: Number of documents whose parsing was cancelled.
+  - `cancel_count`: Number of documents whose parsing was canceled.
   - `done_count`: Number of documents that have been successfully parsed.
   - `fail_count`: Number of documents whose parsing failed.
 
@@ -1791,7 +1791,7 @@ curl --request GET \
   - Status mapping:
     - `0` / `UNSTART`: Document not yet processed
     - `1` / `RUNNING`: Document is currently being processed
-    - `2` / `CANCEL`: Document processing was cancelled
+    - `2` / `CANCEL`: Document processing was canceled
     - `3` / `DONE`: Document processing completed successfully
     - `4` / `FAIL`: Document processing failed
   Defaults to all statuses.
@@ -4130,7 +4130,7 @@ Starts a chat completion request. The same endpoint supports three modes:
 
 :::tip NOTE
 
-- In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+- In streaming mode, not all responses include a reference, as this depends on the system's judgment.
 - In streaming mode, the last message is an empty message:
 
   ```json
@@ -6686,7 +6686,7 @@ Failure
 
 **GET** `/api/v1/messages?memory_id={memory_id}&agent_id={agent_id}&session_id={session_id}&limit={limit}`
 
-Retrieves the most recent messages from specified memories. Typically accepts a `limit` parameter to control the number of messages returned.
+Retrieves the most recent messages from specified memories. Typically, accepts a `limit` parameter to control the number of messages returned.
 
 #### Request
 
