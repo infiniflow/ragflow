@@ -530,7 +530,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
 	reqBody["input"] = texts
-	if embeddingConfig.Dimension > 0 {
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 

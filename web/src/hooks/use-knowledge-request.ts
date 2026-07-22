@@ -1075,7 +1075,7 @@ export const useSelectTestingResult = (): ITestingResult => {
       return mutation.state.data;
     },
   });
-  return (data.at(-1) ?? {
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
     chunks: [],
     documents: [],
     total: 0,
@@ -1109,7 +1109,7 @@ export const useAllTestingResult = (): ITestingResult => {
       return mutation.state.data;
     },
   });
-  return (data.at(-1) ?? {
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
     chunks: [],
     documents: [],
     total: 0,
