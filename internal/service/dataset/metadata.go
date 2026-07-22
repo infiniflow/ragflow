@@ -13,11 +13,10 @@ import (
 
 // UpdateDocumentMetadataConfig updates the metadata config for a document in a dataset.
 func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
-	if _, err := d.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
-		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+	userID = strings.TrimSpace(userID)
+	datasetID = strings.TrimSpace(datasetID)
+	if !d.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
@@ -52,10 +51,16 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
 func (d *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := d.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	datasetID = strings.TrimSpace(datasetID)
+	tenantID = strings.TrimSpace(tenantID)
+	if !d.Accessible(datasetID, tenantID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+			return nil, common.CodeDataError, errors.New("Dataset not found")
 		}
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
@@ -74,10 +79,14 @@ func (d *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *s
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
 
-	kb, err := d.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	if !d.Accessible(datasetID, tenantID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+			return nil, common.CodeDataError, errors.New("Dataset not found")
 		}
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}

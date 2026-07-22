@@ -63,7 +63,7 @@ dependencies = [
     "json-repair==0.60.1",
     "langfuse>=4.0.1",
     "mammoth>=1.11.0",
-    "markdown==3.6",
+    "markdown>=3.8.1,<4.0.0",
     "markdown-to-json==2.1.1",
     "markdownify>=1.2.0",
     "mcp>=1.19.0",
@@ -130,7 +130,7 @@ dependencies = [
     "setuptools>=78.1.1,<81.0.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
-    "zhipuai==2.0.1",
+    "zai-sdk>=0.2.3,<1.0.0",
     "peewee>=3.17.1,<4.0.0",
     "langgraph==1.2.0",
     #    following modules aren't necessary
@@ -139,7 +139,7 @@ dependencies = [
     #    "openai>=1.45.0",
     #    "openpyxl>=3.1.0,<4.0.0",
     #    "pandas>=2.2.0,<3.0.0",
-    #    "pillow>=12.2.0,<13.0.0",
+    #    "pillow>=12.3.0,<13.0.0",
     #    "protobuf==5.27.2",
     #    "pymysql>=1.1.1,<2.0.0",
     #    "python-dotenv==1.0.1",
@@ -185,7 +185,7 @@ dependencies = [
 test = [
     "hypothesis>=6.132.0",
     "openpyxl>=3.1.5",
-    "pillow>=12.2.0,<13.0.0",
+    "pillow>=12.3.0,<13.0.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.3.0",
     "pytest-xdist>=3.8.0",
@@ -217,9 +217,6 @@ constraint-dependencies = [
     # through excessive resource consumption. (CVSS 8.9)
     # urllib3 < 2.7.0 is vulnerable, pulled in transitively via requests, minio, akshare, and others
     "urllib3>=2.7.0",
-
-
-
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

@@ -163,11 +163,14 @@ export const useSelectParserList = (): Array<{
 
   const parserList = useMemo(() => {
     // Go backend: prefer the dynamic pipeline catalog from the API.
+    // GET /api/v1/pipelines?type=builtin responds with
+    // { code, data: { canvas: [{ id, title, description, filename }], total } }.
     if (backendLang === 'go') {
       const pipelineList: Array<{
         id: string;
         title: string;
-        dsl: Record<string, any>;
+        description?: string;
+        filename?: string;
       }> = pipelineListData?.data?.canvas ?? [];
       if (pipelineList.length > 0) {
         const labelFromAPI = (parserId: string, title: string) => {

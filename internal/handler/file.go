@@ -559,7 +559,13 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
+	mode := strings.ToLower(c.DefaultQuery("mode", "replace"))
+	if mode != "add" && mode != "replace" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "mode must be 'add' or 'replace'")
+		return
+	}
+
+	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req, mode); err != nil {
 		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}
