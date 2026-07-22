@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.2"
+OFFICE_OXIDE_VERSION="0.1.8"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -152,16 +152,31 @@ check_office_oxide_deps() {
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
-    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
-        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
-        return 0
+    if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
+        echo -e "${RED}Error: office_oxide native library not found${NC}"
+        echo "  Expected: ${lib_path}"
+        echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+        exit 1
     fi
 
-    echo -e "${RED}Error: office_oxide native library not found${NC}"
-    echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
-    echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
-    exit 1
+    # Verify the on-disk lib matches the pinned version. A stale older lib
+    # (e.g. v0.1.7) silently reintroduces the PPT97 content-loss bug
+    # (github.com/yfedoseev/office_oxide#85, fixed in v0.1.8): PlainText()
+    # on a legacy .ppt returns stale metadata instead of slide text.
+    if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    uv run python3 ragflow_deps/download_deps.py"
+        exit 1
+    fi
+
+    echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
+    return 0
 }
 
 # Check pdfium static library.
@@ -324,8 +339,25 @@ build_go() {
 setup_cgo_env() {
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
+
+    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
+    # file content of referenced .a archives. So swapping the .a in-place
+    # (same path) does NOT invalidate the cache, and `go build` silently
+    # reuses a stale binary linked against the old .a.
+    #
+    # Create a version-stamped symlink directory so the flag string
+    # includes the actual linked version. When the .a is upgraded, the
+    # path changes → Go cache key changes → automatic relink.
+    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
+    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
+    if [ ! -d "$versioned_lib_dir" ]; then
+        mkdir -p "$versioned_lib_dir"
+        ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
+            "${versioned_lib_dir}/liboffice_oxide.a"
+    fi
+
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
