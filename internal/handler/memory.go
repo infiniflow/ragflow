@@ -105,7 +105,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	}
 
 	// Validate required field: name
-	if req.Name == "" {
+	if strings.TrimSpace(req.Name) == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "name is required")
 		return
 	}
@@ -893,7 +893,9 @@ func isArgumentError(msg string) bool {
 	// Matches Python ArgumentException error messages
 	argumentErrorPrefixes := []string{
 		"memory name cannot be empty",  // Memory name cannot be empty
+		"name can't be empty",          // ValidateName trimmed-empty
 		"memory name exceeds limit",    // Memory name exceeds limit
+		"name length is",               // ValidateName exceeds limit
 		"memory type must be a list",   // memory_type must be a list
 		"memory type is not supported", // Unsupported memory_type
 	}
