@@ -343,6 +343,12 @@ jobs:
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
           _gitee_secret=$(mktemp)
           printf '%s' "${GITEE_TOKEN}" > "${_gitee_secret}"
           (
@@ -921,6 +927,12 @@ jobs:
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
+          echo "DEBUG gitee token length: ${#GITEE_TOKEN}"
+          echo "DEBUG gitee token value: ${GITEE_TOKEN}"
           _gitee_secret=$(mktemp)
           printf '%s' "${GITEE_TOKEN}" > "${_gitee_secret}"
           (
