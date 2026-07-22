@@ -8,7 +8,7 @@
 //  2. ToolCallRound: the runner returns a message with ToolCalls →
 //     component extracts them into the tool_calls output.
 //  3. ExhaustRoundsError: the runner returns an error → component
-//     propagates it.
+//     exposes it through the Python-compatible _ERROR output.
 //  4. MissingModelID: the component rejects before calling the runner.
 package component
 
@@ -324,15 +324,18 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return nil, errors.New("agent: exhausted rounds without final answer")
+		return nil, errors.New("[GraphRunError] exceeds max steps")
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), map[string]any{
 		"user_prompt": "x",
 	})
-	if err == nil {
-		t.Fatal("expected error when loop exhausts without a final answer")
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
 	}
 }
 

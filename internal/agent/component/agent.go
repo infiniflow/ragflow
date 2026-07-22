@@ -538,7 +538,8 @@ func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
 // NewAgentComponent builds an AgentComponent from raw params.
 func NewAgentComponent(p AgentParam) *AgentComponent {
 	if p.MaxRounds <= 0 {
-		p.MaxRounds = 3
+		// Keep the Python Agent default (AgentParam.max_rounds = 5).
+		p.MaxRounds = 5
 	}
 	return &AgentComponent{param: p}
 }
@@ -627,7 +628,15 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
+		// Python's LLM layer turns model/tool execution failures into an
+		// ``**ERROR**`` response, which Agent exposes as the `_ERROR`
+		// component output.  Preserve cancellation as a real graph error,
+		// but keep ordinary ReAct failures in the component data flow so
+		// Canvas exception branches can handle them.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
+			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
+		}
+		return map[string]any{"_ERROR": "**ERROR**: " + err.Error()}, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -684,6 +693,18 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
+}
+
+// isAgentGraphRunError identifies ReAct graph failures that Python exposes
+// through the Agent component's _ERROR output. Construction/configuration
+// errors must remain real component errors so invalid canvases still fail
+// fast; only the graph execution limit/error is routed to exception branches.
+func isAgentGraphRunError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "[graphrunerror]") || strings.Contains(msg, "exceeds max steps")
 }
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the
