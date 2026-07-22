@@ -148,3 +148,25 @@ def test_unbroken_token_exceeding_budget_fallback(monkeypatch):
     assert len(non_empty) >= 3
     assert all(char_count_tokens(c) <= 30 for c in non_empty)
     assert "".join(non_empty) == huge_word
+
+
+def test_newline_join_token_count_strict_cap(monkeypatch):
+    """Verify that joining chunks with newline does not overshoot chunk_token_num
+    even when individual token counts sum to <= budget but the newline pushes it over.
+    """
+
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(_mod, "num_tokens_from_string", char_count_tokens)
+
+    # Two lines of 10 chars each. Budget = 20.
+    # line1 + "\n" + line2 = 10 + 1 + 10 = 21 chars/tokens, exceeding budget of 20.
+    line1 = "a" * 10
+    line2 = "b" * 10
+    txt = f"{line1}\n{line2}"
+    chunks = RAGFlowTxtParser.parser_txt(txt, chunk_token_num=20, delimiter="\n")
+    non_empty = [c[0] for c in chunks if c[0].strip()]
+    assert all(char_count_tokens(c) <= 20 for c in non_empty)
+    assert len(non_empty) == 2
+
