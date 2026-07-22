@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
@@ -348,12 +349,18 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelProvider := NewModelProviderService()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		if tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID); err == nil && tenantLLMID != "" {
+		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
+		if err != nil {
+			slog.Warn("CreateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", req.LLMID, "err", err)
+		} else if tenantLLMID != "" {
 			req.TenantLLMID = &tenantLLMID
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		if tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID); err == nil && tenantEmbdID != "" {
+		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		if err != nil {
+			slog.Warn("CreateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", req.EmbdID, "err", err)
+		} else if tenantEmbdID != "" {
 			req.TenantEmbdID = &tenantEmbdID
 		}
 	}
@@ -490,7 +497,10 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			if resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, *req.LLMID); err == nil && resolved != "" {
+			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, *req.LLMID)
+			if err != nil {
+				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", *req.LLMID, "err", err)
+			} else if resolved != "" {
 				updateDict["tenant_llm_id"] = resolved
 			}
 		}
@@ -499,7 +509,10 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			if resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, *req.EmbdID); err == nil && resolved != "" {
+			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			if err != nil {
+				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", *req.EmbdID, "err", err)
+			} else if resolved != "" {
 				updateDict["tenant_embd_id"] = resolved
 			}
 		}
