@@ -8,12 +8,13 @@ import (
 )
 
 func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
+	ctx := t.Context()
 	p, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
 		t.Fatalf("NewMarkdownParser: %v", err)
 	}
 	md := "# Hello\n\nThis is a paragraph.\n\n* List item 1\n* List item 2\n\n```go\nfunc main() {}\n```\n"
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -33,8 +34,9 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_EmptyInput(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
-	res := p.ParseWithResult("empty.md", []byte(""))
+	res := p.ParseWithResult(ctx, "empty.md", []byte(""))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -44,13 +46,14 @@ func TestMarkdownParser_ParseWithResult_EmptyInput(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 	// 1×1 pixel transparent PNG encoded as data URI
 	pixelPNG := make([]byte, 68) // minimal 1x1 PNG header
 	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
 	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
 	_ = pixelPNG
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -71,9 +74,10 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 	md := "# Title\n\nJust some text, no images here.\n\nMore text."
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}

@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ type chunkService interface {
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
 	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
-	AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
+	AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
 	StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
@@ -698,6 +699,7 @@ func addChunkResponseMessage(code common.ErrorCode, err error) string {
 }
 
 func (h *ChunkHandler) AddChunk(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -756,7 +758,7 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		ImageBase64:       imageBase64,
 	}
 
-	resp, err := h.chunkService.AddChunk(&req, userID)
+	resp, err := h.chunkService.AddChunk(ctx, &req, userID)
 	if err != nil {
 		var codedErr service.ErrorCoder
 		if errors.As(err, &codedErr) {

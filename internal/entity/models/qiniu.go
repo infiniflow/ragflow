@@ -140,7 +140,7 @@ func applyQiniuThinkingConfig(reqBody map[string]interface{}, modelName string, 
 	}
 }
 
-func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -260,7 +260,7 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 	return chatResponse, nil
 }
 
-func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -385,39 +385,39 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return nil
 }
 
-func (q *QiniuModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (q *QiniuModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (q *QiniuModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (q *QiniuModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (q *QiniuModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (q *QiniuModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (q *QiniuModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (q *QiniuModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (q *QiniuModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -464,22 +464,22 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	return ParseListModel(modelList), nil
 }
 
-func (q *QiniuModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (q *QiniuModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := q.ListModels(apiConfig)
+func (q *QiniuModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := q.ListModels(ctx, apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (q *QiniuModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (q *QiniuModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (q *QiniuModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }

@@ -27,6 +27,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,6 +72,7 @@ var (
 // It returns (result, handled, error). handled is true when the
 // dispatched result was modified.
 func maybeDispatchDOCXVision(
+	ctx context.Context,
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
@@ -125,7 +127,7 @@ func maybeDispatchDOCXVision(
 			}
 
 			messages := buildVisionMessages(prompt, imageB64)
-			resp, err := visionChatInvoker(driver, modelName, messages, apiConfig)
+			resp, err := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
 			if err != nil {
 				return
 			}
@@ -290,11 +292,12 @@ func extractDOCXVisionAnswer(resp *modelModule.ChatResponse) string {
 }
 
 func defaultVisionChatInvoker(
+	ctx context.Context,
 	driver modelModule.ModelDriver,
 	modelName string,
 	messages []modelModule.Message,
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
 	vision := true
-	return driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	return driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 }

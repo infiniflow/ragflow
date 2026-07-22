@@ -55,7 +55,7 @@ func (j *JinaModel) Name() string {
 	return "jina"
 }
 
-func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -160,12 +160,12 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}, nil
 }
 
-func (j *JinaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	//TODO implement me: https://api.jina.ai/docs#/Search%20Foundation%20Models/chat_completions_v1_chat_completions_post
 	return fmt.Errorf("jina does not implement ChatStreamlyWithSender(not available for now)")
 }
 
-func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	return embeddings, nil
 }
 
-func (j *JinaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -317,7 +317,7 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 	return &rerankResponse, nil
 }
 
-func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -366,47 +366,47 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	return ParseListModel(ModelList{Models: models}), nil
 }
 
-func (j *JinaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (j *JinaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (j *JinaModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := j.ListModels(apiConfig)
+func (j *JinaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := j.ListModels(ctx, apiConfig)
 	return err
 }
 
 // TranscribeAudio transcribe audio
-func (j *JinaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (j *JinaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JinaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", j.Name())
 }
 
 // AudioSpeech convert text to audio
-func (j *JinaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (j *JinaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JinaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", j.Name())
 }
 
 // OCRFile OCR file
-func (j *JinaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (j *JinaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
 // ParseFile parse file
-func (j *JinaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (j *JinaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (j *JinaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (j *JinaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }

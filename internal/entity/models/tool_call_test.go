@@ -24,6 +24,7 @@ import (
 )
 
 func testNonStreamingToolCall(t *testing.T, modelName, path string, newDriver func(string) ModelDriver) {
+	ctx := t.Context()
 	t.Helper()
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,7 @@ func testNonStreamingToolCall(t *testing.T, modelName, path string, newDriver fu
 
 	apiKey, toolChoice := "test-key", "required"
 	response, err := newDriver(server.URL).ChatWithMessages(
+		ctx,
 		modelName,
 		[]Message{
 			{Role: "assistant", ToolCalls: []map[string]interface{}{{"id": "call-1"}}},
@@ -65,6 +67,7 @@ func testNonStreamingToolCall(t *testing.T, modelName, path string, newDriver fu
 }
 
 func testStreamingToolCall(t *testing.T, modelName, path string, newDriver func(string) ModelDriver) {
+	ctx := t.Context()
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != path {
@@ -86,6 +89,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ra
 		ToolCallsResult: &[]map[string]interface{}{{"id": "stale"}},
 	}
 	err := newDriver(server.URL).ChatStreamlyWithSender(
+		ctx,
 		modelName,
 		[]Message{{Role: "user", Content: "find ragflow"}},
 		&APIConfig{ApiKey: &apiKey},
