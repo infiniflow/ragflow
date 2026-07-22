@@ -1322,3 +1322,30 @@ class NewAPIEmbed(OpenAIEmbed):
             raise ValueError("url cannot be None")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class OpenRouterEmbed(Base):
+    _FACTORY_NAME = "OpenRouter"
+
+    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
+        if not base_url:
+            base_url = "https://openrouter.ai/api/v1"
+        self.base_url = ensure_v1(base_url)
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            _ = json.loads(key).get("provider_order", "")
+        except (JSONDecodeError, TypeError):
+            api_key = key
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.model_name = model_name
+
+    def _call(self, batch):
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
+
+    def encode(self, texts: list):
+        return self._batched_encode(texts, self._call, batch_size=16, truncate_to=8191)
+
+    def encode_queries(self, text):
+        vectors, token_count = self._batched_encode([text], self._call, batch_size=16, truncate_to=8191)
+        return vectors[0], token_count
