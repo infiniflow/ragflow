@@ -115,10 +115,16 @@ func applyRemoveTOC(result *deepdoctype.ParseResult) {
 
 func removePDFTOC(result *deepdoctype.ParseResult) {
 	sections := result.Sections
+	// Detect English to mirror Python's `eng` parameter: use first-2-words
+	// prefix for English documents vs first-3-characters for CJK documents.
+	eng := isEnglishSections(sections)
 	i := 0
 	for i < len(sections) {
 		text := sectionText(sections[i])
-		if !pdfTOCTitlePattern.MatchString(strings.ToLower(strings.TrimSpace(text))) {
+		// Collapse whitespace and strip "@@" suffix before matching, mirroring
+		// Python's re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0]).
+		text = stripAndCollapse(text)
+		if !pdfTOCTitlePattern.MatchString(strings.ToLower(text)) {
 			i++
 			continue
 		}
@@ -126,13 +132,13 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 		if i >= len(sections) {
 			break
 		}
-		prefix := sectionTextPrefix(sections[i], 3)
+		prefix := sectionTextPrefixExpr(sections[i], eng)
 		for prefix == "" {
 			sections = append(sections[:i], sections[i+1:]...)
 			if i >= len(sections) {
 				break
 			}
-			prefix = sectionTextPrefix(sections[i], 3)
+			prefix = sectionTextPrefixExpr(sections[i], eng)
 		}
 		if i >= len(sections) || prefix == "" {
 			break
@@ -152,17 +158,83 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 	result.Sections = sections
 }
 
+// stripAndCollapse strips the "@@" suffix and collapses consecutive
+// whitespace characters (space, ideographic space) into a single empty
+// string. Mirrors Python's:
+//
+//	re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0])
+func stripAndCollapse(s string) string {
+	if idx := strings.Index(s, "@@"); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimSpace(s)
+	return spaceCollapseRe.ReplaceAllString(s, "")
+}
+
+var spaceCollapseRe = regexp.MustCompile(`[ \x{3000}]+`)
+
+// sectionTextPrefixExpr computes the TOC prefix matching Python's:
+//
+//	prefix = get(i)[:3] if not eng else " ".join(get(i).split()[:2])
+func sectionTextPrefixExpr(s deepdoctype.Section, eng bool) string {
+	text := sectionText(s)
+	if !eng {
+		// Use rune slicing to match Python's character-level [:3].
+		// Go's default byte-slicing would return only one
+		// 3-byte CJK character instead of three characters.
+		runes := []rune(text)
+		if len(runes) < 3 {
+			return text
+		}
+		return string(runes[:3])
+	}
+	words := strings.Fields(text)
+	if len(words) >= 2 {
+		return strings.Join(words[:2], " ")
+	}
+	return text
+}
+
+// isEnglishSections mirrors Python's is_english + random_choices
+// sampling over section texts. Returns true when >80% of sampled
+// section texts consist entirely of ASCII alphanumeric / whitespace /
+// punctuation characters.
+func isEnglishSections(sections []deepdoctype.Section) bool {
+	const sampleSize = 200
+	var texts []string
+	for _, s := range sections {
+		t := strings.TrimSpace(s.Text)
+		if t == "" {
+			continue
+		}
+		texts = append(texts, t)
+		if len(texts) >= sampleSize {
+			break
+		}
+	}
+	if len(texts) == 0 {
+		return false
+	}
+	eng := 0
+	for _, t := range texts {
+		if isEnglishTextPattern.MatchString(strings.TrimSpace(t)) {
+			eng++
+		}
+	}
+	return float64(eng)/float64(len(texts)) > 0.8
+}
+
+// isEnglishTextPattern mirrors Python's is_english character pattern:
+//
+//	r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]+"
+//
+// The backtick is omitted as it is irrelevant for section texts.
+var isEnglishTextPattern = regexp.MustCompile(`^[a-zA-Z0-9\s.,':;"/?<>!()\-]+$`)
+
 func sectionText(s deepdoctype.Section) string {
 	return strings.TrimSpace(s.Text)
 }
 
-func sectionTextPrefix(s deepdoctype.Section, n int) string {
-	text := sectionText(s)
-	if len(text) < n {
-		return text
-	}
-	return text[:n]
-}
 func removePDFTOCByOutlines(result *deepdoctype.ParseResult, outlines []deepdoctype.Outline) {
 	if result == nil || len(outlines) == 0 {
 		return

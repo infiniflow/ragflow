@@ -246,6 +246,42 @@ func beforeAt(s string) string {
 	return strings.TrimSpace(s)
 }
 
+var pureNumberPattern = regexp.MustCompile(`^[0-9]+$`)
+
+// shortOrNumericLine mirrors Python's tree_merge pre-filter:
+//
+//	sections = [(t, o) for t, o in sections if t and
+//	    len(t.split("@")[0].strip()) > 1 and
+//	    not re.match(r"[0-9]+$", t.split("@")[0].strip())]
+//
+// Returns true when the text is too short (≤1 character after stripping
+// the "@" suffix) or is a pure-numeric line, meaning it should not be
+// treated as a heading.
+func shortOrNumericLine(text string) bool {
+	clean := beforeAt(text)
+	if clean == "" {
+		return true
+	}
+	if utf8.RuneCountInString(clean) <= 1 {
+		return true
+	}
+	return pureNumberPattern.MatchString(clean)
+}
+
+// removeShortOrNumericLines filters out text records that Python's
+// tree_merge would drop: empty, single-character, or pure-numeric lines.
+// Non-text records (images, tables) are always kept.
+func removeShortOrNumericLines(records []lineRecord) []lineRecord {
+	out := make([]lineRecord, 0, len(records))
+	for _, rec := range records {
+		if rec.isText() && shortOrNumericLine(rec.text) {
+			continue
+		}
+		out = append(out, rec)
+	}
+	return out
+}
+
 // matchLayoutLevel mirrors common.py:match_layout_level. When the
 // record's layout field flags it as a section/title/head and the text is
 // title-like (not not_title), the record is promoted to `fallback_level`

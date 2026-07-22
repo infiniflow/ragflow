@@ -112,6 +112,15 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 		zap.String("variant", "group"),
 		zap.Int("records", len(records)),
 	)
+	// Remove table-of-contents entries before heading detection to prevent
+	// TOC entries (e.g. "第一章", "1.1") from being misidentified as real
+	// section headings. Mirrors Python's remove_contents_table in laws.py /
+	// book.py, applied between parser output and heading detection.
+	records = removeContentsTable(records)
+	// Drop short or pure-numeric lines that Python's tree_merge pre-filter
+	// would discard (empty, ≤1 character, or pure-numeric after stripping
+	// "@"-suffixed position info from PDF sections).
+	records = removeShortOrNumericLines(records)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
