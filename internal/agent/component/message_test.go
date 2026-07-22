@@ -193,6 +193,40 @@ func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 	}
 }
 
+// TestMessage_SkipsEmissionWhenAgentAlreadyStreamed verifies that the
+// Message component does not re-emit content when an upstream Agent
+// component already streamed its answer. This prevents the double-reply
+// bug (Agent → Message): the Agent streams via StreamCallback during the
+// ReAct loop, and the Message node must not send the same content again.
+func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-skip", "task-skip")
+	ctx := withStateForTest(context.Background(), state)
+	var emitted []string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+	})
+
+	// Simulate the Agent having already streamed its answer.
+	runtime.EmitAgentMessage(ctx, "agent streamed this", "")
+	emitted = nil // clear setup emission so we only capture Message's output
+
+	out, err := c.Invoke(ctx, map[string]any{"content": "agent streamed this"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// Content is still set in outputs for state persistence.
+	if got, _ := out["content"].(string); got != "agent streamed this" {
+		t.Fatalf("content: got %q, want %q", got, "agent streamed this")
+	}
+	// But no additional SSE emission should occur.
+	if len(emitted) != 0 {
+		t.Fatalf("emitted = %#v, want empty (Agent already streamed)", emitted)
+	}
+}
+
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")

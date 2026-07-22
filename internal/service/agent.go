@@ -614,10 +614,21 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
+//
+// Permission is an owner-only setting: team members who have access to the
+// canvas can still update title/avatar/description, but any permission value
+// they send is ignored so they cannot make a team agent private (or vice
+// versa). The owner can change permission together with title/avatar in one
+// request.
 func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
 	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return err
+	}
+
+	// Only the canvas owner may change the permission field.
+	if _, ok := patch["permission"]; ok && canvasInstance.UserID != userID {
+		delete(patch, "permission")
 	}
 
 	updates := map[string]interface{}{}
