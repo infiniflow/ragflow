@@ -166,8 +166,6 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, lang
                     language=lang,
                 )
                 logging.info(f"[VisionFigureParser] figure={idx} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context")
-                logging.info(f"[VisionFigureParser] figure={idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={idx} context_below_snippet={context_below[:512]}")
             else:
                 prompt = vision_llm_figure_describe_prompt(language=lang)
                 logging.info(f"[VisionFigureParser] figure={idx} context_len=0 prompt=default")
@@ -267,8 +265,6 @@ class VisionFigureParser:
                 logging.info(
                     f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context"
                 )
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_below_snippet={context_below[:512]}")
             else:
                 prompt = vision_llm_figure_describe_prompt(language=self.language)
                 logging.info(f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_len=0 prompt=default")
