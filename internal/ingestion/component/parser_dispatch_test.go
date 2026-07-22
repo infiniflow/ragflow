@@ -430,7 +430,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		}
 		return nil, "resolved-vlm", nil, nil
 	}
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		if modelName != "resolved-vlm" {
 			return nil, fmt.Errorf("modelName = %q, want resolved-vlm", modelName)
 		}
@@ -508,7 +508,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 		return nil, "resolved-vlm", nil, nil
 	}
 	call := 0
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		call++
 		answer := ""
 		if call == 1 {
@@ -625,19 +625,19 @@ func (d *mineruTestDriver) OCRFile(ctx context.Context, modelName *string, conte
 func (d *mineruTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig, usage *common.ModelUsage) (*modelModule.ParseFileResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ListModels(apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+func (d *mineruTestDriver) ListModels(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Balance(apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
+func (d *mineruTestDriver) Balance(ctx context.Context, apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) CheckConnection(apiConfig *modelModule.APIConfig) error {
+func (d *mineruTestDriver) CheckConnection(ctx context.Context, apiConfig *modelModule.APIConfig) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ListTasks(apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
+func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ShowTask(taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
+func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

@@ -92,6 +92,7 @@ func (h *Handler) Ping(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /admin/login [post]
 func (h *Handler) Login(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
@@ -100,7 +101,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Use userService.LoginByEmail with adminLogin=true
 	// This allows default admin account to log in admin system
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -816,6 +817,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 // Validates that the user is authenticated and is a superuser (admin)
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
 			common.ErrorWithCode(c, common.CodeUnauthorized, "Missing authorization header")
@@ -824,7 +826,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(token)
+		user, code, err := h.userService.GetUserByToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()

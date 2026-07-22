@@ -250,7 +250,7 @@ type streamSentinelDriver struct {
 	*captureToolDriver
 }
 
-func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *streamSentinelDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	answer := "answer"
 	if err := sender(&answer, nil); err != nil {
 		return err
@@ -265,11 +265,11 @@ func (d *streamSentinelDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *
 
 func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver { return d }
 func (d *captureToolDriver) Name() string                                      { return "capture" }
-func (d *captureToolDriver) ChatWithMessages(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (d *captureToolDriver) ChatWithMessages(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	d.lastConfig = cfg
 	return d.resp, nil
 }
-func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *captureToolDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	d.lastConfig = cfg
 	if d.resp == nil {
 		return nil
@@ -284,40 +284,40 @@ func (d *captureToolDriver) ChatStreamlyWithSender(_ string, _ []Message, _ *API
 	}
 	return nil
 }
-func (d *captureToolDriver) Embed(_ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *captureToolDriver) Embed(ctx context.Context, _ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Rerank(_ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
+func (d *captureToolDriver) Rerank(ctx context.Context, _ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudio(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
+func (d *captureToolDriver) TranscribeAudio(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) TranscribeAudioWithSender(_ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
+func (d *captureToolDriver) TranscribeAudioWithSender(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) AudioSpeech(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage) (*TTSResponse, error) {
+func (d *captureToolDriver) AudioSpeech(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage) (*TTSResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) AudioSpeechWithSender(_ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
+func (d *captureToolDriver) AudioSpeechWithSender(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *TTSConfig, _ *common.ModelUsage, _ func(*string, *string) error) error {
 	return nil
 }
-func (d *captureToolDriver) OCRFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig, _ *common.ModelUsage) (*OCRFileResponse, error) {
+func (d *captureToolDriver) OCRFile(ctx context.Context, _ *string, _ []byte, _ *string, _ *APIConfig, _ *OCRConfig, _ *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) ParseFile(_ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig, _ *common.ModelUsage) (*ParseFileResponse, error) {
+func (d *captureToolDriver) ParseFile(ctx context.Context, _ *string, _ []byte, _ *string, _ *APIConfig, _ *ParseFileConfig, _ *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) ListModels(_ *APIConfig) ([]ListModelResponse, error) {
+func (d *captureToolDriver) ListModels(ctx context.Context, _ *APIConfig) ([]ListModelResponse, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Balance(_ *APIConfig) (map[string]interface{}, error) {
+func (d *captureToolDriver) Balance(ctx context.Context, _ *APIConfig) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) CheckConnection(_ *APIConfig) error { return nil }
-func (d *captureToolDriver) ListTasks(_ *APIConfig) ([]ListTaskStatus, error) {
+func (d *captureToolDriver) CheckConnection(ctx context.Context, _ *APIConfig) error { return nil }
+func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]ListTaskStatus, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) ShowTask(_ string, _ *APIConfig) (*TaskResponse, error) {
+func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
 	return nil, nil
 }

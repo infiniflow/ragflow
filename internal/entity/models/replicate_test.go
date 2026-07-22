@@ -296,14 +296,14 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	model := newReplicateForTest(srv.URL)
-	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "meta/meta-llama-3-70b-instruct,replicate/hello-world" {
 		t.Errorf("models=%v", models)
 	}
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
@@ -313,11 +313,11 @@ func TestReplicateUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).
 	// Pass non-empty docs + nil modelName to trigger model-name validation.
-	if _, err := m.Rerank(nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.Rerank(ctx, nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	// Balance IS a stub → "no such method"
-	if _, err := m.Balance(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 }

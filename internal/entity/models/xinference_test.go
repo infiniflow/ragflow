@@ -90,7 +90,7 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	x := newXinferenceForTest(srv.URL)
 	maxTokens := 32
 	temp := 0.2
-	resp, err := x.ChatWithMessages("qwen2.5-instruct",
+	resp, err := x.ChatWithMessages(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp}, nil)
@@ -122,7 +122,7 @@ func TestXinferenceChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL + "/v1")
 	key := "sk-test"
-	_, err := x.ChatWithMessages("qwen2.5-instruct",
+	_, err := x.ChatWithMessages(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestXinferenceChatExtractsReasoningFields(t *testing.T) {
 	defer srv.Close()
 
 	x := newXinferenceForTest(srv.URL)
-	resp, err := x.ChatWithMessages("qwen3",
+	resp, err := x.ChatWithMessages(ctx, "qwen3",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{}, nil, nil)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestXinferenceStreamHappyPath(t *testing.T) {
 	var content []string
 	var reasoning []string
 	var sawDone bool
-	err := x.ChatStreamlyWithSender("qwen2.5-instruct",
+	err := x.ChatStreamlyWithSender(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
@@ -208,7 +208,7 @@ func TestXinferenceStreamHappyPath(t *testing.T) {
 func TestXinferenceStreamRejectsFalseStreamConfig(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	stream := false
-	err := x.ChatStreamlyWithSender("qwen2.5-instruct",
+	err := x.ChatStreamlyWithSender(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
 		&ChatConfig{Stream: &stream},
@@ -239,7 +239,7 @@ func TestXinferenceStreamCancelsOnIdle(t *testing.T) {
 	t.Cleanup(func() { close(hold) })
 
 	x := newXinferenceForTest(srv.URL)
-	err := x.ChatStreamlyWithSender("qwen2.5-instruct",
+	err := x.ChatStreamlyWithSender(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil,
 		nil,
@@ -322,7 +322,7 @@ func TestXinferenceEmbedHappyPathAndOmitsEmptyAuth(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	got, err := x.Embed(&model, []string{"hello", "world"}, &APIConfig{}, nil, nil)
+	got, err := x.Embed(ctx, &model, []string{"hello", "world"}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestXinferenceEmbedSendsAuthWhenKeyConfigured(t *testing.T) {
 	x := newXinferenceForTest(srv.URL)
 	key := "sk-test"
 	model := "bge-m3"
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &key}, nil, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &key}, nil, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 	if gotAuth != "Bearer sk-test" {
@@ -367,7 +367,7 @@ func TestXinferenceEmbedNormalizesBaseURLWithV1Suffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions", Embedding: "v1/embeddings", Models: "v1/models"},
 	)
 	model := "bge-m3"
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
@@ -383,7 +383,7 @@ func TestXinferenceEmbedForwardsDimension(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, &EmbeddingConfig{Dimension: 384}, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, &EmbeddingConfig{Dimension: 384}, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
@@ -396,7 +396,7 @@ func TestXinferenceEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -410,7 +410,7 @@ func TestXinferenceEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -425,7 +425,7 @@ func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding") {
 		t.Errorf("expected missing-embedding error, got %v", err)
 	}
@@ -434,7 +434,7 @@ func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
 func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	model := "bge-m3"
-	got, err := x.Embed(&model, nil, &APIConfig{}, nil, nil)
+	got, err := x.Embed(ctx, &model, nil, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty inputs, got %v", err)
 	}
@@ -460,7 +460,7 @@ func TestXinferenceEmbedSurfacesHTTPError(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Xinference embeddings API error") {
 		t.Errorf("expected API error, got %v", err)
 	}
@@ -472,7 +472,7 @@ func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions"}, // no Embedding suffix
 	)
 	model := "bge-m3"
-	_, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no embedding URL suffix configured") {
 		t.Errorf("expected missing-suffix error, got %v", err)
 	}
@@ -480,7 +480,7 @@ func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
 
 func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
 	x := NewXinferenceModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
-	_, err := x.ChatWithMessages("qwen2.5-instruct",
+	_, err := x.ChatWithMessages(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "base URL") {
@@ -498,7 +498,7 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	// TranscribeAudio IS implemented; it validates inputs after APIConfigCheck.
 	// The test passes nil file, which should yield an input-validation error,
 	// not an api-key error.
-	if _, err := x.TranscribeAudio(&model, nil, &APIConfig{}, nil, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+	if _, err := x.TranscribeAudio(ctx, &model, nil, &APIConfig{}, nil, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("TranscribeAudio: expected input validation error (file missing), got %v", err)
 	}
 	if err := x.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
@@ -568,7 +568,7 @@ func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	resp, err := x.Rerank(&model, "capital of France",
+	resp, err := x.Rerank(ctx, &model, "capital of France",
 		[]string{"Paris is the capital of France.", "Eiffel Tower.", "Berlin is the capital of Germany."},
 		&APIConfig{}, nil, nil,
 	)
@@ -598,7 +598,7 @@ func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
 	)
 	apiKey := "test-key"
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -615,7 +615,7 @@ func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a", "b", "c", "d"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b", "c", "d"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -624,7 +624,7 @@ func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
 func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	model := "bge-reranker-v2-m3"
-	resp, err := x.Rerank(&model, "q", nil, &APIConfig{}, nil, nil)
+	resp, err := x.Rerank(ctx, &model, "q", nil, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -635,7 +635,7 @@ func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
 
 func TestXinferenceRerankRequiresModelName(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
-	_, err := x.Rerank(nil, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("err=%v", err)
 	}
@@ -651,7 +651,7 @@ func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("err=%v", err)
 	}
@@ -670,7 +670,7 @@ func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("err=%v", err)
 	}
@@ -685,7 +685,7 @@ func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Xinference rerank API error") {
 		t.Errorf("err=%v", err)
 	}
@@ -697,7 +697,7 @@ func TestXinferenceRerankRejectsMissingRerankSuffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
 		t.Errorf("err=%v", err)
 	}

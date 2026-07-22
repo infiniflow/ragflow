@@ -134,7 +134,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 }
 
 func TestTokenHubChatRequiresAPIKey(t *testing.T) {
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages("gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages(ctx, "gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
@@ -142,7 +142,7 @@ func TestTokenHubChatRequiresAPIKey(t *testing.T) {
 
 func TestTokenHubChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newTokenHubForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newTokenHubForTest("http://unused").ChatWithMessages(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Fatalf("expected model-name error, got %v", err)
 	}
@@ -269,7 +269,7 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newTokenHubForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newTokenHubForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestTokenHubEmbedValidatesInputs(t *testing.T) {
 		t.Fatalf("expected model-name error, got %v", err)
 	}
 	model := "text-embedding-3-small"
-	if _, err := newTokenHubForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newTokenHubForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
 }
@@ -306,7 +306,7 @@ func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newTokenHubForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newTokenHubForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
 }
 
 func TestTokenHubListModelsValidatesResponseAndAPIKey(t *testing.T) {
-	if _, err := newTokenHubForTest("http://unused").ListModels(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newTokenHubForTest("http://unused").ListModels(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
 
@@ -327,7 +327,7 @@ func TestTokenHubListModelsValidatesResponseAndAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newTokenHubForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	_, err := newTokenHubForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "invalid models list format") {
 		t.Fatalf("expected invalid-format error, got %v", err)
 	}

@@ -371,7 +371,7 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newTokenPonyForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newTokenPonyForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyListModelsRequiresAPIKey(t *testing.T) {
-	_, err := newTokenPonyForTest("http://unused").ListModels(&APIConfig{})
+	_, err := newTokenPonyForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -397,7 +397,7 @@ func TestTokenPonyCheckConnectionDelegatesToListModels(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	if err := newTokenPonyForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := newTokenPonyForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection: %v", err)
 	}
 }
@@ -410,7 +410,7 @@ func TestTokenPonyCheckConnectionPropagatesError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	err := newTokenPonyForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey})
+	err := newTokenPonyForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -420,7 +420,7 @@ func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
 	m := newTokenPonyForTest("http://unused")
 	apiKey := "test-key"
 	region := "missing"
-	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &region})
+	_, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: &region})
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base-URL error, got %v", err)
 	}
@@ -428,7 +428,7 @@ func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
 
 func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
 	model := "x"
-	_, err := newTokenPonyForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newTokenPonyForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}
@@ -437,13 +437,13 @@ func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
 func TestTokenPonyAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := newTokenPonyForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

@@ -134,7 +134,7 @@ func TestNvidiaRerankEmptyDocuments(t *testing.T) {
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
-	resp, err := model.Rerank(&modelName, "q", nil, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	resp, err := model.Rerank(ctx, &modelName, "q", nil, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty documents, got %v", err)
 	}
@@ -146,7 +146,7 @@ func TestNvidiaRerankEmptyDocuments(t *testing.T) {
 func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
 	model := newNvidiaModelForTest("http://unused")
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
-	_, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, &modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
 func TestNvidiaRerankRequiresModelName(t *testing.T) {
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
-	_, err := model.Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -171,7 +171,7 @@ func TestNvidiaRerankRejectsHTTPError(t *testing.T) {
 	model := newNvidiaModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
-	_, err := model.Rerank(&modelName, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, &modelName, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Nvidia rerank API error") {
 		t.Errorf("expected API error, got %v", err)
 	}
@@ -190,7 +190,7 @@ func TestNvidiaRerankRejectsOutOfRangeIndex(t *testing.T) {
 	model := newNvidiaModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
-	_, err := model.Rerank(&modelName, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, &modelName, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unexpected rerank index") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}

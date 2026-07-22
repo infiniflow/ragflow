@@ -145,14 +145,14 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 
 func TestPerplexityChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestPerplexityChatRequiresApiKey(t *testing.T) {
-	_, err := newPerplexityForTest("http://unused").ChatWithMessages("sonar", []Message{{Role: "user", Content: "x"}}, nil, nil, nil)
+	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "sonar", []Message{{Role: "user", Content: "x"}}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -257,14 +257,14 @@ func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	model := newPerplexityForTest(srv.URL)
-	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "sonar,sonar-pro,pplx-embed-v1-0.6b" {
 		t.Errorf("models=%v", models)
 	}
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
@@ -279,7 +279,7 @@ func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newPerplexityForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newPerplexityForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 	modelName := "pplx-embed-v1-0.6b"
 	apiKey := "test-key"
-	out, err := newPerplexityForTest("http://unused").Embed(&modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -357,10 +357,10 @@ func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 
 func TestPerplexityUnsupportedMethods(t *testing.T) {
 	m := newPerplexityForTest("http://unused")
-	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
-	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 }

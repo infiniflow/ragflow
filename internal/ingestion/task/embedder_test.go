@@ -17,6 +17,7 @@
 package task
 
 import (
+	"context"
 	"ragflow/internal/common"
 	"testing"
 
@@ -115,19 +116,21 @@ func (d *stubDriver) OCRFile(ctx context.Context, modelName *string, content []b
 func (d *stubDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, parseFileConfig *models.ParseFileConfig, usage *common.ModelUsage) (*models.ParseFileResponse, error) {
 	return nil, nil
 }
-func (d *stubDriver) ListModels(apiConfig *models.APIConfig) ([]models.ListModelResponse, error) {
+func (d *stubDriver) ListModels(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListModelResponse, error) {
 	return nil, nil
 }
-func (d *stubDriver) Balance(apiConfig *models.APIConfig) (map[string]interface{}, error) {
+func (d *stubDriver) Balance(ctx context.Context, apiConfig *models.APIConfig) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (d *stubDriver) CheckConnection(apiConfig *models.APIConfig) error { return nil }
-func (d *stubDriver) ListTasks(apiConfig *models.APIConfig) ([]models.ListTaskStatus, error) {
+func (d *stubDriver) CheckConnection(ctx context.Context, apiConfig *models.APIConfig) error {
+	return nil
+}
+func (d *stubDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListTaskStatus, error) {
 	return nil, nil
 }
-func (d *stubDriver) ShowTask(taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
+func (d *stubDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
-func (d *stubDriver) ToolCall(name string, arguments map[string]interface{}) (string, error) {
+func (d *stubDriver) ToolCall(ctx context.Context, name string, arguments map[string]interface{}) (string, error) {
 	return "", nil
 }

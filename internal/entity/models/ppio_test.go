@@ -178,7 +178,7 @@ func TestPPIOChatUsesReasoningFallback(t *testing.T) {
 
 func TestPPIOChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPPIOForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPPIOForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -186,7 +186,7 @@ func TestPPIOChatRequiresModelName(t *testing.T) {
 
 func TestPPIOChatRequiresMessages(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPPIOForTest("http://unused").ChatWithMessages("deepseek/deepseek-r1", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPPIOForTest("http://unused").ChatWithMessages(ctx, "deepseek/deepseek-r1", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages error, got %v", err)
 	}
@@ -199,7 +199,7 @@ func TestPPIOChatSurfacesHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPPIOForTest(srv.URL).ChatWithMessages(ctx, "deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected HTTP status error, got %v", err)
 	}
@@ -214,7 +214,7 @@ func TestPPIOChatRejectsProviderError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newPPIOForTest(srv.URL).ChatWithMessages("deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPPIOForTest(srv.URL).ChatWithMessages(ctx, "deepseek/deepseek-r1", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "upstream error") {
 		t.Errorf("expected upstream error, got %v", err)
 	}
@@ -375,20 +375,20 @@ func TestPPIOListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	model := newPPIOForTest(srv.URL)
-	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "deepseek/deepseek-r1,qwen/qwen-2.5-72b-instruct" {
 		t.Errorf("models=%v", models)
 	}
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestPPIOListModelsRequiresAPIKey(t *testing.T) {
-	_, err := newPPIOForTest("http://unused").ListModels(&APIConfig{})
+	_, err := newPPIOForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -403,7 +403,7 @@ func TestPPIOListModelsRejectsProviderError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newPPIOForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	_, err := newPPIOForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "upstream error") {
 		t.Errorf("expected upstream error, got %v", err)
 	}
@@ -477,10 +477,10 @@ func TestPPIOUnsupportedMethods(t *testing.T) {
 	if _, err := m.Embed(ctx, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed error=%v", err)
 	}
-	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
-	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 	if _, err := m.TranscribeAudio(nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
@@ -498,10 +498,10 @@ func TestPPIOUnsupportedMethods(t *testing.T) {
 	if _, err := m.OCRFile(nil, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile error=%v", err)
 	}
-	if _, err := m.ParseFile(nil, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ParseFile(ctx, nil, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile error=%v", err)
 	}
-	if _, err := m.ListTasks(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ListTasks(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks error=%v", err)
 	}
 	if _, err := m.ShowTask("", nil); err == nil || !strings.Contains(err.Error(), "no such method") {

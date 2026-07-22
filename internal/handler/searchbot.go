@@ -379,10 +379,11 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	common.SuccessWithData(c, mindMap, "success")
 }
 
-// SearchbotDetail returns the public share-page bootstrap payload for a
+// SearchBotDetail returns the public share-page bootstrap payload for a
 // search app. The route is mounted under apiNoAuth but still requires a beta
 // token, matching Python's AUTH_BETA flow.
-func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
+func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
+	ctx := c.Request.Context()
 	searchID := strings.TrimSpace(c.Query("search_id"))
 	if searchID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
@@ -390,7 +391,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 	}
 
 	userSvc := service.NewUserService()
-	user, code, err := userSvc.GetUserByBetaAPIToken(c.GetHeader("Authorization"))
+	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return

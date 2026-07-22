@@ -40,7 +40,7 @@ func TestOllamaListModels(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := newOllamaForListModelsTest(srv.URL).ListModels(&APIConfig{})
+	models, err := newOllamaForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestOllamaListModelsFallsBackToModelField(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := newOllamaForListModelsTest(srv.URL).ListModels(&APIConfig{})
+	models, err := newOllamaForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -78,14 +78,14 @@ func TestOllamaListModelsRejectsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := newOllamaForListModelsTest(srv.URL).ListModels(&APIConfig{}); err == nil {
+	if _, err := newOllamaForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{}); err == nil {
 		t.Fatal("ListModels: expected error for HTTP 500, got nil")
 	}
 }
 
 func TestOllamaListModelsRequiresBaseURL(t *testing.T) {
 	m := NewOllamaModel(map[string]string{}, URLSuffix{Models: "api/tags"})
-	if _, err := m.ListModels(&APIConfig{}); err == nil {
+	if _, err := m.ListModels(ctx, &APIConfig{}); err == nil {
 		t.Fatal("ListModels: expected error for missing base URL, got nil")
 	}
 }

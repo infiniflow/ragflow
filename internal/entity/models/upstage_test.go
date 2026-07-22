@@ -38,7 +38,7 @@ func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	effort := "high"
-	_, err := u.ChatWithMessages("solar-pro2",
+	_, err := u.ChatWithMessages(ctx, "solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Effort: &effort}, nil)
@@ -64,7 +64,7 @@ func TestUpstageChatOmitsReasoningEffortWhenUnset(t *testing.T) {
 
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := u.ChatWithMessages("solar-pro2",
+	_, err := u.ChatWithMessages(ctx, "solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{}, // no Effort
@@ -94,7 +94,7 @@ func TestUpstageStreamPropagatesReasoningEffort(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	effort := "medium"
-	err := u.ChatStreamlyWithSender("solar-pro2",
+	err := u.ChatStreamlyWithSender(ctx, "solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Effort: &effort},
@@ -124,7 +124,7 @@ func TestUpstageChatExtractsReasoningField(t *testing.T) {
 
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := u.ChatWithMessages("solar-pro3",
+	resp, err := u.ChatWithMessages(ctx, "solar-pro3",
 		[]Message{{Role: "user", Content: "What is 15% of 80?"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestUpstageChatHandlesAbsentReasoning(t *testing.T) {
 
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := u.ChatWithMessages("solar-mini",
+	resp, err := u.ChatWithMessages(ctx, "solar-mini",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
@@ -182,7 +182,7 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	topP := 0.9
 	stop := []string{"END"}
 	effort := "high"
-	_, err := u.ChatWithMessages("solar-pro2",
+	_, err := u.ChatWithMessages(ctx, "solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort}, nil)
@@ -227,7 +227,7 @@ func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -242,7 +242,7 @@ func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -261,7 +261,7 @@ func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	vecs, err := u.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := u.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestUpstageStreamExtractsReasoningDelta(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	var contentChunks, reasoningChunks []string
-	err := u.ChatStreamlyWithSender("solar-pro3",
+	err := u.ChatStreamlyWithSender(ctx, "solar-pro3",
 		[]Message{{Role: "user", Content: "What is 15% of 80?"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(content *string, reason *string) error {
@@ -354,7 +354,7 @@ func TestUpstageStreamReasoningChunksArriveBeforeContent(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	var seq []string
-	err := u.ChatStreamlyWithSender("solar-pro3",
+	err := u.ChatStreamlyWithSender(ctx, "solar-pro3",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(content *string, reason *string) error {
@@ -400,7 +400,7 @@ func TestUpstageStreamWithoutReasoningStillWorks(t *testing.T) {
 	apiKey := "test-key"
 	var content []string
 	var reasonCalled bool
-	err := u.ChatStreamlyWithSender("solar-mini",
+	err := u.ChatStreamlyWithSender(ctx, "solar-mini",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
