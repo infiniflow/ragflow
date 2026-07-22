@@ -82,6 +82,8 @@ func TestRAGconFactory(t *testing.T) {
 }
 
 func TestRAGconChatHappyPath(t *testing.T) {
+	ctx := t.Context()
+
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s, want /chat/completions", r.URL.Path)
@@ -110,6 +112,7 @@ func TestRAGconChatHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	resp, err := newRAGconForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -130,7 +133,9 @@ func TestRAGconChatHappyPath(t *testing.T) {
 }
 
 func TestRAGconChatRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
@@ -142,8 +147,10 @@ func TestRAGconChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestRAGconChatRequiresMessages(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
@@ -155,6 +162,7 @@ func TestRAGconChatRequiresMessages(t *testing.T) {
 }
 
 func TestRAGconChatSurfacesHTTPError(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":"invalid key"}`)
@@ -163,6 +171,7 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newRAGconForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -174,6 +183,7 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 }
 
 func TestRAGconStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -195,6 +205,7 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newRAGconForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -228,8 +239,10 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 }
 
 func TestRAGconStreamRejectsNilSender(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	err := newRAGconForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -243,6 +256,7 @@ func TestRAGconStreamRejectsNilSender(t *testing.T) {
 }
 
 func TestRAGconEmbed(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/embeddings" {
 			t.Errorf("path=%s, want /embeddings", r.URL.Path)
@@ -268,6 +282,7 @@ func TestRAGconEmbed(t *testing.T) {
 }
 
 func TestRAGconRerank(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/rerank" {
 			t.Errorf("path=%s, want /rerank", r.URL.Path)
@@ -296,6 +311,7 @@ func TestRAGconRerank(t *testing.T) {
 }
 
 func TestRAGconListModelsAndCheckConnection(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/models" {
 			t.Errorf("path=%s, want /models", r.URL.Path)
@@ -319,6 +335,7 @@ func TestRAGconListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/audio/transcriptions" {
 			t.Errorf("path=%s, want /audio/transcriptions", r.URL.Path)
@@ -362,6 +379,7 @@ func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
 }
 
 func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/audio/speech" {
 			t.Errorf("path=%s, want /audio/speech", r.URL.Path)
@@ -386,6 +404,7 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 }
 
 func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	r := newRAGconForTest("http://unused")
 	model := "llama-4-maverick"
 
@@ -401,7 +420,7 @@ func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	if _, err := r.ListTasks(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks: expected no such method, got %v", err)
 	}
-	if _, err := r.ShowTask("t1", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ShowTask(ctx, "t1", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: expected no such method, got %v", err)
 	}
 }
