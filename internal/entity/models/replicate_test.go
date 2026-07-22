@@ -122,7 +122,9 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	maxTokens := 128
 	stop := []string{"END"}
+	ctx := t.Context()
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "system", Content: "be helpful"}, {Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -161,9 +163,10 @@ func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-
+	ctx := t.Context()
 	apiKey := "test-key"
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
+		ctx,
 		version,
 		[]Message{{Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -201,9 +204,10 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-
+	ctx := t.Context()
 	apiKey := "test-key"
 	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -256,10 +260,11 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 		})
 	}))
 	defer apiSrv.Close()
-
+	ctx := t.Context()
 	apiKey := "test-key"
 	var chunks []string
 	err := newReplicateForTest(apiSrv.URL).ChatStreamlyWithSender(
+		ctx,
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -278,6 +283,7 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 }
 
 func TestReplicateListModelsAndCheckConnection(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -309,6 +315,7 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestReplicateUnsupportedMethods(t *testing.T) {
+	ctx := t.Context()
 	m := newReplicateForTest("http://unused")
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).

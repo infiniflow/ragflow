@@ -23,6 +23,7 @@ func newUpstageForTest(baseURL string) *UpstageModel {
 // ---------- reasoning_effort / reasoning field ----------
 
 func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
+	ctx := t.Context()
 	// Per https://console.upstage.ai/api/docs/for-agents/raw, Upstage
 	// Solar models accept `reasoning_effort: minimal|low|medium|high`.
 	// ChatConfig.Effort is the canonical carrier; this test asserts it
@@ -51,6 +52,7 @@ func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
 }
 
 func TestUpstageChatOmitsReasoningEffortWhenUnset(t *testing.T) {
+	ctx := t.Context()
 	// If the caller does not opt in, the field must NOT be sent. Sending
 	// "minimal" by default would silently change behavior for downstream
 	// proxies that treat a present field differently from an absent one.
@@ -79,6 +81,7 @@ func TestUpstageChatOmitsReasoningEffortWhenUnset(t *testing.T) {
 }
 
 func TestUpstageStreamPropagatesReasoningEffort(t *testing.T) {
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -110,6 +113,7 @@ func TestUpstageStreamPropagatesReasoningEffort(t *testing.T) {
 }
 
 func TestUpstageChatExtractsReasoningField(t *testing.T) {
+	ctx := t.Context()
 	// Per the Upstage docs: when reasoning_effort is high|medium for
 	// solar-pro3 (or high for solar-pro2), the response's
 	// choices[0].message includes a `reasoning` field. The driver must
@@ -139,6 +143,7 @@ func TestUpstageChatExtractsReasoningField(t *testing.T) {
 }
 
 func TestUpstageChatHandlesAbsentReasoning(t *testing.T) {
+	ctx := t.Context()
 	// Models without reasoning (solar-mini, syn-pro) or low-effort
 	// requests return no `reasoning` field. The driver must leave
 	// ReasonContent empty without crashing.
@@ -167,6 +172,7 @@ func TestUpstageChatHandlesAbsentReasoning(t *testing.T) {
 // https://console.upstage.ai/api/chat) round-trips through the request
 // body for both streaming and non-streaming paths.
 func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -215,6 +221,7 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 // ---------- Embed: duplicate / out-of-range / reorder ----------
 
 func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
+	ctx := t.Context()
 	// A malformed upstream that repeats data[*].index would silently
 	// overwrite the earlier vector; the driver must fail loudly instead.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -234,6 +241,7 @@ func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[{"embedding":[1],"index":7}]}`)
 	}))
@@ -249,6 +257,7 @@ func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
+	ctx := t.Context()
 	// Upstream returns vectors in shuffled order; driver must realign.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[
@@ -281,6 +290,7 @@ func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
 // reasoning_effort=high — both fields appear, sometimes in the same
 // chunk and sometimes separately.
 func TestUpstageStreamExtractsReasoningDelta(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -338,6 +348,7 @@ func TestUpstageStreamExtractsReasoningDelta(t *testing.T) {
 // present: reasoning is forwarded first so a UI consuming both can
 // render the chain-of-thought before the answer for that token.
 func TestUpstageStreamReasoningChunksArriveBeforeContent(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -385,6 +396,7 @@ func TestUpstageStreamReasoningChunksArriveBeforeContent(t *testing.T) {
 // non-reasoning models (solar-mini, solar-pro2 with no reasoning_effort)
 // emit only delta.content. The driver must not regress on them.
 func TestUpstageStreamWithoutReasoningStillWorks(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)

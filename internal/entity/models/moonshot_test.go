@@ -85,6 +85,7 @@ func TestMoonshotNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMoonshotChatForcesNonStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -113,6 +114,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 	stream := true
 	thinking := true
 	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
 		" kimi-k2.6 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -130,6 +132,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMoonshotChatSupportsTools(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		tools, ok := body["tools"].([]interface{})
 		if !ok || len(tools) != 1 {
@@ -164,6 +167,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 		},
 	}}
 	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "北京今天天气怎么样？"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -181,6 +185,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 }
 
 func TestMoonshotStreamForcesStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -209,6 +214,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -243,6 +249,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v, want true", body["stream"])
@@ -255,6 +262,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 	apiKey := "test-key"
 	var sawDone bool
 	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -276,6 +284,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 }
 
 func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -303,6 +312,7 @@ func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -323,7 +333,7 @@ func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	balance, err := newMoonshotForTest(srv.URL).Balance(&APIConfig{ApiKey: &apiKey})
+	balance, err := newMoonshotForTest(srv.URL).Balance(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
@@ -336,6 +346,7 @@ func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotRejectsMalformedResponses(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	tests := []struct {
 		name     string
@@ -387,6 +398,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 }
 
 func TestMoonshotValidatesInputs(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "
 	send := func(*string, *string) error { return nil }
@@ -444,7 +456,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "balance api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").Balance(nil)
+				_, err := newMoonshotForTest("http://unused").Balance(ctx, &APIConfig{})
 				return err
 			},
 			want: "api key is required",

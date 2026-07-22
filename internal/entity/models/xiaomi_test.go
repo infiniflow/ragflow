@@ -111,7 +111,8 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	maxTokens := 1024
 	thinking := false
-	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages(
+	ctx := t.Context()
+	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages(ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -129,6 +130,7 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 }
 
 func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -155,6 +157,7 @@ func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
 }
 
 func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/override/chat", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -182,6 +185,7 @@ func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
 }
 
 func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -205,6 +209,7 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 }
 
 func TestXiaomiChatRequiresInputs(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	m := newXiaomiForTest("http://unused")
 	if _, err := m.ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -219,6 +224,7 @@ func TestXiaomiChatRequiresInputs(t *testing.T) {
 }
 
 func TestXiaomiChatRejectsHTTPError(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":"unauthorized"}`)
@@ -233,6 +239,7 @@ func TestXiaomiChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestXiaomiStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v want true", body["stream"])
@@ -250,6 +257,7 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -284,6 +292,7 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 }
 
 func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -296,6 +305,7 @@ func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
 	apiKey := "test-key"
 	var content []string
 	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -317,6 +327,7 @@ func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
 }
 
 func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: {bad json}\n\n")
@@ -332,6 +343,7 @@ func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestXiaomiUnsupportedMethods(t *testing.T) {
+	ctx := t.Context()
 	m := newXiaomiForTest("http://unused")
 	model := "mimo-v2.5-pro"
 	apiKey := "test-key"
@@ -344,7 +356,7 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 		t.Errorf("Rerank: %v", err)
 	}
 	// CheckConnection IS implemented — verifies API config and base URL are reachable.
-	if err := m.CheckConnection(cfg); err != nil {
+	if err := m.CheckConnection(ctx, cfg); err != nil {
 		t.Errorf("CheckConnection: %v", err)
 	}
 	// TranscribeAudio IS implemented; with nil file it returns input validation error.
@@ -352,10 +364,10 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
 	// AudioSpeech IS implemented; with nil content it returns input validation error.
-	if _, err := m.AudioSpeech(&model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
+	if _, err := m.AudioSpeech(ctx, &model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

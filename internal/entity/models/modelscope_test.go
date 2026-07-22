@@ -94,6 +94,7 @@ func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -145,6 +146,7 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 }
 
 func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer ms-test" {
 			t.Errorf("Authorization=%q, want Bearer ms-test", got)
@@ -164,6 +166,7 @@ func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 }
 
 func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
 			"content":"12",
@@ -185,6 +188,7 @@ func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
 }
 
 func TestModelScopeStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -248,6 +252,7 @@ func TestModelScopeStreamHappyPath(t *testing.T) {
 }
 
 func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
+	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	stream := false
 	err := m.ChatStreamlyWithSender(ctx, "Qwen/Qwen2.5-7B-Instruct",
@@ -262,6 +267,7 @@ func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
+	ctx := t.Context()
 	withModelScopeIdleTimeout(t, 200*time.Millisecond)
 
 	hold := make(chan struct{})
@@ -291,6 +297,7 @@ func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
 }
 
 func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path=%s, want /v1/models", r.URL.Path)
@@ -312,12 +319,13 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	if joinModelNames(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
 		t.Errorf("models=%v", models)
 	}
-	if err := m.CheckConnection(apiConfig); err != nil {
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
+	ctx := t.Context()
 	m := NewModelScopeModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := m.ChatWithMessages(ctx, "Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
@@ -328,6 +336,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"
 
@@ -343,16 +352,16 @@ func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	if _, err := m.TranscribeAudio(ctx, &model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
 	}
-	if err := m.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.TranscribeAudioWithSender(ctx, &model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: expected no such method, got %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: expected no such method, got %v", err)
 	}
-	if err := m.AudioSpeechWithSender(&model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.AudioSpeechWithSender(ctx, &model, nil, &APIConfig{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: expected no such method, got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
 }

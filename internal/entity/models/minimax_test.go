@@ -85,6 +85,7 @@ func TestMinimaxNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMinimaxChatForcesNonStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -113,6 +114,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 	stream := true
 	thinking := true
 	resp, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
 		" MiniMax-M3 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -131,6 +133,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	})
@@ -138,6 +141,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -150,6 +154,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 }
 
 func TestMinimaxStreamForcesStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -177,6 +182,7 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 	stream := false
 	var content, reasoning []string
 	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -204,6 +210,7 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v, want true", body["stream"])
@@ -215,6 +222,7 @@ func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -228,6 +236,7 @@ func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 }
 
 func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -255,6 +264,7 @@ func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
 		"missing data": map[string]interface{}{"object": "list"},
@@ -274,6 +284,7 @@ func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -294,6 +305,7 @@ func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestMinimaxValidatesInputs(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "
 	send := func(*string, *string) error { return nil }

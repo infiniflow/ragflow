@@ -3,6 +3,7 @@ package models
 import "testing"
 
 func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	driver := NewXunFeiModel(map[string]string{"default": "http://unused"}, URLSuffix{}).
 		NewInstance(map[string]string{"default": "http://unused"})
 	modelName := "spark"
@@ -21,40 +22,40 @@ func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 			return err
 		}},
 		{"TranscribeAudio", func() error {
-			_, err := driver.TranscribeAudio(&modelName, &text, &APIConfig{}, nil, nil)
+			_, err := driver.TranscribeAudio(ctx, &modelName, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"TranscribeAudioWithSender", func() error {
-			return driver.TranscribeAudioWithSender(&modelName, &text, &APIConfig{}, nil, nil, nil)
+			return driver.TranscribeAudioWithSender(ctx, &modelName, &text, &APIConfig{}, nil, nil, nil)
 		}},
 		{"AudioSpeech", func() error {
-			_, err := driver.AudioSpeech(&modelName, &text, &APIConfig{}, nil, nil)
+			_, err := driver.AudioSpeech(ctx, &modelName, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"AudioSpeechWithSender", func() error {
-			return driver.AudioSpeechWithSender(&modelName, &text, &APIConfig{}, nil, nil, nil)
+			return driver.AudioSpeechWithSender(ctx, &modelName, &text, &APIConfig{}, nil, nil, nil)
 		}},
 		{"OCRFile", func() error {
-			_, err := driver.OCRFile(&modelName, nil, &text, &APIConfig{}, nil, nil)
+			_, err := driver.OCRFile(ctx, &modelName, nil, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"ParseFile", func() error {
-			_, err := driver.ParseFile(&modelName, nil, &text, &APIConfig{}, nil, nil)
+			_, err := driver.ParseFile(ctx, &modelName, nil, &text, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"Balance", func() error {
-			_, err := driver.Balance(&APIConfig{})
+			_, err := driver.Balance(ctx, &APIConfig{})
 			return err
 		}},
 		{"CheckConnection", func() error {
 			return driver.CheckConnection(ctx, &APIConfig{})
 		}},
 		{"ListTasks", func() error {
-			_, err := driver.ListTasks(&APIConfig{})
+			_, err := driver.ListTasks(ctx, &APIConfig{})
 			return err
 		}},
 		{"ShowTask", func() error {
-			_, err := driver.ShowTask("task-id", &APIConfig{})
+			_, err := driver.ShowTask(ctx, "task-id", &APIConfig{})
 			return err
 		}},
 	}

@@ -55,6 +55,7 @@ func TestVolcEngineConfigDeclaresModelsSuffix(t *testing.T) {
 }
 
 func TestVolcEngineListModelsHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
@@ -87,6 +88,7 @@ func TestVolcEngineListModelsHappyPath(t *testing.T) {
 }
 
 func TestVolcEngineListModelsRejectsProviderError(t *testing.T) {
+	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	})
@@ -100,6 +102,7 @@ func TestVolcEngineListModelsRejectsProviderError(t *testing.T) {
 }
 
 func TestVolcEngineListModelsRequiresModelsSuffix(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	model := NewVolcEngine(map[string]string{"default": "http://unused"}, URLSuffix{})
 

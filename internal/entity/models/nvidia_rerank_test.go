@@ -52,6 +52,7 @@ func newNvidiaModelForTest(baseURL string) *NvidiaModel {
 }
 
 func TestNvidiaRerankHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "nvidia/nv-rerankqa-mistral-4b-v3" {
 			t.Errorf("expected model=nvidia/nv-rerankqa-mistral-4b-v3, got %v", body["model"])
@@ -86,6 +87,7 @@ func TestNvidiaRerankHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
 	resp, err := model.Rerank(
+		ctx,
 		&modelName,
 		"What is RAPTOR?",
 		[]string{"doc-zero", "doc-one", "doc-two"},
@@ -108,6 +110,7 @@ func TestNvidiaRerankHappyPath(t *testing.T) {
 }
 
 func TestNvidiaRerankTopNClamp(t *testing.T) {
+	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
 			t.Errorf("expected top_n clamp to RerankConfig.TopN=2, got %v", body["top_n"])
@@ -120,6 +123,7 @@ func TestNvidiaRerankTopNClamp(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
 	if _, err := model.Rerank(
+		ctx,
 		&modelName, "q",
 		[]string{"a", "b", "c", "d"},
 		&APIConfig{ApiKey: &apiKey},
@@ -131,6 +135,7 @@ func TestNvidiaRerankTopNClamp(t *testing.T) {
 }
 
 func TestNvidiaRerankEmptyDocuments(t *testing.T) {
+	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
@@ -144,6 +149,7 @@ func TestNvidiaRerankEmptyDocuments(t *testing.T) {
 }
 
 func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
 	_, err := model.Rerank(ctx, &modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{}, nil)
@@ -153,6 +159,7 @@ func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
 }
 
 func TestNvidiaRerankRequiresModelName(t *testing.T) {
+	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
 	_, err := model.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
@@ -162,6 +169,7 @@ func TestNvidiaRerankRequiresModelName(t *testing.T) {
 }
 
 func TestNvidiaRerankRejectsHTTPError(t *testing.T) {
+	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -178,6 +186,7 @@ func TestNvidiaRerankRejectsHTTPError(t *testing.T) {
 }
 
 func TestNvidiaRerankRejectsOutOfRangeIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"rankings": []map[string]interface{}{

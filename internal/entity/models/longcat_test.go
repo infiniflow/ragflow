@@ -100,6 +100,7 @@ func TestLongCatNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestLongCatChatHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Chat" {
 			t.Errorf("model=%v", body["model"])
@@ -135,6 +136,7 @@ func TestLongCatChatHappyPath(t *testing.T) {
 }
 
 func TestLongCatChatExtractsReasoningContent(t *testing.T) {
+	ctx := t.Context()
 	// LongCat-Flash-Thinking returns the chain-of-thought in
 	// message.reasoning_content (OpenAI o-series shape). Live-probed
 	// against api.longcat.chat; the fixture mimics the actual response
@@ -180,6 +182,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 // top_p — anything else is undocumented and must not be sent, since
 // the maintainer specifically flagged this on PR #14809.
 func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		for _, k := range []string{"stop", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
 			if _, present := body[k]; present {
@@ -220,6 +223,7 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 }
 
 func TestLongCatChatRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
@@ -231,6 +235,7 @@ func TestLongCatChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestLongCatChatRequiresMessages(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
 	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -240,6 +245,7 @@ func TestLongCatChatRequiresMessages(t *testing.T) {
 }
 
 func TestLongCatChatRejectsHTTPError(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -257,6 +263,7 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestLongCatStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -295,6 +302,7 @@ func TestLongCatStreamHappyPath(t *testing.T) {
 }
 
 func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
+	ctx := t.Context()
 	// Fixture matches the shape captured live from
 	// LongCat-Flash-Thinking against api.longcat.chat: deltas
 	// interleave reasoning_content and content within the stream.
@@ -337,6 +345,7 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 }
 
 func TestLongCatStreamRejectsExplicitFalse(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
 	stream := false
@@ -352,6 +361,7 @@ func TestLongCatStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestLongCatStreamRequiresSender(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
 	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
@@ -363,6 +373,7 @@ func TestLongCatStreamRequiresSender(t *testing.T) {
 }
 
 func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
@@ -383,6 +394,7 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 // which masked truncated or corrupted streams. The driver must now
 // fail hard with a "longcat: invalid SSE event" wrapper.
 func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {this is not valid json}`+"\n",
@@ -404,6 +416,7 @@ func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
 // the "no choices" continue and leave the caller with a generic
 // truncation error. The driver must surface the upstream error verbatim.
 func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"rate limit exceeded","type":"rate_limit_error"}}`+"\n",
@@ -425,6 +438,7 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestLongCatListModelsAndCheckConnection(t *testing.T) {
+	ctx := t.Context()
 	var requests int
 	srv := newLongCatServer(t, "/openai/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		requests++
@@ -476,6 +490,7 @@ func TestLongCatListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestLongCatListModelsRejectsInvalidResponses(t *testing.T) {
+	ctx := t.Context()
 	for name, response := range map[string]string{
 		"missing data": `{}`,
 		"null data":    `{"data":null}`,
@@ -497,17 +512,18 @@ func TestLongCatListModelsRejectsInvalidResponses(t *testing.T) {
 }
 
 func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	for name, cfg := range map[string]*APIConfig{
 		"nil config": nil,
 		"nil key":    {},
 		"empty key":  {ApiKey: new(string)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := newLongCatForTest("http://unused").ListModels(cfg)
+			_, err := newLongCatForTest("http://unused").ListModels(ctx, cfg)
 			if err == nil || !strings.Contains(err.Error(), "api key is required") {
 				t.Errorf("expected api-key error, got %v", err)
 			}
-			err = newLongCatForTest("http://unused").CheckConnection(cfg)
+			err = newLongCatForTest("http://unused").CheckConnection(ctx, cfg)
 			if err == nil || !strings.Contains(err.Error(), "api key is required") {
 				t.Errorf("CheckConnection expected api-key error, got %v", err)
 			}
@@ -516,6 +532,7 @@ func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
 	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
@@ -525,6 +542,7 @@ func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestLongCatRerankReturnsNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
 	_, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
@@ -534,6 +552,7 @@ func TestLongCatRerankReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestLongCatBalanceReturnsNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	_, err := m.Balance(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
@@ -542,6 +561,7 @@ func TestLongCatBalanceReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestLongCatAudioOCRReturnNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
 	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

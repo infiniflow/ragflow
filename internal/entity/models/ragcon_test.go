@@ -306,14 +306,14 @@ func TestRAGconListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
-	models, err := newRAGconForTest(srv.URL).ListModels(cfg)
+	models, err := newRAGconForTest(srv.URL).ListModels(ctx, cfg)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "llama-4-maverick,gpt-oss-120b" {
 		t.Errorf("models=%v", models)
 	}
-	if err := newRAGconForTest(srv.URL).CheckConnection(cfg); err != nil {
+	if err := newRAGconForTest(srv.URL).CheckConnection(ctx, cfg); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
@@ -376,7 +376,7 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 	apiKey := "test-key"
 	model := "tts-1"
 	text := "hello"
-	resp, err := newRAGconForTest(srv.URL).AudioSpeech(&model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}}, nil)
+	resp, err := newRAGconForTest(srv.URL).AudioSpeech(ctx, &model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}}, nil)
 	if err != nil {
 		t.Fatalf("AudioSpeech: %v", err)
 	}
@@ -389,16 +389,16 @@ func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	r := newRAGconForTest("http://unused")
 	model := "llama-4-maverick"
 
-	if _, err := r.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := r.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.OCRFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
-	if _, err := r.ParseFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ParseFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: expected no such method, got %v", err)
 	}
-	if _, err := r.ListTasks(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ListTasks(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks: expected no such method, got %v", err)
 	}
 	if _, err := r.ShowTask("t1", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

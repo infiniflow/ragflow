@@ -60,6 +60,7 @@ func TestPerplexityFactory(t *testing.T) {
 }
 
 func TestPerplexityChatHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/sonar" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -91,6 +92,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 	stop := []string{"END"}
 	effort := "high"
 	resp, err := newPerplexityForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"sonar-reasoning-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -109,6 +111,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 }
 
 func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "sonar" {
 			t.Errorf("model=%v", body["model"])
@@ -129,6 +132,7 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 	apiKey := "test-key"
 	effort := "high"
 	resp, err := newPerplexityForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"sonar",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -144,6 +148,7 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 }
 
 func TestPerplexityChatRequiresModelName(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
@@ -152,6 +157,7 @@ func TestPerplexityChatRequiresModelName(t *testing.T) {
 }
 
 func TestPerplexityChatRequiresApiKey(t *testing.T) {
+	ctx := t.Context()
 	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "sonar", []Message{{Role: "user", Content: "x"}}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
@@ -159,6 +165,7 @@ func TestPerplexityChatRequiresApiKey(t *testing.T) {
 }
 
 func TestPerplexityStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/sonar" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -182,6 +189,7 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 	var content []string
 	var reasoning []string
 	err := newPerplexityForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"sonar",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -207,6 +215,7 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 }
 
 func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -219,6 +228,7 @@ func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	err := newPerplexityForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"sonar",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -238,6 +248,7 @@ func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
 }
 
 func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
@@ -270,6 +281,7 @@ func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
 			{"id": "sonar"},
@@ -289,6 +301,7 @@ func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
 }
 
 func TestPerplexityEmbedHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/embeddings" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -315,6 +328,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "pplx-embed-v1-0.6b"
 	out, err := newPerplexityForTest(srv.URL).Embed(
+		ctx,
 		&modelName,
 		[]string{"hello", "world"},
 		&APIConfig{ApiKey: &apiKey},
@@ -336,6 +350,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 }
 
 func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
+	ctx := t.Context()
 	modelName := "pplx-embed-v1-0.6b"
 	apiKey := "test-key"
 	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -348,6 +363,7 @@ func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 }
 
 func TestPerplexityEmbedRequiresModelName(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
@@ -356,6 +372,7 @@ func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 }
 
 func TestPerplexityUnsupportedMethods(t *testing.T) {
+	ctx := t.Context()
 	m := newPerplexityForTest("http://unused")
 	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)

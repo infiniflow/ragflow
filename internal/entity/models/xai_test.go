@@ -43,6 +43,7 @@ func TestXAIConfigDeclaresModelsSuffix(t *testing.T) {
 }
 
 func TestXAIListModelsHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -79,6 +80,7 @@ func TestXAIListModelsHappyPath(t *testing.T) {
 }
 
 func TestXAIListModelsRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	_, err := newXAIForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api key error, got %v", err)
@@ -86,6 +88,7 @@ func TestXAIListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestXAIListModelsRejectsProviderError(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	}))
@@ -99,6 +102,7 @@ func TestXAIListModelsRejectsProviderError(t *testing.T) {
 }
 
 func TestXAICheckConnectionDelegatesToListModels(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models" {
 			t.Errorf("path=%s, want /models", r.URL.Path)
@@ -114,6 +118,7 @@ func TestXAICheckConnectionDelegatesToListModels(t *testing.T) {
 }
 
 func TestXAIListModelsRequiresModelsSuffix(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("ListModels should reject a missing models suffix before sending a request")
 	}))

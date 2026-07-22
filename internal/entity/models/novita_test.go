@@ -821,13 +821,13 @@ func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := "x"
 	apiKey := "test-key"
 	v := newNovitaForTest("http://unused")
-	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.TranscribeAudio(ctx, &m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := v.AudioSpeech(&m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.AudioSpeech(ctx, &m, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.OCRFile(ctx, &m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }
