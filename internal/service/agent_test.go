@@ -1469,6 +1469,89 @@ func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentPermissionOwnerOnly(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	status := "1"
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        "ut-owner",
+		UserID:    "user-1",
+		TenantID:  "user-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed owner tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        "ut-member",
+		UserID:    "user-2",
+		TenantID:  "user-1",
+		Role:      "normal",
+		InvitedBy: "user-1",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed member tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-team",
+		UserID:         "user-1",
+		Title:          sptr("Team Agent"),
+		Avatar:         sptr("owner-avatar"),
+		Permission:     "team",
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	// Team member tries to make the agent private while updating title/avatar.
+	err := NewAgentService().UpdateAgent(context.Background(), "user-2", "canvas-team", map[string]interface{}{
+		"title":      "Renamed by member",
+		"avatar":     "member-avatar",
+		"permission": "me",
+	})
+	if err != nil {
+		t.Fatalf("team member update should succeed for non-permission fields: %v", err)
+	}
+	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-team")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Permission != "team" {
+		t.Fatalf("team member changed permission to %q; want team", persisted.Permission)
+	}
+	if persisted.Title == nil || *persisted.Title != "Renamed by member" {
+		t.Fatalf("title = %v, want Renamed by member", persisted.Title)
+	}
+	if persisted.Avatar == nil || *persisted.Avatar != "member-avatar" {
+		t.Fatalf("avatar = %v, want member-avatar", persisted.Avatar)
+	}
+
+	// Owner can change permission together with title/avatar.
+	err = NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-team", map[string]interface{}{
+		"title":      "Owner updated",
+		"avatar":     "owner-avatar-2",
+		"permission": "me",
+	})
+	if err != nil {
+		t.Fatalf("owner update failed: %v", err)
+	}
+	persisted, err = dao.NewUserCanvasDAO().GetByID("canvas-team")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Permission != "me" {
+		t.Fatalf("owner permission = %q, want me", persisted.Permission)
+	}
+	if persisted.Title == nil || *persisted.Title != "Owner updated" {
+		t.Fatalf("title = %v, want Owner updated", persisted.Title)
+	}
+	if persisted.Avatar == nil || *persisted.Avatar != "owner-avatar-2" {
+		t.Fatalf("avatar = %v, want owner-avatar-2", persisted.Avatar)
+	}
+}
+
 func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 

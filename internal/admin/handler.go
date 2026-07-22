@@ -712,38 +712,6 @@ func (h *Handler) GetVersion(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"version": version, "version_type": versionType}, "")
 }
 
-// GetFingerprint handle get system fingerprint
-func (h *Handler) GetFingerprint(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-type SetLicenseHTTPRequest struct {
-	License string `json:"license" binding:"required"`
-}
-
-// SetLicense to set system license
-func (h *Handler) SetLicense(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-type SetLicenseConfigHTTPRequest struct {
-	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
-	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
-}
-
-func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-// ShowLicense to get system license
-func (h *Handler) ShowLicense(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
 // ListSandboxProviders handle list sandbox providers
 func (h *Handler) ListSandboxProviders(c *gin.Context) {
 	providers, err := h.service.ListSandboxProviders()

@@ -37,7 +37,7 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
-      openInNewTab: '在新標籤頁中聊天',
+      openInNewTab: '在新標籤頁中開啟',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',

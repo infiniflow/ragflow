@@ -148,7 +148,10 @@ jobs:
             else
               echo "  (none — lefthook will be a no-op)"
             fi
-            lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+            # LEFTHOOK_CHECK_ONLY=1 makes the pre-commit jobs verify without
+            # applying --fix or `git add`, so CI only checks and reports
+            # failures instead of rewriting the working tree.
+            LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -342,7 +345,7 @@ jobs:
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=0 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -915,7 +918,7 @@ jobs:
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=0 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
