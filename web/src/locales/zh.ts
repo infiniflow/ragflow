@@ -1726,7 +1726,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       modelMaxTokensMinMessage: '最大 Token 数不能小于 0',
     },
     knowledgeCompilation: {
-      builtinTemplates: '内置模板',
+      builtinTemplates: '模板',
     },
     datasetSkill: {
       folders: '技能',
@@ -2567,8 +2567,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '知识编译',
-      compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
+      compiler: '算子',
+      compilerDescription: '使用算子模板将文档块处理为结构化工件。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
       fileFormatOptions: {
