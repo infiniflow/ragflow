@@ -892,8 +892,8 @@ func isArgumentError(msg string) bool {
 	// Define list of argument error prefixes
 	// Matches Python ArgumentException error messages
 	argumentErrorPrefixes := []string{
-		"memory name cannot be empty",  // Memory name cannot be empty
-		"name can't be empty",          // ValidateName trimmed-empty
+		"memory name cannot be empty",  // Python: "Memory name cannot be empty or whitespace."
+		"name cannot be empty",         // ValidateName trimmed-empty case
 		"memory name exceeds limit",    // Memory name exceeds limit
 		"name length is",               // ValidateName exceeds limit
 		"memory type must be a list",   // memory_type must be a list
