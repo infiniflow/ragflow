@@ -1939,12 +1939,7 @@ async def cleanup_timeline_isolated_entities(
         if edge is not None:
             connected_names.update(name.casefold() for name in edge if name)
 
-    orphan_ids = [
-        row_id
-        for row_id, row in rows.items()
-        if row.get("knowledge_graph_kwd") == "entity"
-        and _struct_entity_name(row).casefold() not in connected_names
-    ]
+    orphan_ids = [row_id for row_id, row in rows.items() if row.get("knowledge_graph_kwd") == "entity" and _struct_entity_name(row).casefold() not in connected_names]
     if orphan_ids:
         await thread_pool_exec(
             settings.docStoreConn.delete,
