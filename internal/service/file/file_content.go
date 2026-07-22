@@ -94,6 +94,19 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 
 // GetFileContents fetches file contents (text + image) from storage
 // for the given file dicts.
+//
+// File dicts are the descriptors returned by the upload_info endpoint
+// (UploadInfos / storeUploadInfoBlob). They contain:
+//
+//   - "id":         storage location UUID (key in the downloads bucket)
+//   - "created_by": the user ID who owns the downloads bucket
+//   - "name":       the original filename
+//   - "mime_type":  the content type
+//
+// Blobs are stored directly in "{created_by}-downloads/{id}" in object
+// storage WITHOUT a corresponding File entity row in the database.
+// Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
+//
 //   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
 //   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
 func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
@@ -107,28 +120,36 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 		if id == "" {
 			continue
 		}
-		file, ferr := s.fileDAO.GetByID(id)
-		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
-			continue
+		name, _ := fd["name"].(string)
+		mimeType, _ := fd["mime_type"].(string)
+		createdBy, _ := fd["created_by"].(string)
+		if createdBy == "" {
+			createdBy = uid
 		}
-		if !s.checkFilePerm(s.fileDAO, file, uid) {
+		// Permission: only the owner can access their uploads bucket.
+		if createdBy != uid {
 			return nil, nil, fmt.Errorf("No authorization.")
 		}
-		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+
+		data, derr := storageImpl.Get(createdBy+"-downloads", id)
 		if derr != nil || len(data) == 0 {
 			continue
 		}
-		ft := utility.FilenameType(file.Name)
+
+		ft := utility.FilenameType(name)
 		if ft == utility.FileTypeVISUAL {
 			if raw {
 				images = append(images, string(data))
 			} else {
-				ext := utility.GetFileExtension(file.Name)
-				mime := utility.GetContentType(ext, string(ft))
-				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+				mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+				if mediaType == "" {
+					ext := utility.GetFileExtension(name)
+					mediaType = utility.GetContentType(ext, string(ft))
+				}
+				images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 			}
 		} else {
-			texts = append(texts, parseFileContent(file.Name, data))
+			texts = append(texts, parseFileContent(name, data))
 		}
 	}
 	return texts, images, nil
