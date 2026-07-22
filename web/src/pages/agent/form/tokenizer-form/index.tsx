@@ -14,6 +14,7 @@ import {
   TokenizerFields,
   TokenizerSearchMethod,
 } from '../../constant';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -31,7 +32,11 @@ export const FormSchema = z.object({
 
 export type TokenizerFormSchemaType = z.infer<typeof FormSchema>;
 
-const TokenizerForm = ({ node }: INextOperatorForm) => {
+const TokenizerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
 
@@ -53,6 +58,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
   });
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -81,9 +87,11 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
           {(field) => <SelectWithSearch options={FieldsOptions} {...field} />}
         </RAGFlowFormItem>
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

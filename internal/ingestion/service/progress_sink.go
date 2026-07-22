@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/pipeline"
 	servicepkg "ragflow/internal/service"
+	documentpkg "ragflow/internal/service/document"
 )
 
 // progressSink implements pipeline.ProgressSink. It is the single writer of
@@ -60,7 +61,7 @@ func newProgressSink(taskSvc *servicepkg.IngestionTaskService) *progressSink {
 	// server-config dependency, so this is safe in any environment.
 	return &progressSink{
 		taskSvc: taskSvc,
-		docSvc:  servicepkg.NewDocumentService(),
+		docSvc:  documentpkg.NewDocumentService(),
 	}
 }
 

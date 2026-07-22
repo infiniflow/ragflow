@@ -26,17 +26,18 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // TenantHandler tenant handler
 type TenantHandler struct {
 	tenantService  *service.TenantService
 	userService    *service.UserService
-	datasetService *service.DatasetService
+	datasetService *dataset.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *service.DatasetService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *dataset.DatasetService) *TenantHandler {
 	return &TenantHandler{
 		tenantService:  tenantService,
 		userService:    userService,

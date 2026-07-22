@@ -447,6 +447,9 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 //	resp, err := service.UpdateMemory("tenant123", "memory456", req)
 func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
+	if ok, err := s.memoryDAO.Accessible(tenantID, memoryID); !ok || err != nil {
+		return nil, err
+	}
 
 	currentMemory, err := s.memoryDAO.GetByID(memoryID)
 	if err != nil {
