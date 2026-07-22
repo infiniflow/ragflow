@@ -1,4 +1,7 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
+import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Card,
@@ -12,9 +15,10 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
 import {
-  BuiltinPipelineItem,
-  ParseTypeItem,
-} from '@/pages/dataset/dataset-setting/configuration/common-item';
+  useActiveTab,
+  usePipelineOperatorNodes,
+  useResetParserConfigOnPipelineChange,
+} from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -26,15 +30,11 @@ import LinkDataSource, {
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import {
-  useActiveTab,
   useConnectorHandlers,
   useFetchDatasetSettingOnMount,
   usePipelineDataList,
-  usePipelineOperatorNodes,
-  useResetParserConfigOnPipelineChange,
   useSaveDatasetSetting,
 } from './hooks';
-import PipelineOperatorTabs from './pipeline-operator-tabs';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
