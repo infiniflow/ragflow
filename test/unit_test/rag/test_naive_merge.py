@@ -302,3 +302,25 @@ def test_strict_cap_pos_text_does_not_overshoot_budget(monkeypatch):
     chunks = _nonempty(naive_merge(sections, chunk_token_num=20, delimiter=DEFAULT_DELIMITER))
     assert all(char_count_tokens(c) <= 20 for c in chunks)
 
+
+@pytest.mark.p2
+def test_empty_delimiter_oversized_section_strictly_capped():
+    # When delimiter="" and a section exceeds chunk_token_num, it must be sub-split
+    # so no chunk exceeds chunk_token_num.
+    long_section = "word " * 100  # ~100 tokens
+    chunks = _nonempty(naive_merge([long_section], chunk_token_num=30, delimiter=""))
+    assert len(chunks) > 1
+    assert all(_tok(c) <= 30 for c in chunks)
+
+
+@pytest.mark.p2
+def test_images_empty_delimiter_oversized_section_strictly_capped():
+    long_section = "word " * 100
+    images = [None]
+    chunks, imgs = naive_merge_with_images([long_section], images, chunk_token_num=30, delimiter="")
+    nonempty = _nonempty(chunks)
+    assert len(nonempty) > 1
+    assert all(_tok(c) <= 30 for c in nonempty)
+    assert len(chunks) == len(imgs)
+
+
