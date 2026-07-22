@@ -140,7 +140,7 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 				flat = append(flat, flatBlock{image: b64})
 				continue
 			}
-			text := joinDOCXIRRuns(el.Content)
+			text := joinDOCXIRRuns(el.contentRuns())
 			flat = append(flat, flatBlock{text: text})
 		}
 	}
@@ -238,6 +238,44 @@ func joinDOCXIRRuns(runs []docxIRRun) string {
 	return b.String()
 }
 
+// extractTextFromListItem extracts the plain text content from a list item.
+// Each list item contains block-level elements (typically a Paragraph),
+// whose text runs are concatenated.
+func extractTextFromListItem(item docxIRListItem) string {
+	var parts []string
+	for _, el := range item.Content {
+		if el.Type == "paragraph" || el.Type == "heading" {
+			t := joinDOCXIRRuns(el.contentRuns())
+			if t != "" {
+				parts = append(parts, t)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+// extractTextFromBlockElements extracts text from a slice of block-level
+// elements (paragraphs/headings), used by text_box and other compound
+// element types.
+func extractTextFromBlockElements(blocks []docxIRElement) string {
+	var parts []string
+	for _, el := range blocks {
+		if el.Type == "paragraph" || el.Type == "heading" {
+			t := joinDOCXIRRuns(el.contentRuns())
+			if t != "" {
+				parts = append(parts, t)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
 // buildFiguresMap converts the internal DOCXFigure slice to the
 // map form attached to fileMeta["figures"].
 func buildFiguresMap(figures []DOCXFigure) []map[string]any {
@@ -258,7 +296,7 @@ func buildFiguresMap(figures []DOCXFigure) []map[string]any {
 func joinCellText(cell docxIRCell) string {
 	var parts []string
 	for _, el := range cell.Content {
-		if text := joinDOCXIRRuns(el.Content); text != "" {
+		if text := joinDOCXIRRuns(el.contentRuns()); text != "" {
 			parts = append(parts, text)
 		}
 	}
@@ -295,7 +333,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 		for _, el := range sec.Elements {
 			switch el.Type {
 			case "paragraph", "heading":
-				text := joinDOCXIRRuns(el.Content)
+				text := joinDOCXIRRuns(el.contentRuns())
 				if strings.TrimSpace(text) == "" {
 					continue
 				}
@@ -327,6 +365,30 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 					"image":        nil,
 					"doc_type_kwd": "table",
 				})
+
+			case "list":
+				for _, item := range el.Items {
+					text := extractTextFromListItem(item)
+					if text == "" {
+						continue
+					}
+					sections = append(sections, map[string]any{
+						"text":         text,
+						"image":        nil,
+						"doc_type_kwd": "text",
+					})
+				}
+
+			case "text_box":
+				text := extractTextFromBlockElements(el.contentBlocks())
+				if text == "" {
+					continue
+				}
+				sections = append(sections, map[string]any{
+					"text":         text,
+					"image":        nil,
+					"doc_type_kwd": "text",
+				})
 			}
 		}
 	}
@@ -345,12 +407,38 @@ type docxIRSection struct {
 }
 
 type docxIRElement struct {
-	Type    string      `json:"type"`    // "paragraph", "heading", "table", "image"
-	Level   int         `json:"level"`   // heading level (1-6)
-	Style   string      `json:"style"`   // Word style name (e.g. "Normal", "Heading 1")
-	Content []docxIRRun `json:"content"` // rich text runs
-	Data    []byte      `json:"data"`    // raw image bytes (for "image" type)
-	Rows    []docxIRRow `json:"rows"`    // table rows
+	Type    string           `json:"type"`    // "paragraph", "heading", "table", "image", "list", "text_box", ...
+	Level   int              `json:"level"`   // heading level (1-6) or list nesting level
+	Style   string           `json:"style"`   // Word style name (e.g. "Normal", "Heading 1")
+	Content json.RawMessage  `json:"content"` // rich text runs or block-level content; decoded per type
+	Data    []byte           `json:"data"`    // raw image bytes (for "image" type)
+	Rows    []docxIRRow      `json:"rows"`    // table rows
+	Ordered bool             `json:"ordered"` // true=numbered list, false=bullet list (for "list" type)
+	Items   []docxIRListItem `json:"items"`   // list items (for "list" type)
+}
+
+// contentRuns decodes Content as flat text runs (paragraph/heading type).
+func (e docxIRElement) contentRuns() []docxIRRun {
+	var runs []docxIRRun
+	if len(e.Content) > 0 {
+		_ = json.Unmarshal(e.Content, &runs)
+	}
+	return runs
+}
+
+// contentBlocks decodes Content as block-level elements (text_box type).
+func (e docxIRElement) contentBlocks() []docxIRElement {
+	var blocks []docxIRElement
+	if len(e.Content) > 0 {
+		_ = json.Unmarshal(e.Content, &blocks)
+	}
+	return blocks
+}
+
+// docxIRListItem represents one item in an ordered/unordered list.
+type docxIRListItem struct {
+	Content []docxIRElement `json:"content"`          // block-level content (typically a single Paragraph)
+	Nested  json.RawMessage `json:"nested,omitempty"` // nested sub-list (stored as raw JSON for now)
 }
 
 type docxIRRun struct {

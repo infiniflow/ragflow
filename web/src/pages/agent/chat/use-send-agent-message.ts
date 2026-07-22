@@ -83,12 +83,21 @@ export function findMessageFromList(eventList: IEventList) {
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
   ) as IMessageEvent;
+  const messageEndEvent = [...eventList]
+    .reverse()
+    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
     audio_binary: audioBinary,
-    attachment: workflowFinished?.data?.outputs?.attachment || {},
-    downloads: workflowFinished?.data?.outputs?.downloads || [],
+    attachment:
+      workflowFinished?.data?.outputs?.attachment ||
+      messageEndEvent?.data?.attachment ||
+      {},
+    downloads:
+      workflowFinished?.data?.outputs?.downloads ||
+      messageEndEvent?.data?.downloads ||
+      [],
   };
 }
 
