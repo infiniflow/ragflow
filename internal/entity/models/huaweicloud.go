@@ -63,17 +63,6 @@ func huaweiCloudRegionForModel(api *APIConfig, modelName string) string {
 	return region
 }
 
-func huaweiCloudMessages(messages []Message) []map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-	return apiMessages
-}
-
 func huaweiCloudIsDeepSeekV4(modelName string) bool {
 	model := strings.ToLower(modelName)
 	return strings.Contains(model, "deepseek-v4-pro") || strings.Contains(model, "deepseek-v4-flash")
@@ -200,10 +189,11 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 
 	reqb := map[string]interface{}{
 		"model":    huaweiCloudChatModelName(modelName),
-		"messages": huaweiCloudMessages(messages),
+		"messages": buildChatMessages(messages),
 		"stream":   false,
 	}
 	huaweiCloudApplyChatConfig(reqb, modelName, chatModelConfig)
+	applyChatToolConfig(reqb, chatModelConfig)
 
 	jsonData, err := json.Marshal(reqb)
 	if err != nil {
@@ -253,8 +243,9 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 	if !ok {
 		return nil, fmt.Errorf("invalid message format")
 	}
-	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	content, hasContent := messageMap["content"].(string)
+	if !hasContent && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -269,6 +260,7 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -301,13 +293,17 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 
 	reqBody := map[string]interface{}{
 		"model":    huaweiCloudChatModelName(modelName),
-		"messages": huaweiCloudMessages(messages),
+		"messages": buildChatMessages(messages),
 		"stream":   true,
 	}
 	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 	huaweiCloudApplyChatConfig(reqBody, modelName, chatModelConfig)
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+	}
+	applyChatToolConfig(reqBody, chatModelConfig)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -336,6 +332,7 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("huaweicloud: upstream stream error: %v", apiErr)
@@ -349,8 +346,14 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
+			return nil
+		}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -364,9 +367,6 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 				return err
 			}
 		}
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
 		return nil
 	})
 	if err != nil {
@@ -375,6 +375,7 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 	if !done && !sawTerminal {
 		return fmt.Errorf("huaweicloud: stream ended before [DONE] or finish_reason")
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	if err := sender(&endOfStream, nil); err != nil {
