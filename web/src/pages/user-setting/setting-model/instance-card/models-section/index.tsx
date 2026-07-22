@@ -20,7 +20,7 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
 import { ListMinus, ListPlus, Loader2, Plus, Search } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -97,9 +97,33 @@ export function ModelsSection(props: ModelsSectionProps) {
   // or instance changes (rare in practice since the host remounts
   // the section on draft switch, but kept as a safety net).
   const [draftModels, setDraftModels] = useState<IProviderModelItem[]>([]);
+  // Tracks whether we've auto-populated the draft from the catalog for
+  // the current draft session. Prevents re-adding models the user has
+  // manually removed when the catalog refetches.
+  const hasAutoPopulatedDraftRef = useRef(false);
   useEffect(() => {
     setDraftModels([]);
+    hasAutoPopulatedDraftRef.current = false;
   }, [providerName, instanceName]);
+
+  // Auto-populate the draft's model list from the catalog on first
+  // fetch so the user doesn't have to click `+` on every row when
+  // creating a new instance. The user can still remove any auto-added
+  // model via the per-row `-` button - the flag above ensures we don't
+  // re-add removed models if the catalog is refetched (e.g. via the
+  // "List models" button). Pre-existing manual additions (e.g. a
+  // custom model added before the catalog resolved) are preserved by
+  // the merge-by-name setter below.
+  useEffect(() => {
+    if (!isDraftInstance) return;
+    if (hasAutoPopulatedDraftRef.current) return;
+    if (catalog.length === 0) return;
+    hasAutoPopulatedDraftRef.current = true;
+    setDraftModels((prev) => {
+      const existing = new Set(prev.map((m) => m.name));
+      return [...prev, ...catalog.filter((m) => !existing.has(m.name))];
+    });
+  }, [isDraftInstance, catalog]);
 
   const addDraftModel = useCallback((model: IProviderModelItem) => {
     setDraftModels((prev) =>
@@ -129,6 +153,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerName,
     resolveCreds,
     instanceModels,
+    instance,
   });
 
   // 7. Add / remove / batch toggle / custom add.
