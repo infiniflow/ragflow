@@ -593,6 +593,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			if key == "title" {
 				if title, ok := value.(string); ok {
 					value = strings.TrimSpace(title)
+					if existing, err := s.canvasDAO.GetByUserAndTitle(userID, value.(string), canvasInstance.CanvasCategory); err != nil {
+						return fmt.Errorf("check duplicate title: %w", err)
+					} else if existing != nil {
+						return errors.New(title + " already exists.")
+					}
 				}
 			}
 			updates[key] = value
