@@ -154,16 +154,9 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, q.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -186,6 +179,7 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 		}
 
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
+		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -239,15 +233,16 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	content, hasContent := messageMap["content"].(string)
+	if !hasContent && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
+		if !ok && len(toolCalls) == 0 {
 			return nil, fmt.Errorf("invalid reasoning content format")
 		}
 
@@ -259,6 +254,7 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -279,16 +275,9 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      true,
 		"temperature": 1,
 	}
@@ -311,6 +300,8 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		}
 
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
+		chatModelConfig.ToolCallsResult = nil
+		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -339,7 +330,9 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
@@ -350,8 +343,14 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
+			return nil
+		}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -369,9 +368,14 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		}
 
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("qiniu: stream ended before [DONE] or finish_reason")
+	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	if err = sender(&endOfStream, nil); err != nil {
@@ -465,7 +469,11 @@ func (q *QiniuModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 }
 
 func (q *QiniuModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", q.Name())
+	_, err := q.ListModels(apiConfig)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (q *QiniuModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
