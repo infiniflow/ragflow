@@ -47,6 +47,11 @@ class ElasticSearchConnectionPool:
                 )
                 if attempt == MAX_RETRIES - 1:
                     raise
+                if hasattr(self, "es_conn") and self.es_conn:
+                    try:
+                        self.es_conn.close()
+                    except Exception:
+                        pass
                 time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
                 continue
 
