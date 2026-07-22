@@ -1440,8 +1440,8 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       resolveTenantModelDisplayName(resp.LLMID, modelNameCache),
-			"embd_id":      resolveTenantModelDisplayName(resp.EmbdID, modelNameCache),
+			"llm_id":       resolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      resolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1462,23 +1462,26 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 	}, nil
 }
 
-// resolveTenantModelDisplayName turn modelID to modelName@instance@prvider
-func resolveTenantModelDisplayName(modelID string, cache map[string]string) string {
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" || strings.Contains(modelID, "@") {
-		return modelID
+// resolveTenantModelDisplayName turns a tenant_model ID into
+// modelName@instance@provider. rawModelID is the API-facing fallback
+// stored on memory.llm_id / memory.embd_id.
+func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+	tenantModelID = strings.TrimSpace(tenantModelID)
+	rawModelID = strings.TrimSpace(rawModelID)
+	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {
+		return rawModelID
 	}
 
-	if displayName, ok := cache[modelID]; ok {
+	if displayName, ok := cache[tenantModelID]; ok {
 		return displayName
 	}
 
-	displayName := modelID
+	displayName := rawModelID
 	defer func() {
-		cache[modelID] = displayName
+		cache[tenantModelID] = displayName
 	}()
 
-	model, err := dao.NewTenantModelDAO().GetByID(modelID)
+	model, err := dao.NewTenantModelDAO().GetByID(tenantModelID)
 	if err != nil {
 		return displayName
 	}
