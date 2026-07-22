@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"ragflow/internal/common"
@@ -70,12 +69,10 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	apiMessages := aliyunChatMessages(messages)
-
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -168,7 +165,7 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	answer, hasAnswer := messageMap["content"].(string)
-	toolCalls := aliyunToolCalls(messageMap)
+	toolCalls := extractToolCalls(messageMap)
 	if !hasAnswer && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("response contains neither content nor tool calls")
 	}
@@ -212,12 +209,10 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	apiMessages := aliyunChatMessages(messages)
-
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      true,
 		"temperature": 1,
 	}
@@ -308,14 +303,7 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			return nil
 		}
 
-		if toolCalls, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, rawToolCall := range toolCalls {
-				toolCall, ok := rawToolCall.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				mergeAliyunToolCallDelta(accumulatedToolCalls, toolCall)
-			}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -342,76 +330,11 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("aliyun: stream ended before [DONE] or finish_reason")
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for index := range accumulatedToolCalls {
-			indices = append(indices, index)
-		}
-		sort.Ints(indices)
-		toolCalls := make([]map[string]interface{}, 0, len(indices))
-		for _, index := range indices {
-			toolCalls = append(toolCalls, accumulatedToolCalls[index])
-		}
-		chatModelConfig.ToolCallsResult = &toolCalls
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
-}
-
-func mergeAliyunToolCallDelta(accumulated map[int]map[string]interface{}, delta map[string]interface{}) {
-	indexValue, ok := delta["index"].(float64)
-	if !ok {
-		return
-	}
-	index := int(indexValue)
-	toolCall, exists := accumulated[index]
-	if !exists {
-		toolCall = map[string]interface{}{"index": indexValue}
-		accumulated[index] = toolCall
-	}
-
-	for _, field := range []string{"id", "type"} {
-		if value, ok := delta[field].(string); ok && value != "" {
-			toolCall[field] = value
-		}
-	}
-
-	functionDelta, ok := delta["function"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	function, ok := toolCall["function"].(map[string]interface{})
-	if !ok {
-		function = make(map[string]interface{})
-		toolCall["function"] = function
-	}
-	if name, ok := functionDelta["name"].(string); ok && name != "" {
-		function["name"] = name
-	}
-	if arguments, ok := functionDelta["arguments"].(string); ok {
-		currentArguments, _ := function["arguments"].(string)
-		function["arguments"] = currentArguments + arguments
-	}
-}
-
-func aliyunChatMessages(messages []Message) []map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessage := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMessage["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMessage["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMessage
-	}
-	return apiMessages
 }
 
 // aliyunToolChoice prevents qwen-flash from repeatedly issuing another tool call
@@ -436,20 +359,6 @@ func aliyunToolChoice(modelName string, messages []Message, configured *string) 
 		}
 	}
 	return choice
-}
-
-func aliyunToolCalls(message map[string]interface{}) []map[string]interface{} {
-	rawToolCalls, ok := message["tool_calls"].([]interface{})
-	if !ok {
-		return nil
-	}
-	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
-	for _, rawToolCall := range rawToolCalls {
-		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
-			toolCalls = append(toolCalls, toolCall)
-		}
-	}
-	return toolCalls
 }
 
 type aliyunEmbeddingResponse struct {
