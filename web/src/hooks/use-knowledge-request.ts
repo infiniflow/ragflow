@@ -57,7 +57,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
@@ -264,15 +267,6 @@ export const useDeleteKnowledge = () => {
 
   return { data, loading, deleteKnowledge: mutateAsync };
 };
-
-function isPipelineParserConfig(
-  parserConfig: Record<string, any> | undefined,
-): boolean {
-  if (!parserConfig || typeof parserConfig !== 'object') {
-    return false;
-  }
-  return Object.keys(parserConfig).some((key) => key.includes(':'));
-}
 
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
