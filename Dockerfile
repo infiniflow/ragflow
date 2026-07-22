@@ -59,8 +59,7 @@ RUN --mount=type=secret,id=gitee_token \
     if [ "$NEED_MIRROR" == "1" ]; then \
         GITEE_TOKEN=$(cat /run/secrets/gitee_token 2>/dev/null || echo ""); \
         if [ -n "$GITEE_TOKEN" ]; then \
-            git -c http.extraHeader="PRIVATE-TOKEN: ${GITEE_TOKEN}" \
-                clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource; \
+            git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
         else \
             git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource; \
         fi; \
