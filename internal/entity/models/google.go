@@ -355,7 +355,7 @@ func (g *GoogleModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	return googleListModels(context.Background(), g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
+	return googleListModels(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 }
 
 func (g *GoogleModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {

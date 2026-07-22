@@ -251,7 +251,7 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 
 	reqBody := buildN1NChatRequest(modelName, messages, true, chatModelConfig)
 
-	req, err := newN1NJSONRequest(context.Background(), "POST", endpoint, reqBody, apiKey)
+	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
 	if err != nil {
 		return err
 	}

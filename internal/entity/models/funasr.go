@@ -147,7 +147,7 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 	}
 
 	// build request
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)

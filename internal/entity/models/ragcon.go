@@ -250,7 +250,7 @@ func (r *RAGconModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -655,7 +655,7 @@ func (r *RAGconModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("sender is required")
 	}
 
-	req, responseFormat, err := r.newASRRequest(context.Background(), modelName, file, apiConfig, asrConfig, true)
+	req, responseFormat, err := r.newASRRequest(ctx, modelName, file, apiConfig, asrConfig, true)
 	if err != nil {
 		return err
 	}
@@ -817,7 +817,7 @@ func (r *RAGconModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 		return fmt.Errorf("sender is required")
 	}
 
-	req, streamFormat, err := r.newTTSRequest(context.Background(), modelName, audioContent, apiConfig, ttsConfig, true)
+	req, streamFormat, err := r.newTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, true)
 	if err != nil {
 		return err
 	}

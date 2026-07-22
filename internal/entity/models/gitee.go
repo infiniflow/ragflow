@@ -316,7 +316,7 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -730,7 +730,7 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 
 	writer.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
@@ -827,7 +827,7 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 
 	writer.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
@@ -858,7 +858,7 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	_, err = g.getParseFile(&baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
+	_, err = g.getParseFile(ctx, &baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -871,7 +871,7 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 type giteeGetParseFileResponse struct {
 }
 
-func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
+func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
 	url := fmt.Sprintf("%s/task/%s/status", strings.TrimSuffix(*baseURL, "/"), *taskID)
 
 	reqBody := map[string]interface{}{}
@@ -881,7 +881,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	for i := 0; i < count; i++ {

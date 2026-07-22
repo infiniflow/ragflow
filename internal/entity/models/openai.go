@@ -320,7 +320,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -636,7 +636,7 @@ func (o *OpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("sender is required")
 	}
 
-	req, responseFormat, err := o.newOpenAIASRRequest(context.Background(), modelName, file, apiConfig, asrConfig, true)
+	req, responseFormat, err := o.newOpenAIASRRequest(ctx, modelName, file, apiConfig, asrConfig, true)
 	if err != nil {
 		return err
 	}
@@ -755,7 +755,7 @@ func (o *OpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 		return fmt.Errorf("sender is required")
 	}
 
-	req, streamFormat, err := o.newOpenAITTSRequest(context.Background(), modelName, audioContent, apiConfig, ttsConfig, true)
+	req, streamFormat, err := o.newOpenAITTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, true)
 	if err != nil {
 		return err
 	}

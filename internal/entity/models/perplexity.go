@@ -212,7 +212,7 @@ func (p *PerplexityModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	// ResponseHeaderTimeout caps the initial header wait. This context
 	// also caps the body-read phase so a stalled SSE stream cannot hold
 	// the caller's goroutine and connection indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))

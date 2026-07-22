@@ -387,7 +387,7 @@ func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return err
 	}
 
-	prediction, err := r.createPrediction(context.Background(), url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
+	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
 	if err != nil {
 		return err
 	}
@@ -411,11 +411,11 @@ func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return sender(&endOfStream, nil)
 	}
 
-	return r.readPredictionStream(prediction.URLs.Stream, *apiConfig.ApiKey, sender)
+	return r.readPredictionStream(ctx, prediction.URLs.Stream, *apiConfig.ApiKey, sender)
 }
 
-func (r *ReplicateModel) readPredictionStream(url string, apiKey string, sender func(*string, *string) error) error {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+func (r *ReplicateModel) readPredictionStream(ctx context.Context, url string, apiKey string, sender func(*string, *string) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

@@ -235,7 +235,7 @@ func (f *FuturMixModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	reqBody := buildFuturMixChatRequest(modelName, messages, true, chatModelConfig)
 
-	req, err := newFuturMixJSONRequest(context.Background(), "POST", endpoint, reqBody, apiKey)
+	req, err := newFuturMixJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
 	if err != nil {
 		return err
 	}

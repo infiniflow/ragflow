@@ -135,7 +135,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &body)

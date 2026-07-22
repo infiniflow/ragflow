@@ -309,7 +309,7 @@ func (c *CometAPIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 	reqBody := buildCometAPIChatRequest(modelName, messages, true, chatModelConfig)
 
-	req, err := newCometAPIJSONRequest(context.Background(), "POST", url, reqBody, apiKey)
+	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
 	if err != nil {
 		return err
 	}

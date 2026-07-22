@@ -312,7 +312,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -396,7 +396,7 @@ func (x *XiaomiModel) Rerank(ctx context.Context, modelName *string, query strin
 }
 
 func (x *XiaomiModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := x.newXiaomiASRRequest(ctx, modelName, file, apiConfig, asrConfig, false)
@@ -435,7 +435,7 @@ func (x *XiaomiModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("sender is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := x.newXiaomiASRRequest(ctx, modelName, file, apiConfig, asrConfig, true)
@@ -563,9 +563,6 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -642,7 +639,7 @@ func readXiaomiASRStream(body io.Reader, sender func(*string, *string) error) er
 }
 
 func (x *XiaomiModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := x.newXiaomiTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, false)
@@ -672,7 +669,7 @@ func (x *XiaomiModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 		return fmt.Errorf("sender is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := x.newXiaomiTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, true)
@@ -760,9 +757,6 @@ func (x *XiaomiModel) newXiaomiTTSRequest(ctx context.Context, modelName *string
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
