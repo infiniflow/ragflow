@@ -1469,6 +1469,90 @@ func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-same-title",
+		UserID:         "user-1",
+		Title:          sptr("Same Title"),
+		Description:    sptr("old description"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-same-title", map[string]interface{}{
+		"title":       "Same Title",
+		"description": "new description",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed for unchanged title: %v", err)
+	}
+}
+
+func TestUpdateAgentRejectsDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-source-category",
+		UserID:         "user-1",
+		Title:          sptr("Source Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-destination-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Duplicate Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-source-category", map[string]interface{}{
+		"title":           "Duplicate Title",
+		"canvas_category": "dataflow_canvas",
+	})
+	if err == nil || err.Error() != "Duplicate Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Duplicate Title already exists.", err)
+	}
+}
+
+func TestUpdateAgentRejectsCategoryOnlyDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-source",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-category-only-source", map[string]interface{}{
+		"canvas_category": "dataflow_canvas",
+	})
+	if err == nil || err.Error() != "Shared Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Shared Title already exists.", err)
+	}
+}
+
 func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
