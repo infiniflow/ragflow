@@ -1581,11 +1581,14 @@ class RAGFlowClient:
             response = self.http_client.request(
                 "POST", f"/datasets/{dataset_id}/documents?return_raw_files=true", headers=headers, data=encoder, json_body=None, params=None, stream=False, auth_kind="web", use_api_base=True
             )
-            res = response.json()
-            if res.get("code") == 0:
-                print(f"Success to import documents into dataset {dataset_name}")
+            if response.status_code == 200:
+                res = response.json()
+                if res["code"] == 0:
+                    print(f"Success to import documents into dataset {dataset_name}")
+                else:
+                    print(f"Fail to import documents: code: {res['code']}, message: {res['message']}")
             else:
-                print(f"Fail to import documents: code: {res['code']}, message: {res['message']}")
+                print(f"Fail to import documents: code: {response.status_code}, body: {response.text}")
         except Exception as exc:
             print(f"Fail to import document into dataset: {dataset_name}, error: {exc}")
         finally:
@@ -1778,7 +1781,7 @@ class RAGFlowClient:
             print(f"no document found for {doc_id}")
             return
 
-        dataset_id = docs[0].get("dataset_id")
+        dataset_id = docs[0].get("dataset_id") or docs[0].get("kb_id")
         if not dataset_id:
             print(f"Dataset ID not found for document: {doc_id}")
             return
@@ -1824,7 +1827,7 @@ class RAGFlowClient:
             else:
                 print(f"Fail to remove tags, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to remove tags, HTTP {response.status_code}")
+            print(f"Fail to remove tags, code: {response.status_code}, body: {response.text}")
 
     def remove_chunks(self, command_dict):
         if self.server_type != "user":
@@ -1848,7 +1851,7 @@ class RAGFlowClient:
             else:
                 print(f"Fail to remove chunks, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to remove chunks, HTTP {response.status_code}")
+            print(f"Fail to remove chunks, code: {response.status_code}, body: {response.text}")
 
     def list_chunks(self, command_dict):
         if self.server_type != "user":
