@@ -315,32 +315,6 @@ function MessageItem({
                 ))}
               </div>
             )}
-            {/* {isAssistant && item.attachment && item.attachment.doc_id && (
-              <div className="w-full flex items-center justify-end">
-                <Button
-                  variant="link"
-                  className="p-1 m-0 h-auto text-text-sub-title-invert"
-                  onClick={async () => {
-                    if (item.attachment?.doc_id) {
-                      try {
-                        const response = await downloadFile({
-                          docId: item.attachment.doc_id,
-                          ext: item.attachment.format,
-                        });
-                        const blob = new Blob([response.data], {
-                          type: response.data.type,
-                        });
-                        downloadFileFromBlob(blob, item.attachment.file_name);
-                      } catch (error) {
-                        console.error('Download failed:', error);
-                      }
-                    }
-                  }}
-                >
-                  <Download size={16} />
-                </Button>
-              </div>
-            )} */}
           </section>
         </div>
       </section>
