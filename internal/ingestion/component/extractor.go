@@ -75,7 +75,6 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -165,9 +164,17 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		}
 		if v, ok := params["system_prompt"].(string); ok {
 			p.SystemPrompt = v
+		} else if v, ok := params["sys_prompt"].(string); ok {
+			p.SystemPrompt = v
 		}
 		if v, ok := params["prompt"].(string); ok {
 			p.Prompt = v
+		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
+			if first, ok := promptsRaw[0].(map[string]any); ok {
+				if content, ok := first["content"].(string); ok {
+					p.Prompt = content
+				}
+			}
 		}
 		if v, ok := params["auto_keywords"]; ok {
 			p.AutoKeywords = mapInt(v)
@@ -436,6 +443,8 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 		out.prompt = v
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
+		out.systemPrompt = v
+	} else if v, ok := inputs["sys_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
 	}
 	if v, ok := inputs["lang"].(string); ok && v != "" {
@@ -767,19 +776,24 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) (ext
 		return extractorChatConfig{}, nil
 	}
 
-	// Pre-check: if this looks like a bare UUID, confirm the record
-	// exists before delegating.  resolveModelConfig falls through to
-	// parseCompositeModelName when GetByID returns ErrRecordNotFound,
-	// which produces a confusing "provider name missing" error.
+	var driver models.ModelDriver
+	var modelName string
+	var apiConfig *models.APIConfig
 	if isBareTenantModelID(compositeLLMID) {
-		if _, err := dao.NewTenantModelDAO().GetByID(compositeLLMID); err != nil {
+		// UUID path: resolveModelConfigByID does a single GetByID and
+		// returns a clear error if the record doesn't exist.  No need
+		// for a separate pre-check — resolveModelConfig's redundant
+		// GetByID dispatch check is also bypassed.
+		driver, modelName, apiConfig, _, err = resolveModelConfigByID(tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
-	}
-
-	driver, modelName, apiConfig, _, err := resolveModelConfig(tid, entity.ModelTypeChat, compositeLLMID)
-	if err != nil {
-		return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
+	} else {
+		// Composite "model@provider" path: delegate to the shared dispatcher.
+		driver, modelName, apiConfig, _, err = resolveModelConfig(tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
+			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
+		}
 	}
 
 	apiKey := ""

@@ -291,7 +291,11 @@ func isColonTitle(s string) bool {
 	if lastPunct < 0 {
 		return false
 	}
-	between := strings.TrimSpace(body[lastPunct+1:])
+	// Use rune-aware slicing: body[lastPunct+1] would be wrong for CJK
+	// punctuation (e.g. "。" is 3 bytes in UTF-8). Decode the rune at
+	// lastPunct to get the correct byte width and skip the full rune.
+	_, runeLen := utf8.DecodeRuneInString(body[lastPunct:])
+	between := strings.TrimSpace(body[lastPunct+runeLen:])
 	return utf8.RuneCountInString(between) >= 32
 }
 
@@ -311,7 +315,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 		// Python tree_merge short/numeric line filter:
 		// sections = [s for s in sections if len(s.split("@")[0].strip()) > 1
 		//             and not re.match(r"[0-9]+$", s.split("@")[0].strip())]
-		if text := beforeAt(rec.text); len(text) <= 1 || numericOnly.MatchString(text) {
+		if text := beforeAt(rec.text); utf8.RuneCountInString(text) <= 1 || numericOnly.MatchString(text) {
 			out[i] = bodyLevel
 			continue
 		}

@@ -506,6 +506,88 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	}
 }
 
+// TestNewExtractorComponent_SysPromptAlias verifies that "sys_prompt"
+// (the Python DSL name) is accepted as a fallback for SystemPrompt.
+func TestNewExtractorComponent_SysPromptAlias(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"sys_prompt": "You are a Python DSL prompt.",
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.SystemPrompt != "You are a Python DSL prompt." {
+		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a Python DSL prompt.")
+	}
+}
+
+// TestNewExtractorComponent_PromptsArray verifies that the Python DSL
+// "prompts" array format is parsed into Param.Prompt.
+func TestNewExtractorComponent_PromptsArray(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"prompts": []any{
+			map[string]any{
+				"content": "Analyze: {TitleChunker:FlatMiceFix@chunks}",
+				"role":    "user",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	want := "Analyze: {TitleChunker:FlatMiceFix@chunks}"
+	if ec.Param.Prompt != want {
+		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, want)
+	}
+}
+
+// TestNewExtractorComponent_PromptsArray_PromptWins verifies that
+// "prompt" (string) takes priority over "prompts" (array) when both
+// are present in the DSL params.
+func TestNewExtractorComponent_PromptsArray_PromptWins(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"prompt":     "Direct prompt wins.",
+		"prompts": []any{
+			map[string]any{
+				"content": "Should be ignored.",
+				"role":    "user",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.Prompt != "Direct prompt wins." {
+		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
+	}
+}
+
+// TestNewExtractorComponent_SystemPromptWinsOverSysPrompt verifies
+// that "system_prompt" takes priority over "sys_prompt".
+func TestNewExtractorComponent_SystemPromptWinsOverSysPrompt(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name":    "out",
+		"system_prompt": "system_prompt wins.",
+		"sys_prompt":    "sys_prompt ignored.",
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.SystemPrompt != "system_prompt wins." {
+		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "system_prompt wins.")
+	}
+}
+
 // TestExtractorComponent_InputsOutputs_NonEmpty is the shape
 // assertion Phase 4's API endpoint relies on.
 func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {

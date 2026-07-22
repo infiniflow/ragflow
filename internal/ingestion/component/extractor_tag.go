@@ -173,8 +173,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, in extractorInputs
 	if len(docsToTag) > 0 && in.llmID != "" {
 		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, in.llmID)
 		if err != nil {
-			common.Warn("extractor tag: resolve model failed", zap.Error(err))
-			return []map[string]any{}, nil
+			common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
 		}
 		if driver != "" && model != "" {
 			inv := getExtractorChatInvoker()
