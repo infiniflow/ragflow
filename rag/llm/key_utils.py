@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 
 def _normalize_replicate_key(key):
@@ -31,4 +32,24 @@ def _normalize_replicate_key(key):
     return key
 
 
-__all__ = ["_normalize_replicate_key"]
+def _resolve_azure_credentials(key):
+    """Normalize an Azure-OpenAI credential string.
+
+    Accepts a JSON object (``{"api_key": "...", "api_version": "..."}``), a
+    plain string key, or anything else. Returns ``(api_key, api_version)``,
+    defaulting ``api_version`` to ``"2024-02-01"`` when not specified.
+    Falls back to the raw ``key`` value verbatim if ``json.loads`` fails so a
+    user pasting the API key straight from the Azure Portal still validates
+    instead of crashing with ``json.decoder.JSONDecodeError`` (see #17204).
+    """
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
+
+
+__all__ = ["_normalize_replicate_key", "_resolve_azure_credentials"]
