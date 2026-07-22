@@ -264,7 +264,7 @@ func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 	x := newXinferenceForTest(srv.URL)
 	key := "sk-test"
 	apiConfig := &APIConfig{ApiKey: &key}
-	models, err := x.ListModels(apiConfig)
+	models, err := x.ListModels(ctx, apiConfig)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
 
 func TestXinferenceEmbedRequiresModelName(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
-	_, err := x.Embed(nil, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, nil, []string{"x"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}

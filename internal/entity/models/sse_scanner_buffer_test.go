@@ -13,7 +13,7 @@ import (
 // provider. The buffer regression below exercises it through a table so a new
 // provider only needs one row.
 type chatStreamer interface {
-	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
+	ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 }
 
 // largeSSEStreamServer streams a single SSE "data:" line whose content delta is

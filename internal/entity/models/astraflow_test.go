@@ -430,7 +430,7 @@ func TestAstraflowEmbedReturnsNoSuchMethod(t *testing.T) {
 	// Embed IS implemented (not a stub). It should NOT be blocked by APIConfigCheck.
 	// With empty input texts it short-circuits to empty result (no error).
 	apiKey := "test-key"
-	embeddings, err := newAstraflowForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newAstraflowForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Errorf("Embed: want empty result (no error), got embeddings=%v err=%v", embeddings, err)
 	}

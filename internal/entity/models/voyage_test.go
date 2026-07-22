@@ -203,7 +203,7 @@ func TestVoyageEmbedRequiresAPIKey(t *testing.T) {
 func TestVoyageEmbedRequiresModelName(t *testing.T) {
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"
-	_, err := v.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}

@@ -305,7 +305,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	m := newModelScopeForTest(srv.URL)
 	key := "ms-test"
 	apiConfig := &APIConfig{ApiKey: &key}
-	models, err := m.ListModels(apiConfig)
+	models, err := m.ListModels(ctx, apiConfig)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}

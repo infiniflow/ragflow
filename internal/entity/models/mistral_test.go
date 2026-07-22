@@ -532,7 +532,7 @@ func TestMistralEmbedRequiresAPIKey(t *testing.T) {
 func TestMistralEmbedRequiresModelName(t *testing.T) {
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}

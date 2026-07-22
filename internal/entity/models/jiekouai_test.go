@@ -314,7 +314,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",

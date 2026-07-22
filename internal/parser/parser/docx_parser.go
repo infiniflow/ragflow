@@ -19,6 +19,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -66,7 +67,7 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 //
 // JSON path mirrors python parser.py:_docx() output_format == "json".
 // Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
-func (p *DOCXParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "docx")
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("docx open: %w", err)}

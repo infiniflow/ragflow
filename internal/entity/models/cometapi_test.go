@@ -311,7 +311,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			name: "ListModels",
 			path: "/api/models",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
-				_, err := m.ListModels(apiConfig)
+				_, err := m.ListModels(ctx, apiConfig)
 				return err
 			},
 		},
@@ -656,7 +656,7 @@ func TestCometAPIEmbedRequiresAPIKey(t *testing.T) {
 func TestCometAPIEmbedRequiresModelName(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}

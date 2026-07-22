@@ -1016,7 +1016,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	matchExprs := make([]interface{}, 0, 3)
 	if question != "" {
 		matchText := memoryMessageTextExpr(question, similarityThreshold)
-		matchDense, err := s.memoryMessageDenseExpr(question, memories[0], topN, similarityThreshold)
+		matchDense, err := s.memoryMessageDenseExpr(ctx, question, memories[0], topN, similarityThreshold)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1260,13 +1260,13 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	return matchText
 }
 
-func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
+func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}

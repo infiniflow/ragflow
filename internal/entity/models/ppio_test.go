@@ -474,7 +474,7 @@ func TestPPIOMissingRegionBaseURL(t *testing.T) {
 
 func TestPPIOUnsupportedMethods(t *testing.T) {
 	m := newPPIOForTest("http://unused")
-	if _, err := m.Embed(nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed error=%v", err)
 	}
 	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

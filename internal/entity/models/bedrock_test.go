@@ -776,7 +776,7 @@ func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
 
 func TestBedrockEmbedShortCircuitsEmptyInput(t *testing.T) {
 	m := newBedrockForTest("http://unused")
-	got, err := m.Embed(nil, nil, nil, nil, nil)
+	got, err := m.Embed(ctx, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed empty: %v", err)
 	}

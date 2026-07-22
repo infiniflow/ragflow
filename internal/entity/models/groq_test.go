@@ -378,7 +378,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 
 func TestGroqUnsupportedMethods(t *testing.T) {
 	m := newGroqForTest("http://unused")
-	if _, err := m.Embed(nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed error=%v", err)
 	}
 	if _, err := m.Rerank(nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

@@ -349,7 +349,7 @@ func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 
 func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}

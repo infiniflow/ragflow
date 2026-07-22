@@ -344,7 +344,7 @@ type fakeEmbedDriver struct {
 
 func (f *fakeEmbedDriver) Name() string { return f.name }
 
-func (f *fakeEmbedDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, config *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (f *fakeEmbedDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *modelModule.APIConfig, config *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: f.vector}}, nil
 }
 

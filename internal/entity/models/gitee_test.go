@@ -197,7 +197,7 @@ func TestGiteeListModelsIntegration(t *testing.T) {
 		apiConfig.ApiKey = &apiKey
 	}
 
-	models, err := newGiteeForListModelsTest(baseURL).ListModels(apiConfig)
+	models, err := newGiteeForListModelsTest(baseURL).ListModels(ctx, apiConfig)
 	if err != nil {
 		t.Fatalf("real Gitee ListModels: %v", err)
 	}
