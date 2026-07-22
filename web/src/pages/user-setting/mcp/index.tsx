@@ -65,8 +65,8 @@ export default function McpServer() {
   return (
     <ProfileSettingWrapperCard
       header={
-        <header className="flex flex-row gap-1.5 justify-between items-end">
-          <div>
+        <header className="flex flex-col gap-4 md:flex-row md:justify-between md:items-end min-w-0">
+          <div className="min-w-0">
             <h2 className="text-text-primary text-2xl font-medium">
               {t('mcp.mcpServers')}
             </h2>
@@ -76,37 +76,59 @@ export default function McpServer() {
             </p>
           </div>
 
-          <div className="flex gap-4" role="toolbar">
+          <div className="flex flex-col gap-3 w-full md:flex-row md:items-center md:gap-4 md:w-auto md:shrink-0">
             <SearchInput
-              className="w-40"
+              className="w-full md:w-40"
               value={searchString}
               onChange={handleInputChange}
               placeholder={t('common.search')}
             />
-            <Button variant="outline" onClick={switchSelectionMode}>
-              {isSelectionMode ? (
-                <ListChecks className="size-3.5" />
-              ) : (
-                <LayoutList className="size-3.5" />
-              )}
-              {t(`mcp.${isSelectionMode ? 'exitBulkManage' : 'bulkManage'}`)}
-            </Button>
-            <Button variant="outline" onClick={showImportModal}>
-              <Download className="size-3.5" />
-              {t('mcp.import')}
-            </Button>
-            <Button onClick={showEditModal('')}>
-              <Plus /> {t('mcp.addMCP')}
-            </Button>
+            <div className="w-full min-w-0 md:w-auto">
+              <div
+                className="grid grid-cols-2 gap-2 w-full md:flex md:flex-wrap md:gap-4"
+                role="toolbar"
+              >
+                <Button
+                  variant="outline"
+                  className="col-span-2 w-full min-w-0 md:col-span-1 md:w-auto"
+                  onClick={switchSelectionMode}
+                >
+                  {isSelectionMode ? (
+                    <ListChecks className="size-3.5 shrink-0" />
+                  ) : (
+                    <LayoutList className="size-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">
+                    {t(
+                      `mcp.${isSelectionMode ? 'exitBulkManage' : 'bulkManage'}`,
+                    )}
+                  </span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full min-w-0 md:w-auto"
+                  onClick={showImportModal}
+                >
+                  <Download className="size-3.5 shrink-0" />
+                  {t('mcp.import')}
+                </Button>
+                <Button
+                  className="w-full min-w-0 md:w-auto"
+                  onClick={showEditModal('')}
+                >
+                  <Plus /> {t('mcp.addMCP')}
+                </Button>
+              </div>
+            </div>
           </div>
         </header>
       }
     >
-      <div className="h-full p-5 overflow-x-hidden overflow-y-auto">
+      <div className="h-full p-4 md:p-5 overflow-x-hidden overflow-y-auto">
         {data.mcp_servers?.length ? (
           <>
             {isSelectionMode && (
-              <section className="pb-5 flex items-center">
+              <section className="pb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
                 <Checkbox id="all" onCheckedChange={handleSelectAll} />
                 <Label
                   className="pl-2 text-text-primary cursor-pointer"
@@ -114,10 +136,10 @@ export default function McpServer() {
                 >
                   {t('common.selectAll')}
                 </Label>
-                <span className="text-text-secondary pr-10 pl-5">
+                <span className="text-text-secondary">
                   {t('mcp.selected')} {selectedList.length}
                 </span>
-                <div className="flex gap-10 items-center">
+                <div className="flex flex-wrap gap-2 sm:gap-4 items-center">
                   <Button variant={'secondary'} onClick={handleExportMcp}>
                     <Upload className="size-3.5"></Upload>
                     {t('mcp.export')}
@@ -164,13 +186,13 @@ export default function McpServer() {
           </>
         ) : (
           <div
-            className="flex items-center justify-between border border-dashed border-border-button rounded-md p-10 cursor-pointer w-[590px]"
+            className="flex flex-col items-center gap-4 text-center border border-dashed border-border-button rounded-md p-6 cursor-pointer w-full max-w-[590px] sm:flex-row sm:items-center sm:justify-between sm:text-left sm:p-10"
             onClick={showEditModal('')}
           >
             <div className="text-text-secondary text-sm">
               {t('empty.noMCP')}
             </div>
-            <Button variant="outline">
+            <Button variant="outline" className="shrink-0">
               <Plus />
               {t('empty.addNow')}
             </Button>

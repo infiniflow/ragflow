@@ -20,12 +20,12 @@ export function ImportMcpDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('mcp.import')}</DialogTitle>
         </DialogHeader>
         <ImportMcpForm hideModal={hideModal} onOk={onOk}></ImportMcpForm>
-        <DialogFooter>
+        <DialogFooter className="flex-row justify-end gap-2">
           <ButtonLoading type="submit" form={TagRenameId} loading={loading}>
             {t('common.save')}
           </ButtonLoading>
