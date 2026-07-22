@@ -310,7 +310,7 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
     if rel_desc:
         edge_parts.append(f"## Relation Description:\n{rel_desc}")
     edge_parts.append(f"## Relation Fields:\n{rel_fields_text}")
-    edge_parts.append("## Known Entities:\n{known_nodes}")
+    edge_parts.append("## Known Entities:\nSee the source text below.")
     edge_parts.append(
         "## Response Format:\n"
         "Reply with a single JSON object of the form: "
@@ -375,11 +375,7 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
 
     user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
     node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
-    nodes = [
-        node
-        for node in _struct_unwrap_items(node_res)
-        if not _struct_is_invalid_entity_payload(node, parser_config)
-    ]
+    nodes = [node for node in _struct_unwrap_items(node_res) if not _struct_is_invalid_entity_payload(node, parser_config)]
 
     id_field = _struct_entity_id_field(parser_config)
     known_keys = []
@@ -395,13 +391,9 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     if not edge_prompt_template:
         return nodes, []
 
-    edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
-    edge_res = await gen_json(edge_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
-    edges = [
-        edge
-        for edge in _struct_unwrap_items(edge_res)
-        if not _struct_is_invalid_relation_payload(edge, parser_config)
-    ]
+    edge_user = user_prompt + f"\n\n## Known Entities to link:\n{known_str}"
+    edge_res = await gen_json(edge_prompt_template, edge_user, chat_mdl, gen_conf={"temperature": 0.1})
+    edges = [edge for edge in _struct_unwrap_items(edge_res) if not _struct_is_invalid_relation_payload(edge, parser_config)]
 
     return nodes, edges
 
