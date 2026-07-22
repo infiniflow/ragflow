@@ -309,7 +309,7 @@ Whether to include document parsing status counts in each returned `DataSet` obj
 
 - `unstart_count`: `int` Number of documents not yet started parsing.
 - `running_count`: `int` Number of documents currently being parsed.
-- `cancel_count`: `int` Number of documents whose parsing was cancelled.
+- `cancel_count`: `int` Number of documents whose parsing was canceled.
 - `done_count`: `int` Number of documents that have been successfully parsed.
 - `fail_count`: `int` Number of documents whose parsing failed.
 
@@ -646,7 +646,7 @@ A `Document` object contains the following attributes:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picure"`:  
+  - `chunk_method`=`"picture"`:  
     `None`
   - `chunk_method`=`"one"`:  
     `None`
@@ -758,7 +758,7 @@ DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, in
 
 *Asynchronously* parses documents in the current dataset.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be cancelled gracefully.
+This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully.
 
 #### Parameters
 
@@ -1177,7 +1177,7 @@ Base64 encoding of the avatar. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`
 
-The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant and you can attach datasets later.
+The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant, and you can attach datasets later.
 
 ##### llm_id: `str | None`
 
@@ -1586,7 +1586,7 @@ Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Mess
 Asks a specified chat assistant a question to start an AI-powered conversation.
 
 :::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+In streaming mode, not all responses include a reference, as this depends on the system's judgment.
 :::
 
 #### Parameters
@@ -1723,7 +1723,7 @@ Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Mess
 Asks a specified agent through the unified completion endpoint.
 
 :::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+In streaming mode, not all responses include a reference, as this depends on the system's judgment.
 :::
 
 #### Parameters
@@ -1893,7 +1893,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
 agent = rag_object.get_agent(AGENT_id)
-sessons = agent.list_sessions()
+sessions = agent.list_sessions()
 for session in sessions:
     print(session)
 ```
@@ -2726,7 +2726,7 @@ Ragflow.get_recent_messages(
 ) -> list[dict]
 ```
 
-Retrieves the most recent messages from specified memories. Typically accepts a `limit` parameter to control the number of messages returned.
+Retrieves the most recent messages from specified memories. Typically, accepts a `limit` parameter to control the number of messages returned.
 
 #### Parameters
 
