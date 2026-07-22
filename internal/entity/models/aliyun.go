@@ -115,6 +115,11 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
+	// For qwen3 models on DashScope, enable_thinking defaults to true when
+	// omitted. RAGFlow's default is to disable thinking unless explicitly
+	// enabled by the user, matching Python's chat_model.py behavior.
+	applyQwen3ThinkingDefault(modelName, reqBody)
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -258,6 +263,11 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 	}
 
+	// For qwen3 models on DashScope, enable_thinking defaults to true when
+	// omitted. RAGFlow's default is to disable thinking unless explicitly
+	// enabled by the user, matching Python's chat_model.py behavior.
+	applyQwen3ThinkingDefault(modelName, reqBody)
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -394,6 +404,21 @@ func mergeAliyunToolCallDelta(accumulated map[int]map[string]interface{}, delta 
 		currentArguments, _ := function["arguments"].(string)
 		function["arguments"] = currentArguments + arguments
 	}
+}
+
+// applyQwen3ThinkingDefault ensures enable_thinking=false is sent for qwen3
+// models when it hasn't been explicitly configured. DashScope defaults
+// enable_thinking to true for qwen3 models, which produces reasoning output
+// that RAGFlow doesn't expect in most pipelines. Mirrors Python's
+// chat_model.py default of enable_thinking=False for qwen3.
+func applyQwen3ThinkingDefault(modelName string, reqBody map[string]interface{}) {
+	if !strings.Contains(strings.ToLower(modelName), "qwen3") {
+		return
+	}
+	if _, alreadySet := reqBody["enable_thinking"]; alreadySet {
+		return
+	}
+	reqBody["enable_thinking"] = false
 }
 
 func aliyunChatMessages(messages []Message) []map[string]interface{} {
