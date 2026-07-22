@@ -646,7 +646,7 @@ A `Document` object contains the following attributes:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picure"`:  
+  - `chunk_method`=`"picture"`:  
     `None`
   - `chunk_method`=`"one"`:  
     `None`
@@ -1893,7 +1893,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
 agent = rag_object.get_agent(AGENT_id)
-sessons = agent.list_sessions()
+sessions = agent.list_sessions()
 for session in sessions:
     print(session)
 ```
