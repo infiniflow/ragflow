@@ -34,13 +34,15 @@ import (
 	"go.uber.org/zap"
 )
 
-// agentLLMIDPattern matches `<model>@<provider>` and
+const maxSubAgentDepth = 8
+
+// agentPatternless matches `<model>@<provider>` and
 // `<model>@<instance>@<provider>` (the trailing `@<provider>` is
 // always the last segment — the segment just before the last `@`
 // is treated as the bare model name for upstream API calls). The
 // browser component has the same idea at browser.go:88-92, but
 // keeps the regex greedy for its 2-part fixture; we keep both
-// behaviours here via the in-function split below.
+// behaviors here via the in-function split below.
 
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
@@ -72,12 +74,14 @@ type AgentComponent struct {
 // AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
 	ModelID                  string
+	Description              string
 	SystemPrompt             string
 	UserPrompt               string
 	Thinking                 string
 	TopP                     *float64
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
+	SubAgents                []SubAgentTool
 	MaxRounds                int
 	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
 	OptimizeMultiTurn        bool
@@ -97,6 +101,13 @@ type AgentParam struct {
 	Driver  string
 	APIKey  string
 	BaseURL string
+}
+
+// SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
+type SubAgentTool struct {
+	Name        string
+	Description string
+	Param       AgentParam
 }
 
 const (
@@ -532,7 +543,159 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 }
 
 func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
-	return agenttool.BuildAll(p.Tools, p.ToolParams)
+	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
+	if err != nil {
+		return nil, err
+	}
+	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: %w", err)
+		}
+		if info == nil || strings.TrimSpace(info.Name) == "" {
+			return nil, fmt.Errorf("agent tool info: missing name")
+		}
+		if _, exists := toolNames[info.Name]; exists {
+			return nil, fmt.Errorf("duplicate agent tool name %q", info.Name)
+		}
+		toolNames[info.Name] = struct{}{}
+	}
+	for _, subAgent := range p.SubAgents {
+		name := uniqueAgentToolName(subAgent.Name, toolNames)
+		toolNames[name] = struct{}{}
+		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
+	}
+	return tools, nil
+}
+
+type subAgentTool struct {
+	name string
+	spec SubAgentTool
+}
+
+func (t *subAgentTool) Info(_ context.Context) (*schema.ToolInfo, error) {
+	params := map[string]*schema.ParameterInfo{
+		"user_prompt": {
+			Type:     schema.String,
+			Desc:     agentUserPromptSchemaDefault,
+			Required: true,
+		},
+		"reasoning": {
+			Type:     schema.String,
+			Desc:     "Supervisor's reasoning for choosing this agent. Explain why this agent is being invoked and what is expected of it.",
+			Required: true,
+		},
+		"context": {
+			Type:     schema.String,
+			Desc:     "All relevant background information, prior facts, decisions, and state needed by the agent to solve the current query.",
+			Required: true,
+		},
+	}
+	name := t.name
+	if name == "" {
+		name = normalizeAgentToolName(t.spec.Name)
+	}
+	return &schema.ToolInfo{
+		Name:        name,
+		Desc:        subAgentToolDescription(t.spec),
+		ParamsOneOf: schema.NewParamsOneOfByParams(params),
+	}, nil
+}
+
+type subAgentDepthKey struct{}
+
+func subAgentDepth(ctx context.Context) int {
+	if v, ok := ctx.Value(subAgentDepthKey{}).(int); ok {
+		return v
+	}
+	return 0
+}
+
+func (t *subAgentTool) InvokableRun(ctx context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
+	depth := subAgentDepth(ctx)
+	if depth >= maxSubAgentDepth {
+		return "", fmt.Errorf("sub-agent tool %q: max nesting depth (%d) exceeded", normalizeAgentToolName(t.spec.Name), maxSubAgentDepth)
+	}
+
+	ctx = context.WithValue(ctx, subAgentDepthKey{}, depth+1)
+
+	inputs := map[string]any{}
+	if strings.TrimSpace(argsJSON) != "" {
+		if err := json.Unmarshal([]byte(argsJSON), &inputs); err != nil {
+			return "", fmt.Errorf("sub-agent tool %q: decode arguments: %w", normalizeAgentToolName(t.spec.Name), err)
+		}
+	}
+
+	out, err := NewAgentComponent(t.spec.Param).Invoke(ctx, inputs)
+	if err != nil {
+		return "", fmt.Errorf("sub-agent tool %q: %w", normalizeAgentToolName(t.spec.Name), err)
+	}
+	if content, ok := out["content"].(string); ok {
+		return content, nil
+	}
+	payload, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("sub-agent tool %q: encode output: %w", normalizeAgentToolName(t.spec.Name), err)
+	}
+	return string(payload), nil
+}
+
+func subAgentToolDescription(spec SubAgentTool) string {
+	if strings.TrimSpace(spec.Description) != "" {
+		return strings.TrimSpace(spec.Description)
+	}
+	if strings.TrimSpace(spec.Param.Description) != "" {
+		return strings.TrimSpace(spec.Param.Description)
+	}
+	return "This is an agent for a specific task."
+}
+
+func uniqueAgentToolName(name string, used map[string]struct{}) string {
+	base := normalizeAgentToolName(name)
+	if _, exists := used[base]; !exists {
+		return base
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s_%d", base, n)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+func normalizeAgentToolName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "agent"
+	}
+
+	var b strings.Builder
+	lastSeparator := false
+	for _, r := range name {
+		valid := r == '_' || r == '-' ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9')
+		if valid {
+			b.WriteRune(r)
+			lastSeparator = false
+			continue
+		}
+		if !lastSeparator {
+			b.WriteByte('_')
+			lastSeparator = true
+		}
+	}
+
+	out := strings.Trim(b.String(), "_-")
+	if out == "" {
+		return "agent"
+	}
+	if out[0] >= '0' && out[0] <= '9' {
+		out = "agent_" + out
+	}
+	return out
 }
 
 // NewAgentComponent builds an AgentComponent from raw params.
@@ -1104,6 +1267,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	} else if v, ok := stringFrom(inputs, "llm_id"); ok {
 		p.ModelID = v
 	}
+	if v, ok := stringFrom(inputs, "description"); ok {
+		p.Description = v
+	}
 	if v, ok := stringFrom(inputs, "system_prompt"); ok {
 		p.SystemPrompt = v
 	} else if v, ok := stringFrom(inputs, "sys_prompt"); ok {
@@ -1128,6 +1294,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
 	}
+	if v, ok := intFrom(inputs, "message_history_window_size"); ok {
+		p.MessageHistoryWindowSize = v
+	}
 	if v, ok := stringFrom(inputs, "driver"); ok {
 		p.Driver = v
 	}
@@ -1137,8 +1306,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
-	if tools, params, ok := agentToolsFrom(inputs, "tools"); ok {
+	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
+		p.SubAgents = subAgents
 		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
@@ -1158,18 +1328,20 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
 // []string; the canvas DSL shape stores tool component objects with
-// component_name and params.
-func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, bool) {
+// component_name and params. Child Agent objects are returned separately
+// because they are dynamic tools, not entries in the static tool registry.
+func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, []SubAgentTool, bool) {
 	v, ok := inputs[name]
 	if !ok {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	switch x := v.(type) {
 	case []string:
-		return x, nil, true
+		return x, nil, nil, true
 	case []any:
 		out := make([]string, 0, len(x))
 		params := make(map[string]map[string]any)
+		subAgents := make([]SubAgentTool, 0)
 		for _, item := range x {
 			switch tool := item.(type) {
 			case string:
@@ -1178,6 +1350,10 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 				}
 				out = append(out, tool)
 			case map[string]any:
+				if subAgent, ok := subAgentToolObject(tool); ok {
+					subAgents = append(subAgents, subAgent)
+					continue
+				}
 				toolName, toolParams, ok := agentToolObject(tool)
 				if !ok {
 					continue
@@ -1188,9 +1364,36 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 				}
 			}
 		}
-		return out, params, true
+		return out, params, subAgents, true
 	}
-	return nil, nil, false
+	return nil, nil, nil, false
+}
+
+func subAgentToolObject(item map[string]any) (SubAgentTool, bool) {
+	componentName, ok := stringFrom(item, "component_name")
+	if !ok || !strings.EqualFold(strings.TrimSpace(componentName), "Agent") {
+		return SubAgentTool{}, false
+	}
+
+	rawParams, _ := item["params"].(map[string]any)
+	param := agentParamFromMap(rawParams)
+	name, _ := stringFrom(item, "function_name")
+	if strings.TrimSpace(name) == "" {
+		name, _ = stringFrom(item, "name")
+	}
+	if strings.TrimSpace(name) == "" {
+		name, _ = stringFrom(item, "id")
+	}
+	description, _ := stringFrom(item, "description")
+	if strings.TrimSpace(description) == "" {
+		description = param.Description
+	}
+
+	return SubAgentTool{
+		Name:        normalizeAgentToolName(name),
+		Description: description,
+		Param:       param,
+	}, true
 }
 
 func agentToolObject(item map[string]any) (string, map[string]any, bool) {
@@ -1299,56 +1502,15 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 	return out, true
 }
 
+func agentParamFromMap(params map[string]any) AgentParam {
+	return mergeAgentParam(AgentParam{
+		MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize,
+	}, params)
+}
+
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
-		p := AgentParam{MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize}
-		if v, ok := stringFrom(params, "model_id"); ok {
-			p.ModelID = v
-		} else if v, ok := stringFrom(params, "llm_id"); ok {
-			p.ModelID = v
-		}
-		if v, ok := stringFrom(params, "system_prompt"); ok {
-			p.SystemPrompt = v
-		} else if v, ok := stringFrom(params, "sys_prompt"); ok {
-			p.SystemPrompt = v
-		}
-		if promptSystem, promptUser, ok := promptMessagesFromParams(params); ok {
-			p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
-			p.UserPrompt = promptUser
-		}
-		if v, ok := stringFrom(params, "user_prompt"); ok && p.UserPrompt == "" {
-			p.UserPrompt = v
-		}
-		if v, ok := floatFrom(params, "top_p"); ok {
-			f := v
-			p.TopP = &f
-		}
-		if tools, toolParams, ok := agentToolsFrom(params, "tools"); ok {
-			p.Tools = tools
-			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
-		}
-		if v, ok := nestedMapFrom(params, "tool_params"); ok {
-			p.ToolParams = mergeToolParams(p.ToolParams, v)
-		}
-		if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
-			p.Thinking = v
-		}
-		if v, ok := intFrom(params, "max_rounds"); ok {
-			p.MaxRounds = v
-		}
-		if v, ok := intFrom(params, "message_history_window_size"); ok {
-			p.MessageHistoryWindowSize = v
-		}
-		if v, ok := stringFrom(params, "driver"); ok {
-			p.Driver = v
-		}
-		if v, ok := stringFrom(params, "api_key"); ok {
-			p.APIKey = v
-		}
-		if v, ok := stringFrom(params, "base_url"); ok {
-			p.BaseURL = v
-		}
-		return NewAgentComponent(p), nil
+		return NewAgentComponent(agentParamFromMap(params)), nil
 	})
 }
