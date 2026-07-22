@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { DynamicFormRef } from '@/components/dynamic-form';
+import { DynamicFormRef, FormFieldType } from '@/components/dynamic-form';
 import {
   useDeleteProviderInstance,
   useFetchAvailableProviders,
@@ -24,8 +24,10 @@ import {
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import { ControllerRenderProps } from 'react-hook-form';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
+import { MaskedApiKeyInput } from './components/masked-api-key-input';
 import {
   API_KEY_NESTED_FIELDS,
   ApiKeyNestedField,
@@ -673,6 +675,7 @@ export function useFormFields(
   initialValues: Record<string, any>,
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
+  hasStoredApiKey?: boolean,
 ) {
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
@@ -689,8 +692,30 @@ export function useFormFields(
   });
 
   const formFields = useMemo(
-    () => fields.filter((f) => f.name !== 'instance_name'),
-    [fields],
+    () =>
+      fields
+        .filter((f) => f.name !== 'instance_name')
+        .map((f) =>
+          // A saved instance's key must render with a fixed-length mask
+          // (the native password input would leak the key's length via
+          // its dot count). Swap the plain password field for the masked
+          // input; the form value itself still carries the real key, so
+          // reveal / save / verify behave as before.
+          hasStoredApiKey && f.name === 'api_key'
+            ? {
+                ...f,
+                type: FormFieldType.Custom,
+                render: (fieldProps: ControllerRenderProps) => (
+                  <MaskedApiKeyInput
+                    {...fieldProps}
+                    placeholder={f.placeholder}
+                    disabled={f.disabled}
+                  />
+                ),
+              }
+            : f,
+        ),
+    [fields, hasStoredApiKey],
   );
 
   const defaultValuesKey = JSON.stringify(defaultValues);
