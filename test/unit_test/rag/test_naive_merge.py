@@ -284,3 +284,21 @@ def test_images_strict_cap_packs_to_budget():
     nonempty = _nonempty(chunks)
     assert all(_tok(c) <= 50 for c in nonempty)
     assert len(chunks) == len(imgs)
+
+
+@pytest.mark.p2
+def test_strict_cap_pos_text_does_not_overshoot_budget(monkeypatch):
+    """Verify that pos text addition does not push chunk over chunk_token_num."""
+
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(nlp, "num_tokens_from_string", char_count_tokens)
+
+    # section is 15 chars, pos is 10 chars. chunk_token_num is 20.
+    # section + pos = 25 > 20, so pos should be omitted or chunk kept <= 20.
+    pos_tag = "@@12345678"
+    sections = [("\na" * 15, pos_tag)]
+    chunks = _nonempty(naive_merge(sections, chunk_token_num=20, delimiter=DEFAULT_DELIMITER))
+    assert all(char_count_tokens(c) <= 20 for c in chunks)
+

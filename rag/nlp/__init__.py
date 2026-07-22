@@ -1267,19 +1267,20 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
 
         # First chunk ever — no previous content to overlap with.
         if cks[-1] == "":
-            if t.find(pos) < 0:
-                t += pos
-            cks[-1] = t
+            new_t = t + pos if t.find(pos) < 0 else t
+            cks[-1] = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
             tk_nums[-1] = num_tokens_from_string(cks[-1])
             return
 
         # Proactive merge: append only if the *projected* total still fits.
-        # The previous ``> threshold`` check fired late and let each chunk
-        # overshoot the budget by the size of one section.
-        if tk_nums[-1] + tnum <= chunk_token_num:
-            if cks[-1].find(pos) < 0:
-                t += pos
-            cks[-1] += t
+        merged = cks[-1] + t
+        merged_pos = merged + pos if cks[-1].find(pos) < 0 else merged
+        if num_tokens_from_string(merged_pos) <= chunk_token_num:
+            cks[-1] = merged_pos
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
+            return
+        elif num_tokens_from_string(merged) <= chunk_token_num:
+            cks[-1] = merged
             tk_nums[-1] = num_tokens_from_string(cks[-1])
             return
 
@@ -1369,18 +1370,25 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
         # First chunk ever — no previous content to overlap with.
         if cks[-1] == "":
-            if t.find(pos) < 0:
-                t += pos
-            cks[-1] = t
+            new_t = t + pos if t.find(pos) < 0 else t
+            cks[-1] = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
             tk_nums[-1] = num_tokens_from_string(cks[-1])
             result_images[-1] = image
             return
 
         # Proactive merge: append only if the *projected* total still fits.
-        if tk_nums[-1] + tnum <= chunk_token_num:
-            if cks[-1].find(pos) < 0:
-                t += pos
-            cks[-1] += t
+        merged = cks[-1] + t
+        merged_pos = merged + pos if cks[-1].find(pos) < 0 else merged
+        if num_tokens_from_string(merged_pos) <= chunk_token_num:
+            cks[-1] = merged_pos
+            tk_nums[-1] = num_tokens_from_string(cks[-1])
+            if result_images[-1] is None:
+                result_images[-1] = image
+            else:
+                result_images[-1] = concat_img(result_images[-1], image)
+            return
+        elif num_tokens_from_string(merged) <= chunk_token_num:
+            cks[-1] = merged
             tk_nums[-1] = num_tokens_from_string(cks[-1])
             if result_images[-1] is None:
                 result_images[-1] = image

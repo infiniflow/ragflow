@@ -44,9 +44,11 @@ class RAGFlowTxtParser:
                 tk_nums[-1] = tnum
                 return
 
-            if tk_nums[-1] + tnum <= chunk_token_num:
-                cks[-1] += "\n" + t
-                tk_nums[-1] = num_tokens_from_string(cks[-1])
+            merged = cks[-1] + "\n" + t
+            merged_tnum = num_tokens_from_string(merged)
+            if merged_tnum <= chunk_token_num:
+                cks[-1] = merged
+                tk_nums[-1] = merged_tnum
                 return
 
             cks.append(t)
