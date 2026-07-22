@@ -189,7 +189,7 @@ def ensure_llm_bundle(mdl, method: str, *, label: str = "model"):
 # ---------------------------------------------------------------------------
 
 
-async def es_search(
+async def doc_storage_search(
     select_fields: list[str],
     condition: dict,
     *,
@@ -198,7 +198,7 @@ async def es_search(
     match_expressions: list | None = None,
     offset: int = 0,
     limit: int = 1000,
-    label: str = "es_search",
+    label: str = "doc_storage_search",
 ) -> dict:
     """Thin wrapper around ``docStoreConn.search`` + ``get_fields``.
 
@@ -230,12 +230,12 @@ async def es_search(
         return {}
 
 
-async def es_insert(
+async def doc_storage_insert(
     rows: list[dict],
     tenant_id: str,
     kb_id: str,
     *,
-    label: str = "es_insert",
+    label: str = "doc_storage_insert",
 ) -> None:
     """Bulk insert wrapped in ``thread_pool_exec``. Logs on failure."""
     if not rows:
@@ -250,12 +250,12 @@ async def es_insert(
         logging.exception("%s failed (%d row(s))", label, len(rows))
 
 
-async def es_delete(
+async def doc_storage_delete(
     condition: dict,
     tenant_id: str,
     kb_id: str,
     *,
-    label: str = "es_delete",
+    label: str = "doc_storage_delete",
 ) -> None:
     """Bulk delete wrapped in ``thread_pool_exec``. Best-effort; logs on
     failure (some callers rely on id-based upsert as a fallback)."""
@@ -269,13 +269,13 @@ async def es_delete(
         logging.debug("%s failed (condition=%r); caller may rely on id-upsert", label, condition)
 
 
-async def es_upsert_one(
+async def doc_storage_upsert_one(
     filter_condition: dict,
     row: dict,
     tenant_id: str,
     kb_id: str,
     *,
-    label: str = "es_upsert_one",
+    label: str = "doc_storage_upsert_one",
 ) -> None:
     """Delete-by-filter then insert. Used when an in-place update would
     require knowing the existing row's id and we'd rather drop+re-create.
@@ -285,8 +285,8 @@ async def es_upsert_one(
     (:func:`stable_row_id`) so id-based dedup at the connector catches any
     race that bypasses the delete.
     """
-    await es_delete(filter_condition, tenant_id, kb_id, label=f"{label}.delete")
-    await es_insert([row], tenant_id, kb_id, label=f"{label}.insert")
+    await doc_storage_delete(filter_condition, tenant_id, kb_id, label=f"{label}.delete")
+    await doc_storage_insert([row], tenant_id, kb_id, label=f"{label}.insert")
 
 
 # ---------------------------------------------------------------------------
@@ -899,10 +899,10 @@ __all__ = [
     "union_ordered",
     "make_input_budget",
     "ensure_llm_bundle",
-    "es_search",
-    "es_insert",
-    "es_delete",
-    "es_upsert_one",
+    "doc_storage_search",
+    "doc_storage_insert",
+    "doc_storage_delete",
+    "doc_storage_upsert_one",
     "find_vec_field",
     # New engines
     "normalize_key",

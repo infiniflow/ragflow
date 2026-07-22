@@ -295,8 +295,8 @@ async def run_structure_compile_over_batches(
     chunks_by_id: dict[str, str] = {}
     flush_sequence = 0
     flush_tasks: set[asyncio.Task[None]] = set()
-    es_condition = asyncio.Condition()
-    next_es_sequence = 0
+    doc_storage_condition = asyncio.Condition()
+    next_doc_storage_sequence = 0
 
     async def _flush(template_id: str) -> None:
         nonlocal flush_sequence
@@ -310,24 +310,24 @@ async def run_structure_compile_over_batches(
         timing_context = f"{doc_id}:{template_id}:flush-{flush_sequence}"
 
         async def _run_flush() -> None:
-            nonlocal next_es_sequence
-            es_acquired = False
-            es_released = False
+            nonlocal next_doc_storage_sequence
+            doc_storage_acquired = False
+            doc_storage_released = False
 
-            async def _wait_for_es() -> None:
-                nonlocal es_acquired
-                async with es_condition:
-                    await es_condition.wait_for(lambda: next_es_sequence == sequence)
-                    es_acquired = True
+            async def _wait_for_doc_storage() -> None:
+                nonlocal doc_storage_acquired
+                async with doc_storage_condition:
+                    await doc_storage_condition.wait_for(lambda: next_doc_storage_sequence == sequence)
+                    doc_storage_acquired = True
 
-            async def _release_es() -> None:
-                nonlocal next_es_sequence, es_released
-                async with es_condition:
-                    if next_es_sequence != sequence:
-                        raise RuntimeError(f"ES sequence mismatch: expected {next_es_sequence}, releasing {sequence}")
-                    next_es_sequence += 1
-                    es_released = True
-                    es_condition.notify_all()
+            async def _release_doc_storage() -> None:
+                nonlocal next_doc_storage_sequence, doc_storage_released
+                async with doc_storage_condition:
+                    if next_doc_storage_sequence != sequence:
+                        raise RuntimeError(f"ES sequence mismatch: expected {next_doc_storage_sequence}, releasing {sequence}")
+                    next_doc_storage_sequence += 1
+                    doc_storage_released = True
+                    doc_storage_condition.notify_all()
 
             kind = template_kinds.get(template_id, "")
             merge_chat_mdl = llm_pool.wrap(
@@ -350,15 +350,15 @@ async def run_structure_compile_over_batches(
                     chain_kind=kind,
                     chain_callback=progress_cb,
                     chain_timeout_seconds=STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
-                    es_waiter=_wait_for_es,
-                    es_releaser=_release_es,
+                    doc_storage_waiter=_wait_for_doc_storage,
+                    doc_storage_releaser=_release_doc_storage,
                     merge_scope=merge_scope_by_tid[template_id],
                 )
             finally:
-                if not es_released:
-                    if not es_acquired:
-                        await _wait_for_es()
-                    await _release_es()
+                if not doc_storage_released:
+                    if not doc_storage_acquired:
+                        await _wait_for_doc_storage()
+                    await _release_doc_storage()
             if isinstance(info, dict):
                 agg = agg_infos[template_id]
                 for k in ("inserted", "updated", "duplicates_dropped"):

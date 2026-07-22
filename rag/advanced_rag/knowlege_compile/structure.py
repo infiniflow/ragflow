@@ -540,7 +540,7 @@ def _struct_relation_member_fields(parser_config: dict) -> Tuple:
     return None, None
 
 
-def _struct_to_es_doc(
+def _struct_to_doc_storage_doc(
     payload: dict,
     compile_kwd: str,
     doc_id: str,
@@ -679,7 +679,7 @@ async def _struct_process_batch(
             return []
 
         docs = [
-            _struct_to_es_doc(
+            _struct_to_doc_storage_doc(
                 payload,
                 autotype,
                 doc_id,
@@ -947,7 +947,7 @@ async def _struct_rewrite_relation_doc(doc: dict, aliases: dict[str, str], embd_
     base["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
     base["from_entity_kwd"] = _struct_resolve_entity_alias(base.get("from_entity_kwd", ""), aliases)
     base["to_entity_kwd"] = _struct_resolve_entity_alias(base.get("to_entity_kwd", ""), aliases)
-    return _struct_rebuild_es_doc(payload, base, vecs[0], doc.get("source_chunk_ids") or [], preserve_id=True)
+    return _struct_rebuild_doc_storage_doc(payload, base, vecs[0], doc.get("source_chunk_ids") or [], preserve_id=True)
 
 
 async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict | None:
@@ -1002,14 +1002,14 @@ def _struct_apply_merge_invariants(existing: dict, merged_payload: dict) -> dict
     return merged_payload
 
 
-def _struct_rebuild_es_doc(
+def _struct_rebuild_doc_storage_doc(
     payload: dict,
     base_doc: dict,
     vec,
     chunk_ids: list,
     preserve_id: bool = True,
 ) -> dict:
-    """Rebuild an ES doc from a merged payload using _struct_to_es_doc, then
+    """Rebuild an ES doc from a merged payload using _struct_to_doc_storage_doc, then
     overlay identity fields (id, from_entity_kwd, to_entity_kwd) from base_doc.
     """
     kind = base_doc.get("knowledge_graph_kwd") or "entity"
@@ -1024,7 +1024,7 @@ def _struct_rebuild_es_doc(
         except Exception:
             pass
 
-    new_doc = _struct_to_es_doc(
+    new_doc = _struct_to_doc_storage_doc(
         payload=payload,
         compile_kwd=base_doc.get("compile_kwd"),
         doc_id=base_doc.get("doc_id"),
@@ -1052,7 +1052,7 @@ async def _struct_reembed_payload(payload: dict, embd_mdl):
     return vecs[0] if vecs else None
 
 
-def _struct_es_dedup_condition(doc: dict, merge_scope: str = MERGE_SCOPE_DOC) -> dict:
+def _struct_doc_storage_dedup_condition(doc: dict, merge_scope: str = MERGE_SCOPE_DOC) -> dict:
     condition = {
         "compile_kwd": [doc["compile_kwd"]],
     }
@@ -1074,7 +1074,7 @@ def _struct_es_dedup_condition(doc: dict, merge_scope: str = MERGE_SCOPE_DOC) ->
     return condition
 
 
-async def _struct_es_knn_candidate(
+async def _struct_doc_storage_knn_candidate(
     doc: dict,
     tenant_id: str,
     kb_id: str,
@@ -1105,7 +1105,7 @@ async def _struct_es_knn_candidate(
             settings.docStoreConn.search,
             select_fields,
             [],
-            _struct_es_dedup_condition(doc, merge_scope),
+            _struct_doc_storage_dedup_condition(doc, merge_scope),
             [match_expr],
             OrderByExpr(),
             0,
@@ -1193,7 +1193,7 @@ Groups:
 """
 
 
-async def _struct_judge_es_group_batch(group_specs: list[dict], chat_mdl) -> dict[str, set[int]]:
+async def _struct_judge_doc_storage_group_batch(group_specs: list[dict], chat_mdl) -> dict[str, set[int]]:
     """Judge every incoming item independently without generating a merge."""
     prompt_groups = []
     for spec in group_specs:
@@ -1242,7 +1242,7 @@ async def _struct_judge_es_group_batch(group_specs: list[dict], chat_mdl) -> dic
     return result
 
 
-async def _struct_merge_es_group_batch(group_specs: list[dict], chat_mdl) -> dict[str, tuple[list[dict], dict | None]]:
+async def _struct_merge_doc_storage_group_batch(group_specs: list[dict], chat_mdl) -> dict[str, tuple[list[dict], dict | None]]:
     """Judge multiple old_id groups in one LLM request."""
     prompt_groups = []
     for spec in group_specs:
@@ -1297,7 +1297,7 @@ async def _struct_merge_es_group_batch(group_specs: list[dict], chat_mdl) -> dic
     return result
 
 
-async def _struct_merge_es_group(old_doc: dict, incoming_docs: list[dict], chat_mdl) -> tuple[list[dict], dict | None]:
+async def _struct_merge_doc_storage_group(old_doc: dict, incoming_docs: list[dict], chat_mdl) -> tuple[list[dict], dict | None]:
     """Judge one ES candidate group with one LLM request.
 
     Returns ``(non_duplicate_docs, merged_payload)``. The existing ES row is
@@ -1338,7 +1338,7 @@ async def _struct_merge_es_group(old_doc: dict, incoming_docs: list[dict], chat_
     return separate, merged
 
 
-async def _struct_es_dedup_batch(
+async def _struct_doc_storage_dedup_batch(
     docs: list[dict],
     chat_mdl,
     embd_mdl,
@@ -1384,7 +1384,7 @@ async def _struct_es_dedup_batch(
     async def run_knn_shared(item_index: int, doc: dict):
         _raise_if_canceled()
         async with knn_semaphore:
-            return doc, await _struct_es_knn_candidate(
+            return doc, await _struct_doc_storage_knn_candidate(
                 doc,
                 tenant_id,
                 kb_id,
@@ -1459,7 +1459,7 @@ async def _struct_es_dedup_batch(
         _raise_if_canceled()
         async with llm_semaphore:
             try:
-                result = await _struct_judge_es_group_batch(batch_specs, chat_mdl)
+                result = await _struct_judge_doc_storage_group_batch(batch_specs, chat_mdl)
             except Exception:
                 logging.exception("merge_compiled_structures: ES decision batch failed")
                 result = {spec["request_group_id"]: set() for spec in batch_specs}
@@ -1493,7 +1493,7 @@ async def _struct_es_dedup_batch(
         for start in range(0, len(duplicate_docs), _ES_DEDUP_LLM_BATCH_SIZE):
             _raise_if_canceled()
             candidate_docs = duplicate_docs[start : start + _ES_DEDUP_LLM_BATCH_SIZE]
-            separate, candidate_merged = await _struct_merge_es_group(current_doc, candidate_docs, chat_mdl)
+            separate, candidate_merged = await _struct_merge_doc_storage_group(current_doc, candidate_docs, chat_mdl)
             state["separate"].extend(separate)
             if candidate_merged is None:
                 continue
@@ -1551,7 +1551,7 @@ async def _struct_es_dedup_batch(
             logging.exception("merge_compiled_structures: grouped embedding failed for %d docs", len(batch))
             vectors = []
         for job, vec in zip(batch, vectors):
-            job["rebuilt"] = _struct_rebuild_es_doc(
+            job["rebuilt"] = _struct_rebuild_doc_storage_doc(
                 job["payload"],
                 job["old_doc"],
                 vec,
@@ -1653,7 +1653,7 @@ async def _struct_es_dedup_batch(
             for start in range(0, len(rewrite_batch), _ES_DEDUP_EMBED_BATCH_SIZE):
                 batch = rewrite_batch[start : start + _ES_DEDUP_EMBED_BATCH_SIZE]
                 vectors = await _struct_embed(embd_mdl, [_struct_payload_description(payload) for _, payload in batch])
-                rewritten = [_struct_rebuild_es_doc(payload, base, vector, base.get("source_chunk_ids") or [], preserve_id=True) for (base, payload), vector in zip(batch, vectors)]
+                rewritten = [_struct_rebuild_doc_storage_doc(payload, base, vector, base.get("source_chunk_ids") or [], preserve_id=True) for (base, payload), vector in zip(batch, vectors)]
                 if rewritten:
                     await thread_pool_exec(settings.docStoreConn.insert, rewritten, index, kb_id)
                     existing_relation_updates += len(rewritten)
@@ -1667,7 +1667,7 @@ async def _struct_es_dedup_batch(
                 continue
             vector = await _struct_reembed_payload(job["payload"], embd_mdl)
             if vector is not None:
-                rewritten = _struct_rebuild_es_doc(job["payload"], job["old_doc"], vector, job["chunk_ids"], preserve_id=True)
+                rewritten = _struct_rebuild_doc_storage_doc(job["payload"], job["old_doc"], vector, job["chunk_ids"], preserve_id=True)
                 await thread_pool_exec(settings.docStoreConn.insert, [rewritten], index, kb_id)
     return inserted, updated + existing_relation_updates
 
@@ -1741,7 +1741,7 @@ async def _struct_local_dedup(
                 # Re-embed failed: keep existing, drop incoming silently.
                 dropped += 1
                 continue
-            rebuilt = _struct_rebuild_es_doc(
+            rebuilt = _struct_rebuild_doc_storage_doc(
                 merged_payload,
                 existing,
                 new_vec,
@@ -2459,8 +2459,8 @@ async def merge_compiled_structures(
     chain_kind: str = "",
     chain_callback=None,
     chain_timeout_seconds: float = 120.0,
-    es_waiter: Callable[[], Awaitable[None]] | None = None,
-    es_releaser: Callable[[], Awaitable[None]] | None = None,
+    doc_storage_waiter: Callable[[], Awaitable[None]] | None = None,
+    doc_storage_releaser: Callable[[], Awaitable[None]] | None = None,
     merge_scope: str = MERGE_SCOPE_DOC,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
@@ -2553,13 +2553,13 @@ async def merge_compiled_structures(
         if callable(cancel_check) and cancel_check():
             raise TaskCanceledException("Task was cancelled during structure ES dedup merge")
 
-    if es_waiter is not None:
-        await es_waiter()
+    if doc_storage_waiter is not None:
+        await doc_storage_waiter()
     _raise_if_canceled()
     # Dataset scope: hold a per-(kb, template) lock across the read-modify-write
     # KNN merge so concurrent per-document parses can't both KNN-miss the same
     # canonical entity and insert duplicates. Acquired *after* the in-doc
-    # ``es_waiter`` gate (never before) to avoid a deadlock where a later flush
+    # ``doc_storage_waiter`` gate (never before) to avoid a deadlock where a later flush
     # holds the KB lock while waiting on an earlier flush that also needs it.
     merge_lock = None
     if merge_scope == MERGE_SCOPE_DATASET:
@@ -2576,7 +2576,7 @@ async def merge_compiled_structures(
             logging.exception("merge_compiled_structures: dataset merge lock acquire failed for kb=%s", kb_id)
             merge_lock = None
     try:
-        inserted, updated = await _struct_es_dedup_batch(
+        inserted, updated = await _struct_doc_storage_dedup_batch(
             deduped,
             chat_mdl,
             embd_mdl,
@@ -2596,8 +2596,8 @@ async def merge_compiled_structures(
                 merge_lock.release()
             except Exception:
                 logging.exception("merge_compiled_structures: dataset merge lock release failed for kb=%s", kb_id)
-    if es_releaser is not None:
-        await es_releaser()
+    if doc_storage_releaser is not None:
+        await doc_storage_releaser()
 
     graphs = 0
     for graph_index, (doc_id, compile_kwd, template_id) in enumerate(graph_keys):

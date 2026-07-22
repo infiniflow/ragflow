@@ -498,6 +498,15 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
+        # Ref-counted cleanup of wiki/artifact products this doc fed into
+        # (non-critical, log and continue). A product shared by other docs
+        # survives; one this doc solely owned is removed.
+        try:
+            if chunk_index_exists:
+                cls.remove_artifact_products(doc, tenant_id)
+        except Exception as e:
+            logging.warning(f"Failed to clean up artifact products for document {doc.id}: {e}")
+
         # Prune this doc's line from the KB's tree-kind navigation
         # markdown (best-effort — the markdown is a downstream artifact,
         # and failure here must not block the document delete).
@@ -557,6 +566,103 @@ class DocumentService(CommonService):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
                     settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             page += 1
+
+    @classmethod
+    def remove_artifact_products(cls, doc, tenant_id):
+        """Reference-counted cleanup of KB-scoped wiki/artifact products
+        in the doc store when a document is deleted.
+
+        Every derived artifact row (pages, entities, relations, drafts,
+        topics, reduce/plan aggregates) carries a ``source_doc_ids`` list
+        of the documents that contributed to it. On delete we detach
+        ``doc.id`` from that list and drop the row only when this document
+        was its sole contributor — a product shared by other docs
+        survives. ``artifact_map_extract`` resume rows are 1:1 with a
+        document and are removed directly by ``doc_id``.
+
+        The compile_kwd set is pulled from the wiki generator so new
+        artifact row types are covered automatically (single source of
+        truth). Deletion is not a hot path, so the module import cost is
+        acceptable here.
+        """
+        from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+            WIKI_MAP_COMPILE_KWD,
+            WIKI_DERIVED_COMPILE_KWDS,
+        )
+
+        index = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index, doc.kb_id):
+            return
+
+        # 1. Per-doc MAP resume rows are keyed by the real doc_id.
+        settings.docStoreConn.delete(
+            {"compile_kwd": [WIKI_MAP_COMPILE_KWD], "doc_id": doc.id},
+            index,
+            doc.kb_id,
+        )
+
+        # 2. Derived KB-scoped rows: reference-counted via source_doc_ids.
+        # Read every row this doc contributed to, partitioning into rows it
+        # solely owned (delete by id) vs. rows shared with other docs
+        # (detach this doc). Reading first — rather than a blanket
+        # ``must_not exists`` sweep — avoids deleting rows that legitimately
+        # carry no source_doc_ids.
+        derived_kwds = list(WIKI_DERIVED_COMPILE_KWDS)
+        select_fields = ["id", "source_doc_ids"]
+        sole_owner_ids: list[str] = []
+        shared_seen = False
+        offset = 0
+        page_size = 1000
+        while True:
+            res = settings.docStoreConn.search(
+                select_fields,
+                [],
+                {"compile_kwd": derived_kwds, "source_doc_ids": [doc.id]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index,
+                [doc.kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+            if not field_map:
+                break
+            for row_id, row in field_map.items():
+                raw = row.get("source_doc_ids")
+                if isinstance(raw, str):
+                    owners = [raw] if raw else []
+                elif isinstance(raw, list):
+                    owners = [d for d in raw if isinstance(d, str) and d]
+                else:
+                    owners = []
+                if any(d != doc.id for d in owners):
+                    shared_seen = True
+                else:
+                    sole_owner_ids.append(row_id)
+            if len(field_map) < page_size:
+                break
+            offset += page_size
+
+        # Drop rows this document solely owned (delete by id in batches).
+        for i in range(0, len(sole_owner_ids), page_size):
+            settings.docStoreConn.delete(
+                {"id": sole_owner_ids[i:i + page_size]},
+                index,
+                doc.kb_id,
+            )
+
+        # Detach this document from rows still owned by others. The filter
+        # guarantees source_doc_ids contains doc.id, so the store's
+        # list-remove is safe; any sole-owner rows already deleted above are
+        # simply not matched.
+        if shared_seen:
+            settings.docStoreConn.update(
+                {"compile_kwd": derived_kwds, "source_doc_ids": doc.id},
+                {"remove": {"source_doc_ids": doc.id}},
+                index,
+                doc.kb_id,
+            )
 
     @classmethod
     @DB.connection_context()
