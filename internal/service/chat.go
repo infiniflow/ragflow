@@ -65,8 +65,10 @@ func NewChatService() *ChatService {
 // ChatWithKBNames chat with knowledge base names
 type ChatWithKBNames struct {
 	*entity.Chat
-	KBNames    []string `json:"kb_names"`
-	DatasetIDs []string `json:"dataset_ids"`
+	KBNames      []string `json:"kb_names"`
+	DatasetIDs   []string `json:"dataset_ids"`
+	Nickname     string   `json:"nickname"`
+	TenantAvatar *string  `json:"tenant_avatar,omitempty"`
 }
 
 // ListChatsResponse list chats response
@@ -76,18 +78,58 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool) (*ListChatsResponse, error) {
-	chats, total, err := s.chatDAO.ListByTenantIDs(
-		nil,
-		userID,
-		page,
-		pageSize,
-		orderBy,
-		desc,
-		keywords,
-	)
-	if err != nil {
-		return nil, err
+func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool, ownerIDs ...[]string) (*ListChatsResponse, error) {
+	var chats []*entity.ChatListItem
+	var total int64
+	var err error
+
+	filterOwnerIDs := []string(nil)
+	if len(ownerIDs) > 0 {
+		filterOwnerIDs = ownerIDs[0]
+	}
+
+	if len(filterOwnerIDs) == 0 {
+		chats, total, err = s.chatDAO.ListByTenantIDs(
+			nil,
+			userID,
+			page,
+			pageSize,
+			orderBy,
+			desc,
+			keywords,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		filterOwnerIDs, err = s.filterAccessibleChatOwnerIDs(userID, filterOwnerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(filterOwnerIDs) == 0 {
+			return &ListChatsResponse{
+				Total: 0,
+				Chats: []*ChatWithKBNames{},
+			}, nil
+		}
+
+		chats, total, err = s.chatDAO.ListByOwnerIDs(filterOwnerIDs, userID, orderBy, desc, keywords)
+		if err != nil {
+			return nil, err
+		}
+
+		if page > 0 && pageSize > 0 {
+			start := (page - 1) * pageSize
+			end := start + pageSize
+			if start < int(total) {
+				if end > int(total) {
+					end = int(total)
+				}
+				chats = chats[start:end]
+			} else {
+				chats = []*entity.ChatListItem{}
+			}
+		}
 	}
 
 	// Enrich with knowledge base names
@@ -95,9 +137,11 @@ func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize 
 	for _, chat := range chats {
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
-			Chat:       chat,
-			KBNames:    kbNames,
-			DatasetIDs: datasetIDs,
+			Chat:         &chat.Chat,
+			KBNames:      kbNames,
+			DatasetIDs:   datasetIDs,
+			Nickname:     ownerNickname(chat.Nickname, chat.TenantID),
+			TenantAvatar: chat.TenantAvatar,
 		})
 	}
 
@@ -105,6 +149,46 @@ func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize 
 		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
+}
+
+func (s *ChatService) filterAccessibleChatOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	allowed := map[string]struct{}{userID: {}}
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID != "" {
+			allowed[tenantID] = struct{}{}
+		}
+	}
+
+	filtered := make([]string, 0, len(ownerIDs))
+	seen := make(map[string]struct{}, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID == "" {
+			continue
+		}
+		if _, ok := allowed[ownerID]; !ok {
+			continue
+		}
+		if _, ok := seen[ownerID]; ok {
+			continue
+		}
+		seen[ownerID] = struct{}{}
+		filtered = append(filtered, ownerID)
+	}
+	return filtered, nil
+}
+
+func ownerNickname(nickname *string, tenantID string) string {
+	if nickname != nil && strings.TrimSpace(*nickname) != "" {
+		return *nickname
+	}
+	return tenantID
 }
 
 type CreateChatRequest struct {

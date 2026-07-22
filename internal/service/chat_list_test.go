@@ -92,6 +92,50 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 	if len(result.Chats) != 3 {
 		t.Fatalf("expected 3 chats, got %d", len(result.Chats))
 	}
+	if result.Chats[0].Nickname != "tester" {
+		t.Fatalf("expected nickname tester, got %q", result.Chats[0].Nickname)
+	}
+}
+
+func TestChatServiceListChatsFiltersByOwnerIDs(t *testing.T) {
+	db := setupChatListTestDB(t)
+
+	if err := db.Create(&entity.User{
+		ID:       "tenant-2",
+		Nickname: "team owner",
+		Email:    "tenant-2@test.com",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant user: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID:        "rel-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-2",
+		Role:      "normal",
+		InvitedBy: "tenant-2",
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create user tenant relation: %v", err)
+	}
+
+	createChatListTestChat(t, db, "chat-own", "user-1", "own_chat")
+	createChatListTestChat(t, db, "chat-team", "tenant-2", "team_chat")
+
+	svc := NewChatService()
+	result, err := svc.ListChats("user-1", "1", "", 0, 0, "create_time", true, []string{"tenant-2"})
+	if err != nil {
+		t.Fatalf("ListChats failed: %v", err)
+	}
+	if result.Total != 1 || len(result.Chats) != 1 {
+		t.Fatalf("expected one filtered chat, got total=%d len=%d", result.Total, len(result.Chats))
+	}
+	if result.Chats[0].TenantID != "tenant-2" {
+		t.Fatalf("expected tenant-2 chat, got tenant %q", result.Chats[0].TenantID)
+	}
+	if result.Chats[0].Nickname != "team owner" {
+		t.Fatalf("expected nickname team owner, got %q", result.Chats[0].Nickname)
+	}
 }
 
 func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
