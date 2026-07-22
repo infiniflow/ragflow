@@ -76,7 +76,7 @@ When the Memory reaches its storage limit and the automatic forgetting policy is
 
 ## Enhance Agent context 
 
-Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.mdx) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
+Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.md) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
 
 ### Retrieve from memory
 
