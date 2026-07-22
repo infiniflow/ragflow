@@ -637,3 +637,60 @@ func TestExtractorComponent_ConcurrentInvoke(t *testing.T) {
 // (it currently isn't, but pinning the import keeps test-side
 // imports honest if helpers move around in future revisions).
 var _ = eschema.Message{}
+
+// TestIsBareTenantModelID verifies UUID detection.
+func TestIsBareTenantModelID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"9e819c2442b14f9dab46062916e29195", true},
+		{"ABCDEFabcdef01234567890123456789", true},
+		{"9e819c2442b14f9dab46062916e2919", false},   // 31 chars
+		{"9e819c2442b14f9dab46062916e29195X", false}, // 33 chars
+		{"gpt-4o-mini@openai", false},
+		{"", false},
+		{"not-a-uuid", false},
+	}
+	for _, tc := range tests {
+		got := isBareTenantModelID(tc.input)
+		if got != tc.want {
+			t.Errorf("isBareTenantModelID(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split
+// fallback path works without canvas state (unit test compatibility).
+func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
+	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(
+		context.Background(), "gpt-4o-mini@openai")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if driver != "openai" {
+		t.Errorf("driver = %q, want openai", driver)
+	}
+	if modelName != "gpt-4o-mini" {
+		t.Errorf("modelName = %q, want gpt-4o-mini", modelName)
+	}
+	if apiKey != "" || baseURL != "" {
+		t.Errorf("apiKey/baseURL should be empty in fallback path")
+	}
+}
+
+// TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string
+// without canvas state returns no driver (passes through to Chat()).
+func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
+	driver, modelName, _, _, err := resolveExtractorChatTarget(
+		context.Background(), "plain-name")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if driver != "" {
+		t.Errorf("driver should be empty for plain name, got %q", driver)
+	}
+	if modelName != "plain-name" {
+		t.Errorf("modelName = %q, want plain-name", modelName)
+	}
+}
