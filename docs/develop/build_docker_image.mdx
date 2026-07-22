@@ -55,7 +55,9 @@ cd ..
 docker compose -f docker/docker-compose-macos.yml up -d --build --force-recreate ragflow
 ```
 
-The `--build` option rebuilds the RAGFlow image from the current source before the container is recreated. Run this command again after changing the source code. If neither the source nor the image has changed, use `docker compose -f docker/docker-compose-macos.yml restart ragflow` to restart the existing container without rebuilding it.
+- Use `docker compose -f docker/docker-compose-macos.yml restart ragflow` to restart the existing container when the source, image, and Compose configuration—including `.env`, ports, volumes, and other settings—are unchanged.
+- Use `docker compose -f docker/docker-compose-macos.yml up -d --force-recreate ragflow` to recreate the container when the image or Compose configuration changes but the source does not require rebuilding.
+- Use `docker compose -f docker/docker-compose-macos.yml up -d --build --force-recreate ragflow` to rebuild the image from the current source and recreate the container when the source changes.
 
 2. Access the RAGFlow Service
 
