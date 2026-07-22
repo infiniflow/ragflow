@@ -41,7 +41,7 @@ This integration implements the requirements from [Firecrawl Issue #2167](https:
 ## 📁 **File Structure**
 
 ```
-intergrations/firecrawl/
+tools/firecrawl/
 ├── __init__.py                 # Package initialization
 ├── firecrawl_connector.py      # API communication with Firecrawl
 ├── firecrawl_config.py         # Configuration management
@@ -144,7 +144,7 @@ The integration includes comprehensive testing:
 
 ```bash
 # Run the test suite
-cd intergrations/firecrawl
+cd tools/firecrawl
 python3 -c "
 import sys
 sys.path.append('.')
