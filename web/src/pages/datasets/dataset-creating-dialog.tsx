@@ -39,7 +39,7 @@ const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const defaultModelDictionary = useFetchDefaultModelDictionary(true);
   const ChunkMethodName = isGoBackend() ? 'parser_id' : 'chunk_method';
 
   const FormSchema = z
