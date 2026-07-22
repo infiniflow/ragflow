@@ -175,6 +175,12 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		if v, ok := params["auto_questions"]; ok {
 			p.AutoQuestions = mapInt(v)
 		}
+		if v, ok := params["auto_tags"]; ok {
+			p.AutoTags = mapInt(v)
+		}
+		if v, ok := params["tag_file_id"].(string); ok {
+			p.TagFileID = v
+		}
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
@@ -399,6 +405,7 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
+	lang         string
 	chunks       []map[string]any
 }
 
@@ -427,6 +434,9 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
+	}
+	if v, ok := inputs["lang"].(string); ok && v != "" {
+		out.lang = v
 	}
 	for _, key := range extractorChunkInputOrder(inputs) {
 		if chunks, ok := extractorChunkList(inputs[key]); ok {
@@ -508,6 +518,15 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	}
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
+		// Tag phase: run when auto_tags > 0 and we have chunks.
+		if c.Param.AutoTags > 0 && len(in.chunks) > 0 {
+			tagged, tagErr := c.runAutoTags(timeoutCtx, in)
+			if tagErr != nil {
+				return tagErr
+			}
+			in.chunks = tagged
+		}
+
 		if len(in.chunks) == 0 {
 			ans, callErr := c.call(timeoutCtx, in, "")
 			if callErr != nil {
@@ -517,9 +536,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 			return nil
 		}
 		for i, ck := range in.chunks {
-			text, _ := ck["text"].(string)
+			text, _ := ck["content_with_weight"].(string)
 			if strings.TrimSpace(text) == "" {
-				text, _ = ck["content_with_weight"].(string)
+				text, _ = ck["text"].(string)
 			}
 
 			if c.Param.AutoKeywords > 0 {
@@ -540,8 +559,6 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 				}
 				ck[in.fieldName] = ans
 			}
-
-			in.chunks[i] = ck
 		}
 		return nil
 	}); err != nil {
@@ -579,7 +596,8 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 		return nil
 	}
 	ck["important_kwd"] = kwds
-	tks, tkErr := tokenizer.Tokenize(strings.Join(kwds, " "))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
 	if tkErr == nil {
 		ck["important_tks"] = tks
 	}
@@ -616,7 +634,8 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorI
 		return nil
 	}
 	ck["question_kwd"] = filtered
-	tks, tkErr := tokenizer.Tokenize(strings.Join(filtered, "\n"))
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
 	if tkErr == nil {
 		ck["question_tks"] = tks
 	}

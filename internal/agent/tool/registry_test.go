@@ -40,6 +40,30 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 	}
 }
 
+func TestBuildByName_TavilyCanvasComponentNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+	}{
+		{name: "TavilySearch"},
+		{name: "TavilyExtract"},
+	} {
+		built, err := BuildByName(tc.name, nil)
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", tc.name, err)
+		}
+		switch tc.name {
+		case "TavilySearch":
+			if _, ok := built.(*TavilyTool); !ok {
+				t.Errorf("BuildByName(%q) returned %T, want *TavilyTool", tc.name, built)
+			}
+		case "TavilyExtract":
+			if _, ok := built.(*TavilyExtractTool); !ok {
+				t.Errorf("BuildByName(%q) returned %T, want *TavilyExtractTool", tc.name, built)
+			}
+		}
+	}
+}
+
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{

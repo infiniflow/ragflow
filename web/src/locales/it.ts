@@ -1488,9 +1488,9 @@ Esempio: Virtual Hosted Style`,
       restApiRequestDelayTip:
         "Ritardo in secondi tra richieste di pagina consecutive. Aiuta a evitare il rate limiting dall'API. Imposta a 0 per disabilitare.",
       restApiValidationApiKeyRequired:
-        'La chiave API è richiesta quando il tipo di autenticazione è API KEY (Header).',
+        'La chiave API è richiesta quando il tipo di autenticazione è API Key (Header).',
       restApiValidationApiKeyHeaderNameRequired:
-        'Il nome header della chiave API è richiesto quando il tipo di autenticazione è API KEY (Header).',
+        'Il nome header della chiave API è richiesto quando il tipo di autenticazione è API Key (Header).',
       restApiValidationBearerTokenRequired:
         'Il bearer token è richiesto quando il tipo di autenticazione è Bearer Token.',
       restApiValidationBasicUsernameRequired:
@@ -1687,13 +1687,13 @@ Esempio: Virtual Hosted Style`,
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'inserisci la tua APIKey',
       yiyanModelNameMessage: 'Inserisci il nome del modello',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Inserisci la tua API KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Inserisci la tua API Key',
       addyiyanSK: 'yiyan SECRET KEY',
       yiyanSKMessage: 'Inserisci la tua SECRET KEY',
       FishAudioModelNameMessage: 'Dai un nome al tuo modello di sintesi vocale',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Inserisci la tua API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Inserisci la tua API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Inserisci il Reference ID (lascia vuoto per usare il modello predefinito).',
@@ -2180,7 +2180,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         "Un componente che recupera informazioni meteorologiche, come temperatura e qualità dell'aria, da https://www.qweather.com/.",
       lang: 'Lingua',
       type: 'Tipo',
-      webApiKey: 'Web API KEY',
+      webApiKey: 'Web API Key',
       userType: 'Tipo utente',
       timePeriod: 'Periodo di tempo',
       qWeatherLangOptions: {
@@ -2807,7 +2807,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         bodyTemplate: 'Template body',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'API KEY',
+        apiKey: 'API Key',
         queryParameters: 'Parametri query',
         headerParameters: 'Parametri header',
         requestBodyParameters: 'Parametri body richiesta',

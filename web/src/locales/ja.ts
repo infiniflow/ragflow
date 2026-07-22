@@ -1579,9 +1579,9 @@ export default {
       restApiRequestDelayTip:
         '連続するページリクエストの間の待機時間です（秒単位）。APIのレート制限を回避するのに役立ちます。無効にする場合は0を指定してください。',
       restApiValidationApiKeyRequired:
-        'Auth TypeがAPI KEY (Header)の場合、APIキーは必須です。',
+        'Auth TypeがAPI Key (Header)の場合、APIキーは必須です。',
       restApiValidationApiKeyHeaderNameRequired:
-        'Auth TypeがAPI KEY (Header)の場合、APIキーのヘッダー名は必須です。',
+        'Auth TypeがAPI Key (Header)の場合、APIキーのヘッダー名は必須です。',
       restApiValidationBearerTokenRequired:
         'Auth TypeがBearer Tokenの場合、Bearerトークンは必須です。',
       restApiValidationBasicUsernameRequired:
