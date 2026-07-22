@@ -43,13 +43,7 @@ const SourceDetailPage = () => {
     }
   }, [detail, dataSourceInfo]);
 
-  const [fields, setFields] = useState<FormFieldConfig[]>([]);
   const [isDirty, setIsDirty] = useState(false);
-  const [defaultValues, setDefaultValues] = useState<FieldValues>(
-    DataSourceFormDefaultValues[
-      detail?.source as keyof typeof DataSourceFormDefaultValues
-    ] as FieldValues,
-  );
 
   const customFields = useMemo(() => {
     return [
@@ -114,6 +108,38 @@ const SourceDetailPage = () => {
     ];
   }, []);
 
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    if (!detail) {
+      return [];
+    }
+    const baseFields = DataSourceFormBaseFields.map((field) =>
+      field.name === 'name' ? { ...field, disabled: true } : { ...field },
+    );
+    const allFields = [
+      ...baseFields,
+      ...getDataSourceFieldsWithExtras(detail.source as any),
+      ...customFields,
+    ] as FormFieldConfig[];
+    return allFields.map((field) => ({
+      ...field,
+      horizontal: true,
+      onChange: undefined,
+    }));
+  }, [detail, customFields]);
+
+  const defaultValues = useMemo<FieldValues>(() => {
+    if (!detail) {
+      return {};
+    }
+    return mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[
+        detail.source as keyof typeof DataSourceFormDefaultValues
+      ] as FieldValues,
+      getCommonExtraDefaultValues(),
+      detail as FieldValues,
+    );
+  }, [detail]);
+
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
   const { loading: testLoading, handleTest } = useTestDataSource();
 
@@ -170,47 +196,8 @@ const SourceDetailPage = () => {
   }, [actionMode]);
 
   useEffect(() => {
-    const baseFields = DataSourceFormBaseFields.map((field) => {
-      if (field.name === 'name') {
-        return {
-          ...field,
-          disabled: true,
-        };
-      } else {
-        return {
-          ...field,
-        };
-      }
-    });
-    if (detail) {
-      const fields = [
-        ...baseFields,
-        ...getDataSourceFieldsWithExtras(detail.source as any),
-        ...customFields,
-      ] as FormFieldConfig[];
-
-      const newFields = fields.map((field) => {
-        return {
-          ...field,
-          horizontal: true,
-          onChange: undefined,
-        };
-      });
-      setFields(newFields);
-
-      const defaultValueTemp = {
-        ...mergeDataSourceFormValues(
-          DataSourceFormDefaultValues[
-            detail?.source as keyof typeof DataSourceFormDefaultValues
-          ] as FieldValues,
-          getCommonExtraDefaultValues(),
-          detail as FieldValues,
-        ),
-      };
-      setDefaultValues(defaultValueTemp);
-      setIsDirty(false);
-    }
-  }, [detail, customFields, onSubmit]);
+    setIsDirty(false);
+  }, [detail]);
 
   useEffect(() => {
     const instance = formRef.current;

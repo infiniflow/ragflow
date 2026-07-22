@@ -1,7 +1,7 @@
 import { DynamicForm, FormFieldConfig } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,16 +21,26 @@ const AddDataSourceModal = ({
   onOk,
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
-  const [fields, setFields] = useState<FormFieldConfig[]>([]);
-
-  useEffect(() => {
-    if (sourceData) {
-      setFields([
-        ...DataSourceFormBaseFields,
-        ...getDataSourceFieldsWithExtras(sourceData.id as any),
-      ] as FormFieldConfig[]);
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    if (!sourceData) {
+      return [];
     }
+    return [
+      ...DataSourceFormBaseFields,
+      ...getDataSourceFieldsWithExtras(sourceData.id as any),
+    ] as FormFieldConfig[];
   }, [sourceData]);
+
+  const defaultValues = useMemo<FieldValues>(
+    () =>
+      mergeDataSourceFormValues(
+        DataSourceFormDefaultValues[
+          sourceData?.id as keyof typeof DataSourceFormDefaultValues
+        ] as FieldValues,
+        getCommonExtraDefaultValues(),
+      ) as FieldValues,
+    [sourceData],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     await onOk?.(values);
@@ -58,14 +68,7 @@ const AddDataSourceModal = ({
         onSubmit={(data) => {
           console.log(data);
         }}
-        defaultValues={
-          mergeDataSourceFormValues(
-            DataSourceFormDefaultValues[
-              sourceData?.id as keyof typeof DataSourceFormDefaultValues
-            ] as FieldValues,
-            getCommonExtraDefaultValues(),
-          ) as FieldValues
-        }
+        defaultValues={defaultValues}
         labelClassName="font-normal"
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
