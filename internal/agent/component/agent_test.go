@@ -571,6 +571,92 @@ func TestAgent_Registered(t *testing.T) {
 	}
 }
 
+func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"id":             "child-node",
+				"name":           "NewPumasLick",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"description": "child agent description",
+					"prompts": []any{
+						map[string]any{"role": "user", "content": "child prompt"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+	if len(agent.param.Tools) != 0 {
+		t.Fatalf("regular tools = %v, want none", agent.param.Tools)
+	}
+	if len(agent.param.SubAgents) != 1 {
+		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
+	}
+
+	tools, err := buildAgentTools(agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	info, err := tools[0].Info(context.Background())
+	if err != nil {
+		t.Fatalf("tool.Info: %v", err)
+	}
+	if info.Name != "NewPumasLick" {
+		t.Fatalf("tool name = %q, want NewPumasLick", info.Name)
+	}
+	if info.Desc != "child agent description" {
+		t.Fatalf("tool desc = %q, want child agent description", info.Desc)
+	}
+}
+
+func TestAgent_SubAgentToolInvokableRunCallsChildAgent(t *testing.T) {
+	var got AgentParam
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		got = p
+		return &schema.Message{Role: schema.Assistant, Content: "child answer"}, nil
+	})
+
+	tool := &subAgentTool{spec: SubAgentTool{
+		Name: "Child Agent",
+		Param: AgentParam{
+			ModelID:    "stub",
+			UserPrompt: "default child prompt",
+			MaxRounds:  1,
+		},
+	}}
+
+	out, err := tool.InvokableRun(context.Background(), `{"user_prompt":"ask child","reasoning":"because","context":"facts"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if out != "child answer" {
+		t.Fatalf("InvokableRun output = %q, want child answer", out)
+	}
+	if !strings.Contains(got.UserPrompt, "REASONING:\nbecause") {
+		t.Fatalf("UserPrompt = %q, want reasoning included", got.UserPrompt)
+	}
+	if !strings.Contains(got.UserPrompt, "CONTEXT:\nfacts") {
+		t.Fatalf("UserPrompt = %q, want context included", got.UserPrompt)
+	}
+	if !strings.Contains(got.UserPrompt, "QUERY:\nask child") {
+		t.Fatalf("UserPrompt = %q, want query included", got.UserPrompt)
+	}
+}
+
 // exhaustStepsModel is a scripted ToolCallingChatModel that emits a
 // tool_call on every Generate and never returns final content. It
 // is the input driver for TestAgent_ReActExhaustsSteps, which needs
