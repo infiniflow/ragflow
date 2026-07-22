@@ -350,11 +350,9 @@ setup_cgo_env() {
     # path changes → Go cache key changes → automatic relink.
     local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
     local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
-    if [ ! -d "$versioned_lib_dir" ]; then
-        mkdir -p "$versioned_lib_dir"
-        ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
-            "${versioned_lib_dir}/liboffice_oxide.a"
-    fi
+    mkdir -p "$versioned_lib_dir"
+    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
+        "${versioned_lib_dir}/liboffice_oxide.a"
 
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
     export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
