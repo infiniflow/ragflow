@@ -1038,6 +1038,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),
 		"parser_id":        doc.ParserID,
+		"chunk_method":     doc.ParserID,
 		"pipeline_id":      stringValue(doc.PipelineID),
 		"pipeline_name":    stringValue(doc.PipelineName),
 		"nickname":         stringValue(doc.Nickname),

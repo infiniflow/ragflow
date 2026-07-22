@@ -48,7 +48,8 @@
                         "topPEnabled": true,
                         "top_p": 0.3,
                         "auto_keywords": 0,
-                        "auto_questions": 0
+                        "auto_questions": 0,
+                        "auto_tags": 0
                     }
                 },
                 "upstream": [

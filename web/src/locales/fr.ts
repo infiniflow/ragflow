@@ -1706,9 +1706,9 @@ Exemple : Virtual Hosted Style`,
       restApiRequestDelayTip:
         "Délai en secondes entre les requêtes de pages consécutives. Aide à éviter la limitation de débit de l'API. Définissez à 0 pour désactiver.",
       restApiValidationApiKeyRequired:
-        "La clé API est requise lorsque le type d'authentification est API KEY (Header).",
+        "La clé API est requise lorsque le type d'authentification est API Key (Header).",
       restApiValidationApiKeyHeaderNameRequired:
-        "Le nom d'en-tête de la clé API est requis lorsque le type d'authentification est API KEY (Header).",
+        "Le nom d'en-tête de la clé API est requis lorsque le type d'authentification est API Key (Header).",
       restApiValidationBearerTokenRequired:
         "Le jeton Bearer est requis lorsque le type d'authentification est Bearer Token.",
       restApiValidationBasicUsernameRequired:
