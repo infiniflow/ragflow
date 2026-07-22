@@ -59,7 +59,7 @@ export default {
       submit: 'Gönder',
       clear: 'Temizle',
       embedIntoSite: 'Web sayfasına göm',
-      openInNewTab: 'Yeni sekmede sohbet et',
+      openInNewTab: 'Yeni sekmede aç',
       previousPage: 'Önceki',
       nextPage: 'Sonraki',
       previous: 'Önceki',
