@@ -500,8 +500,7 @@ async def run_chunked_pipeline(
 
     async def _producer() -> None:
         for idx, entries in enumerate(batches):
-            if entries:
-                await work_queue.put((idx, entries))
+            await work_queue.put((idx, entries))
         for _ in range(worker_count):
             await work_queue.put(None)
 
@@ -518,14 +517,11 @@ async def run_chunked_pipeline(
             finally:
                 work_queue.task_done()
 
-    if not any(batches):
-        return aggregate([]) if aggregate else []
-
     producer = asyncio.create_task(_producer())
     workers = [asyncio.create_task(_worker()) for _ in range(worker_count)]
     try:
         await asyncio.gather(producer, *workers)
-    except Exception:
+    except BaseException:
         producer.cancel()
         for t in workers:
             t.cancel()
@@ -709,14 +705,15 @@ async def _embedding_dedup(
                 right_indices = group_indices[right_start : right_start + block_size]
                 sims = left_vectors @ matrix[right_indices].T
                 if right_start == left_start:
-                    rows, cols = np.triu_indices(len(left_indices), k=1)
+                    candidate_mask = np.triu(sims >= ambiguous_low, k=1)
                 else:
-                    rows, cols = np.nonzero(sims >= ambiguous_low)
-                for row, col in zip(rows.tolist(), cols.tolist()):
+                    candidate_mask = sims >= ambiguous_low
+                rows, cols = np.nonzero(candidate_mask)
+                for row, col in zip(rows.tolist(), cols.tolist(), strict=True):
                     score = float(sims[row, col])
                     if score >= merge_threshold:
                         auto_pairs.append((left_indices[row], right_indices[col]))
-                    elif score >= ambiguous_low:
+                    else:
                         ambiguous_pairs.append((left_indices[row], right_indices[col]))
 
     for i, j in auto_pairs:
@@ -744,10 +741,12 @@ async def _resolve_ambiguous_pairs(
     llm_timeout: int = 60,
     system_prompt: str = DEFAULT_DISAMBIGUATE_SYSTEM,
 ) -> dict[int, int]:
-    """LLM-judged disambiguation in concurrent batches.
+    """LLM-judged disambiguation in bounded concurrent waves.
 
-    LLM results are collected concurrently, then applied to union-find in one
-    serial pass so shared roots are never mutated by competing tasks.
+    Each wave filters pairs using the latest union-find roots, then runs at
+    most one batch per available pooled LLM slot. Results are applied in one
+    serial pass before the next wave starts, avoiding redundant calls for
+    pairs merged by an earlier wave.
     """
     if not ambiguous_pairs:
         return merged_into
@@ -756,8 +755,6 @@ async def _resolve_ambiguous_pairs(
         while i in merged_into:
             i = merged_into[i]
         return i
-
-    batches = [ambiguous_pairs[start : start + batch_size] for start in range(0, len(ambiguous_pairs), batch_size)]
 
     async def _resolve_batch(batch: list[tuple[int, int]]) -> tuple[list[tuple[int, int]], Optional[list]]:
         lines: list[str] = []
@@ -773,14 +770,11 @@ async def _resolve_ambiguous_pairs(
             "Return ONLY the JSON array.\n\n" + "\n".join(lines)
         )
 
-        async def _call_model():
-            return await asyncio.wait_for(
+        try:
+            res = await asyncio.wait_for(
                 gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
                 timeout=llm_timeout,
             )
-
-        try:
-            res = await _call_model()
         except asyncio.TimeoutError:
             logging.warning("bulk_dedup: disambiguation timed out (%d pairs)", len(batch))
             return batch, None
@@ -801,21 +795,31 @@ async def _resolve_ambiguous_pairs(
             return batch, None
         return batch, decisions
 
-    results = await asyncio.gather(*(_resolve_batch(batch) for batch in batches))
-    for batch, decisions in results:
-        if decisions is None:
-            continue
-        for k, (i, j) in enumerate(batch):
-            verdict = decisions[k] if k < len(decisions) else False
-            if not verdict:
+    pool = getattr(chat_mdl, "_pool", None)
+    wave_batch_count = max(1, int(getattr(pool, "max_concurrency", 10)))
+    remaining = list(ambiguous_pairs)
+    while remaining:
+        eligible = [(i, j) for i, j in remaining if _root(i) != _root(j)]
+        if not eligible:
+            break
+        wave_pairs = eligible[: wave_batch_count * batch_size]
+        batches = [wave_pairs[start : start + batch_size] for start in range(0, len(wave_pairs), batch_size)]
+        results = await asyncio.gather(*(_resolve_batch(batch) for batch in batches))
+        for batch, decisions in results:
+            if decisions is None:
                 continue
-            ri, rj = _root(i), _root(j)
-            if ri == rj:
-                continue
-            if canonical[ri].get("mention_count", 0) >= canonical[rj].get("mention_count", 0):
-                merged_into[rj] = ri
-            else:
-                merged_into[ri] = rj
+            for k, (i, j) in enumerate(batch):
+                verdict = decisions[k] if k < len(decisions) else False
+                if not verdict:
+                    continue
+                ri, rj = _root(i), _root(j)
+                if ri == rj:
+                    continue
+                if canonical[ri].get("mention_count", 0) >= canonical[rj].get("mention_count", 0):
+                    merged_into[rj] = ri
+                else:
+                    merged_into[ri] = rj
+        remaining = eligible[len(wave_pairs) :]
 
     return merged_into
 

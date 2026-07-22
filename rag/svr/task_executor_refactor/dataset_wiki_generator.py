@@ -826,13 +826,12 @@ async def run_wiki(
     async def _map_worker() -> None:
         while True:
             item = await map_queue.get()
-            if item is None:
-                map_queue.task_done()
-                return
-            i, doc, template_id, parser_cfg, batch, batch_no = item
-            doc_id = doc["id"]
-            stats = doc_stats[i]
             try:
+                if item is None:
+                    return
+                i, doc, template_id, parser_cfg, batch, batch_no = item
+                doc_id = doc["id"]
+                stats = doc_stats[i]
                 map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
@@ -872,11 +871,14 @@ async def run_wiki(
 
     producers = [asyncio.create_task(_produce_document(i, job)) for i, job in enumerate(resolved_eligible)]
     workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
-    await asyncio.gather(*producers)
-    await map_queue.join()
-    for _ in workers:
-        await map_queue.put(None)
-    await asyncio.gather(*workers)
+    try:
+        await asyncio.gather(*producers)
+        await map_queue.join()
+    finally:
+        for task in producers + workers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*producers, *workers, return_exceptions=True)
 
     for i, stats in doc_stats.items():
         doc = stats["doc"]

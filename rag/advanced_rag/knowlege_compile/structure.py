@@ -99,8 +99,6 @@ class LLMCallPool:
 
 
 class PooledChatModel:
-    _pool_managed = True
-
     def __init__(self, pool: LLMCallPool, chat_mdl, *, priority: int, label: str, context: str | None):
         self._pool = pool
         self._chat_mdl = chat_mdl
