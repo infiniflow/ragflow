@@ -241,3 +241,61 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
 }
+
+func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
+	srv := newJinaServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["top_n"] != float64(2) {
+			t.Errorf("top_n=%v, want 2", body["top_n"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 0, "relevance_score": 0.9},
+				{"index": 1, "relevance_score": 0.1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-reranker-v3"
+	resp, err := newJinaForTest(srv.URL).Rerank(
+		&modelName,
+		"weather",
+		[]string{"sunny", "rainy"},
+		&APIConfig{ApiKey: &apiKey},
+		&RerankConfig{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("results=%d, want 2", len(resp.Data))
+	}
+}
+
+func TestJinaRerankRespectsSmallerTopN(t *testing.T) {
+	srv := newJinaServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["top_n"] != float64(1) {
+			t.Errorf("top_n=%v, want 1", body["top_n"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{{"index": 0, "relevance_score": 0.9}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-reranker-v3"
+	_, err := newJinaForTest(srv.URL).Rerank(
+		&modelName,
+		"weather",
+		[]string{"sunny", "rainy"},
+		&APIConfig{ApiKey: &apiKey},
+		&RerankConfig{TopN: 1},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
