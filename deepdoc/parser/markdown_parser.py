@@ -20,6 +20,8 @@ import re
 
 from markdown import markdown
 
+logger = logging.getLogger(__name__)
+
 
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
@@ -47,6 +49,7 @@ class RAGFlowMarkdownParser:
                 if any(start <= match.start() < end for start, end in fenced_spans):
                     # inside a code fence: leave it in place. last_end is untouched, so
                     # the block is copied through verbatim.
+                    logger.debug("markdown table pass: skipping match inside a code fence at %d", match.start())
                     continue
                 raw_table = match.group()
                 table_list.append(raw_table)
@@ -95,6 +98,7 @@ class RAGFlowMarkdownParser:
         def replace_tag(m):
             if any(start <= m.start() < end for start, end in tag_fenced_spans):
                 # an html example inside a fence keeps its attributes verbatim.
+                logger.debug("html tag pass: preserving tag inside a code fence at %d", m.start())
                 return m.group()
             tag_name = re.match(r"<(\w+)", m.group()).group(1)
             return "<{}>".format(tag_name)
@@ -130,6 +134,7 @@ class RAGFlowMarkdownParser:
                 fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
                 for match in html_table_pattern.finditer(working_text):
                     if any(start <= match.start() < end for start, end in fenced_spans):
+                        logger.debug("html table pass: skipping match inside a code fence at %d", match.start())
                         continue
                     raw_table = match.group()
                     tables.append(raw_table)

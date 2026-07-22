@@ -218,6 +218,19 @@ class TestMarkdownTableDedup:
         assert 'border="1"' in remainder
         assert "<td>A</td>" in remainder
 
+    def test_bare_html_table_inside_code_fence_is_not_extracted(self, markdown_parser_module):
+        """A bare <table> (no attributes) inside a fence hits the html-table
+        extraction pass (the `<table>` fast-path guard fires); that pass must
+        skip fenced matches too, not just the tag-stripping pass."""
+        text = "# Guide\n\n```html\n<table>\n<tr><td>A</td></tr>\n</table>\n```\n\nDone.\n"
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert tables == []
+        assert "<table>" in remainder
+        assert "<td>A</td>" in remainder
+
     def test_real_table_still_extracted_alongside_a_fenced_example(self, markdown_parser_module):
         """Shielding fences must not stop genuine tables outside them from being split."""
         text = "```markdown\n| Name | Value |\n| --- | --- |\n| A | 1 |\n```\n\n| X | Y |\n| --- | --- |\n| 9 | 8 |\n\ntail\n"
