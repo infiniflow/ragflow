@@ -103,7 +103,14 @@ export default function ChatList() {
 
   return (
     <>
-      {data.chats?.length || searchString ? (
+      {loading && !data.chats?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <Spin size="large" />
+        </article>
+      ) : data.chats?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
           data-testid="chats-list"
@@ -157,13 +164,6 @@ export default function ChatList() {
               />
             </div>
           )}
-        </article>
-      ) : loading ? (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="chats-list"
-        >
-          <Spin size="large" />
         </article>
       ) : (
         <article

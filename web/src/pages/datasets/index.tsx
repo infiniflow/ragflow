@@ -72,7 +72,14 @@ export default function Datasets() {
 
   return (
     <>
-      {kbs?.length || searchString ? (
+      {loading && !kbs?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="datasets-list"
+        >
+          <Spin size="large" />
+        </article>
+      ) : kbs?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
           data-testid="datasets-list"
@@ -126,13 +133,6 @@ export default function Datasets() {
               />
             </div>
           )}
-        </article>
-      ) : loading ? (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="datasets-list"
-        >
-          <Spin size="large" />
         </article>
       ) : (
         <article
