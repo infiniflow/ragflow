@@ -93,6 +93,8 @@ export const extractParserConfigExt = (
     filename_embd_weight,
     task_page_size,
     pages,
+    children_delimiter,
+    enable_children,
     parent_child: enable_children
       ? {
           children_delimiter,
