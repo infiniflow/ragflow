@@ -71,7 +71,7 @@ GO_ONLY_SKIPS = {
         # "test_message_status_validation_requires_boolean",
         # "test_message_search_route_contract",
         # "test_memory_crud_and_config",
-        "test_messages_list_and_search_validation_contracts",
+        # "test_messages_list_and_search_validation_contracts",
         "test_message_update_forget_and_content_error_contracts",
         "test_session_create_validation_and_deleted_chat_contract",
         "test_session_delete_basic_scenarios",
