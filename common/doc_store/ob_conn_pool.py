@@ -95,6 +95,11 @@ class OceanBaseConnectionPool:
                 )
                 if attempt == MAX_RETRIES - 1:
                     raise
+                if self.client is not None:
+                    try:
+                        self.client.engine.dispose()
+                    except Exception:
+                        pass
                 time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
                 continue
 
