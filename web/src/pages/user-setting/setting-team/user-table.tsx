@@ -23,9 +23,12 @@ import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
-  [TenantRole.Normal]: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  [TenantRole.Invite]: 'bg-accent-primary-5 bg-accent-primary rounded-sm',
-  [TenantRole.Owner]: 'bg-red-100 text-red-800',
+  [TenantRole.Normal]:
+    'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  [TenantRole.Invite]:
+    'bg-accent-primary-5 text-accent-primary hover:bg-accent-primary/10 rounded-sm',
+  [TenantRole.Owner]:
+    'bg-red-100 text-red-800 hover:bg-red-200 hover:text-red-800',
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
