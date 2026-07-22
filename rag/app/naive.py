@@ -966,7 +966,13 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         # images list - index of image chunk in chunks
         chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
-        vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
+        vision_figure_parser_docx_wrapper_naive(
+            chunks=chunks,
+            idx_lst=images,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
 
         callback(0.8, "Finish parsing.")
         st = timer()
