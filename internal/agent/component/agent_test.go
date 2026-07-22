@@ -212,6 +212,34 @@ func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 	}
 }
 
+func TestAgent_NewTreatsSchemaDefaultUserPromptAsSysQueryPlaceholder(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"api_key":     "test-key",
+		"user_prompt": agentUserPromptSchemaDefault,
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "用户真正的问题"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotPrompt != "用户真正的问题" {
+		t.Fatalf("runner prompt = %q, want sys.query placeholder resolved", gotPrompt)
+	}
+}
+
 func TestAgent_EmptyConfiguredUserPromptDoesNotFallbackToSysQuery(t *testing.T) {
 	var gotSystemPrompt, gotUserPrompt string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
@@ -620,6 +648,57 @@ func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
 	}
 	if info.Desc != "child agent description" {
 		t.Fatalf("tool desc = %q, want child agent description", info.Desc)
+	}
+}
+
+func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "你好",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child one",
+				},
+			},
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "世界",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child two",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+
+	tools, err := buildAgentTools(agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	var names []string
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names = append(names, info.Name)
+	}
+	if got, want := strings.Join(names, ","), "agent,agent_2"; got != want {
+		t.Fatalf("tool names = %q, want %q", got, want)
 	}
 }
 

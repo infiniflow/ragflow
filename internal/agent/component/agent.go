@@ -34,13 +34,15 @@ import (
 	"go.uber.org/zap"
 )
 
-// agentLLMIDPattern matches `<model>@<provider>` and
+const maxSubAgentDepth = 8
+
+// agentPatternless matches `<model>@<provider>` and
 // `<model>@<instance>@<provider>` (the trailing `@<provider>` is
 // always the last segment — the segment just before the last `@`
 // is treated as the bare model name for upstream API calls). The
 // browser component has the same idea at browser.go:88-92, but
 // keeps the regex greedy for its 2-part fixture; we keep both
-// behaviours here via the in-function split below.
+// behaviors here via the in-function split below.
 
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
@@ -545,13 +547,30 @@ func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
+	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: %w", err)
+		}
+		if info == nil || strings.TrimSpace(info.Name) == "" {
+			return nil, fmt.Errorf("agent tool info: missing name")
+		}
+		if _, exists := toolNames[info.Name]; exists {
+			return nil, fmt.Errorf("duplicate agent tool name %q", info.Name)
+		}
+		toolNames[info.Name] = struct{}{}
+	}
 	for _, subAgent := range p.SubAgents {
-		tools = append(tools, &subAgentTool{spec: subAgent})
+		name := uniqueAgentToolName(subAgent.Name, toolNames)
+		toolNames[name] = struct{}{}
+		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
 	}
 	return tools, nil
 }
 
 type subAgentTool struct {
+	name string
 	spec SubAgentTool
 }
 
@@ -573,14 +592,34 @@ func (t *subAgentTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			Required: true,
 		},
 	}
+	name := t.name
+	if name == "" {
+		name = normalizeAgentToolName(t.spec.Name)
+	}
 	return &schema.ToolInfo{
-		Name:        normalizeAgentToolName(t.spec.Name),
+		Name:        name,
 		Desc:        subAgentToolDescription(t.spec),
 		ParamsOneOf: schema.NewParamsOneOfByParams(params),
 	}, nil
 }
 
+type subAgentDepthKey struct{}
+
+func subAgentDepth(ctx context.Context) int {
+	if v, ok := ctx.Value(subAgentDepthKey{}).(int); ok {
+		return v
+	}
+	return 0
+}
+
 func (t *subAgentTool) InvokableRun(ctx context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
+	depth := subAgentDepth(ctx)
+	if depth >= maxSubAgentDepth {
+		return "", fmt.Errorf("sub-agent tool %q: max nesting depth (%d) exceeded", normalizeAgentToolName(t.spec.Name), maxSubAgentDepth)
+	}
+
+	ctx = context.WithValue(ctx, subAgentDepthKey{}, depth+1)
+
 	inputs := map[string]any{}
 	if strings.TrimSpace(argsJSON) != "" {
 		if err := json.Unmarshal([]byte(argsJSON), &inputs); err != nil {
@@ -610,6 +649,19 @@ func subAgentToolDescription(spec SubAgentTool) string {
 		return strings.TrimSpace(spec.Param.Description)
 	}
 	return "This is an agent for a specific task."
+}
+
+func uniqueAgentToolName(name string, used map[string]struct{}) string {
+	base := normalizeAgentToolName(name)
+	if _, exists := used[base]; !exists {
+		return base
+	}
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s_%d", base, n)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
 }
 
 func normalizeAgentToolName(name string) string {
@@ -1430,67 +1482,9 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 }
 
 func agentParamFromMap(params map[string]any) AgentParam {
-	p := AgentParam{MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize}
-	if v, ok := stringFrom(params, "model_id"); ok {
-		p.ModelID = v
-	} else if v, ok := stringFrom(params, "llm_id"); ok {
-		p.ModelID = v
-	}
-	if v, ok := stringFrom(params, "description"); ok {
-		p.Description = v
-	}
-	if v, ok := stringFrom(params, "system_prompt"); ok {
-		p.SystemPrompt = v
-	} else if v, ok := stringFrom(params, "sys_prompt"); ok {
-		p.SystemPrompt = v
-	}
-	if promptSystem, promptUser, ok := promptMessagesFromParams(params); ok {
-		p.SystemPrompt = appendPromptText(p.SystemPrompt, promptSystem)
-		p.UserPrompt = promptUser
-	}
-	if v, ok := stringFrom(params, "user_prompt"); ok && p.UserPrompt == "" {
-		p.UserPrompt = v
-	}
-	if v, ok := floatFrom(params, "top_p"); ok {
-		f := v
-		p.TopP = &f
-	}
-	if tools, toolParams, subAgents, ok := agentToolsFrom(params, "tools"); ok {
-		p.Tools = tools
-		p.SubAgents = subAgents
-		p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
-	}
-	if v, ok := nestedMapFrom(params, "tool_params"); ok {
-		p.ToolParams = mergeToolParams(p.ToolParams, v)
-	}
-	if v, ok := stringFrom(params, "thinking"); ok && v != "" && v != "default" {
-		p.Thinking = v
-	}
-	if v, ok := intFrom(params, "max_rounds"); ok {
-		p.MaxRounds = v
-	}
-	if v, ok := intFrom(params, "message_history_window_size"); ok {
-		p.MessageHistoryWindowSize = v
-	}
-	if v, ok := stringFrom(params, "driver"); ok {
-		p.Driver = v
-	}
-	if v, ok := stringFrom(params, "api_key"); ok {
-		p.APIKey = v
-	}
-	if v, ok := stringFrom(params, "base_url"); ok {
-		p.BaseURL = v
-	}
-	if v, ok := boolFrom(params, "optimize_multi_turn"); ok {
-		p.OptimizeMultiTurn = v
-	}
-	if v, ok := intFrom(params, "optimize_history_window"); ok {
-		p.OptimizeHistoryWindow = v
-	}
-	if v, ok := boolFrom(params, "cite"); ok {
-		p.Cite = v
-	}
-	return p
+	return mergeAgentParam(AgentParam{
+		MessageHistoryWindowSize: defaultAgentMessageHistoryWindowSize,
+	}, params)
 }
 
 // init registers AgentComponent with the orchestrator-owned registry.
