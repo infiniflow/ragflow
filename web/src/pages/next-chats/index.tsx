@@ -5,6 +5,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
 import { useFetchChatList } from '@/hooks/use-chat-request';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
@@ -25,12 +26,11 @@ export default function ChatList() {
     searchString,
     filterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchChatList();
   const { t } = useTranslation();
   const { t: tc } = useTranslation('common');
-  const owners = [
-    buildOwnersFilter(data?.chats ?? [], undefined, tc('owner')),
-  ];
+  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
   const {
     initialChatName,
     chatRenameVisible,
@@ -157,6 +157,13 @@ export default function ChatList() {
               />
             </div>
           )}
+        </article>
+      ) : loading ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <Spin size="large" />
         </article>
       ) : (
         <article

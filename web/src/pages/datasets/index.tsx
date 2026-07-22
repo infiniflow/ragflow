@@ -5,6 +5,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
@@ -37,6 +38,7 @@ export default function Datasets() {
     searchString,
     filterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchNextKnowledgeListByPage();
 
   const owners = useSelectOwners();
@@ -124,6 +126,13 @@ export default function Datasets() {
               />
             </div>
           )}
+        </article>
+      ) : loading ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="datasets-list"
+        >
+          <Spin size="large" />
         </article>
       ) : (
         <article
