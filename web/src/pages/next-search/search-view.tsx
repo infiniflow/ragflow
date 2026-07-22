@@ -12,6 +12,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { IReference } from '@/interfaces/database/chat';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ListTree, Search, X } from 'lucide-react';
@@ -78,13 +79,7 @@ export default function SearchingView({
     setSearchText(searchStr);
   }, [searchStr, setSearchText]);
 
-  // Grow the search box with its content so long queries stay readable.
-  useEffect(() => {
-    const el = searchInputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [searchText]);
+  useAutoResizeTextarea(searchInputRef, searchText);
 
   return (
     <section

@@ -1,8 +1,9 @@
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { Search } from 'lucide-react';
-import { Dispatch, SetStateAction, useEffect, useRef } from 'react';
+import { Dispatch, SetStateAction, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import './index.less';
 import { RAGFlowLogo } from './ragflow-logo';
@@ -28,13 +29,8 @@ export default function SearchHome({
   const { t } = useTranslation();
   const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Grow the search box with its content so long queries stay readable.
-  useEffect(() => {
-    const el = searchInputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [searchText]);
+  useAutoResizeTextarea(searchInputRef, searchText);
+
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
