@@ -78,17 +78,12 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool, ownerIDs ...[]string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderBy string, desc bool, ownerIDs []string) (*ListChatsResponse, error) {
 	var chats []*entity.ChatListItem
 	var total int64
 	var err error
 
-	filterOwnerIDs := []string(nil)
-	if len(ownerIDs) > 0 {
-		filterOwnerIDs = ownerIDs[0]
-	}
-
-	if len(filterOwnerIDs) == 0 {
+	if len(ownerIDs) == 0 {
 		chats, total, err = s.chatDAO.ListByTenantIDs(
 			nil,
 			userID,
@@ -102,7 +97,7 @@ func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize 
 			return nil, err
 		}
 	} else {
-		filterOwnerIDs, err = s.filterAccessibleChatOwnerIDs(userID, filterOwnerIDs)
+		filterOwnerIDs, err := s.filterAccessibleChatOwnerIDs(userID, ownerIDs)
 		if err != nil {
 			return nil, err
 		}
