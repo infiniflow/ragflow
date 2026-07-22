@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	einomodel "github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
@@ -139,13 +140,79 @@ type AgentOutput struct {
 // that returns canned *schema.Message values.
 var agentRunner = runEinoReActAgent
 
+const chatStreamUnsupportedMarker = "does not implement ChatStreamlyWithSender"
+
+// agentChatModel keeps the ReAct Agent on its streaming execution path while
+// allowing models without a streaming implementation to use normal chat. The
+// fallback is Agent-specific and only happens before any stream chunk has been
+// emitted, so transport failures and interrupted streams are not retried as a
+// second request.
+type agentChatModel struct {
+	einomodel.ToolCallingChatModel
+}
+
+func (m *agentChatModel) WithTools(tools []*schema.ToolInfo) (einomodel.ToolCallingChatModel, error) {
+	modelWithTools, err := m.ToolCallingChatModel.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &agentChatModel{ToolCallingChatModel: modelWithTools}, nil
+}
+
+func (m *agentChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.StreamReader[*schema.Message], error) {
+	stream, err := m.ToolCallingChatModel.Stream(ctx, input, opts...)
+	if err != nil {
+		if !isChatStreamUnsupported(err) {
+			return nil, err
+		}
+		msg, generateErr := m.Generate(ctx, input, opts...)
+		if generateErr != nil {
+			return nil, generateErr
+		}
+		return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+	}
+
+	out, writer := schema.Pipe[*schema.Message](1)
+	go func() {
+		defer writer.Close()
+		defer stream.Close()
+
+		emitted := false
+		for {
+			msg, recvErr := stream.Recv()
+			if errors.Is(recvErr, io.EOF) {
+				return
+			}
+			if recvErr != nil {
+				if !emitted && isChatStreamUnsupported(recvErr) {
+					msg, generateErr := m.Generate(ctx, input, opts...)
+					_ = writer.Send(msg, generateErr)
+					return
+				}
+				_ = writer.Send(nil, recvErr)
+				return
+			}
+			emitted = true
+			if closed := writer.Send(msg, nil); closed {
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+func isChatStreamUnsupported(err error) bool {
+	return err != nil && strings.Contains(err.Error(), chatStreamUnsupportedMarker)
+}
+
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(ctx, p)
+	baseChatModel, err := buildAgentChatModel(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
+	chatModel := &agentChatModel{ToolCallingChatModel: baseChatModel}
 	tools, err := buildAgentTools(p)
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
