@@ -249,7 +249,7 @@ func TestTokenHubStreamRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
 	err := newTokenHubForTest("http://unused").ChatStreamlyWithSender(
 		ctx,
-		"gpt-4o-mini",
+		" ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
