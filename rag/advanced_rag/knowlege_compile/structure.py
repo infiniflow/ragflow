@@ -47,6 +47,26 @@ _ES_DEDUP_EMBED_BATCH_SIZE = 64
 _ES_DEDUP_INSERT_BATCH_SIZE = 256
 _STRUCT_INVALID_SENTINELS = {"-1"}
 
+# Merge scopes. ``doc`` (default) dedups an incoming entity/relation only
+# against rows already stored for the *same* document; ``dataset`` widens the
+# candidate lookup to the whole knowledge base so the same logical entity found
+# in different documents collapses onto one canonical row.
+MERGE_SCOPE_DOC = "doc"
+MERGE_SCOPE_DATASET = "dataset"
+
+# Dataset-scope merges read-modify-write shared KB-wide rows, so concurrent
+# per-document parse tasks (possibly in different worker processes) must be
+# serialized to avoid inserting duplicate canonical rows before either sees the
+# other. Mirrors the per-kb lock ``dataset_nav`` already uses for the same
+# cross-document upsert hazard.
+_STRUCT_MERGE_LOCK_TIMEOUT_S = 60
+_STRUCT_MERGE_LOCK_BLOCKING_TIMEOUT_S = 5
+
+
+def _struct_merge_lock_key(kb_id: str, compilation_template_id: str | None) -> str:
+    """Per-(kb, template) lock so different templates can merge in parallel."""
+    return f"struct_merge:{kb_id}:{compilation_template_id or ''}"
+
 
 class LLMCallPool:
     """Task-scoped priority scheduler for actual chat-model calls."""
@@ -1032,11 +1052,16 @@ async def _struct_reembed_payload(payload: dict, embd_mdl):
     return vecs[0] if vecs else None
 
 
-def _struct_es_dedup_condition(doc: dict) -> dict:
+def _struct_es_dedup_condition(doc: dict, merge_scope: str = MERGE_SCOPE_DOC) -> dict:
     condition = {
         "compile_kwd": [doc["compile_kwd"]],
-        "doc_id": [doc["doc_id"]],
     }
+    # Doc scope: only an entity/relation already stored for the same document is
+    # a merge candidate. Dataset scope: widen to the whole KB (``kb_id`` is
+    # already the search index scope) so the same entity across documents
+    # collapses onto one canonical row.
+    if merge_scope != MERGE_SCOPE_DATASET:
+        condition["doc_id"] = [doc["doc_id"]]
     if doc.get("knowledge_graph_kwd"):
         condition["knowledge_graph_kwd"] = [doc["knowledge_graph_kwd"]]
     if doc.get("from_entity_kwd"):
@@ -1058,6 +1083,7 @@ async def _struct_es_knn_candidate(
     select_fields: list[str],
     timing_context: str | None,
     item_index: int,
+    merge_scope: str = MERGE_SCOPE_DOC,
 ) -> dict | None:
     """Run one KNN lookup; the caller controls concurrency."""
     from common import settings
@@ -1079,7 +1105,7 @@ async def _struct_es_knn_candidate(
             settings.docStoreConn.search,
             select_fields,
             [],
-            _struct_es_dedup_condition(doc),
+            _struct_es_dedup_condition(doc, merge_scope),
             [match_expr],
             OrderByExpr(),
             0,
@@ -1321,8 +1347,14 @@ async def _struct_es_dedup_batch(
     similarity_threshold: float,
     timing_context: str | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    merge_scope: str = MERGE_SCOPE_DOC,
 ) -> tuple[int, int]:
-    """Batch ES dedup: concurrent KNN, parallel decisions, then grouped merges."""
+    """Batch ES dedup: concurrent KNN, parallel decisions, then grouped merges.
+
+    ``merge_scope`` controls the candidate horizon: ``doc`` restricts KNN and
+    the relation-alias rewrite to the incoming rows' own ``doc_id``; ``dataset``
+    widens both to the whole knowledge base so cross-document duplicates merge.
+    """
     from common import settings
     from rag.nlp import search as _rag_search
 
@@ -1361,6 +1393,7 @@ async def _struct_es_dedup_batch(
                 select_fields,
                 timing_context,
                 item_index,
+                merge_scope,
             )
 
     _raise_if_canceled()
@@ -1566,9 +1599,14 @@ async def _struct_es_dedup_batch(
         ]
         from common.doc_store.doc_store_base import OrderByExpr
 
+        # In doc scope a renamed entity only affects relations inside the same
+        # document; in dataset scope the canonical entity is shared, so every
+        # relation in the KB that references an alias must be rewritten. Drop
+        # ``doc_id`` from the scope key (and the search condition) accordingly.
+        dataset_scope = merge_scope == MERGE_SCOPE_DATASET
         scopes = {
             (
-                state["old_doc"].get("doc_id"),
+                None if dataset_scope else state["old_doc"].get("doc_id"),
                 state["old_doc"].get("compile_kwd"),
                 _struct_doc_template_id(state["old_doc"]),
             )
@@ -1577,10 +1615,11 @@ async def _struct_es_dedup_batch(
         }
         for doc_id, compile_kwd, template_id in scopes:
             condition = {
-                "doc_id": [doc_id],
                 "compile_kwd": [compile_kwd],
                 "knowledge_graph_kwd": ["relation"],
             }
+            if doc_id is not None:
+                condition["doc_id"] = [doc_id]
             if template_id:
                 condition["compilation_template_ids"] = [template_id]
             try:
@@ -1868,7 +1907,7 @@ def _struct_graph_row_id(
 async def _struct_rebuild_graph_json(
     tenant_id: str,
     kb_id: str,
-    doc_id: str,
+    doc_id: str | None,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> dict:
@@ -1878,11 +1917,14 @@ async def _struct_rebuild_graph_json(
 
     index = _rag_search.index_name(tenant_id)
     fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    # ``doc_id is None`` collects every document's entities/relations in the KB
+    # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
-        "doc_id": [doc_id],
         "compile_kwd": [compile_kwd],
         "knowledge_graph_kwd": ["entity", "relation"],
     }
+    if doc_id is not None:
+        condition["doc_id"] = [doc_id]
     if compilation_template_id:
         condition["compilation_template_ids"] = [compilation_template_id]
     res = await thread_pool_exec(
@@ -1977,6 +2019,107 @@ async def rebuild_structure_graph_json(
         doc_id,
         compile_kwd,
         compilation_template_id,
+    )
+    return graph
+
+
+def _dataset_struct_graph_row_id(
+    kb_id: str,
+    compile_kwd: str,
+    compilation_template_id: str | None = None,
+) -> str:
+    """Stable id for the KB-wide (dataset) structure graph row, keyed by
+    (kb, compile_kwd, template). Distinct namespace from the per-doc row id so
+    the dataset graph never collides with any document's graph."""
+    tpl_part = compilation_template_id or ""
+    return xxhash.xxh64(
+        f"{kb_id}:dataset_structure_graph:{compile_kwd}:{tpl_part}".encode(
+            "utf-8",
+            "surrogatepass",
+        ),
+    ).hexdigest()
+
+
+async def _struct_upsert_dataset_graph_json(
+    graph: dict,
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    compilation_template_id: str | None = None,
+    structure_kind: str | None = None,
+) -> None:
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    row_id = _dataset_struct_graph_row_id(kb_id, compile_kwd, compilation_template_id)
+    # The dataset graph is not per-document generated data, but the store schema
+    # requires ``doc_id``; carry ``kb_id`` there so the row is self-describing
+    # and per-doc graph queries (filtered by a real doc_id) never pick it up.
+    row = {
+        "id": row_id,
+        "content_with_weight": json.dumps(graph, ensure_ascii=False),
+        "compile_kwd": compile_kwd,
+        "knowledge_graph_kwd": "dataset_graph",
+        "doc_id": kb_id,
+        "kb_id": kb_id,
+        "available_int": 0,
+    }
+    if compilation_template_id:
+        row["compilation_template_ids"] = [compilation_template_id]
+    # On ``dataset_graph`` rows ``compilation_template_kind_kwd`` carries the
+    # template's *top-level* kind (graph/mind_map/timeline/session_essence/
+    # session_graph) so the artifacts_structure endpoint can filter by it —
+    # unlike entity/relation rows where the field holds the ``config.kind``
+    # (which collapses the knowledge_graph family together).
+    if structure_kind:
+        row["compilation_template_kind_kwd"] = str(structure_kind)
+    old = await thread_pool_exec(settings.docStoreConn.get, row_id, index, [kb_id])
+    if old:
+        await thread_pool_exec(
+            settings.docStoreConn.update,
+            {"id": row_id},
+            {k: v for k, v in row.items() if k != "id"},
+            index,
+            kb_id,
+        )
+    else:
+        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+
+
+async def rebuild_dataset_structure_graph_json(
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    compilation_template_id: str | None = None,
+    structure_kind: str | None = None,
+) -> dict:
+    """Rebuild and persist the KB-wide (dataset) structure graph for one
+    (compile_kwd, template_id) pair.
+
+    Reads every document's merged entities/relations in the KB (no ``doc_id``
+    filter) and writes a single ``knowledge_graph_kwd="dataset_graph"`` row.
+    Meant to run once per template after all per-document flushes finish; when
+    ``dataset`` merge scope is on the entity/relation rows are already
+    deduplicated across documents, so this simply projects them into a graph.
+
+    ``structure_kind`` is the template's top-level kind (e.g. ``knowledge_graph``,
+    ``session_graph``); it is stamped on the row so the dataset structure API
+    can filter by kind."""
+    graph = await _struct_rebuild_graph_json(
+        tenant_id,
+        kb_id,
+        None,
+        compile_kwd,
+        compilation_template_id,
+    )
+    await _struct_upsert_dataset_graph_json(
+        graph,
+        tenant_id,
+        kb_id,
+        compile_kwd,
+        compilation_template_id,
+        structure_kind=structure_kind,
     )
     return graph
 
@@ -2318,6 +2461,7 @@ async def merge_compiled_structures(
     chain_timeout_seconds: float = 120.0,
     es_waiter: Callable[[], Awaitable[None]] | None = None,
     es_releaser: Callable[[], Awaitable[None]] | None = None,
+    merge_scope: str = MERGE_SCOPE_DOC,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
     inserting them into ES.
@@ -2348,9 +2492,18 @@ async def merge_compiled_structures(
         cancel_check: optional callable returning True when the owning parse
             task has been canceled. Checked between ES-dedup iterations so a
             long merge can stop promptly.
+        merge_scope: ``"doc"`` (default) dedups only against rows already
+            stored for the incoming ``doc_id``; ``"dataset"`` dedups against
+            the whole KB so cross-document duplicates collapse. Dataset-scope
+            ES writes are serialized with a per-(kb, template) Redis lock so
+            concurrent per-document parses don't insert duplicate canonical
+            rows. Surviving rows keep the existing row's ``doc_id``.
 
     Returns:
-        {"inserted": N, "updated": M, "duplicates_dropped": K} summary.
+        {"inserted": N, "updated": M, "duplicates_dropped": K,
+         "compile_kwds": [...]} summary. ``compile_kwds`` lists the compile
+        keywords touched so a dataset-scope caller can rebuild the dataset
+        structure graph once all flushes finish.
     """
     if not docs:
         return {"inserted": 0, "updated": 0, "duplicates_dropped": 0}
@@ -2403,6 +2556,25 @@ async def merge_compiled_structures(
     if es_waiter is not None:
         await es_waiter()
     _raise_if_canceled()
+    # Dataset scope: hold a per-(kb, template) lock across the read-modify-write
+    # KNN merge so concurrent per-document parses can't both KNN-miss the same
+    # canonical entity and insert duplicates. Acquired *after* the in-doc
+    # ``es_waiter`` gate (never before) to avoid a deadlock where a later flush
+    # holds the KB lock while waiting on an earlier flush that also needs it.
+    merge_lock = None
+    if merge_scope == MERGE_SCOPE_DATASET:
+        from rag.utils.redis_conn import RedisDistributedLock
+
+        merge_lock = RedisDistributedLock(
+            _struct_merge_lock_key(kb_id, compilation_template_id),
+            timeout=_STRUCT_MERGE_LOCK_TIMEOUT_S,
+            blocking_timeout=_STRUCT_MERGE_LOCK_BLOCKING_TIMEOUT_S,
+        )
+        try:
+            await merge_lock.spin_acquire()
+        except Exception:
+            logging.exception("merge_compiled_structures: dataset merge lock acquire failed for kb=%s", kb_id)
+            merge_lock = None
     try:
         inserted, updated = await _struct_es_dedup_batch(
             deduped,
@@ -2413,10 +2585,17 @@ async def merge_compiled_structures(
             similarity_threshold,
             timing_context=timing_context,
             cancel_check=cancel_check,
+            merge_scope=merge_scope,
         )
     except Exception:
         logging.exception("merge_compiled_structures: batched ES dedup failed")
         inserted = updated = 0
+    finally:
+        if merge_lock is not None:
+            try:
+                merge_lock.release()
+            except Exception:
+                logging.exception("merge_compiled_structures: dataset merge lock release failed for kb=%s", kb_id)
     if es_releaser is not None:
         await es_releaser()
 
@@ -2445,6 +2624,7 @@ async def merge_compiled_structures(
         "updated": updated,
         "duplicates_dropped": dropped,
         "graphs": graphs,
+        "compile_kwds": sorted({compile_kwd for _, compile_kwd, _ in graph_keys}),
     }
     return info
 
@@ -2453,4 +2633,7 @@ __all__ = [
     "compile_structure_from_text",
     "merge_compiled_structures",
     "rebuild_structure_graph_json",
+    "rebuild_dataset_structure_graph_json",
+    "MERGE_SCOPE_DOC",
+    "MERGE_SCOPE_DATASET",
 ]

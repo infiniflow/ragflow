@@ -672,6 +672,51 @@ async def get_wiki_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_dataset_structure(tenant_id, dataset_id):
+    """Return the dataset-scope (KB-wide) structure graph for one kind.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    where ``kind`` is one of:
+      graph | mindmap | timeline | session_essence | session_graph
+
+    These are the non-tree structured artifacts merged across the whole
+    dataset (written when a template has ``dataset_merge`` enabled). Response
+    mirrors the per-document structure graph so the frontend reuses its view::
+
+        {"code": 0, "data": {"kind": "<kind>", "templates": [
+            {"template_id", "template_name", "kind", "entities", "relations"}
+        ]}}
+    """
+    try:
+        kind = request.args.get("kind", "")
+        if isinstance(kind, str):
+            kind = kind.strip()
+        if not kind:
+            return get_error_data_result(
+                message="`kind` is required (one of: graph, mindmap, timeline, session_essence, session_graph).",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        if dataset_api_service._resolve_dataset_structure_kind(kind) is None:
+            return get_error_data_result(
+                message=f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph.",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        success, result = await dataset_api_service.get_dataset_structure(
+            dataset_id,
+            tenant_id,
+            kind,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/artifacts/alteration", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

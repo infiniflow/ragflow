@@ -1661,6 +1661,156 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
     return True, {"has": bool(total)}
 
 
+# Dataset-scope structure kinds the artifacts_structure API serves. Keys are the
+# friendly names the frontend passes; values are the template's *top-level* kind
+# as stamped on ``dataset_graph`` rows. The canonical names map to themselves so
+# a caller can pass either form. Note this deliberately does NOT reuse
+# ``_compilation_template_kind`` — that helper folds ``knowledge_graph`` into
+# ``timeline`` and would merge distinct kinds here.
+_DATASET_STRUCTURE_ROW_KWD = "dataset_graph"
+_DATASET_STRUCTURE_KIND_ALIASES = {
+    "graph": "knowledge_graph",
+    "knowledge_graph": "knowledge_graph",
+    "mindmap": "mind_map",
+    "mind_map": "mind_map",
+    "timeline": "timeline",
+    "session_essence": "session_essence",
+    "session_graph": "session_graph",
+}
+
+
+def _resolve_dataset_structure_kind(kind) -> str | None:
+    """Map a friendly/canonical kind string to the stored top-level kind."""
+    if not isinstance(kind, str):
+        return None
+    return _DATASET_STRUCTURE_KIND_ALIASES.get(kind.strip().lower().replace("-", "_"))
+
+
+async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str):
+    """Load the dataset-scope (KB-wide) structure graph for one ``kind``.
+
+    ``kind`` is one of ``graph`` / ``mindmap`` / ``timeline`` /
+    ``session_essence`` / ``session_graph``. Reads the
+    ``knowledge_graph_kwd="dataset_graph"`` rows written by
+    ``rebuild_dataset_structure_graph_json`` (one per template), filters to the
+    requested kind, and returns them grouped by template — mirroring the
+    per-document ``structure/graph`` response so the frontend graph view is
+    reused unchanged.
+
+    Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
+    ``(False, message)`` on auth/validation failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    resolved_kind = _resolve_dataset_structure_kind(kind)
+    if not resolved_kind:
+        return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
+
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    empty = {"kind": kind, "templates": []}
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, empty
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+    from api.db.services.compilation_template_service import CompilationTemplateService
+
+    select_fields = [
+        "content_with_weight",
+        "compile_kwd",
+        "compilation_template_ids",
+        "compilation_template_kind_kwd",
+    ]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index_nm,
+            [dataset_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, select_fields) or {}
+    except Exception:
+        logging.exception("get_dataset_structure: docStore search failed for kb=%s", dataset_id)
+        return True, empty
+
+    def _row_template_id(row: dict) -> str | None:
+        raw = row.get("compilation_template_ids")
+        if isinstance(raw, list):
+            for v in raw:
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
+
+    # Resolve a template's top-level kind + display name, memoized. Used both to
+    # label buckets and as a fallback for rows written before the kind stamp
+    # (they carry ``compilation_template_ids`` but no ``compilation_template_kind_kwd``).
+    template_kind_cache: dict[str, str | None] = {}
+    template_name_cache: dict[str, str] = {}
+
+    def _template_meta(tid: str | None) -> str | None:
+        if not tid:
+            return None
+        if tid in template_kind_cache:
+            return template_kind_cache[tid]
+        top_kind = None
+        try:
+            saved = CompilationTemplateService.get_saved(tid, tenant_id)
+            if saved:
+                top_kind = (saved.get("kind") or "").strip() or None
+                template_name_cache[tid] = saved.get("name") or tid
+        except Exception:
+            logging.exception("get_dataset_structure: template lookup failed for %s", tid)
+        template_kind_cache[tid] = top_kind
+        return top_kind
+
+    grouped: dict[str, dict] = {}
+    for row in rows.values():
+        tid = _row_template_id(row)
+        stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
+        row_kind = stamped_kind or _template_meta(tid) or ""
+        if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
+            continue
+
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        entities = graph.get("entities") or []
+        relations = graph.get("relations") or []
+        if not entities and not relations:
+            continue
+
+        bucket_id = tid or f"kind:{resolved_kind}"
+        if bucket_id not in grouped:
+            if tid and tid not in template_name_cache:
+                _template_meta(tid)
+            grouped[bucket_id] = {
+                "template_id": bucket_id,
+                "template_name": template_name_cache.get(tid or "", bucket_id),
+                "kind": row_kind or resolved_kind,
+                "entities": [],
+                "relations": [],
+            }
+        grouped[bucket_id]["entities"].extend(entities)
+        grouped[bucket_id]["relations"].extend(relations)
+
+    templates_out = [g for g in grouped.values() if g["entities"] or g["relations"]]
+    return True, {"kind": kind, "templates": templates_out}
+
+
 async def get_wiki_alteration(dataset_id: str, tenant_id: str):
     """Return doc-level drift between current dataset docs and compiled wiki provenance."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):

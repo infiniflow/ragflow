@@ -44,8 +44,11 @@ from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
 from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
+    MERGE_SCOPE_DATASET,
+    MERGE_SCOPE_DOC,
     compile_structure_from_text,
     merge_compiled_structures,
+    rebuild_dataset_structure_graph_json,
     rebuild_structure_graph_json,
 )
 
@@ -280,6 +283,14 @@ async def run_structure_compile_over_batches(
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
     template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
+    # ``dataset_merge`` hyper-parameter (per template config): when truthy the
+    # merge dedups entities/relations across the whole dataset (KB), collapsing
+    # cross-document duplicates onto one canonical row, instead of merging only
+    # within the current document.
+    merge_scope_by_tid: dict[str, str] = {tid: (MERGE_SCOPE_DATASET if bool((cfg or {}).get("dataset_merge")) else MERGE_SCOPE_DOC) for tid, cfg in active_templates}
+    # compile_kwd(s) each template actually wrote, harvested from flush results
+    # so a dataset-scope template can rebuild its dataset graph once at the end.
+    compile_kwds_by_tid: dict[str, set[str]] = {tid: set() for tid, _ in active_templates}
     agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
     flush_sequence = 0
@@ -341,6 +352,7 @@ async def run_structure_compile_over_batches(
                     chain_timeout_seconds=STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
                     es_waiter=_wait_for_es,
                     es_releaser=_release_es,
+                    merge_scope=merge_scope_by_tid[template_id],
                 )
             finally:
                 if not es_released:
@@ -351,6 +363,9 @@ async def run_structure_compile_over_batches(
                 agg = agg_infos[template_id]
                 for k in ("inserted", "updated", "duplicates_dropped"):
                     agg[k] = agg.get(k, 0) + int(info.get(k, 0) or 0)
+                for compile_kwd in info.get("compile_kwds") or []:
+                    if compile_kwd:
+                        compile_kwds_by_tid[template_id].add(str(compile_kwd))
 
         flush_tasks.add(asyncio.create_task(_run_flush()))
 
@@ -469,6 +484,49 @@ async def run_structure_compile_over_batches(
             raise
         finally:
             flush_tasks.clear()
+
+    # ── Dataset structure graph ──────────────────────────────────────────
+    # For dataset-scope templates the entity/relation rows are now merged
+    # across documents, so (re)project them into a single KB-wide graph. This
+    # runs once per document-parse completion; the last document to finish
+    # produces the complete dataset graph. Best-effort — a failure here must
+    # not fail the parse.
+    for template_id, _ in active_templates:
+        if merge_scope_by_tid[template_id] != MERGE_SCOPE_DATASET:
+            continue
+        # The row is filtered by the template's *top-level* kind (e.g.
+        # ``knowledge_graph``, ``session_graph``), which — unlike ``config.kind``
+        # — distinguishes the knowledge_graph family. Resolve it from the
+        # template record; on failure leave it unstamped (the read side falls
+        # back to resolving kind from the template id).
+        structure_kind = None
+        try:
+            saved_template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            if saved_template:
+                structure_kind = (saved_template.get("kind") or "").strip() or None
+        except Exception:
+            logging.exception("dataset structure graph: failed to resolve top-level kind for template %s", template_id)
+        for compile_kwd in sorted(compile_kwds_by_tid[template_id]):
+            if cancel_check():
+                raise TaskCanceledException("Task was cancelled before dataset structure graph rebuild")
+            try:
+                progress_cb(msg=f"Rebuilding dataset structure graph (compile_kwd={compile_kwd}) ...")
+                await rebuild_dataset_structure_graph_json(
+                    tenant_id,
+                    kb_id,
+                    compile_kwd,
+                    compilation_template_id=template_id,
+                    structure_kind=structure_kind,
+                )
+            except TaskCanceledException:
+                raise
+            except Exception:
+                logging.exception(
+                    "dataset structure graph rebuild failed for kb=%s compile_kwd=%s template=%s",
+                    kb_id,
+                    compile_kwd,
+                    template_id,
+                )
 
     await _upsert_dataset_nav_from_page_index(
         active_templates=active_templates,
