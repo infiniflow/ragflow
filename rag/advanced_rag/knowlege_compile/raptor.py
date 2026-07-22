@@ -42,6 +42,7 @@ from rag.utils.raptor_utils import (
     SUPPORTED_CLUSTERING_METHODS,
     SUPPORTED_TREE_BUILDERS,
 )
+from ._common import knowledge_compile_gen_conf
 
 # Regularization added to GMM covariance diagonals; keeps components
 # from collapsing on singleton/near-identical reduced points.
@@ -216,7 +217,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         last_exc = None
         for attempt in range(3):
             try:
-                response = await self._llm_model.async_chat(system, history, gen_conf)
+                response = await self._llm_model.async_chat(
+                    system, history, knowledge_compile_gen_conf(self._llm_model, gen_conf)
+                )
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
