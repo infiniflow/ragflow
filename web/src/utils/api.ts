@@ -181,6 +181,20 @@ export default {
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
+  getDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  getDatasetNavChildren: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/children`,
+  deleteDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  deleteDatasetNavNode: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,

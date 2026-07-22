@@ -47,6 +47,7 @@ from rag.advanced_rag.knowlege_compile.structure import (
     MERGE_SCOPE_DATASET,
     MERGE_SCOPE_DOC,
     compile_structure_from_text,
+    cleanup_timeline_isolated_entities,
     merge_compiled_structures,
     rebuild_dataset_structure_graph_json,
     rebuild_structure_graph_json,
@@ -538,6 +539,24 @@ async def run_structure_compile_over_batches(
         progress_cb=progress_cb,
         cancel_check=cancel_check,
     )
+    # Timeline entity cleanup must happen after every flush has completed;
+    # otherwise an entity can look isolated in one flush and be referenced by
+    # a relation from a later flush. Keep this scoped to timeline templates.
+    for template_id, _ in active_templates:
+        if template_kinds.get(template_id) != "timeline":
+            continue
+        try:
+            await cleanup_timeline_isolated_entities(
+                tenant_id,
+                kb_id,
+                doc_id,
+                compilation_template_id=template_id,
+            )
+        except Exception:
+            logging.exception(
+                "document_structure_compile: timeline isolated-entity cleanup failed for template=%s",
+                template_id,
+            )
 
     for idx, (template_id, parser_cfg) in enumerate(active_templates):
         if cancel_check():
