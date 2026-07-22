@@ -82,19 +82,10 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model":    modelName,
-		"messages": apiMessages,
+		"messages": buildChatMessages(messages),
 		"stream":   false,
 	}
 
@@ -126,6 +117,8 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 			// by SiliconFlow, breaking the thinking feature).
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
+
+		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 
 	// Qwen3 family: disable thinking by default (matches Python's
@@ -186,8 +179,9 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	content, hasContent := messageMap["content"].(string)
+	if !hasContent && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -212,6 +206,7 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -233,19 +228,10 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
 		"model":    modelName,
-		"messages": apiMessages,
+		"messages": buildChatMessages(messages),
 		"stream":   true,
 	}
 
@@ -273,6 +259,9 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		chatModelConfig.ToolCallsResult = nil
+		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 
 	// Qwen3 family: disable thinking by default (matches Python's
@@ -310,6 +299,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -322,9 +312,15 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
+			return nil
+		}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -342,11 +338,6 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-
 		return nil
 	})
 	if err != nil {
@@ -355,6 +346,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	if !done && !sawTerminal {
 		return fmt.Errorf("siliconflow: stream ended before [DONE] or finish_reason")
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

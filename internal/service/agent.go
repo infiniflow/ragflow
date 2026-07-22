@@ -498,17 +498,17 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	title := strings.TrimSpace(*req.Title)
 	req.Title = &title
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, errors.New(title + " already exists.")
-	}
-
 	if req.Permission == "" {
 		req.Permission = "me"
 	}
 	if req.CanvasCategory == "" {
 		req.CanvasCategory = "agent_canvas"
+	}
+
+	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
+	} else if existing != nil {
+		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
@@ -525,9 +525,42 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		DSL:            req.DSL,
 	}
 	if err := s.canvasDAO.Create(row); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+		}
 		return nil, common.CodeServerError, fmt.Errorf("create agent: %w", err)
 	}
 	return row, common.CodeSuccess, nil
+}
+
+func agentTitleAlreadyExistsError(title string) error {
+	return errors.New(title + " already exists.")
+}
+
+func updatedAgentTitle(canvasInstance *entity.UserCanvas, updates map[string]interface{}) (string, bool) {
+	if value, ok := updates["title"]; ok {
+		title, ok := value.(string)
+		if !ok {
+			return "", false
+		}
+		return title, true
+	}
+	if _, ok := updates["canvas_category"]; !ok {
+		return "", false
+	}
+	if canvasInstance.Title == nil {
+		return "", false
+	}
+	return *canvasInstance.Title, true
+}
+
+func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[string]interface{}) string {
+	if value, ok := updates["canvas_category"]; ok {
+		if canvasCategory, ok := value.(string); ok {
+			return canvasCategory
+		}
+	}
+	return canvasInstance.CanvasCategory
 }
 
 // loadCanvasForUser is the shared IDOR guard used by every non-List
@@ -609,6 +642,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			updates[key] = value
 		}
 	}
+	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
+		if existing, err := s.canvasDAO.GetByUserAndTitle(userID, title, canvasCategory); err != nil {
+			return fmt.Errorf("check duplicate title: %w", err)
+		} else if existing != nil && existing.ID != canvasID {
+			return agentTitleAlreadyExistsError(title)
+		}
+	}
 	if dsl, ok := patch["dsl"]; ok && dsl != nil {
 		dslMap, ok := dsl.(map[string]interface{})
 		if !ok {
@@ -623,6 +664,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 
 	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
 	if err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+				return agentTitleAlreadyExistsError(title)
+			}
+			return errors.New("Agent title already exists.")
+		}
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	if dslValue, ok := updates["dsl"]; ok {

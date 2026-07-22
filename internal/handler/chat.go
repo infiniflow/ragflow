@@ -102,8 +102,10 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
+	ownerIDs := getOwnerIDs(c)
+
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc)
+	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return

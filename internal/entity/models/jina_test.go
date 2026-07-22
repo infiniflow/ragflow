@@ -90,6 +90,12 @@ func TestJinaChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestJinaChatSupportsToolCalls(t *testing.T) {
+	testNonStreamingToolCall(t, "jina-vlm", "/chat/completions", func(baseURL string) ModelDriver {
+		return newJinaForTest(baseURL)
+	})
+}
+
 func TestJinaChatPropagatesConfig(t *testing.T) {
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {

@@ -73,17 +73,9 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	reqBody := map[string]interface{}{
 		"model":    modelName,
-		"messages": apiMessages,
+		"messages": buildChatMessages(messages),
 		"stream":   false,
 	}
 
@@ -100,6 +92,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -153,8 +146,9 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	content, hasContent := messageMap["content"].(string)
+	if !hasContent && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -162,6 +156,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
