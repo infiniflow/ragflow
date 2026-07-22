@@ -797,6 +797,58 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         if bucket_id not in ordered_ids:
             ordered_ids.append(bucket_id)
 
+    page_index_groups = [
+        group
+        for group in grouped.values()
+        if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}
+    ]
+    if page_index_groups:
+        # PageIndex nodes should follow the document's chunk order. Use the
+        # current chunk query order directly. Do not derive the order
+        # from page/position metadata because some document formats do not
+        # populate those fields.
+        chunk_order: dict[str, int] = {}
+        try:
+            chunk_res = await settings.retriever.search(
+                {
+                    "doc_ids": [document_id],
+                    "page": 1,
+                    "size": 10000,
+                    "question": "",
+                    "sort": True,
+                    "must_not": {"exists": "compile_kwd"},
+                },
+                index_name,
+                [dataset_id],
+                emb_mdl=None,
+                highlight=True,
+            )
+            for index, chunk_id in enumerate(chunk_res.ids or []):
+                chunk_id = str(chunk_id)
+                if chunk_id:
+                    chunk_order[chunk_id] = index
+        except Exception:
+            logging.exception("structure graph: failed to load document chunk order for PageIndex ordering")
+
+        for group in page_index_groups:
+            original_entities = list(group.get("entities") or [])
+
+            def entity_position(entity: dict, fallback: int):
+                chunk_indexes = [
+                    chunk_order[chunk_id]
+                    for chunk_id in entity.get("source_chunk_ids") or []
+                    if isinstance(chunk_id, str) and chunk_id in chunk_order
+                ]
+                return (min(chunk_indexes), fallback) if chunk_indexes else (float("inf"), fallback)
+
+            group["entities"] = [
+                entity
+                for _, entity in sorted(
+                    enumerate(original_entities),
+                    key=lambda item: entity_position(item[1], item[0]),
+                )
+            ]
+
     templates_out = [grouped[bid] for bid in ordered_ids if grouped[bid]["entities"] or grouped[bid]["relations"]]
     return get_result(data={"templates": templates_out})
 
