@@ -4712,7 +4712,7 @@ When `stream=true`, the server sends Server-Sent Events (SSE). A client should h
 The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component first.
+You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.md) component first.
 :::
 
 ##### Request examples
