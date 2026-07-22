@@ -36,6 +36,7 @@ func TestQiniuToolCalls(t *testing.T) {
 }
 
 func TestQiniuChatStreamRejectsTruncatedResponse(t *testing.T) {
+	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"partial"}}]}` + "\n\n"))
@@ -44,13 +45,14 @@ func TestQiniuChatStreamRejectsTruncatedResponse(t *testing.T) {
 
 	apiKey := "test-key"
 	model := NewQiniuModel(map[string]string{"default": server.URL}, URLSuffix{Chat: "chat/completions"})
-	err := model.ChatStreamlyWithSender("model", []Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, nil, func(_, _ *string) error { return nil })
+	err := model.ChatStreamlyWithSender(ctx, "model", []Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, nil, func(_, _ *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before [DONE] or finish_reason") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestQiniuCheckConnectionUsesListModels(t *testing.T) {
+	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
@@ -67,12 +69,13 @@ func TestQiniuCheckConnectionUsesListModels(t *testing.T) {
 
 	apiKey := "test-key"
 	model := NewQiniuModel(map[string]string{"default": server.URL}, URLSuffix{Models: "models"})
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection() error = %v", err)
 	}
 }
 
 func TestQiniuCheckConnectionPropagatesListModelsError(t *testing.T) {
+	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"message":"invalid api key"}`, http.StatusUnauthorized)
 	}))
@@ -80,7 +83,7 @@ func TestQiniuCheckConnectionPropagatesListModelsError(t *testing.T) {
 
 	apiKey := "invalid-key"
 	model := NewQiniuModel(map[string]string{"default": server.URL}, URLSuffix{Models: "models"})
-	err := model.CheckConnection(&APIConfig{ApiKey: &apiKey})
+	err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Fatalf("CheckConnection() error = %v, want status 401", err)
 	}

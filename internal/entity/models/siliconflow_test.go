@@ -42,7 +42,8 @@ func TestSiliconflowChatRejectsMissingContent(t *testing.T) {
 
 	apiKey := "test-key"
 	model := NewSiliconflowModel(map[string]string{"default": server.URL}, URLSuffix{Chat: "chat/completions"})
-	if _, err := model.ChatWithMessages("model", []Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil {
+	ctx := t.Context()
+	if _, err := model.ChatWithMessages(ctx, "model", []Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil {
 		t.Fatal("expected missing content error")
 	}
 }
