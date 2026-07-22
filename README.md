@@ -46,7 +46,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -81,8 +81,8 @@
 Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 Latest Updates
@@ -106,7 +106,7 @@ Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 releases! 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 Key Features
@@ -141,7 +141,7 @@ releases! 🌟
 ## 🔎 System Architecture
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 Self-Hosting
@@ -165,14 +165,14 @@ releases! 🌟
    > To check the value of `vm.max_map_count`:
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > Reset `vm.max_map_count` to a value at least 262144 if it is not.
    >
    > ```bash
    > # In this case, we set it to 262144:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
@@ -185,7 +185,7 @@ releases! 🌟
 2. Clone the repo:
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 3. Start up the server using the pre-built Docker images:
 
@@ -196,14 +196,14 @@ releases! 🌟
 > The command below downloads the `v0.26.4` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.26.4`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
 
 ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
    git checkout v0.26.4
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
    # Use CPU for DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
@@ -222,7 +222,7 @@ releases! 🌟
 4. Check the server status after having the server up and running:
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _The following output confirms a successful launch of the system:_
@@ -272,7 +272,7 @@ to `<YOUR_SERVING_PORT>:80`.
 Updates to the above configurations require a reboot of all containers to take effect:
 
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### Switch doc engine from Elasticsearch to Infinity
@@ -282,7 +282,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 1. Stop all running containers:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
+   docker compose -f docker/docker-compose.yml down -v
    ```
 
 > [!WARNING]
@@ -292,7 +292,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 3. Start the containers:
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
 > [!WARNING]
@@ -346,7 +346,7 @@ docker build --platform linux/amd64 \
 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
@@ -364,7 +364,7 @@ docker build --platform linux/amd64 \
    # OpenSUSE
    sudo zypper install jemalloc
    # macOS
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 6. Launch backend service:
 
@@ -387,7 +387,7 @@ docker build --platform linux/amd64 \
 
    _The following output confirms a successful launch of the system:_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 9. Stop RAGFlow front-end and back-end service after development is complete:
 
    ```bash

@@ -46,7 +46,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -62,8 +62,8 @@
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 最新情報
@@ -87,7 +87,7 @@
 ⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 主な特徴
@@ -121,7 +121,7 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 セルフホスティング
@@ -145,14 +145,14 @@
    > `vm.max_map_count` の値をチェックするには:
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > `vm.max_map_count` が 262144 より大きい値でなければリセットする。
    >
    > ```bash
    > # In this case, we set it to 262144:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > この変更はシステム再起動後にリセットされる。変更を恒久的なものにするには、**/etc/sysctl.conf** の `vm.max_map_count` 値を適宜追加または更新する:
@@ -164,7 +164,7 @@
 2. リポジトリをクローンする:
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
@@ -175,14 +175,14 @@
 > 以下のコマンドは、RAGFlow Docker イメージの v0.26.4 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.26.4 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
 ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
    git checkout v0.26.4
    # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
    # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
 
    # Use CPU for DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
@@ -201,7 +201,7 @@
    1. サーバーを立ち上げた後、サーバーの状態を確認する:
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _以下の出力は、システムが正常に起動したことを確認するものです:_
@@ -246,7 +246,7 @@
 > すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
 >
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### Elasticsearch から Infinity にドキュメントエンジンを切り替えます
@@ -256,7 +256,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 1. 実行中のすべてのコンテナを停止するには：
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
+   docker compose -f docker/docker-compose.yml down -v
    ```
 
    Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
@@ -264,7 +264,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 3. 起動コンテナ：
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
    > [!WARNING]
@@ -316,7 +316,7 @@ docker build --platform linux/amd64 \
 
    `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
@@ -332,7 +332,7 @@ docker build --platform linux/amd64 \
    # centos
    sudo yum install jemalloc
    # mac
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 6. バックエンドサービスを起動する:
 
@@ -355,7 +355,7 @@ docker build --platform linux/amd64 \
 
    _以下の画面で、システムが正常に起動したことを示します:_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
 
    ```bash

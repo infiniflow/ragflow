@@ -46,7 +46,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -81,8 +81,8 @@
 Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 Son Güncellemeler
@@ -105,7 +105,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 ⭐️ Heyecan verici yeni özellikler ve iyileştirmelerden haberdar olmak için depomuzı yıldızlayın! Yeni sürümler için anında bildirim alın! 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 Temel Özellikler
@@ -139,7 +139,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 ## 🔎 Sistem Mimarisi
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 Kendi Sunucusunda Barındırma
@@ -163,14 +163,14 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
    > `vm.max_map_count` değerini kontrol etmek için:
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > Değer 262144'ten düşükse, en az 262144 olarak ayarlayın.
    >
    > ```bash
    > # Bu örnekte 262144 olarak ayarlıyoruz:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > Bu değişiklik sistem yeniden başlatıldığında sıfırlanacaktır. Değişikliğin kalıcı olmasını sağlamak için
@@ -183,7 +183,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 2. Depoyu klonlayın:
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 3. Önceden oluşturulmuş Docker imajlarını kullanarak sunucuyu başlatın:
 
@@ -194,14 +194,14 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 > Aşağıdaki komut RAGFlow Docker imajının `v0.26.4` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.4` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
 
 ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
    git checkout v0.26.4
    # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
    # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
 
    # DeepDoc görevleri için CPU kullanımı:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # DeepDoc görevlerini hızlandırmak için GPU kullanımı:
    # sed -i '1i DEVICE=gpu' .env
@@ -220,7 +220,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
@@ -267,7 +267,7 @@ Varsayılan HTTP sunucu portunu (80) değiştirmek için [docker-compose.yml](./
 Yukarıdaki yapılandırma değişikliklerinin etkili olması için tüm konteynerlerin yeniden başlatılması gerekir:
 
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### Doküman Motorunu Elasticsearch'ten Infinity'ye Geçirme
@@ -277,7 +277,7 @@ RAGFlow varsayılan olarak tam metin ve vektörlerin depolanması için Elastics
 1. Çalışan tüm konteynerleri durdurun:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
+   docker compose -f docker/docker-compose.yml down -v
    ```
 
 > [!WARNING]
@@ -287,7 +287,7 @@ RAGFlow varsayılan olarak tam metin ve vektörlerin depolanması için Elastics
 3. Konteynerleri başlatın:
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
 > [!WARNING]
@@ -338,7 +338,7 @@ docker build --platform linux/amd64 \
 
    **docker/.env** dosyasında belirtilen tüm ana bilgisayar adlarını `127.0.0.1`'e çözümlemek için `/etc/hosts` dosyasına aşağıdaki satırı ekleyin:
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. HuggingFace'e erişemiyorsanız, bir ayna site kullanmak için `HF_ENDPOINT` ortam değişkenini ayarlayın:
@@ -356,7 +356,7 @@ docker build --platform linux/amd64 \
    # OpenSUSE
    sudo zypper install jemalloc
    # macOS
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 6. Arka uç hizmetini başlatın:
 
@@ -379,7 +379,7 @@ docker build --platform linux/amd64 \
 
    _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 9. Geliştirme tamamlandıktan sonra RAGFlow ön yüz ve arka uç hizmetini durdurun:
 
    ```bash
