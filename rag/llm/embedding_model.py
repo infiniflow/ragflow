@@ -1333,15 +1333,27 @@ class OpenRouterEmbed(Base):
             base_url = "https://openrouter.ai/api/v1"
         self.base_url = ensure_v1(base_url)
         try:
-            api_key = json.loads(key).get("api_key", "")
-            _ = json.loads(key).get("provider_order", "")
+            payload = json.loads(key)
         except (JSONDecodeError, TypeError):
             api_key = key
+            provider_order = ""
+        else:
+            if isinstance(payload, dict):
+                api_key = payload.get("api_key", "")
+                provider_order = payload.get("provider_order", "")
+            else:
+                api_key = key
+                provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=self.base_url)
         self.model_name = model_name
+        self.provider_order = provider_order
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        extra_body = {"drop_params": True}
+        if self.provider_order:
+            order = [s.strip() for s in self.provider_order.split(",") if s.strip()]
+            extra_body["provider"] = {"order": order, "allow_fallbacks": False}
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
