@@ -100,6 +100,8 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
+	case errors.Is(err, service.ErrInvalidRefreshFreq):
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 	default:
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
@@ -262,8 +264,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	}
 
 	connector, err := h.connectorService.CreateConnector(user.ID, &req)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+	if connectorErrorResponse(c, err) {
 		return
 	}
 

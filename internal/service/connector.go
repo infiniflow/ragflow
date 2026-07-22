@@ -79,7 +79,28 @@ var (
 	// ErrConnectorTestUnsupported is returned for connector sources whose
 	// validation path is not yet ported to Go.
 	ErrConnectorTestUnsupported = errors.New("test endpoint currently supports only REST API connectors")
+	// ErrInvalidRefreshFreq is returned when a connector refresh frequency is negative.
+	ErrInvalidRefreshFreq = errors.New("refresh_freq must be a non-negative integer")
 )
+
+func validateRefreshFreq(refreshFreq *int64, present bool) error {
+	if (present && refreshFreq == nil) || (refreshFreq != nil && *refreshFreq < 0) {
+		return ErrInvalidRefreshFreq
+	}
+	return nil
+}
+
+func unmarshalWithRefreshFreqPresence(data []byte, request any) (bool, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(data, request); err != nil {
+		return false, err
+	}
+	_, present := fields["refresh_freq"]
+	return present, nil
+}
 
 // ConnectorService connector service
 type ConnectorService struct {
@@ -102,12 +123,25 @@ type ListConnectorsResponse struct {
 
 // CreateConnectorRequest creates a connector with Python-compatible defaults.
 type CreateConnectorRequest struct {
-	Name        string         `json:"name"`
-	Source      string         `json:"source"`
-	Config      entity.JSONMap `json:"config"`
-	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
-	PruneFreq   *int64         `json:"prune_freq,omitempty"`
-	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
+	Name           string         `json:"name"`
+	Source         string         `json:"source"`
+	Config         entity.JSONMap `json:"config"`
+	RefreshFreq    *int64         `json:"refresh_freq,omitempty"`
+	PruneFreq      *int64         `json:"prune_freq,omitempty"`
+	TimeoutSecs    *int64         `json:"timeout_secs,omitempty"`
+	refreshFreqSet bool
+}
+
+func (req *CreateConnectorRequest) UnmarshalJSON(data []byte) error {
+	type requestAlias CreateConnectorRequest
+	var decoded requestAlias
+	present, err := unmarshalWithRefreshFreqPresence(data, &decoded)
+	if err != nil {
+		return err
+	}
+	*req = CreateConnectorRequest(decoded)
+	req.refreshFreqSet = present
+	return nil
 }
 
 // RebuildConnectorRequest rebuild connector request.
@@ -236,6 +270,10 @@ func (s *ConnectorService) cancelConnectorTasks(connectorID string) error {
 // CreateConnector creates a connector owned by the current user.
 // Equivalent to Python's create_connector endpoint.
 func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	if err := validateRefreshFreq(req.RefreshFreq, req.refreshFreqSet); err != nil {
+		return nil, err
+	}
+
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
@@ -856,12 +894,25 @@ func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, co
 }
 
 type UpdateConnectorRequest struct {
-	PruneFreq   *int64         `json:"prune_freq,omitempty"`
-	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
-	Config      entity.JSONMap `json:"config,omitempty"`
-	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
-	Reschedule  bool           `json:"reschedule,omitempty"`
-	Status      string         `json:"status,omitempty"`
+	PruneFreq      *int64         `json:"prune_freq,omitempty"`
+	RefreshFreq    *int64         `json:"refresh_freq,omitempty"`
+	Config         entity.JSONMap `json:"config,omitempty"`
+	TimeoutSecs    *int64         `json:"timeout_secs,omitempty"`
+	Reschedule     bool           `json:"reschedule,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	refreshFreqSet bool
+}
+
+func (req *UpdateConnectorRequest) UnmarshalJSON(data []byte) error {
+	type requestAlias UpdateConnectorRequest
+	var decoded requestAlias
+	present, err := unmarshalWithRefreshFreqPresence(data, &decoded)
+	if err != nil {
+		return err
+	}
+	*req = UpdateConnectorRequest(decoded)
+	req.refreshFreqSet = present
+	return nil
 }
 
 func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
@@ -879,6 +930,11 @@ func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *Upda
 
 	if !s.canAccessConnector(connector, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+	if req != nil {
+		if err := validateRefreshFreq(req.RefreshFreq, req.refreshFreqSet); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
 
 	updates := map[string]interface{}{}
