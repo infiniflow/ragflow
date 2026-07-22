@@ -218,7 +218,7 @@ func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListMo
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

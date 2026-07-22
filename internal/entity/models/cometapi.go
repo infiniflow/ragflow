@@ -255,7 +255,7 @@ func (c *CometAPIModel) ChatWithMessages(ctx context.Context, modelName string, 
 
 	reqBody := buildCometAPIChatRequest(modelName, messages, false, chatModelConfig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
@@ -412,7 +412,7 @@ func (c *CometAPIModel) Embed(ctx context.Context, modelName *string, texts []st
 		reqBody.Dimensions = embeddingConfig.Dimension
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
@@ -465,7 +465,7 @@ func (c *CometAPIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -499,7 +499,7 @@ func (c *CometAPIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 		return nil, fmt.Errorf("balance URL is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.balanceURL(*apiConfig.ApiKey), nil)

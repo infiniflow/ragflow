@@ -394,7 +394,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -486,7 +486,7 @@ func (a *AI302Model) Rerank(ctx context.Context, modelName *string, query string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -855,7 +855,7 @@ func (a *AI302Model) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -924,7 +924,7 @@ func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *API
 	}
 	apiURL := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)

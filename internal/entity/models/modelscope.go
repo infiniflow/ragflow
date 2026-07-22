@@ -163,7 +163,7 @@ func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -377,7 +377,7 @@ func (m *ModelScopeModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

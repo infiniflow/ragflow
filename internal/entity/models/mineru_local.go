@@ -205,7 +205,7 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s/%s/result", resolvedBaseURL, m.baseModel.URLSuffix.Task, taskID)
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

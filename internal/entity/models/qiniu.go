@@ -193,7 +193,7 @@ func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -425,7 +425,7 @@ func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

@@ -102,7 +102,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -386,7 +386,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Models, "/"))
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

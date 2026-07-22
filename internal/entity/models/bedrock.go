@@ -531,7 +531,7 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("bedrock: marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -780,7 +780,7 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -884,7 +884,7 @@ func (b *BedrockModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)

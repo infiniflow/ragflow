@@ -118,7 +118,7 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -385,7 +385,7 @@ func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, texts []
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -480,7 +480,7 @@ func (o *OpenRouterModel) Rerank(ctx context.Context, modelName *string, query s
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), o.baseModel.URLSuffix.Rerank)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -726,7 +726,7 @@ func (o *OpenRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -776,7 +776,7 @@ func (o *OpenRouterModel) Balance(ctx context.Context, apiConfig *APIConfig) (ma
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Balance)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

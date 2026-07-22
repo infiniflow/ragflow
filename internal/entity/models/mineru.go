@@ -208,7 +208,7 @@ func (m *MinerUModel) ShowTask(ctx context.Context, taskID string, apiConfig *AP
 	}
 	apiURL := fmt.Sprintf("%s/api/%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse, taskID)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)

@@ -180,7 +180,7 @@ func (v *VolcEngine) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -591,7 +591,7 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 		parsed, err := func() (volcengineEmbeddingResponse, error) {
 			var parsed volcengineEmbeddingResponse
 
-			ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+			ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 			defer cancel()
 
 			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -760,7 +760,7 @@ func (v *VolcEngine) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), modelsSuffix)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -840,7 +840,7 @@ func (v *VolcEngine) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

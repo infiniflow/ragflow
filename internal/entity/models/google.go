@@ -307,7 +307,7 @@ func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("texts is empty")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))

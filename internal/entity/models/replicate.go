@@ -341,7 +341,7 @@ func (r *ReplicateModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
@@ -392,7 +392,7 @@ func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return err
 	}
 	if prediction.URLs.Stream == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+		ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		defer cancel()
 		prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
 		if err != nil {
@@ -509,7 +509,7 @@ func (r *ReplicateModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -696,7 +696,7 @@ func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []s
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
@@ -787,7 +787,7 @@ func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query st
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)

@@ -165,7 +165,7 @@ func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, 
 
 	reqBody := buildFuturMixChatRequest(modelName, messages, false, chatModelConfig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newFuturMixJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)

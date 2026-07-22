@@ -115,7 +115,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -346,7 +346,7 @@ func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts [
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -404,7 +404,7 @@ func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 	url := fmt.Sprintf("%s/%s?api-version=%s",
 		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

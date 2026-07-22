@@ -120,7 +120,7 @@ func (h *HuggingFaceModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -356,7 +356,7 @@ func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, texts [
 	}
 	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Embedding, *modelName)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -449,7 +449,7 @@ func (h *HuggingFaceModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))

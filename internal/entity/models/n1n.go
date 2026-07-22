@@ -178,7 +178,7 @@ func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messa
 
 	reqBody := buildN1NChatRequest(modelName, messages, false, chatModelConfig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -348,7 +348,7 @@ func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string,
 		reqBody.Dimensions = embeddingConfig.Dimension
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -443,7 +443,7 @@ func (n *N1NModel) Rerank(ctx context.Context, modelName *string, query string, 
 		reqBody.TopN = rerankConfig.TopN
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -508,7 +508,7 @@ func (n *N1NModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]List
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "GET", endpoint, nil, apiKey)
