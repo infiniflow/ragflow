@@ -56,6 +56,8 @@ type MessageComponent struct {
 	autoPlay     audio.Engine
 	voice        string
 	lang         string
+	memoryIDs    []string
+	userID       string
 }
 
 // NewMessageComponent constructs a Message component. The params map
@@ -82,6 +84,8 @@ func NewMessageComponent(params map[string]any) (Component, error) {
 		format = OutputFormat(v)
 	}
 	engine, voice, lang := extractAudioConfig(params)
+	memIDs := extractMemoryIDsFromAny(params["memory_ids"])
+	userID, _ := params["user_id"].(string)
 	return &MessageComponent{
 		name:         componentNameMessage,
 		text:         tpl,
@@ -89,6 +93,8 @@ func NewMessageComponent(params map[string]any) (Component, error) {
 		autoPlay:     engine,
 		voice:        voice,
 		lang:         lang,
+		memoryIDs:    memIDs,
+		userID:       userID,
 	}, nil
 }
 
@@ -279,22 +285,32 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	// memory service returns ErrMemoryServiceMissing which we
 	// surface under outputs["memory_error"] so the message still
 	// flows.
-	memSave, _ := inputs["memory_save"].(bool)
-	if memSave {
-		memIDs := extractMemoryIDs(inputs)
-		if len(memIDs) > 0 {
-			saver := GetMemorySaver()
-			saveErr := saver.Save(ctx, MemorySaveRequest{
-				MemoryIDs:     memIDs,
-				AgentID:       state.TaskID,
-				SessionID:     state.RunID,
-				UserInput:     stringFromStateSys(state, "query"),
-				AgentResponse: rendered,
-			})
-			if saveErr != nil {
-				out["memory_error"] = saveErr.Error()
-				common.Error("Message: memory_save failed", saveErr)
-			}
+	//
+	// The effective memory IDs come from inputs (runtime override)
+	// or fall back to the DSL-declared m.memoryIDs. This matches
+	// the Python Message component, which saves whenever
+	// memory_ids is non-empty.
+	memIDs := extractMemoryIDs(inputs)
+	if len(memIDs) == 0 {
+		memIDs = m.memoryIDs
+	}
+	if len(memIDs) > 0 {
+		userID := stringFromStateSys(state, "user_id")
+		if userID == "" {
+			userID = m.userID
+		}
+		saver := GetMemorySaver()
+		saveErr := saver.Save(ctx, MemorySaveRequest{
+			MemoryIDs:     memIDs,
+			UserID:        userID,
+			AgentID:       state.TaskID,
+			SessionID:     state.RunID,
+			UserInput:     stringFromStateSys(state, "query"),
+			AgentResponse: rendered,
+		})
+		if saveErr != nil {
+			out["memory_error"] = saveErr.Error()
+			common.Error("Message: memory_save failed", saveErr)
 		}
 	}
 
@@ -304,10 +320,13 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 // extractMemoryIDs normalises a memory_ids value from inputs /
 // params. Accepts []string and []any[string].
 func extractMemoryIDs(inputs map[string]any) []string {
-	v, ok := inputs["memory_ids"]
-	if !ok {
-		return nil
-	}
+	return extractMemoryIDsFromAny(inputs["memory_ids"])
+}
+
+// extractMemoryIDsFromAny normalises a memory_ids value from any
+// source (DSL params or runtime inputs). Accepts []string and
+// []any[string].
+func extractMemoryIDsFromAny(v any) []string {
 	switch x := v.(type) {
 	case []string:
 		return x
@@ -356,7 +375,7 @@ func fallbackMessageText(inputs map[string]any) string {
 func isMessageInfraInput(key string) bool {
 	switch key {
 	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
-		"output_format", "voice", "lang", "auto_play", "memory_save", "stream":
+		"output_format", "voice", "lang", "auto_play", "memory_save", "memory_ids", "user_id", "stream":
 		return true
 	default:
 		return false
