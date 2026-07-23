@@ -119,7 +119,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"avatar": "a" * 65536})
-        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -162,7 +162,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"description": "a" * 65536})
-        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_none(self, client, add_dataset_func):

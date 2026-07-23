@@ -132,7 +132,7 @@ class TestDatasetCreate:
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -172,7 +172,7 @@ class TestDatasetCreate:
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_unset(self, client):

@@ -107,7 +107,7 @@ class TestDatasetCreate:
         [
             ("", "String should have at least 1 character"),
             (" ", "String should have at least 1 character"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "string should have at most 128 characters"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
             (0, "Input should be a valid string"),
             (None, "Input should be a valid string"),
         ],
@@ -157,7 +157,7 @@ class TestDatasetCreate:
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "string should have at most 65535 characters" in res["message"], res
+        assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -206,7 +206,7 @@ class TestDatasetCreate:
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "string should have at most 65535 characters" in res["message"], res
+        assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     def test_description_unset(self, HttpApiAuth):

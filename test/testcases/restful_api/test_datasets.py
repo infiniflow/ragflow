@@ -712,7 +712,7 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
     assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
-    assert "string should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "dataset_update_avatar_invalid.png")
     encoded_avatar = encode_avatar(image_path)
@@ -762,7 +762,7 @@ def test_dataset_update_description_validation_contract(rest_client, clear_datas
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
     assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
-    assert "string should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
     assert none_res.status_code == 200
@@ -794,7 +794,7 @@ def test_dataset_update_name_invalid_and_duplicate_contract(rest_client, clear_d
     invalid_cases = [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
         (0, "Input should be a valid string"),
         (None, "Input should be a valid string"),
     ]
@@ -1105,7 +1105,7 @@ def test_dataset_update_field_unset_and_unsupported_contract(rest_client, clear_
     [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
     ],
     ids=["empty", "spaces", "too_long"],
 )
@@ -1510,7 +1510,7 @@ def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_d
     invalid_cases = [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
         (0, "Input should be a valid string"),
         (None, "Input should be a valid string"),
     ]
@@ -1570,7 +1570,7 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
     assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
-    assert "string should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "ragflow_test.png")
     encoded_avatar = encode_avatar(image_path)
@@ -1616,7 +1616,7 @@ def test_dataset_create_description_contract(rest_client, clear_datasets):
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
     assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
-    assert "string should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     unset_res = rest_client.post("/datasets", json={"name": "description_unset"})
     assert unset_res.status_code == 200

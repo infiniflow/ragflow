@@ -64,13 +64,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			return nil, common.CodeDataError, errors.New("`name` is required")
 		}
 		if len(name) > 128 {
-			return nil, common.CodeDataError, errors.New("string should have at most 128 characters")
+			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
 		}
 		simpleUpdates["name"] = name
 	}
 	if req.Avatar != nil {
 		if len(*req.Avatar) > 65535 {
-			return nil, common.CodeDataError, errors.New("string should have at most 65535 characters")
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
 		}
 		if err := validateDatasetAvatar(*req.Avatar); err != nil {
 			return nil, common.CodeDataError, err
@@ -79,21 +79,21 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 	if req.Description != nil {
 		if len(*req.Description) > 65535 {
-			return nil, common.CodeDataError, errors.New("string should have at most 65535 characters")
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
 		}
 		simpleUpdates["description"] = *req.Description
 	}
 	if req.Language != nil {
 		language := strings.TrimSpace(*req.Language)
 		if len(language) > 32 {
-			return nil, common.CodeDataError, errors.New("string should have at most 32 characters")
+			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
 		}
 		simpleUpdates["language"] = language
 	}
 	if req.Permission != nil {
 		permission := strings.TrimSpace(*req.Permission)
 		if permission != "me" && permission != "team" {
-			return nil, common.CodeDataError, errors.New("input should be 'me' or 'team'")
+			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
 		}
 		simpleUpdates["permission"] = permission
 	}
