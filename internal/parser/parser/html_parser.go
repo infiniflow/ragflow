@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -47,7 +48,7 @@ func (p *HTMLParser) String() string {
 // (bold / links / images) is intentionally NOT surfaced as a
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
-func (p *HTMLParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}

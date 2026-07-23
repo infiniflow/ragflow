@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -90,7 +91,7 @@ func normalizeXLSXParseMethod(raw string) string {
 	return method
 }
 
-func (p *XLSXParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":

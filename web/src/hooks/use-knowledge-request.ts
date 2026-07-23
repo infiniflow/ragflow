@@ -57,7 +57,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
@@ -169,10 +172,8 @@ export const useFetchNextKnowledgeListByPage = () => {
         filterValue,
       },
     ],
-    initialData: {
-      kbs: [],
-      total_datasets: 0,
-    },
+    placeholderData: (previousData) =>
+      previousData ?? { kbs: [], total_datasets: 0 },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await listDataset({
@@ -264,15 +265,6 @@ export const useDeleteKnowledge = () => {
 
   return { data, loading, deleteKnowledge: mutateAsync };
 };
-
-function isPipelineParserConfig(
-  parserConfig: Record<string, any> | undefined,
-): boolean {
-  if (!parserConfig || typeof parserConfig !== 'object') {
-    return false;
-  }
-  return Object.keys(parserConfig).some((key) => key.includes(':'));
-}
 
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();

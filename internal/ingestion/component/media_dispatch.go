@@ -52,6 +52,7 @@ import (
 // Video dispatch: IMAGE2TEXT vision chat ---
 
 func maybeDispatchVideo(
+	ctx context.Context,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -94,7 +95,7 @@ func maybeDispatchVideo(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: video describe: %w", err)
@@ -124,6 +125,7 @@ func maybeDispatchVideo(
 //   4. Returns combined text
 
 func maybeDispatchImage(
+	ctx context.Context,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -221,7 +223,7 @@ func maybeDispatchImage(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		if ocrText != "" {
 			return parserDispatchResult{
@@ -262,6 +264,7 @@ func maybeDispatchImage(
 //   - Returns the transcription as text
 
 func maybeDispatchAudio(
+	ctx context.Context,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -294,7 +297,7 @@ func maybeDispatchAudio(
 	}
 	defer os.Remove(tmpFile)
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpFile, apiConfig, nil, nil)
+	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)
