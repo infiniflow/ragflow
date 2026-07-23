@@ -241,7 +241,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	asrModel := ""
 	vlmModel := ""
 	rerankModel := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
 		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
