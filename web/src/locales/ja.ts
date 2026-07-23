@@ -1659,6 +1659,7 @@ export default {
       templateWizardConfigurationDescription: 'テンプレートを設定します',
       blueprints: 'ブループリント',
       blueprintsDescription: '必要なブループリントを選択してください',
+      custom: 'カスタム',
       templates: 'テンプレート',
       addFieldModalTitle: 'フィールドを追加',
       editFieldModalTitle: 'フィールドを編集',

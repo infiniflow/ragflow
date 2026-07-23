@@ -1575,6 +1575,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       templateWizardConfigurationDescription: '管理模板的配置',
       blueprints: '蓝图',
       blueprintsDescription: '选择所需要的 blueprints',
+      custom: '自定义',
       templates: '模板',
       addFieldModalTitle: '添加字段',
       editFieldModalTitle: '编辑字段',

@@ -1,35 +1,34 @@
-import { CardContainer } from '@/components/card-container';
 import { Collapse } from '@/components/collapse';
+import MarkdownEditor from '@/components/markdown-editor';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Textarea } from '@/components/ui/textarea';
 import { useFetchWikiPresets } from '@/hooks/use-compilation-template-request';
-import { ICompilationTemplateBuiltin } from '@/interfaces/database/compilation-template';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { useBlueprintSelection } from '../hooks/use-blueprint-selection';
 import { FormSchemaType } from '../schema';
-import { BlueprintCard } from './blueprint-card';
-import { BlueprintDialog } from './blueprint-dialog';
 
 type BlueprintSectionProps = {
   form: UseFormReturn<FormSchemaType>;
-  builtins: ICompilationTemplateBuiltin[];
   selectedTemplateIndex: number;
 };
 
 export function BlueprintSection({
   form,
-  builtins,
   selectedTemplateIndex,
 }: BlueprintSectionProps) {
   const { t } = useTranslation();
   const { data: presets } = useFetchWikiPresets();
   const {
-    selectedPresetId,
-    previewPreset,
-    handleTogglePreset,
-    handlePreview,
-    handlePreviewOpenChange,
-  } = useBlueprintSelection({ form, builtins, selectedTemplateIndex });
+    selectedValue,
+    options,
+    handleSelect,
+    instructionPath,
+    pageExample,
+    handlePageExampleChange,
+  } = useBlueprintSelection({ form, selectedTemplateIndex, presets });
 
   if (presets.length === 0) {
     return null;
@@ -43,23 +42,31 @@ export function BlueprintSection({
           <h3 className="text-base font-medium">{t('setting.blueprints')}</h3>
         }
       >
-        <CardContainer>
-          {presets.map((preset) => (
-            <BlueprintCard
-              key={preset.id}
-              preset={preset}
-              selected={preset.id === selectedPresetId}
-              onToggle={handleTogglePreset}
-              onPreview={handlePreview}
-            />
-          ))}
-        </CardContainer>
-      </Collapse>
+        <div className="space-y-4">
+          <SelectWithSearch
+            value={selectedValue}
+            onChange={handleSelect}
+            options={options}
+            placeholder={t('common.selectPlaceholder')}
+          />
 
-      <BlueprintDialog
-        preset={previewPreset}
-        onOpenChange={handlePreviewOpenChange}
-      />
+          <div className="rounded-lg border border-border-button bg-bg-card p-4 space-y-4">
+            <RAGFlowFormItem
+              name={instructionPath}
+              label={t('setting.instruction')}
+            >
+              <Textarea rows={6} />
+            </RAGFlowFormItem>
+
+            <div className="flex h-[50vh] min-h-0 flex-col">
+              <MarkdownEditor
+                content={String(pageExample ?? '')}
+                onChange={handlePageExampleChange}
+              />
+            </div>
+          </div>
+        </div>
+      </Collapse>
     </section>
   );
 }

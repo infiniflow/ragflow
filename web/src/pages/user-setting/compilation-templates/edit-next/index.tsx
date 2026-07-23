@@ -68,7 +68,6 @@ export default function EditNextCompilationTemplate() {
             {isArtifacts && (
               <BlueprintSection
                 form={form}
-                builtins={builtins}
                 selectedTemplateIndex={SelectedTemplateIndex}
               />
             )}

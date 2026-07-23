@@ -1,16 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 
 import { buildFormSchema, FormSchemaType } from '../schema';
-import {
-  DefaultValues,
-  generateTemplateName,
-  transformGroupDetailToForm,
-} from '../utils';
+import { DefaultValues, transformGroupDetailToForm } from '../utils';
 
 type UseCompilationTemplateGroupFormOptions = {
   detail?: ICompilationTemplateGroup;
@@ -25,22 +21,9 @@ export const useCompilationTemplateGroupForm = ({
 }: UseCompilationTemplateGroupFormOptions) => {
   const { t } = useTranslation();
 
-  const defaultValues = useMemo<FormSchemaType>(() => {
-    if (!isCreate) return DefaultValues;
-    return {
-      ...DefaultValues,
-      templates: [
-        {
-          ...DefaultValues.templates[0],
-          name: generateTemplateName(),
-        },
-      ],
-    };
-  }, [isCreate]);
-
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(buildFormSchema(t)),
-    defaultValues,
+    defaultValues: DefaultValues,
     mode: 'onChange',
   });
 
