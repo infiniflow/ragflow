@@ -233,7 +233,9 @@ export const useCreateKnowledge = () => {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+        });
       }
       return data;
     },
@@ -828,6 +830,20 @@ export const useClearWiki = () => {
 
 const KNOWLEDGE_LIST_PAGE_SIZE = 10;
 
+export const KnowledgeListKeys = {
+  list: (
+    shouldFilterListWithoutDocument: boolean,
+    keywords: string,
+    pageSize: number,
+  ) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      shouldFilterListWithoutDocument,
+      keywords,
+      pageSize,
+    ] as const,
+};
+
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
@@ -842,12 +858,11 @@ export const useFetchKnowledgeList = (
 } => {
   const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
     useInfiniteQuery<{ items: IDataset[] }>({
-      queryKey: [
-        KnowledgeApiAction.FetchKnowledgeList,
+      queryKey: KnowledgeListKeys.list(
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
-      ],
+      ),
       gcTime: 0,
       initialPageParam: 1,
       queryFn: async ({ pageParam }) => {
