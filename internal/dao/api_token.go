@@ -132,7 +132,7 @@ func (dao *API4ConversationDAO) Update(ctx context.Context, conv *entity.API4Con
 func (dao *API4ConversationDAO) Stats(ctx context.Context, tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
 	var rows []ConversationStatsRow
 	dateExpr := "DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00')"
-	db := DB.Table("api_4_conversation AS a").
+	db := DB.WithContext(ctx).Table("api_4_conversation AS a").
 		Select(`
 			DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00') AS dt,
 			COUNT(a.id) AS pv,

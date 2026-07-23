@@ -162,7 +162,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	if migrateDB {
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
-			if err = autoMigrateSafely(DB, m); err != nil {
+			if err = autoMigrateSafely(ctx, DB, m); err != nil {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
@@ -240,9 +240,9 @@ func findModelConfigDir() (string, error) {
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
-func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) error {
 	//err := db.Debug().AutoMigrate(model) // to print debug info
-	err := db.AutoMigrate(model)
+	err := db.WithContext(ctx).AutoMigrate(model)
 	if err == nil {
 		return nil
 	}
