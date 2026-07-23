@@ -187,11 +187,7 @@ async def _upsert_dataset_nav_from_page_index(
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool],
 ) -> None:
-    page_index_templates = [
-        (template_id, parser_cfg)
-        for template_id, parser_cfg in active_templates
-        if _is_page_index_template(parser_cfg)
-    ]
+    page_index_templates = [(template_id, parser_cfg) for template_id, parser_cfg in active_templates if _is_page_index_template(parser_cfg)]
     if not page_index_templates:
         return
 

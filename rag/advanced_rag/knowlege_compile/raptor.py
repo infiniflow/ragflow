@@ -769,7 +769,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             to materialize.
         """
         if len(chunks) <= 1:
-            return (None,None) if is_tree else ([], [])
+            return (None, None) if is_tree else ([], [])
 
         # Normalize input to the 3-tuple shape. Reject empties / bad
         # vectors at the same time the legacy path used to.
