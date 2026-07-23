@@ -88,43 +88,6 @@ func newFuturMixJSONRequest(ctx context.Context, method, endpoint string, payloa
 	return req, nil
 }
 
-type futurmixAPIMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
-}
-
-type futurmixChatRequest struct {
-	Model       string               `json:"model"`
-	Messages    []futurmixAPIMessage `json:"messages"`
-	Stream      bool                 `json:"stream"`
-	MaxTokens   *int                 `json:"max_tokens,omitempty"`
-	Temperature *float64             `json:"temperature,omitempty"`
-	TopP        *float64             `json:"top_p,omitempty"`
-	Stop        *[]string            `json:"stop,omitempty"`
-}
-
-func buildFuturMixChatRequest(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) futurmixChatRequest {
-	apiMessages := make([]futurmixAPIMessage, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = futurmixAPIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-	}
-	reqBody := futurmixChatRequest{
-		Model:    modelName,
-		Messages: apiMessages,
-		Stream:   stream,
-	}
-	if chatModelConfig != nil {
-		reqBody.MaxTokens = chatModelConfig.MaxTokens
-		reqBody.Temperature = chatModelConfig.Temperature
-		reqBody.TopP = chatModelConfig.TopP
-		reqBody.Stop = chatModelConfig.Stop
-	}
-	return reqBody
-}
-
 type futurmixChatChoice struct {
 	Message      futurmixChatMessage `json:"message"`
 	Delta        futurmixChatDelta   `json:"delta"`
@@ -150,27 +113,30 @@ func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := *apiConfig.ApiKey
-	if strings.TrimSpace(modelName) == "" {
-		return nil, fmt.Errorf("model name is required")
-	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.baseModel.URLSuffix.Chat)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
-	reqBody := buildFuturMixChatRequest(modelName, messages, false, chatModelConfig)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := newFuturMixJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := f.baseModel.httpClient.Do(req)
@@ -213,31 +179,29 @@ func (f *FuturMixModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
-	if strings.TrimSpace(modelName) == "" {
-		return fmt.Errorf("model name is required")
-	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	apiKey := *apiConfig.ApiKey
 
-	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.baseModel.URLSuffix.Chat)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
-	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	reqBody := buildFuturMixChatRequest(modelName, messages, true, chatModelConfig)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
 
-	req, err := newFuturMixJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := f.baseModel.httpClient.Do(req)
