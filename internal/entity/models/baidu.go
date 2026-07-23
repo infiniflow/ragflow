@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"sort"
 	"strings"
 )
 
@@ -51,7 +50,7 @@ func (b *BaiduModel) Name() string {
 	return "BaiduYiyan"
 }
 
-func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -65,49 +64,10 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]any, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]any{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMessages[i]["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMessages[i]["tool_calls"] = msg.ToolCalls
-		}
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 
 		if chatModelConfig.Thinking != nil {
 			lowerModelName := strings.ToLower(modelName)
@@ -149,12 +109,6 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 				}
 			}
 		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -162,7 +116,7 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -241,7 +195,7 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		ToolCalls:     toolCalls,
 	}
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{
+		chatResponse.Usage = &TokenUsage{
 			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
 		}
 	}
@@ -249,7 +203,7 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 	return chatResponse, nil
 }
 
-func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (b *BaiduModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -264,99 +218,46 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMessages[i]["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMessages[i]["tool_calls"] = msg.ToolCalls
-		}
-	}
-
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	if modelConfig != nil && modelConfig.Thinking != nil {
+		lowerModelName := strings.ToLower(modelName)
 
-	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
+		// `enable_think` for qwen and erine
+		if strings.HasPrefix(lowerModelName, "qwen") || strings.HasPrefix(lowerModelName, "ernie") {
+			reqBody["enable_thinking"] = *modelConfig.Thinking
+		} else {
+			if *modelConfig.Thinking {
+				thinkingFlag := "enabled"
 
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
-		}
-
-		if modelConfig.Thinking != nil {
-			lowerModelName := strings.ToLower(modelName)
-
-			// `enable_think` for qwen and erine
-			if strings.HasPrefix(lowerModelName, "qwen") || strings.HasPrefix(lowerModelName, "ernie") {
-				reqBody["enable_thinking"] = *modelConfig.Thinking
-			} else {
-				if *modelConfig.Thinking {
-					thinkingFlag := "enabled"
-
-					if strings.Contains(lowerModelName, "deepseek-v4") {
-						effort := "high"
-						if modelConfig.Effort != nil {
-							effort = *modelConfig.Effort
-						}
-						switch effort {
-						case "none", "low", "medium":
-							thinkingFlag = "disabled"
-						case "high", "default":
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = "high"
-						case "max":
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = "max"
-						default:
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = effort
-						}
+				if strings.Contains(lowerModelName, "deepseek-v4") {
+					effort := "high"
+					if modelConfig.Effort != nil {
+						effort = *modelConfig.Effort
 					}
-
-					reqBody["thinking"] = map[string]interface{}{
-						"type": thinkingFlag,
-					}
-				} else {
-					reqBody["thinking"] = map[string]interface{}{
-						"type": "disabled",
+					switch effort {
+					case "none", "low", "medium":
+						thinkingFlag = "disabled"
+					case "high", "default":
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = "high"
+					case "max":
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = "max"
+					default:
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = effort
 					}
 				}
-			}
-		}
 
-		if modelConfig.Tools != nil {
-			reqBody["tools"] = modelConfig.Tools
-		}
-		if modelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *modelConfig.ToolChoice
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
 		}
 	}
 
@@ -365,7 +266,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -408,55 +309,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 			return nil
 		}
 
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if !hasExisting {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-					continue
-				}
-				if id, ok := tcMap["id"].(string); ok && id != "" {
-					if eid, ok := existing["id"].(string); ok {
-						existing["id"] = eid + id
-					} else {
-						existing["id"] = id
-					}
-				}
-				if typ, ok := tcMap["type"].(string); ok && typ != "" {
-					existing["type"] = typ
-				}
-				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-					ef, ok := existing["function"].(map[string]interface{})
-					if !ok {
-						ef = make(map[string]interface{})
-						existing["function"] = ef
-					}
-					if name, ok := fn["name"].(string); ok && name != "" {
-						if en, ok := ef["name"].(string); ok {
-							ef["name"] = en + name
-						} else {
-							ef["name"] = name
-						}
-					}
-					if args, ok := fn["arguments"].(string); ok && args != "" {
-						if ea, ok := ef["arguments"].(string); ok {
-							ef["arguments"] = ea + args
-						} else {
-							ef["arguments"] = args
-						}
-					}
-				}
-			}
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -486,18 +339,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("baidu: stream ended before [DONE] or finish_reason")
 	}
 
-	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		modelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
@@ -528,7 +370,7 @@ type baiduUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -558,7 +400,7 @@ func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -625,7 +467,7 @@ func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	return embeddings, nil
 }
 
-func (b *BaiduModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -657,7 +499,7 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -707,20 +549,20 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 }
 
 // TranscribeAudio transcribe audio
-func (b *BaiduModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (b *BaiduModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaiduModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (b *BaiduModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // AudioSpeech convert text to audio
-func (b *BaiduModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (b *BaiduModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (b *BaiduModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
@@ -736,7 +578,7 @@ type qianfanOCRResponse struct {
 	} `json:"result"`
 }
 
-func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (b *BaiduModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -781,7 +623,7 @@ func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string,
 		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -826,7 +668,7 @@ func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string,
 	return &ocrResponse, nil
 }
 
-func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (b *BaiduModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -844,7 +686,7 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -879,23 +721,23 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	return ParseListModel(modelList), nil
 }
 
-func (b *BaiduModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (b *BaiduModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := b.ListModels(apiConfig)
+func (b *BaiduModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := b.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (b *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (b *BaiduModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (b *BaiduModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (b *BaiduModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }

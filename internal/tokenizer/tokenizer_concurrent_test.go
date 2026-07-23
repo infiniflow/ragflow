@@ -30,7 +30,7 @@ import (
 
 func init() {
 	// Initialize logger for tests
-	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
+	if err := common.Init("info", common.FileOutput{}, "tokenizer_test"); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 	}
 }
@@ -170,6 +170,67 @@ func TestConcurrentTokenize(t *testing.T) {
 	}
 
 	t.Log("=== Test completed successfully ===")
+}
+
+func TestConcurrentTokenizeLanguageIsolation(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	RegisterEngineType(func() string { return "" })
+
+	cfg := &PoolConfig{
+		DictPath:       "",
+		MinSize:        2,
+		MaxSize:        8,
+		IdleTimeout:    3 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}
+
+	if err := Init(cfg); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	sample := findEnglishDutchDifferentiator(t)
+
+	const goroutinesPerLang = 8
+	const requestsPerGoroutine = 20
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errors := make(chan string, goroutinesPerLang*requestsPerGoroutine*2)
+
+	run := func(tok Tokenizer, lang, want string) {
+		defer wg.Done()
+		<-start
+		for i := 0; i < requestsPerGoroutine; i++ {
+			got, err := tok.Tokenize(sample.input)
+			if err != nil {
+				errors <- fmt.Sprintf("lang=%s req=%d unexpected error: %v", lang, i, err)
+				return
+			}
+			if got != want {
+				errors <- fmt.Sprintf("lang=%s req=%d got %q want %q", lang, i, got, want)
+				return
+			}
+		}
+	}
+
+	for i := 0; i < goroutinesPerLang; i++ {
+		wg.Add(2)
+		go run(New("English"), "English", sample.english)
+		go run(New("Dutch"), "Dutch", sample.dutch)
+	}
+
+	close(start)
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Error(err)
+	}
+	if t.Failed() {
+		t.Fatalf("concurrent language isolation failed for input %q (English=%q Dutch=%q)", sample.input, sample.english, sample.dutch)
+	}
 }
 
 // TestConcurrentTokenizeWithPosition tests concurrent tokenization with position info

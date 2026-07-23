@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,35 +23,35 @@ type fakeChatChannelService struct {
 	deleteFn func(userID, channelID string) (bool, common.ErrorCode, error)
 }
 
-func (f fakeChatChannelService) CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	if f.createFn == nil {
 		return nil, errors.New("unexpected CreateChatChannel call")
 	}
 	return f.createFn(tenantID, name, channelType, config, chatID)
 }
 
-func (f fakeChatChannelService) List(tenantID string) ([]*entity.ChatChannelListResponse, error) {
+func (f fakeChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
 	if f.listFn == nil {
 		return nil, errors.New("unexpected List call")
 	}
 	return f.listFn(tenantID)
 }
 
-func (f fakeChatChannelService) GetChatChannel(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.getFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected GetChatChannel call")
 	}
 	return f.getFn(userID, channelID)
 }
 
-func (f fakeChatChannelService) UpdateChatChannel(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.updateFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected UpdateChatChannel call")
 	}
 	return f.updateFn(userID, channelID, req)
 }
 
-func (f fakeChatChannelService) DeleteChatChannel(userID, channelID string) (bool, common.ErrorCode, error) {
+func (f fakeChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
 	if f.deleteFn == nil {
 		return false, common.CodeServerError, errors.New("unexpected DeleteChatChannel call")
 	}

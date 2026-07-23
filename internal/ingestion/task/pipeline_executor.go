@@ -224,14 +224,34 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
+	chunkCount := countDistinctChunkIDs(chunks)
+
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Metadata:         metadata,
-		ChunkCount:       len(chunks),
+		ChunkCount:       chunkCount,
 		TokenConsumption: embeddingTokenConsumption,
 		Duration:         time.Since(start).Seconds(),
 	}, nil
+}
+
+// countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
+// After ProcessChunksForPipeline, every chunk carries an "id" field computed
+// from xxhash(text+docID). Chunks with identical text share the same id and
+// the search engine treats them as upserts, so the effective stored chunk count
+// is the number of unique ids — not len(chunks). Mirrors the index-side
+// deduplication that happens at write time.
+func countDistinctChunkIDs(chunks []map[string]any) int {
+	seen := make(map[string]struct{}, len(chunks))
+	for _, ck := range chunks {
+		id, _ := ck["id"].(string)
+		if id == "" {
+			continue
+		}
+		seen[id] = struct{}{}
+	}
+	return len(seen)
 }
 
 func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
@@ -286,8 +306,8 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 
 // warnUnknownComponentParams logs a warning for any component id in the
 // parserConfig whose id is absent from the pipeline DSL. The runtime merge
-// (component params -> PatchDSL / override_params) silently drops such
-// entries, so we surface them here for operability. API-side validation
+// (component params -> override_params) silently drops such entries, so we
+// surface them here for operability. API-side validation
 // already rejects unknown ids on write; this is purely a defensive guard
 // for legacy/stale rows.
 func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
@@ -320,24 +340,20 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
 
 	// Surface component params whose cpnID is absent from the DSL. The
-	// runtime merge (PatchDSL / override_params) silently drops such entries;
+	// runtime merge (override_params) silently drops such entries;
 	// API-side validation already rejects unknown ids on write, so this is a
 	// defensive guard for legacy/stale rows.
 	warnUnknownComponentParams(dsl, parserConfig)
-	patchedDSL, err := pipelinepkg.PatchDSL(dsl, parserConfig)
-	if err != nil {
-		return nil, dsl, fmt.Errorf("patch dsl with parser_config: %w", err)
-	}
 
 	pipelineID := "pipeline_" + s.taskCtx.Doc.ID
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		pipelineID = s.taskCtx.IngestionTask.ID
 	}
-	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(patchedDSL), pipelineID,
+	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
 		pipelinepkg.WithProgressSink(s.progressSink),
 		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
 	if err != nil {
-		return nil, patchedDSL, fmt.Errorf("compile pipeline dsl: %w", err)
+		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}
 	inputs := map[string]any{}
 	if s.taskCtx.Doc.ID != "" {
@@ -348,14 +364,21 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
+	if s.taskCtx.KB.Language != nil {
+		inputs["lang"] = *s.taskCtx.KB.Language
+	}
 
-	output, err := pipe.Run(ctx, inputs, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	// Component params from Doc.ParserConfig — including the tenant LLM id
+	// injected into Extractor components above — are passed to Run as
+	// override_params, keyed by cpnID with override-wins. The DSL itself is
+	// compiled unchanged.
+	output, err := pipe.Run(ctx, inputs, parserConfig)
 	if err != nil {
-		return nil, patchedDSL, err
+		return nil, dsl, err
 	}
-	payload, err := pipelinepkg.ExtractPayload(patchedDSL, output)
+	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
-		return nil, patchedDSL, err
+		return nil, dsl, err
 	}
-	return payload, patchedDSL, nil
+	return payload, dsl, nil
 }

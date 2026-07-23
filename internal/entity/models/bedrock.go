@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -503,7 +505,7 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // the joined assistant answer. ReasonContent is always non-nil per the
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
-func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -529,7 +531,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("bedrock: marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -587,7 +589,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 // payload. For chat we only need messageStart, contentBlockDelta,
 // messageStop, and (for error propagation) exception frames; other
 // events are ignored.
-func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -623,7 +625,6 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	// Background context: event streams are long-lived so we attach
 	// no overall deadline. ResponseHeaderTimeout (set in the
 	// constructor) still caps connection setup.
-	ctx := context.Background()
 	creds, err := resolveBedrockCredentials(ctx, key, region)
 	if err != nil {
 		return err
@@ -765,7 +766,7 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -779,7 +780,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -834,8 +835,8 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 // CheckConnection delegates to ListModels: a successful catalog query
 // proves credentials, region, and network reachability in one round
 // trip without burning a chat completion.
-func (b *BedrockModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := b.ListModels(apiConfig)
+func (b *BedrockModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := b.ListModels(ctx, apiConfig)
 	return err
 }
 
@@ -862,7 +863,7 @@ type bedrockCohereEmbeddingResponse struct {
 // InvokeModel. Titan's embedding API accepts one inputText per call,
 // while Cohere accepts a texts batch and returns vectors in input
 // order.
-func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -883,7 +884,7 @@ func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -892,10 +893,10 @@ func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	if strings.HasPrefix(modelID, "amazon.titan-embed-text-") {
-		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig)
+		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
 	}
 	if strings.HasPrefix(modelID, "cohere.embed-") {
-		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig)
+		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
 	}
 	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
 }
@@ -936,7 +937,7 @@ func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string,
 	return respBody, nil
 }
 
-func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	embeddings := make([]EmbeddingData, 0, len(texts))
 	for i, text := range texts {
 		req := bedrockTitanEmbeddingRequest{
@@ -950,7 +951,7 @@ func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []s
 			return nil, err
 		}
 		var parsed bedrockTitanEmbeddingResponse
-		if err := json.Unmarshal(respBody, &parsed); err != nil {
+		if err = json.Unmarshal(respBody, &parsed); err != nil {
 			return nil, fmt.Errorf("bedrock: parse Titan embedding response: %w", err)
 		}
 		if len(parsed.Embedding) == 0 {
@@ -964,7 +965,7 @@ func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []s
 	return embeddings, nil
 }
 
-func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	req := bedrockCohereEmbeddingRequest{
 		Texts:     texts,
 		InputType: "search_document",
@@ -1024,52 +1025,52 @@ func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
 }
 
 // Rerank is not exposed by Bedrock.
-func (b *BedrockModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // Balance is not exposed by Bedrock.
-func (b *BedrockModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (b *BedrockModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // TranscribeAudio is not exposed by Bedrock. Speech-to-text on AWS
 // lives in Amazon Transcribe, a separate service.
-func (b *BedrockModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (b *BedrockModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // AudioSpeech is not exposed by Bedrock. Text-to-speech on AWS lives
 // in Amazon Polly, a separate service.
-func (b *BedrockModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (b *BedrockModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // OCRFile is not exposed by Bedrock. OCR on AWS lives in Amazon
 // Textract, a separate service.
-func (b *BedrockModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (b *BedrockModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ParseFile is not exposed by Bedrock.
-func (b *BedrockModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (b *BedrockModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ListTasks is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (b *BedrockModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ShowTask is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (b *BedrockModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }

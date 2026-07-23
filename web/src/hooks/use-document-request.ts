@@ -39,7 +39,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -500,6 +503,71 @@ export const useSetDocumentParser = () => {
   });
 
   return { setDocumentParser: mutateAsync, data, loading };
+};
+
+/**
+ * Go-backend variant of useSetDocumentParser. The Go document endpoint takes
+ * `parser_id` (instead of the legacy `chunk_method`) and expects the
+ * pipeline-shaped parser_config (keyed by operator id) to be sent as-is.
+ * Keep it parallel to the Python version — the original hook stays untouched
+ * and can be dropped once the Python backend is retired.
+ */
+export const useSetDocumentPipelineParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentParser, 'pipeline'],
+    mutationFn: async ({
+      parserId,
+      pipelineId,
+      parseType,
+      documentId,
+      datasetId,
+      parserConfig,
+    }: {
+      parserId: string;
+      pipelineId: string;
+      parseType?: number;
+      documentId: string;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
+    }) => {
+      const updateData: Record<string, unknown> = {
+        parser_id: parserId,
+        pipeline_id: pipelineId,
+      };
+
+      if (parseType !== undefined) {
+        updateData.parse_type = parseType;
+      }
+
+      if (parserConfig) {
+        updateData.parser_config = isPipelineParserConfig(parserConfig)
+          ? parserConfig
+          : extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.code;
+    },
+  });
+
+  return { setDocumentPipelineParser: mutateAsync, data, loading };
 };
 
 export const useSetDocumentMeta = () => {

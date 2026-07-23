@@ -17,9 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
@@ -29,6 +30,7 @@ type Router struct {
 	documentHandler      *handler.DocumentHandler
 	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
+	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
@@ -63,6 +65,7 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
+	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -95,6 +98,7 @@ func NewRouter(
 		documentHandler:      documentHandler,
 		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
+		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
@@ -165,13 +169,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// no auth required. The front end uses it to populate the parser
 		// picker without hard-coding the parser_id list.
 		// Query: ?type=builtin returns built-in templates (default).
-		if r.pipelineHandler != nil {
-			apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
-			apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
-		}
+		apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 		// searchbots
-		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -185,17 +187,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// OAuthLogin without conflict.
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
 		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
-
-		// For EE
-		apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
-		apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
-		apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)
-		apiNoAuth.GET("/auth/icbc/callback", r.userHandler.ICBCAuthCallback)
-		apiNoAuth.GET("/auth/azure/callback", r.userHandler.AzureAuthCallback)
-		apiNoAuth.GET("/auth/azure/login", r.userHandler.AzureAuthLogin)
-		apiNoAuth.POST("/auth/register/captcha", r.userHandler.Captcha)
-		apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
-		apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -214,6 +205,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -227,13 +220,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
-		if r.botHandler != nil {
-			chatbotGroup := apiBetaAuth.Group("/chatbots")
-			betaMW := r.authHandler.BetaAuthMiddleware()
-			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
-			agentbotGroup := apiBetaAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
-		}
+		chatBotGroup := apiBetaAuth.Group("/chatbots")
+		chatBotGroup.POST("/:dialog_id/completions", r.botHandler.ChatbotCompletion)
+		chatBotGroup.GET("/:dialog_id/info", r.botHandler.ChatbotInfo)
+
+		agentBotGroup := apiBetaAuth.Group("/agentbots")
+		agentBotGroup.POST("/:agent_id/completions", r.botHandler.AgentbotCompletion)
+		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
+		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
+
 		// Public bot endpoints (authenticated with an SDK beta token, not a session)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
@@ -242,9 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
 		// Uses BetaAuthMiddleware to resolve the user from the
 		// Authorization header.
-		if r.mcpServerHandler != nil {
-			apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
-		}
+		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -406,11 +399,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/chunks", r.chunkHandler.Parse)
 				datasets.PATCH("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.UpdateChunk)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
 				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
 				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
-				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/chunks", r.chunkHandler.StopParsing)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
@@ -599,9 +592,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// ?category=ingestion,agent,shared filter; defaults to
 			// all categories. The data source is
 			// runtime.DefaultRegistry.
-			if r.componentsHandler != nil {
-				v1.GET("/components", r.componentsHandler.Get)
-			}
+			v1.GET("/components", r.componentsHandler.Get)
 
 			connectors := v1.Group("/connectors")
 			{
@@ -643,7 +634,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.systemHandler.GetStats)
+				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 
 				config := system.Group("/config")
 				{

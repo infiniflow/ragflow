@@ -38,7 +38,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -104,11 +107,34 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 // record-buckets for the merge pass).
 func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+	)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
 	ctx := newLevelContext(records, p)
 	levels := ctx.Levels()
+	// Count heading level distribution for debugging.
+	headingCounts := make(map[int]int)
+	for _, lvl := range levels {
+		if lvl < bodyLevel {
+			headingCounts[lvl]++
+		}
+	}
+	bodyCount := len(levels)
+	for _, c := range headingCounts {
+		bodyCount -= c
+	}
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+		zap.Int("body_level", bodyCount),
+		zap.Any("heading_levels", headingCounts),
+	)
 
 	// Mirror python group_chunker._resolve_group_target_level: when
 	// `hierarchy` is unset the target level is `most_level` directly
@@ -120,7 +146,18 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 	secIDs := buildSectionIDs(levels, targetLevel)
 
 	groups := groupRecords(records, secIDs, p)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("groups", len(groups)),
+	)
 	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("chunks", len(chunks)),
+		zap.Bool("plain_text", isPlainTextFormat(inputs)),
+	)
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -253,7 +290,7 @@ func extractLineRecords(inputs map[string]any) []lineRecord {
 	if docs := chunksFromInputs(inputs); docs != nil {
 		return recordsFromStructured(docs)
 	}
-	text, _ := stringFromInputs(inputs, "text", "content")
+	text, _ := stringFromInputs(inputs, "text", "content", "markdown", "html")
 	if text == "" {
 		return nil
 	}
@@ -300,6 +337,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 			docType:    dt,
 			imgID:      imgID,
 			layout:     it.Layout,
+			ckType:     it.CKType,
 			parentMeta: meta,
 		})
 	}

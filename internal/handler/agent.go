@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -104,7 +105,7 @@ func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandle
 
 // NewAgentHandler create agent handler
 
-func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
+func NewAgentHandler(agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
 		chatRunner:   agentService,
@@ -358,8 +359,8 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
-	templates, err := h.agentService.ListTemplates()
+	ctx := c.Request.Context()
+	templates, err := h.agentService.ListTemplates(ctx)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -628,7 +629,8 @@ func (h *AgentHandler) ListAgentTemplates(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	rows, err := h.agentService.ListTemplates()
+	ctx := c.Request.Context()
+	rows, err := h.agentService.ListTemplates(ctx)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -710,8 +712,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	sessionID := c.Query("id")
 	expUserID := c.Query("user_id")
 	includeDSL := c.Query("dsl") == "true"
-
-	resp, code, err := h.agentService.ListAgentSessions(user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
+	ctx := c.Request.Context()
+	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
 		Page:       page,
 		PageSize:   pageSize,
 		Keywords:   keywords,
@@ -748,7 +750,8 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	row, code, err := h.agentService.CreateAgentSession(&service.CreateAgentSessionRequest{
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
 		UserID:  user.ID,
 		AgentID: canvasID,
 		Name:    body.Name,
@@ -771,7 +774,8 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
-	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -790,10 +794,11 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
+	ctx := c.Request.Context()
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	if sessionID != "" {
-		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
+		ok, code, err := h.agentService.DeleteAgentSessionItem(ctx, user.ID, canvasID, sessionID)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -811,7 +816,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			}
 		}
 	}
-	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
+	result, code, err := h.agentService.DeleteAgentSessions(ctx, user.ID, canvasID, ids, deleteAll)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

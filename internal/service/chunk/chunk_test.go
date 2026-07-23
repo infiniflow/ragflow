@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"reflect"
 	"strings"
@@ -278,6 +279,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 }
 
 func TestAddChunkSuccess(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -319,7 +321,7 @@ func TestAddChunkSuccess(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:         datasetID,
 		DocumentID:        documentID,
 		Content:           "chunk body",
@@ -369,6 +371,7 @@ func TestAddChunkSuccess(t *testing.T) {
 }
 
 func TestAddChunkValidationErrors(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1")
@@ -409,7 +412,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(svc)
 			}
-			_, err := svc.AddChunk(tt.req, "user-1")
+			_, err := svc.AddChunk(ctx, tt.req, "user-1")
 			if err == nil || !strings.Contains(err.Error(), tt.wantMsg) {
 				t.Fatalf("error = %v, want substring %q", err, tt.wantMsg)
 			}
@@ -418,6 +421,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 }
 
 func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -456,7 +460,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		},
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
@@ -468,7 +472,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 
 	validJPEG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pRZ0AAAAASUVORK5CYII="
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -478,7 +482,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		t.Fatalf("expected tag_feas validation error, got resp=%#v err=%v", resp, err)
 	}
 
-	resp, err = svc.AddChunk(&service.AddChunkRequest{
+	resp, err = svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
@@ -497,6 +501,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 }
 
 func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -532,7 +537,7 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -1081,47 +1086,47 @@ type stubEmbeddingDriver struct {
 
 func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
 func (d *stubEmbeddingDriver) Name() string                                     { return "stub" }
-func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig) (*models.ChatResponse, error) {
+func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig) (*models.ASRResponse, error) {
+func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) TranscribeAudioWithSender(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig) (*models.TTSResponse, error) {
+func (d *stubEmbeddingDriver) AudioSpeech(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage) (*models.TTSResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) AudioSpeechWithSender(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig) (*models.OCRFileResponse, error) {
+func (d *stubEmbeddingDriver) OCRFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.OCRConfig, *common.ModelUsage) (*models.OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig) (*models.ParseFileResponse, error) {
+func (d *stubEmbeddingDriver) ParseFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.ParseFileConfig, *common.ModelUsage) (*models.ParseFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ListModels(*models.APIConfig) ([]models.ListModelResponse, error) {
+func (d *stubEmbeddingDriver) ListModels(context.Context, *models.APIConfig) ([]models.ListModelResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) Balance(*models.APIConfig) (map[string]interface{}, error) {
+func (d *stubEmbeddingDriver) Balance(context.Context, *models.APIConfig) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) CheckConnection(*models.APIConfig) error { return nil }
-func (d *stubEmbeddingDriver) ListTasks(*models.APIConfig) ([]models.ListTaskStatus, error) {
+func (d *stubEmbeddingDriver) CheckConnection(context.Context, *models.APIConfig) error { return nil }
+func (d *stubEmbeddingDriver) ListTasks(context.Context, *models.APIConfig) ([]models.ListTaskStatus, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ShowTask(string, *models.APIConfig) (*models.TaskResponse, error) {
+func (d *stubEmbeddingDriver) ShowTask(context.Context, string, *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
 
@@ -1361,9 +1366,9 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-	var calledOpts service.StartParseOptions
+	var calledOpts document.StartParseOptions
 	var calledDocID string
-	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts service.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
 		calledOpts = opts
 		calledDocID = doc.ID
 		return nil
@@ -1392,7 +1397,7 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 	insertChunkTestDoc(t, "doc-1", datasetID)
 
 	svc := newParseTestService(t)
-	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, service.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
 		return nil
 	}
 

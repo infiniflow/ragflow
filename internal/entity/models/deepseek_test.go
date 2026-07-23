@@ -18,6 +18,7 @@ func newDeepSeekForTest(baseURL string) *DeepSeekModel {
 }
 
 func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
+	ctx := t.Context()
 	var requestBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
@@ -62,6 +63,7 @@ func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
 	apiKey := "test-key"
 	toolChoice := "auto"
 	resp, err := newDeepSeekForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"deepseek-chat",
 		[]Message{
 			{Role: "user", Content: "what is marigold"},
@@ -79,6 +81,7 @@ func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
 			},
 			ToolChoice: &toolChoice,
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -105,6 +108,7 @@ func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
 }
 
 func TestDeepSeekChatWithMessagesForwardsToolHistory(t *testing.T) {
+	ctx := t.Context()
 	var requestBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -122,6 +126,7 @@ func TestDeepSeekChatWithMessagesForwardsToolHistory(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newDeepSeekForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"deepseek-chat",
 		[]Message{
 			{
@@ -141,6 +146,7 @@ func TestDeepSeekChatWithMessagesForwardsToolHistory(t *testing.T) {
 			{Role: "tool", ToolCallID: "call-1", Content: `{"formalized_content":"marigold"}`},
 		},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 	)
 	if err != nil {

@@ -81,7 +81,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
@@ -295,6 +298,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
 }
@@ -307,6 +311,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "pages":          []schema.Page (sorted by PageNumber),
 //	  "name":           string (from inputs["doc_id"]),
 //	  "output_format": "text",
+//	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
 //	}
@@ -372,7 +377,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 	}
 
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -381,7 +386,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -390,7 +395,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -399,25 +404,25 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Setups)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
 		// DOCX vision figure enhancement: enrich the markdown
 		// with LLM-generated descriptions of embedded images.
 		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
-		dispatched, _, _ = maybeDispatchDOCXVision(fileTypeExt, dispatched, inputs, c.Setups)
+		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed
 		// markdown JSON items with LLM-generated descriptions of
 		// referenced images (![alt](url)). Mirrors Python's
 		// enhance_media_sections_with_vision in _markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(fileTypeExt, dispatched, inputs)
+		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -467,7 +472,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		return nil, fmt.Errorf("Parser: %w", err)
 	}
 	sortPagesByNumber(parsed)
-	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
+	lang, _ := getString(inputs, "lang")
+	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
@@ -486,6 +492,19 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
+	// Debug log: summarize parser output for pipeline debugging.
+	if dispatched.OutputFormat == "json" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", "json"),
+			zap.Int("json_items", len(dispatched.JSON)),
+		)
+	} else if dispatched.OutputFormat != "" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", dispatched.OutputFormat),
+		)
+	}
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.

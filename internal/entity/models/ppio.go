@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -60,39 +61,6 @@ func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
-func ppioChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
-
-	return reqBody
-}
-
 type ppioChatMessage struct {
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content"`
@@ -111,7 +79,7 @@ type ppioChatResponse struct {
 	FinishReason string           `json:"finish_reason"`
 }
 
-func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (p *PPIOModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -127,12 +95,12 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(ppioChatPayload(modelName, messages, false, chatModelConfig))
+	jsonData, err := json.Marshal(buildRequestBody(chatModelConfig, modelName, messages, false))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -179,7 +147,7 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}, nil
 }
 
-func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (p *PPIOModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -202,12 +170,12 @@ func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return err
 	}
 
-	jsonData, err := json.Marshal(ppioChatPayload(modelName, messages, true, chatModelConfig))
+	jsonData, err := json.Marshal(buildRequestBody(chatModelConfig, modelName, messages, true))
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -274,11 +242,11 @@ type ppioModelInfo struct {
 }
 
 type ppioListModelsResponse struct {
-	Data  []DSModel   `json:"data"`
-	Error interface{} `json:"error"`
+	Data  []ModelListItem `json:"data"`
+	Error interface{}     `json:"error"`
 }
 
-func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (p *PPIOModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -288,7 +256,7 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -323,51 +291,51 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
-func (p *PPIOModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := p.ListModels(apiConfig)
+func (p *PPIOModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := p.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (p *PPIOModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (p *PPIOModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (p *PPIOModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (p *PPIOModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (p *PPIOModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (p *PPIOModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (p *PPIOModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (p *PPIOModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (p *PPIOModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (p *PPIOModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (p *PPIOModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (p *PPIOModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

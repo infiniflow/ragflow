@@ -101,7 +101,10 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -150,7 +153,7 @@ type EmbeddingResult struct {
 // Embedder is the testability seam for the embedding branch.
 type Embedder interface {
 	MaxTokens() int
-	Encode(texts []string) ([]EmbeddingResult, error)
+	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
 // EmbedderResolver resolves the embedder for one tokenizer invocation.
@@ -345,12 +348,18 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, err
 	}
 	chunks := chunksFromTokenizerUpstream(upstream)
+	common.Debug("tokenizer stage",
+		zap.String("component", "Tokenizer"),
+		zap.Int("input_chunks", len(chunks)),
+	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
 	normalizeChunkTextFallback(chunks)
 
+	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
+
 	if contains(c.param.SearchMethod, "full_text") {
-		if err := tokenizeChunks(chunks, titleStem); err != nil {
+		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
 	}
@@ -372,6 +381,10 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) 
 		return nil, err
 	}
 
+	common.Debug("tokenizer stage",
+		zap.String("component", "Tokenizer"),
+		zap.Int("output_chunks", len(chunks)),
+	)
 	return out, nil
 }
 
@@ -474,7 +487,7 @@ func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) (
 		encErr  error
 	)
 	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
-		results, encErr = embedder.Encode(texts)
+		results, encErr = embedder.Encode(ctx, texts)
 		return encErr
 	})
 	if timeoutErr != nil {
@@ -618,16 +631,21 @@ func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
 
 // tokenizeChunks annotates each chunk with title_tks, content_ltks,
 // and (when applicable) question_tks / important_tks / summary fields.
-// Mirrors python tokenizer.py:130-185.
-func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
+// Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
+// tokenize_chunks().
+//
+// language sets the Snowball stemmer language, matching Python's
+// rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
+func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
+	tok := tokenizer.New(language)
 	for i := range chunks {
 		ck := &chunks[i]
 		ck.ChunkOrderInt = intPtr(i)
-		titleTk, err := tokenizer.Tokenize(titleStem)
+		titleTk, err := tok.Tokenize(titleStem)
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title tokenize: %w", err)
 		}
-		titleSmTk, err := tokenizer.FineGrainedTokenize(titleTk)
+		titleSmTk, err := tok.FineGrainedTokenize(titleTk)
 		if err != nil {
 			return fmt.Errorf("Tokenizer: title fine-grain: %w", err)
 		}
@@ -640,7 +658,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 			if err := ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
 				return fmt.Errorf("Tokenizer: question keywords marshal: %w", err)
 			}
-			qt, err := tokenizer.Tokenize(q)
+			qt, err := tok.Tokenize(q)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: question tokenize: %w", err)
 			}
@@ -652,7 +670,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 			if err := ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
 				return fmt.Errorf("Tokenizer: keyword list marshal: %w", err)
 			}
-			it, err := tokenizer.Tokenize(kw)
+			it, err := tok.Tokenize(kw)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: keyword tokenize: %w", err)
 			}
@@ -661,7 +679,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 			}
 		}
 		if s := ck.Summary; strings.TrimSpace(s) != "" {
-			st, err := tokenizer.Tokenize(s)
+			st, err := tok.Tokenize(s)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
 			}
@@ -669,7 +687,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 				st = s
 			}
 			ck.ContentLtks = st
-			smt, err := tokenizer.FineGrainedTokenize(st)
+			smt, err := tok.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
 			}
@@ -678,7 +696,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 			}
 			ck.ContentSmLtks = smt
 		} else if t := ck.Text; strings.TrimSpace(t) != "" {
-			tt, err := tokenizer.Tokenize(t)
+			tt, err := tok.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
 			}
@@ -686,7 +704,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string) error {
 				tt = t
 			}
 			ck.ContentLtks = tt
-			smt, err := tokenizer.FineGrainedTokenize(tt)
+			smt, err := tok.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
 			}

@@ -212,7 +212,7 @@ class RAGFlowPdfParser:
                 logging.warning("Could not load OCR alphabet from %s: %s; treating all text as representable.", res, e)
                 cls._OCR_ALPHABET = set()
         if not cls._OCR_ALPHABET:
-            return True                      # unknown alphabet: preserve existing behaviour
+            return True  # unknown alphabet: preserve existing behaviour
         letters = [c for c in text if c.strip()]
         if not letters:
             return True
@@ -455,6 +455,18 @@ class RAGFlowPdfParser:
 
         return best_angle, best_img, results
 
+    @staticmethod
+    def _map_clockwise_rotated_point_to_original(x, y, angle, width, height):
+        if angle == 0:
+            return x, y
+        if angle == 90:
+            return y, height - x
+        if angle == 180:
+            return width - x, height - y
+        if angle == 270:
+            return width - y, x
+        return x, y
+
     def _table_transformer_job(self, ZM, auto_rotate=True):
         """
         Process table structure recognition.
@@ -480,7 +492,7 @@ class RAGFlowPdfParser:
         assert len(self.page_layout) == len(self.page_images)
 
         # Collect layout info for all tables
-        table_layouts = []  # [(page, table_layout, left, top, right, bott), ...]
+        table_layouts = []
 
         table_index = 0
         for p, tbls in enumerate(self.page_layout):  # for page
@@ -488,16 +500,17 @@ class RAGFlowPdfParser:
             tbcnt.append(len(tbls))
             if not tbls:
                 continue
-            for tb in tbls:  # for table
+            for page_table_index, tb in enumerate(tbls):  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
                 bott *= ZM
-                pos.append((left, top, p, table_index))  # Add page and table_index
+                layoutno = f"table-{page_table_index}"
+                pos.append((left, top, p, table_index, layoutno))
 
                 # Record table layout info
-                table_layouts.append({"page": p, "table_index": table_index, "layout": tb, "coords": (left, top, right, bott)})
+                table_layouts.append({"page": p, "table_index": table_index, "layoutno": layoutno, "layout": tb, "coords": (left, top, right, bott)})
 
                 # Crop table image
                 table_img = self.page_images[p].crop((left, top, right, bott))
@@ -538,7 +551,28 @@ class RAGFlowPdfParser:
         if auto_rotate:
             self._ocr_rotated_tables(ZM, table_layouts, recos, tbcnt)
 
-        # Process TSR results (keep original logic but handle rotated coordinates)
+        def _map_tsr_component_to_page_space(component, table_pos):
+            crop_left, crop_top, page, table_index, _ = table_pos
+            rotation_info = self.table_rotations.get(table_index, {})
+            angle = rotation_info.get("best_angle", 0)
+            original_pos = rotation_info.get("original_pos", (crop_left, crop_top, crop_left, crop_top))
+            width = original_pos[2] - original_pos[0]
+            height = original_pos[3] - original_pos[1]
+            points = [
+                (component["x0_rotated"], component["top_rotated"]),
+                (component["x1_rotated"], component["top_rotated"]),
+                (component["x0_rotated"], component["bottom_rotated"]),
+                (component["x1_rotated"], component["bottom_rotated"]),
+            ]
+            mapped = [self._map_clockwise_rotated_point_to_original(x, y, angle, width, height) for x, y in points]
+            xs = [p[0] for p in mapped]
+            ys = [p[1] for p in mapped]
+            component["x0"] = min(xs) / ZM + crop_left / ZM
+            component["x1"] = max(xs) / ZM + crop_left / ZM
+            component["top"] = min(ys) / ZM + crop_top / ZM + self.page_cum_height[page]
+            component["bottom"] = max(ys) / ZM + crop_top / ZM + self.page_cum_height[page]
+
+        # Process TSR results and align structure boxes with page-cumulative OCR boxes.
         tbcnt = np.cumsum(tbcnt)
         for i in range(len(tbcnt) - 1):  # for page
             pg = []
@@ -551,11 +585,10 @@ class RAGFlowPdfParser:
                     it["top_rotated"] = it["top"]
                     it["bottom_rotated"] = it["bottom"]
 
-                    # For rotated tables, coordinate transformation to page space requires rotation
-                    # Since we already re-OCR'd on rotated image, keep simple processing here
                     it["pn"] = poss[j][2]  # page number
-                    it["layoutno"] = j
+                    it["layoutno"] = poss[j][4]
                     it["table_index"] = poss[j][3]  # table index
+                    _map_tsr_component_to_page_space(it, poss[j])
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
@@ -568,7 +601,7 @@ class RAGFlowPdfParser:
         headers = gather(r".*header$")
         rows = gather(r".* (row|header)")
         spans = gather(r".*spanning")
-        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0_rotated"] if "x0_rotated" in x else x["x0"]))
+        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
         clmns = Recognizer.layouts_cleanup(self.boxes, clmns, 5, 0.5)
 
         for b in self.boxes:
@@ -648,28 +681,12 @@ class RAGFlowPdfParser:
                 insert_at += 1
             return insert_at
 
-        def _map_rotated_point(x, y, angle, width, height):
-            # Map a point from rotated image coords back to original image coords.
-            if angle == 0:
-                return x, y
-            if angle == 90:
-                # clockwise 90: original->rotated (x', y') = (y, width - x)
-                # inverse:
-                return width - y, x
-            if angle == 180:
-                return width - x, height - y
-            if angle == 270:
-                # clockwise 270: original->rotated (x', y') = (height - y, x)
-                # inverse:
-                return y, height - x
-            return x, y
-
-        def _insert_ocr_boxes(ocr_results, page_index, table_x0, table_top, insert_at, table_index, best_angle, table_w_px, table_h_px):
+        def _insert_ocr_boxes(ocr_results, page_index, crop_left, crop_top, insert_at, table_index, layoutno, best_angle, table_w_px, table_h_px):
             added = 0
             for bbox, (text, conf) in ocr_results:
                 if conf < 0.5:
                     continue
-                mapped = [_map_rotated_point(p[0], p[1], best_angle, table_w_px, table_h_px) for p in bbox]
+                mapped = [self._map_clockwise_rotated_point_to_original(p[0], p[1], best_angle, table_w_px, table_h_px) for p in bbox]
                 x_coords = [p[0] for p in mapped]
                 y_coords = [p[1] for p in mapped]
                 box_x0 = min(x_coords) / ZM
@@ -678,13 +695,13 @@ class RAGFlowPdfParser:
                 box_bottom = max(y_coords) / ZM
                 new_box = {
                     "text": text,
-                    "x0": box_x0 + table_x0,
-                    "x1": box_x1 + table_x0,
-                    "top": box_top + table_top + self.page_cum_height[page_index],
-                    "bottom": box_bottom + table_top + self.page_cum_height[page_index],
+                    "x0": box_x0 + crop_left / ZM,
+                    "x1": box_x1 + crop_left / ZM,
+                    "top": box_top + crop_top / ZM + self.page_cum_height[page_index],
+                    "bottom": box_bottom + crop_top / ZM + self.page_cum_height[page_index],
                     "page_number": page_index + self.page_from,
                     "layout_type": "table",
-                    "layoutno": f"table-{table_index}",
+                    "layoutno": layoutno,
                     "_rotated": True,
                     "_rotation_angle": best_angle,
                     "_table_index": table_index,
@@ -702,6 +719,7 @@ class RAGFlowPdfParser:
             table_index = tbl_info["table_index"]
             page = tbl_info["page"]
             layout = tbl_info["layout"]
+            layoutno = tbl_info["layoutno"]
             left, top, right, bott = tbl_info["coords"]
 
             rotation_info = self.table_rotations.get(table_index, {})
@@ -738,10 +756,11 @@ class RAGFlowPdfParser:
             added = _insert_ocr_boxes(
                 ocr_results,
                 page,
-                table_x0,
-                table_top,
+                left,
+                top,
                 insert_at,
                 table_index,
+                layoutno,
                 best_angle,
                 table_w_px,
                 table_h_px,

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -67,7 +68,7 @@ func (a *AstraflowModel) Name() string {
 }
 
 // ChatWithMessages sends a non-streaming chat request
-func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (a *AstraflowModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -82,33 +83,9 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -116,13 +93,14 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
@@ -177,7 +155,7 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 }
 
 // ChatStreamlyWithSender opens the SSE chat-completions
-func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (a *AstraflowModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -188,6 +166,9 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
 
 	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -196,37 +177,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
-		}
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -235,7 +186,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 
 	// SSE is long-lived; rely on the transport's ResponseHeaderTimeout
 	// to cap connection-establishment instead of a hard deadline.
-	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -300,7 +251,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	return nil
 }
 
-func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (a *AstraflowModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -312,7 +263,7 @@ func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -347,12 +298,12 @@ func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	return ParseListModel(modelList), nil
 }
 
-func (a *AstraflowModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := a.ListModels(apiConfig)
+func (a *AstraflowModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := a.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -429,7 +380,7 @@ func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *API
 	return embeddings, nil
 }
 
-func (a *AstraflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -507,19 +458,19 @@ func (a *AstraflowModel) Rerank(modelName *string, query string, documents []str
 	return &rerankResponse, nil
 }
 
-func (a *AstraflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (a *AstraflowModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (a *AstraflowModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (a *AstraflowModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (a *AstraflowModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -579,22 +530,22 @@ func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, ap
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (a *AstraflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (a *AstraflowModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (a *AstraflowModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (a *AstraflowModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (a *AstraflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (a *AstraflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

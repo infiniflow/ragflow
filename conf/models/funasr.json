@@ -1,0 +1,91 @@
+{
+  "name": "FunASR",
+  "url": {
+    "default": "http://localhost:8000/v1"
+  },
+  "url_suffix": {
+    "asr": "audio/transcriptions",
+    "models": "models"
+  },
+  "class": "local",
+  "models": [
+    {
+      "name": "fun-asr-nano",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Fun-ASR-MLT-Nano",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "SenseVoiceSmall",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "paraformer",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Paraformer-zh-streaming",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Qwen3-ASR",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "GLM-ASR-Nano",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Whisper-large-v3",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Whisper-large-v3-turbo",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "ct-punc",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "fsmn-vad",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "cam++",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "emotion2vec+large",
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

@@ -353,7 +353,7 @@ func (dao *MemoryDAO) GetByFilter(userID string, tenantIDs []string, memoryTypes
 		FROM memory m
 		LEFT JOIN user u ON m.tenant_id = u.id
 		%s
-		ORDER BY m.update_time DESC
+		ORDER BY m.create_time DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
@@ -377,4 +377,33 @@ func (dao *MemoryDAO) GetByFilter(userID string, tenantIDs []string, memoryTypes
 	}
 
 	return memories, total, nil
+}
+
+// Accessible check if it is possible for user to access the memory
+func (dao *MemoryDAO) Accessible(userID, memoryID string) (bool, error) {
+	memory, err := dao.GetByID(memoryID)
+	if err != nil {
+		return false, err
+	}
+
+	if memory.TenantID == userID {
+		return true, nil
+	}
+
+	if memory.Permissions != string(entity.TenantPermissionTeam) {
+		return false, fmt.Errorf("user %s have no access to this memory", userID)
+	}
+
+	var count int64
+	err = DB.Table("user_tenant").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", memory.TenantID, userID, "1").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	return false, fmt.Errorf("user %s have no access to this memory", userID)
 }

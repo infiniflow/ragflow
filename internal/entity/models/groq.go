@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -62,48 +63,16 @@ func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
-func groqChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
+func applyGroqReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
 	modelLower := strings.ToLower(modelName)
 	if strings.Contains(modelLower, "gpt-oss") {
 		reqBody["include_reasoning"] = true
-		if chatModelConfig.Effort != nil {
-			reqBody["reasoning_effort"] = chatModelConfig.Effort
+		if chatModelConfig != nil && chatModelConfig.Effort != nil {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	} else if strings.Contains(modelLower, "qwen") || strings.Contains(modelLower, "deepseek") {
 		reqBody["reasoning_format"] = "parsed"
 	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-	}
-
-	return reqBody
 }
 
 type groqChatMessage struct {
@@ -124,7 +93,7 @@ type groqChatResponse struct {
 	FinishReason string           `json:"finish_reason"`
 }
 
-func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -140,12 +109,14 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -192,7 +163,7 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}, nil
 }
 
-func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -215,12 +186,14 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -287,11 +260,11 @@ type groqModelInfo struct {
 }
 
 type groqListModelsResponse struct {
-	Data  []DSModel   `json:"data"`
-	Error interface{} `json:"error"`
+	Data  []ModelListItem `json:"data"`
+	Error interface{}     `json:"error"`
 }
 
-func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (g *GroqModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -301,7 +274,7 @@ func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -336,24 +309,24 @@ func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
-func (g *GroqModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := g.ListModels(apiConfig)
+func (g *GroqModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := g.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (g *GroqModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (g *GroqModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (g *GroqModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (g *GroqModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -470,11 +443,11 @@ func (g *GroqModel) TranscribeAudio(modelName *string, file *string, apiConfig *
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (g *GroqModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (g *GroqModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -534,22 +507,22 @@ func (g *GroqModel) AudioSpeech(modelName *string, audioContent *string, apiConf
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (g *GroqModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (g *GroqModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (g *GroqModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (g *GroqModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (g *GroqModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (g *GroqModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }

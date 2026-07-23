@@ -1,7 +1,7 @@
 export enum ViewMode {
-  Graph = 'graph',
   LlmWiki = 'llm-wiki',
   Skills = 'skills',
+  Tree = 'tree',
 }
 
 export enum LeftPanelTab {

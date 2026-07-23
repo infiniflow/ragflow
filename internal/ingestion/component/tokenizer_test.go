@@ -387,7 +387,7 @@ type countMismatchedEmbedder struct{ want int }
 
 func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
 
-func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	out := make([]EmbeddingResult, c.want)
 	for i := range out {
 		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}
@@ -748,7 +748,7 @@ func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
 		{Text: "("},
 		{Text: "*"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Summary: "   ", Text: "real content here"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}

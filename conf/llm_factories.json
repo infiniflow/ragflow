@@ -1807,6 +1807,27 @@
             "url": "https://api.moonshot.cn/v1",
             "llm": [
                 {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2.6",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2.7-code",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "kimi-thinking-preview",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 131072,

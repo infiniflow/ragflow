@@ -26,6 +26,7 @@ func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.Clie
 }
 
 func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	cases := []struct {
 		name      string
@@ -61,7 +62,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			models, err := model.ListModels(tc.apiConfig)
+			models, err := model.ListModels(ctx, tc.apiConfig)
 			if err == nil {
 				t.Fatal("expected an API key error")
 			}
@@ -80,6 +81,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
 	configuredAPIKey := "  " + apiKey + "  "
@@ -92,7 +94,7 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 		return expected, nil
 	})
 
-	models, err := model.ListModels(&APIConfig{ApiKey: &configuredAPIKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &configuredAPIKey})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -102,6 +104,7 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
+	ctx := t.Context()
 	customBaseURL := "https://check-connection.example.test/google"
 	model := NewGoogleModel(map[string]string{"default": customBaseURL}, URLSuffix{})
 	apiKey := "test-api-key"
@@ -118,7 +121,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 		return []ListModelResponse{{Name: "models/gemini-2.5-flash"}}, nil
 	})
 
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if calls != 1 {
@@ -127,6 +130,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	calls := 0
 
@@ -163,7 +167,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := model.CheckConnection(tc.apiConfig)
+			err := model.CheckConnection(ctx, tc.apiConfig)
 			if err == nil {
 				t.Fatal("expected an API key error")
 			}
@@ -178,6 +182,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
 	listErr := errors.New("list models failed")
@@ -186,13 +191,14 @@ func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
 		return nil, listErr
 	})
 
-	err := model.CheckConnection(&APIConfig{ApiKey: &apiKey})
+	err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey})
 	if !errors.Is(err, listErr) {
 		t.Fatalf("expected ListModels error %v, got %v", listErr, err)
 	}
 }
 
 func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	messages := []Message{{Role: "user", Content: "hello"}}
 	cases := []struct {
@@ -207,7 +213,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := model.ChatStreamlyWithSender("gemini-2.5-flash", messages, tc.apiConfig, nil, func(*string, *string) error {
+			err := model.ChatStreamlyWithSender(ctx, "gemini-2.5-flash", messages, tc.apiConfig, nil, nil, func(*string, *string) error {
 				t.Errorf("sender should not be called without an API key")
 				return nil
 			})
@@ -222,11 +228,12 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelChatRequiresModelName(t *testing.T) {
+	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
 	messages := []Message{{Role: "user", Content: "hello"}}
 
-	response, err := model.ChatWithMessages("", messages, &APIConfig{ApiKey: &apiKey}, nil)
+	response, err := model.ChatWithMessages(ctx, "", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil {
 		t.Fatal("expected a model name error")
 	}
@@ -237,7 +244,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected no response, got %v", response)
 	}
 
-	err = model.ChatStreamlyWithSender("", messages, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error {
+	err = model.ChatStreamlyWithSender(ctx, "", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error {
 		t.Errorf("sender should not be called without a model name")
 		return nil
 	})
@@ -248,7 +255,7 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 		t.Fatalf("expected model name error, got %v", err)
 	}
 
-	err = model.ChatStreamlyWithSender("gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	err = model.ChatStreamlyWithSender(ctx, "gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected a sender error")
 	}
@@ -312,6 +319,7 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
 			model := NewGoogleModel(tc.baseURL, URLSuffix{})
 			withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 				if config.HTTPOptions.BaseURL != tc.expectedBaseURL {
@@ -320,7 +328,7 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 				return []ListModelResponse{{Name: "models/gemini-2.5-flash"}}, nil
 			})
 
-			if _, err := model.ListModels(&APIConfig{ApiKey: &apiKey, Region: tc.region}); err != nil {
+			if _, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: tc.region}); err != nil {
 				t.Fatalf("expected no error, got %v", err)
 			}
 		})
@@ -329,8 +337,8 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	pages := []googleModelPage{
-		{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
-		{items: []DSModel{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
+		{items: []ModelListItem{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
 	}
 	var pageTokens []string
 
@@ -374,7 +382,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
-			return googleModelPage{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
+			return googleModelPage{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
 		}
 		return googleModelPage{}, pageErr
 	})

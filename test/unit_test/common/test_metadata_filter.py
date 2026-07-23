@@ -61,6 +61,20 @@ def test_pushdown_check_accepts_not_contains():
     assert is_pushdown_supported([{"key": "tag", "op": "not contains", "value": "x"}])
 
 
+@pytest.mark.parametrize("op", ["≠", "not in"])
+def test_pushdown_check_rejects_multivalue_unsafe_negative_ops(op):
+    # These negative operators cannot be expressed as a single push-down
+    # predicate over a multi-valued metadata field without diverging from the
+    # in-memory meta_filter's per-value-bucket semantics, so both backends must
+    # refuse push-down and fall back to in-memory evaluation. The ES backend
+    # already does this; the Infinity backend must match it.
+    from common.metadata_es_filter import is_pushdown_supported as es_is_pushdown_supported
+
+    flt = [{"key": "tag", "op": op, "value": "a"}]
+    assert not is_pushdown_supported(flt)
+    assert not es_is_pushdown_supported(flt)
+
+
 # ---------------------------------------------------------------------------
 # Shared: plan_pushdown (same logic for both backends)
 # ---------------------------------------------------------------------------

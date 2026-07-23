@@ -37,7 +37,7 @@ func NhopEntityNames(nHopJSON string) []string {
 
 // SearchEntities searches for KG entities matching a question.
 func SearchEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGEntity, error) {
-	dense, err := buildDenseExpr(embModel, question, topN)
+	dense, err := buildDenseExpr(ctx, embModel, question, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func SearchEntitiesByTypes(ctx context.Context, docEngine engine.DocEngine, kbID
 
 // SearchRelations searches for KG relations matching a question.
 func SearchRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGRelation, error) {
-	dense, err := buildDenseExpr(embModel, question, topN)
+	dense, err := buildDenseExpr(ctx, embModel, question, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +94,12 @@ func SearchTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs []
 }
 
 // buildDenseExpr computes the query vector and returns a MatchDenseExpr.
-func buildDenseExpr(embModel *modelModule.EmbeddingModel, question string, topN int) (*types.MatchDenseExpr, error) {
+func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, question string, topN int) (*types.MatchDenseExpr, error) {
 	if embModel == nil || question == "" {
 		return nil, nil
 	}
 	embCfg := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{question}, embModel.APIConfig, embCfg)
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, []string{question}, embModel.APIConfig, embCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("KG entity embed failed: %w", err)
 	}

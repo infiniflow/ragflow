@@ -594,6 +594,26 @@ def list_provider_instances(tenant_id: str, provider_id_or_name: str):
     return True, instances
 
 
+async def _run_verification(label: str, coro, timeout_seconds: int):
+    """
+    Run a verification coroutine with timeout and uniform error handling.
+
+    Returns (True, result) on success, or (False, error_message) on failure.
+    """
+    try:
+        result = await asyncio.wait_for(coro, timeout=timeout_seconds)
+        return True, result
+    except asyncio.TimeoutError:
+        logging.exception("Timeout accessing %s", label)
+        return False, f"\nTimeout accessing {label}."
+    except asyncio.CancelledError:
+        logging.exception("Verification cancelled for %s", label)
+        return False, f"\n{label} verification aborted."
+    except Exception as e:
+        logging.exception("Fail to access %s", label)
+        return False, f"\nFail to access {label}.{str(e)}"
+
+
 async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url: str = None, region: str = None, model_info: list[dict] = None):
     """
     Verify API key for a provider.
@@ -652,7 +672,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     model_verify_result = {}
     # test if api key works
-    chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed, asr_passed, vlm_passed = False, False, False, False, False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
@@ -663,182 +682,174 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
             except (json.JSONDecodeError, TypeError):
                 api_key = {"yiyan_ak": api_key, "yiyan_sk": ""}
     api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
+    # check passed types
+    passed_types = set()
     for llm in factory_llms:
         model_types = _factory_model_types(llm)
-        if not embd_passed and LLMType.EMBEDDING.value in model_types:
-            assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
-            mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
-            try:
-                arr, tc = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
-                    timeout=timeout_seconds,
-                )
-                if len(arr[0]) == 0:
-                    raise Exception("Fail")
-                embd_passed = True
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-            except Exception as e:
-                logging.exception(
-                    "Fail to access embedding model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-        elif not chat_passed and LLMType.CHAT.value in model_types:
-            assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
-            mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
-            try:
+        any_passed = False
+        for mt_value in model_types:
+            if mt_value in passed_types:
+                continue
+            passed = False
+
+            if mt_value == LLMType.EMBEDDING.value:
+                if provider_name not in EmbeddingModel:
+                    msg += f"\nEmbedding model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
+                label = f"embedding model({llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(mdl.encode, ["Test if the api key is available"]), timeout_seconds)
+                if not ok:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                if len(result[0]) == 0:
+                    msg += f"\nFail to access {label}."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            elif mt_value == LLMType.CHAT.value:
+                if provider_name not in ChatModel:
+                    msg += f"\nChat model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+
+                temperature = 1 if llm["llm_name"] in ("kimi-k3", "kimi-k2.7-code") else 0.9
 
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
                         None,
                         [{"role": "user", "content": "Hi"}],
-                        {"temperature": 0.9},
+                        {"temperature": temperature},
                     ):
                         if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
                             return True
                     return False
 
-                result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
-                if result:
-                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-                    chat_passed = True
-                else:
-                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                    raise Exception("No valid response received")
-            except Exception as e:
-                logging.exception(
-                    "Fail to access chat model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
-        elif not rerank_passed and LLMType.RERANK.value in model_types:
-            if provider_name not in RerankModel:
-                unsupported_msg = f"Rerank model from {provider_name} is not supported yet."
-                logging.warning(unsupported_msg)
-                msg += f"\n{unsupported_msg}"
-                continue
-            mdl = RerankModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
-            try:
-                arr, tc = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]),
-                    timeout=timeout_seconds,
-                )
-                if len(arr) == 0 or tc == 0:
-                    raise Exception("Fail")
-                rerank_passed = True
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-                logging.debug(f"passed model rerank {llm['llm_name']}")
-            except Exception as e:
-                logging.exception(
-                    "Fail to access rerank model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
-        elif not ocr_passed and LLMType.OCR.value in model_types:
-            assert provider_name in OcrModel, f"OCR model from {provider_name} is not supported yet."
-            mdl = OcrModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
-            try:
-                ok, reason = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.check_available),
-                    timeout=timeout_seconds,
-                )
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, check_streamly(), timeout_seconds)
                 if not ok:
-                    raise RuntimeError(reason or "Model not available")
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-                ocr_passed = True
-            except Exception as e:
-                logging.exception(
-                    "Fail to access OCR model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
-        elif not tts_passed and LLMType.TTS.value in model_types:
-            assert provider_name in TTSModel, f"TTS model from {provider_name} is not supported yet."
-            mdl = TTSModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
-            try:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                if not result:
+                    msg += f"\nFail to access {label}.No valid response received"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            elif mt_value == LLMType.RERANK.value:
+                if provider_name not in RerankModel:
+                    msg += f"\nRerank model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = RerankModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]), timeout_seconds)
+                if not ok:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                arr, tc = result
+                if len(arr) == 0 or tc == 0:
+                    msg += f"\nFail to access {label}."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            elif mt_value == LLMType.OCR.value:
+                if provider_name not in OcrModel:
+                    msg += f"\nOCR model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = OcrModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(mdl.check_available), timeout_seconds)
+                if not ok:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                ok2, reason = result
+                if not ok2:
+                    msg += f"\nFail to access {label}.{reason or 'Model not available'}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            elif mt_value == LLMType.TTS.value:
+                if provider_name not in TTSModel:
+                    msg += f"\nTTS model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = TTSModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
 
                 def drain_tts():
                     for _ in mdl.tts("Hello~ RAGFlower!"):
                         pass
 
-                await asyncio.wait_for(
-                    asyncio.to_thread(drain_tts),
-                    timeout=timeout_seconds,
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-                tts_passed = True
-            except Exception as e:
-                logging.exception(
-                    "Fail to access TTS model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
-        elif not vlm_passed and LLMType.VISION.value in model_types:
-            if provider_name not in CvModel:
-                unsupported_msg = f"Image to text model from {provider_name} is not supported yet."
-                logging.warning(unsupported_msg)
-                msg += f"\n{unsupported_msg}"
-                continue
-            from rag.utils.base64_image import test_image
-
-            mdl = CvModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
-            try:
-                image_data = test_image
-                m, tc = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.describe, image_data),
-                    timeout=timeout_seconds,
-                )
-                if not tc and m.find("**ERROR**:") >= 0:
-                    raise Exception(m)
-                vlm_passed = True
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-            except Exception as e:
-                logging.exception(
-                    "Fail to access vision model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
-        elif not asr_passed and LLMType.ASR.value in model_types:
-            if provider_name not in Seq2txtModel:
-                unsupported_msg = f"Speech model from {provider_name} is not supported yet."
-                logging.warning(unsupported_msg)
-                msg += f"\n{unsupported_msg}"
-                continue
-            mdl = Seq2txtModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
-            try:
-                ok, reason = await asyncio.wait_for(
-                    asyncio.to_thread(mdl.check_available),
-                    timeout=timeout_seconds,
-                )
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(drain_tts), timeout_seconds)
                 if not ok:
-                    raise RuntimeError(reason or "Model not available")
-                asr_passed = True
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-            except Exception as e:
-                logging.exception(
-                    "Fail to access ASR model for provider=%s model=%s",
-                    provider_name,
-                    llm["llm_name"],
-                )
-                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
-                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
-        if any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed, vlm_passed, asr_passed]):
-            msg = ""
-            break
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
 
-    success = any([embd_passed, chat_passed, rerank_passed, ocr_passed, tts_passed, vlm_passed, asr_passed])
+            elif mt_value == LLMType.VISION.value:
+                if provider_name not in CvModel:
+                    msg += f"\nImage to text model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                from rag.utils.base64_image import test_image
+
+                mdl = CvModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(mdl.describe, test_image), timeout_seconds)
+                if not ok:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                m, tc = result
+                if not tc and m.find("**ERROR**:") >= 0:
+                    msg += f"\nFail to access {label}.{m}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            elif mt_value == LLMType.ASR.value:
+                if provider_name not in Seq2txtModel:
+                    msg += f"\nSpeech model from {provider_name} is not supported yet."
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                mdl = Seq2txtModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                ok, result = await _run_verification(label, asyncio.to_thread(mdl.check_available), timeout_seconds)
+                if not ok:
+                    msg += result
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                ok2, reason = result
+                if not ok2:
+                    msg += f"\nFail to access {label}.{reason or 'Model not available'}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
+                passed = True
+
+            if passed:
+                logging.debug("passed model %s type=%s", llm["llm_name"], mt_value)
+                passed_types.add(mt_value)
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.SUCCESS.value
+                any_passed = True
+                break
+            else:
+                model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+        if any_passed:
+            msg = ""
+
+    success = bool(passed_types)
     return success, "success" if success else msg, model_verify_result
 
 

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
@@ -8,7 +9,7 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -45,9 +46,9 @@ func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) Pars
 		apiConfig.ApiKey = &apiKey
 	}
 
-	resp, err := driver.OCRFile(&algorithm, data, &filename, apiConfig, &models.OCRConfig{
+	resp, err := driver.OCRFile(ctx, &algorithm, data, &filename, apiConfig, &models.OCRConfig{
 		Algorithm: algorithm,
-	})
+	}, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)}
 	}
@@ -58,5 +59,5 @@ func parsePDFWithPaddleOCR(filename string, data []byte, parser *PDFParser) Pars
 	if resp.Text != nil && strings.TrimSpace(*resp.Text) == "" {
 		pageCount = 0
 	}
-	return parseMinerUMarkdownResult(filename, *resp.Text, parser.OutputFormat, pageCount)
+	return parseMinerUMarkdownResult(ctx, filename, *resp.Text, parser.OutputFormat, pageCount)
 }

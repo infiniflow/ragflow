@@ -63,9 +63,9 @@ type LLMParam struct {
 	// same line verbatim.
 	FrequencyPenalty *float64
 
-	// Driver is the provider driver to use (e.g. "openai", "dummy"). When
-	// empty, the default ChatInvoker will look up a driver from ModelID
-	// (e.g. by attempting NewDummyModel for unknown providers).
+	// Driver is the configured provider driver to use (e.g. "openai"). When
+	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
+	// test/development-only dummy driver.
 	Driver string
 
 	// APIKey overrides the default empty key. Tests may set this; prod
@@ -219,22 +219,9 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	if driver == "" {
 		driver = "dummy"
 	}
-	baseURL := baseURLMapForDriver(driver, req.BaseURL)
-	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
-	// the chat-completions endpoint (e.g. "chat/completions" for
-	// openai-compatible drivers, "v1/messages" for anthropic). The
-	// factory's NewModelDriver accepts a zero URLSuffix and stores it
-	// as-is; the openai driver then builds `<base>/` (with no path),
-	// which is the wrong endpoint for a v1-root base URL. We seed
-	// the right suffix per driver here so the factory and the
-	// openai driver's URL construction agree.
-	urlSuffix := chatURLSuffixFor(driver)
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	d, err := newChatModelDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("component: LLM: no driver for %q", driver)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -309,42 +296,11 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 	return out
 }
 
-// chatURLSuffixFor returns the URLSuffix the factory should pass to
-// the driver for the chat endpoint. Each driver's ChatWithMessages
-// builds `baseURL/URLSuffix.Chat`, so the suffix has to match the
-// provider's actual chat path. We seed the common ones here; for any
-// driver the factory has no entry for, we fall through to a default
-// "chat/completions" path (the openai-compatible default), which
-// matches the dummy driver and any third-party openai-compatible
-// gateway.
-func chatURLSuffixFor(driver string) models.URLSuffix {
-	switch strings.ToLower(driver) {
-	case "anthropic":
-		return models.URLSuffix{Chat: "v1/messages"}
-	case "ollama":
-		return models.URLSuffix{Chat: "api/chat"}
-	default:
-		return models.URLSuffix{Chat: "chat/completions"}
-	}
-}
-
-func baseURLMapForDriver(driver, override string) map[string]string {
-	if override != "" {
-		return map[string]string{"default": override}
-	}
-	pm := models.GetProviderManager()
-	if pm == nil {
-		return nil
-	}
-	provider := pm.FindProvider(driver)
-	if provider == nil || len(provider.URL) == 0 {
-		return nil
-	}
-	baseURL := make(map[string]string, len(provider.URL))
-	for region, url := range provider.URL {
-		baseURL[region] = url
-	}
-	return baseURL
+// newChatModelDriver returns the provider-configured driver used by regular
+// chat. Provider-specific endpoint suffixes remain owned by conf/models/*.json;
+// a tenant base_url override replaces only the endpoint root.
+func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
+	return models.GetPreconfiguredDriver(driver, override)
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.
@@ -358,6 +314,17 @@ func (c *LLMComponent) Name() string { return "LLM" }
 // Invoke runs the LLM and returns the output map.
 func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}

@@ -45,8 +45,8 @@ type SearchDetailRow struct {
 }
 
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
-	var searches []*entity.Search
+func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+	var searches []*entity.SearchListItem
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
@@ -84,11 +84,11 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
 		offset := (page - 1) * pageSize
-		if err := query.Offset(offset).Limit(pageSize).Find(&searches).Error; err != nil {
+		if err := query.Offset(offset).Limit(pageSize).Scan(&searches).Error; err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := query.Find(&searches).Error; err != nil {
+		if err := query.Scan(&searches).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -97,8 +97,8 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 }
 
 // ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
-	var searches []*entity.Search
+func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+	var searches []*entity.SearchListItem
 
 	// Build query with join to user table
 	query := DB.Model(&entity.Search{}).
@@ -126,7 +126,7 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records
-	if err := query.Find(&searches).Error; err != nil {
+	if err := query.Scan(&searches).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -203,11 +203,18 @@ func (dao *SearchDAO) DeleteByID(tenantID, id string) error {
 
 // Accessible4Deletion checks if a search can be deleted by a specific user
 // Reference: Python search_service.py::accessible4deletion
-// Returns true if the search exists, is valid, and was created by the user
+// Returns true if the search exists, is valid, and was created by the user.
+// A missing or non-owned search returns (false, nil) so callers can distinguish
+// "not authorized" from a genuine database error (which is returned as the error).
 func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) (bool, error) {
-	var search entity.Search
-	err := DB.Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").First(&search).Error
-	return err == nil, err
+	var count int64
+	err := DB.Model(&entity.Search{}).
+		Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // GetByTenantIDAndID gets search by tenant ID and search ID

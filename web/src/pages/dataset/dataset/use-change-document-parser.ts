@@ -1,11 +1,17 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDocumentParser } from '@/hooks/use-document-request';
+import {
+  useSetDocumentParser,
+  useSetDocumentPipelineParser,
+} from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
+import { isGoBackend } from '@/utils/backend-runtime';
 import { useCallback, useState } from 'react';
 
 export const useChangeDocumentParser = () => {
   const { setDocumentParser, loading } = useSetDocumentParser();
+  const { setDocumentPipelineParser, loading: pipelineParserLoading } =
+    useSetDocumentPipelineParser();
   const [record, setRecord] = useState<IDocumentInfo>({} as IDocumentInfo);
 
   const {
@@ -17,19 +23,33 @@ export const useChangeDocumentParser = () => {
   const onChangeParserOk = useCallback(
     async (parserConfigInfo: IChangeParserRequestBody) => {
       if (record?.id && record?.dataset_id) {
-        const ret = await setDocumentParser({
+        // The Go document endpoint takes `parser_id` and a pipeline-shaped
+        // parser_config; the Python one keeps the legacy payload shape.
+        const common = {
           parserId: parserConfigInfo.parser_id,
           pipelineId: parserConfigInfo.pipeline_id || '',
           documentId: record?.id,
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
-        });
+        };
+        const ret = isGoBackend()
+          ? await setDocumentPipelineParser({
+              ...common,
+              parseType: parserConfigInfo.parseType,
+            })
+          : await setDocumentParser(common);
         if (ret === 0) {
           hideChangeParserModal();
         }
       }
     },
-    [record?.id, record?.dataset_id, setDocumentParser, hideChangeParserModal],
+    [
+      record?.id,
+      record?.dataset_id,
+      setDocumentParser,
+      setDocumentPipelineParser,
+      hideChangeParserModal,
+    ],
   );
 
   const handleShowChangeParserModal = useCallback(
@@ -41,7 +61,7 @@ export const useChangeDocumentParser = () => {
   );
 
   return {
-    changeParserLoading: loading,
+    changeParserLoading: loading || pipelineParserLoading,
     onChangeParserOk,
     changeParserVisible,
     hideChangeParserModal,

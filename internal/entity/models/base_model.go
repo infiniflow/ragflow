@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -192,7 +193,7 @@ func NewDriverHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 60 * time.Second
+	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
 	return &http.Client{Transport: t}
 }
@@ -218,4 +219,182 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 func ReadErrorBody(r io.Reader) string {
 	b, _ := io.ReadAll(r)
 	return string(b)
+}
+
+func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := map[string]any{
+		"model":       modelName,
+		"messages":    buildChatMessages(messages),
+		"stream":      stream,
+		"temperature": 1,
+	}
+
+	if cfg != nil {
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
+		if cfg.Temperature != nil {
+			reqBody["temperature"] = *cfg.Temperature
+		}
+
+		if cfg.DoSample != nil {
+			reqBody["do_sample"] = *cfg.DoSample
+		}
+
+		if cfg.TopP != nil {
+			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.Stop != nil {
+			reqBody["stop"] = *cfg.Stop
+		}
+
+		if cfg.Tools != nil {
+			reqBody["tools"] = cfg.Tools
+			toolChoice := "auto"
+			if cfg.ToolChoice != nil {
+				toolChoice = *cfg.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
+	}
+
+	return reqBody
+}
+
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
+}
+
+// buildChatMessages converts internal messages to chat API payload items.
+func buildChatMessages(messages []Message) []map[string]any {
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMsg := map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
+	}
+	return apiMessages
+}
+
+// applyChatToolConfig adds OpenAI-compatible tool configuration to a request.
+func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig) {
+	if chatConfig == nil || chatConfig.Tools == nil {
+		return
+	}
+	reqBody["tools"] = chatConfig.Tools
+	if chatConfig.ToolChoice != nil {
+		reqBody["tool_choice"] = *chatConfig.ToolChoice
+	}
+}
+
+// extractToolCalls converts an OpenAI-compatible message's tool calls.
+func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
+	rawToolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
+	for _, rawToolCall := range rawToolCalls {
+		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
+			toolCalls = append(toolCalls, toolCall)
+		}
+	}
+	return toolCalls
+}
+
+// setSortedToolCallsResult stores accumulated tool calls in index order.
+func setSortedToolCallsResult(chatConfig *ChatConfig, accumulatedToolCalls map[int]map[string]any) {
+	if chatConfig == nil || len(accumulatedToolCalls) == 0 {
+		return
+	}
+	indices := make([]int, 0, len(accumulatedToolCalls))
+	for idx := range accumulatedToolCalls {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+	toolCalls := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+	for _, idx := range indices {
+		toolCalls = append(toolCalls, accumulatedToolCalls[idx])
+	}
+	chatConfig.ToolCallsResult = &toolCalls
+}
+
+// accumulateToolCallDeltas merges streaming tool-call deltas by index.
+func accumulateToolCallDeltas(delta map[string]interface{}, accumulatedToolCalls map[int]map[string]any) bool {
+	toolCallDeltas, ok := delta["tool_calls"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, toolCallDelta := range toolCallDeltas {
+		toolCall, ok := toolCallDelta.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		idxF, ok := toolCall["index"].(float64)
+		if !ok {
+			continue
+		}
+		idx := int(idxF)
+		existing, hasExisting := accumulatedToolCalls[idx]
+		if !hasExisting {
+			accumulatedToolCalls[idx] = cloneMap(toolCall)
+			continue
+		}
+		appendStringField(existing, toolCall, "id")
+		if typ, ok := toolCall["type"].(string); ok && typ != "" {
+			existing["type"] = typ
+		}
+		mergeToolCallFunction(existing, toolCall)
+	}
+	return true
+}
+
+// appendStringField appends a non-empty string field from src into dst.
+func appendStringField(dst, src map[string]interface{}, key string) {
+	value, ok := src[key].(string)
+	if !ok || value == "" {
+		return
+	}
+	if existing, ok := dst[key].(string); ok {
+		dst[key] = existing + value
+	} else {
+		dst[key] = value
+	}
+}
+
+// mergeToolCallFunction merges streamed function name and arguments.
+func mergeToolCallFunction(existing, delta map[string]interface{}) {
+	fn, ok := delta["function"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	existingFn, ok := existing["function"].(map[string]interface{})
+	if !ok {
+		existingFn = make(map[string]interface{})
+		existing["function"] = existingFn
+	}
+	appendStringField(existingFn, fn, "name")
+	appendStringField(existingFn, fn, "arguments")
+}
+
+// CloneMap returns a shallow copy of m.
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	cp := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

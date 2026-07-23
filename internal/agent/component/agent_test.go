@@ -8,7 +8,7 @@
 //  2. ToolCallRound: the runner returns a message with ToolCalls →
 //     component extracts them into the tool_calls output.
 //  3. ExhaustRoundsError: the runner returns an error → component
-//     propagates it.
+//     exposes it through the Python-compatible _ERROR output.
 //  4. MissingModelID: the component rejects before calling the runner.
 package component
 
@@ -212,6 +212,73 @@ func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 	}
 }
 
+func TestAgent_NewTreatsSchemaDefaultUserPromptAsSysQueryPlaceholder(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"api_key":     "test-key",
+		"user_prompt": agentUserPromptSchemaDefault,
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "用户真正的问题"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotPrompt != "用户真正的问题" {
+		t.Fatalf("runner prompt = %q, want sys.query placeholder resolved", gotPrompt)
+	}
+}
+
+func TestAgent_EmptyConfiguredUserPromptDoesNotFallbackToSysQuery(t *testing.T) {
+	var gotSystemPrompt, gotUserPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		gotSystemPrompt = p.SystemPrompt
+		gotUserPrompt = p.UserPrompt
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":   "stub",
+		"api_key":    "test-key",
+		"sys_prompt": "User answer: {UserFillUp:TwelveBadgersRescue@key}",
+		"prompts": []any{
+			map[string]any{"role": "user", "content": ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "1"
+	state.SetVar("UserFillUp:TwelveBadgersRescue", "key", "21")
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotSystemPrompt != "User answer: 21" {
+		t.Fatalf("runner system prompt = %q, want resolved UserFillUp answer", gotSystemPrompt)
+	}
+	if gotUserPrompt == "1" {
+		t.Fatalf("runner user prompt reused sys.query: %q", gotUserPrompt)
+	}
+	if gotUserPrompt != gotSystemPrompt {
+		t.Fatalf("runner user prompt = %q, want system-only fallback %q", gotUserPrompt, gotSystemPrompt)
+	}
+}
+
 func TestAgent_FormatsRuntimePromptLikePython(t *testing.T) {
 	var gotPrompt string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
@@ -285,15 +352,18 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return nil, errors.New("agent: exhausted rounds without final answer")
+		return nil, errors.New("[GraphRunError] exceeds max steps")
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), map[string]any{
 		"user_prompt": "x",
 	})
-	if err == nil {
-		t.Fatal("expected error when loop exhausts without a final answer")
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
 	}
 }
 
@@ -529,6 +599,143 @@ func TestAgent_Registered(t *testing.T) {
 	}
 	if c.Name() != "Agent" {
 		t.Errorf("Name()=%q, want Agent", c.Name())
+	}
+}
+
+func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"id":             "child-node",
+				"name":           "NewPumasLick",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"description": "child agent description",
+					"prompts": []any{
+						map[string]any{"role": "user", "content": "child prompt"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+	if len(agent.param.Tools) != 0 {
+		t.Fatalf("regular tools = %v, want none", agent.param.Tools)
+	}
+	if len(agent.param.SubAgents) != 1 {
+		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
+	}
+
+	tools, err := buildAgentTools(agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	info, err := tools[0].Info(context.Background())
+	if err != nil {
+		t.Fatalf("tool.Info: %v", err)
+	}
+	if info.Name != "NewPumasLick" {
+		t.Fatalf("tool name = %q, want NewPumasLick", info.Name)
+	}
+	if info.Desc != "child agent description" {
+		t.Fatalf("tool desc = %q, want child agent description", info.Desc)
+	}
+}
+
+func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "你好",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child one",
+				},
+			},
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "世界",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child two",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+
+	tools, err := buildAgentTools(agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	var names []string
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names = append(names, info.Name)
+	}
+	if got, want := strings.Join(names, ","), "agent,agent_2"; got != want {
+		t.Fatalf("tool names = %q, want %q", got, want)
+	}
+}
+
+func TestAgent_SubAgentToolInvokableRunCallsChildAgent(t *testing.T) {
+	var got AgentParam
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		got = p
+		return &schema.Message{Role: schema.Assistant, Content: "child answer"}, nil
+	})
+
+	tool := &subAgentTool{spec: SubAgentTool{
+		Name: "Child Agent",
+		Param: AgentParam{
+			ModelID:    "stub",
+			UserPrompt: "default child prompt",
+			MaxRounds:  1,
+		},
+	}}
+
+	out, err := tool.InvokableRun(context.Background(), `{"user_prompt":"ask child","reasoning":"because","context":"facts"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if out != "child answer" {
+		t.Fatalf("InvokableRun output = %q, want child answer", out)
+	}
+	if !strings.Contains(got.UserPrompt, "REASONING:\nbecause") {
+		t.Fatalf("UserPrompt = %q, want reasoning included", got.UserPrompt)
+	}
+	if !strings.Contains(got.UserPrompt, "CONTEXT:\nfacts") {
+		t.Fatalf("UserPrompt = %q, want context included", got.UserPrompt)
+	}
+	if !strings.Contains(got.UserPrompt, "QUERY:\nask child") {
+		t.Fatalf("UserPrompt = %q, want query included", got.UserPrompt)
 	}
 }
 

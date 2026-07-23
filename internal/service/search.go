@@ -17,15 +17,12 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"strings"
-
-	"gorm.io/gorm"
 )
 
 // SearchService search service
@@ -83,7 +80,7 @@ type SearchShareDetail struct {
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	var searches []*entity.Search
+	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
@@ -118,7 +115,7 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 				}
 				searches = searches[start:end]
 			} else {
-				searches = []*entity.Search{}
+				searches = []*entity.SearchListItem{}
 			}
 		}
 	}
@@ -169,7 +166,7 @@ func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs [
 }
 
 // toSearchAppResponse converts search model to response format
-func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]interface{} {
+func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":            search.ID,
 		"tenant_id":     search.TenantID,
@@ -180,16 +177,15 @@ func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]in
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
 		"search_config": map[string]interface{}(search.SearchConfig),
+		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
 	if search.Avatar != nil {
 		result["avatar"] = *search.Avatar
 	}
-
-	// Add joined fields from user table
-	// Note: These fields are populated by the DAO query with Select clause
-	// but GORM will map them to the model's embedded fields if available
-	// We need to handle the extra fields manually
+	if search.TenantAvatar != nil {
+		result["tenant_avatar"] = *search.TenantAvatar
+	}
 
 	return result
 }
@@ -211,6 +207,10 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
+	if err := common.ValidateName(name); err != nil {
+		return nil, err
+	}
+
 	// Generate UUID for search ID (same as Python get_uuid())
 	searchID := utility.GenerateUUID()
 
@@ -337,14 +337,7 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 
 // AccessibleForCompletion check if it is accessible
 func (s *SearchService) AccessibleForCompletion(userID string, searchID string) (bool, error) {
-	ok, err := s.searchDAO.Accessible4Deletion(searchID, userID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return ok, nil
+	return s.searchDAO.Accessible4Deletion(searchID, userID)
 }
 
 type SearchCompletionPlan struct {
@@ -561,14 +554,14 @@ type UpdateSearchRequest struct {
 
 func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
 	// Step 1: Check update permission (same as delete - uses accessible4deletion)
-	// Only creator can update
+	// Only creator can update. A missing or non-owned search is treated as
+	// unauthorized so the contract returns a clear "no authorization" error.
 
-	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	accessible, err := s.searchDAO.Accessible4Deletion(searchID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
 	}
-
-	if !status {
+	if !accessible {
 		return nil, fmt.Errorf("no authorization")
 	}
 

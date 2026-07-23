@@ -90,7 +90,6 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"qa":           true,
 		"resume":       true,
 		"table":        true,
-		"tag":          true,
 	}
 	for h := range hardcoded {
 		t.Logf("Hardcoded has: %s", h)
@@ -239,39 +238,5 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	_, err := LoadBuiltinDSL("nonexistent")
 	if err == nil {
 		t.Fatal("LoadBuiltinDSL(nonexistent) = nil, want error")
-	}
-}
-
-func TestDefaultRegistry_DefaultParserID(t *testing.T) {
-	r, err := DefaultRegistry()
-	if err != nil {
-		t.Fatalf("DefaultRegistry: %v", err)
-	}
-
-	tests := []struct {
-		name     string
-		fileType string
-		filename string
-		fallback string
-		want     string
-	}{
-		{name: "visual", fileType: "visual", filename: "img.png", fallback: "naive", want: "picture"},
-		{name: "aural", fileType: "aural", filename: "audio.mp3", fallback: "naive", want: "audio"},
-		{name: "presentation by ext", fileType: "doc", filename: "deck.pptx", fallback: "naive", want: "presentation"},
-		{name: "email by ext", fileType: "doc", filename: "mail.eml", fallback: "naive", want: "email"},
-		{name: "pages as presentation", fileType: "doc", filename: "slides.pages", fallback: "naive", want: "presentation"},
-		{name: "msg as email", fileType: "doc", filename: "message.msg", fallback: "naive", want: "email"},
-		{name: "fallback default", fileType: "doc", filename: "notes.txt", fallback: "manual", want: "manual"},
-		{name: "unknown filetype fallback", fileType: "unknown", filename: "file.bin", fallback: "general", want: "general"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := r.DefaultParserID(tt.fileType, tt.filename, tt.fallback)
-			if got != tt.want {
-				t.Fatalf("DefaultParserID(%q, %q, %q) = %q, want %q",
-					tt.fileType, tt.filename, tt.fallback, got, tt.want)
-			}
-		})
 	}
 }

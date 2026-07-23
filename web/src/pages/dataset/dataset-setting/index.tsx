@@ -25,8 +25,9 @@ import ChunkMethodLearnMore from './chunk-method-learn-more';
 import LinkDataSource, {
   IDataSourceNodeProps,
 } from './components/link-data-source';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
 import { MainContainer } from './configuration-form-container';
-import { ChunkMethodItem, ParseTypeItem } from './configuration/common-item';
+import { ChunkMethodItem } from './configuration/common-item';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -105,7 +106,6 @@ export default function DatasetSettings() {
           additionalProperties: false,
         },
         built_in_metadata: [],
-        compilation_template_group_id: [],
         enable_metadata: false,
         llm_id: '',
       },

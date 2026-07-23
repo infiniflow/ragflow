@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -57,45 +58,18 @@ type togetherAIReasoningOptions struct {
 	Enabled bool `json:"enabled"`
 }
 
-func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
+func applyTogetherAIReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
+	if chatModelConfig == nil {
+		return
+	}
+	if chatModelConfig.Thinking != nil {
+		reqBody["reasoning"] = togetherAIReasoningOptions{
+			Enabled: *chatModelConfig.Thinking,
 		}
 	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
+	if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "gpt-oss") {
+		reqBody["reasoning_effort"] = *chatModelConfig.Effort
 	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Thinking != nil {
-			reqBody["reasoning"] = togetherAIReasoningOptions{
-				Enabled: *chatModelConfig.Thinking,
-			}
-		}
-		if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "gpt-oss") {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
-		}
-	}
-
-	return reqBody
 }
 
 func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
@@ -126,7 +100,7 @@ type togetherAIChatResponse struct {
 	FinishReason string                 `json:"finish_reason"`
 }
 
-func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (t *TogetherAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -142,12 +116,14 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(t.chatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyTogetherAIReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -193,7 +169,7 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 	}, nil
 }
 
-func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (t *TogetherAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -216,12 +192,14 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return err
 	}
 
-	jsonData, err := json.Marshal(t.chatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyTogetherAIReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -288,7 +266,7 @@ type togetherAIModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (t *TogetherAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -300,7 +278,7 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -324,7 +302,7 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result []DSModel
+	var result []ModelListItem
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -332,8 +310,8 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 	return ParseListModel(ModelList{Models: result}), nil
 }
 
-func (t *TogetherAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := t.ListModels(apiConfig)
+func (t *TogetherAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := t.ListModels(ctx, apiConfig)
 	return err
 }
 
@@ -349,7 +327,7 @@ type togetherAIEmbeddingResponse struct {
 	Object string                    `json:"object"`
 }
 
-func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (t *TogetherAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -382,7 +360,7 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -437,7 +415,7 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 	return embeddings, nil
 }
 
-func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -515,11 +493,11 @@ func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []st
 	return &rerankResponse, nil
 }
 
-func (t *TogetherAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (t *TogetherAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -622,11 +600,11 @@ func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiCo
 	}, nil
 }
 
-func (t *TogetherAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (t *TogetherAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -686,7 +664,7 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -772,18 +750,18 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 	return nil
 }
 
-func (t *TogetherAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (t *TogetherAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (t *TogetherAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (t *TogetherAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (t *TogetherAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (t *TogetherAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (t *TogetherAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (t *TogetherAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }

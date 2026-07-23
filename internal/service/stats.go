@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"ragflow/internal/dao"
@@ -27,6 +28,17 @@ var ErrTenantNotFound = errors.New("Tenant not found!")
 
 // StatPoint matches the frontend [date, value] tuple shape.
 type StatPoint [2]interface{}
+
+type StatsService struct {
+	userTenantDAO *dao.UserTenantDAO
+}
+
+// NewStatsService create stats service
+func NewStatsService() *StatsService {
+	return &StatsService{
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+}
 
 // StatsResponse matches Python GET /api/v1/system/stats response data.
 type StatsResponse struct {
@@ -39,14 +51,13 @@ type StatsResponse struct {
 }
 
 // GetStats returns daily API conversation statistics for the first tenant of a user.
-func (s *SystemService) GetStats(userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
-	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserID(userID)
+func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil || len(tenants) == 0 {
 		return nil, ErrTenantNotFound
 	}
 
-	rows, err := dao.NewAPI4ConversationDAO().Stats(tenants[0].TenantID, fromDate, toDate, source)
+	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, tenants[0].TenantID, fromDate, toDate, source)
 	if err != nil {
 		return nil, err
 	}

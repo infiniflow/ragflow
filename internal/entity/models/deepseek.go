@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -53,7 +52,7 @@ func (d *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
-func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -68,96 +67,43 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+			break
+		case "low":
+			thinkingFlag = "disabled"
+			break
+		case "medium":
+			thinkingFlag = "disabled"
+			break
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+			break
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "low":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "medium":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-				default:
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = effort
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 
@@ -166,7 +112,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -242,7 +188,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		ToolCalls:     toolCalls,
 	}
 	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &ChatUsage{
+		chatResponse.Usage = &TokenUsage{
 			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
 		}
 	}
@@ -251,7 +197,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -266,101 +212,39 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+		case "low":
+			thinkingFlag = "disabled"
+		case "medium":
+			thinkingFlag = "disabled"
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+		default:
+			return fmt.Errorf("invalid effort level")
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					break
-				case "low":
-					thinkingFlag = "disabled"
-					break
-				case "medium":
-					thinkingFlag = "disabled"
-					break
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-					break
-				default:
-					return fmt.Errorf("invalid effort level")
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 
@@ -369,7 +253,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -411,34 +295,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			return nil
 		}
 
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if hasExisting {
-					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-						if args, ok := fn["arguments"].(string); ok {
-							if ef, ok := existing["function"].(map[string]interface{}); ok {
-								if ea, ok := ef["arguments"].(string); ok {
-									ef["arguments"] = ea + args
-								} else {
-									ef["arguments"] = args
-								}
-							}
-						}
-					}
-				} else {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-				}
-			}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
 			return nil
 		}
 
@@ -469,18 +326,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("deepseek: stream ended before [DONE] or finish_reason")
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
@@ -488,17 +334,11 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 // Embed embeds a list of texts into embeddings
-func (d *DeepSeekModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (d *DeepSeekModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-type DSModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
-}
-
-func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (d *DeepSeekModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -517,7 +357,7 @@ func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -569,7 +409,7 @@ type deepseekBalanceResponse struct {
 // calling GET /user/balance with the configured Bearer token.
 // The result map matches the shape used by the Moonshot driver,
 // so the UI can render it without provider-specific code.
-func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (d *DeepSeekModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -581,7 +421,7 @@ func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Balance)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -629,8 +469,8 @@ func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	}, nil
 }
 
-func (d *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := d.ListModels(apiConfig)
+func (d *DeepSeekModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := d.ListModels(ctx, apiConfig)
 	if err != nil {
 		return err
 	}
@@ -638,42 +478,42 @@ func (d *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (d *DeepSeekModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (d *DeepSeekModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", d.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (d *DeepSeekModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (d *DeepSeekModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (d *DeepSeekModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (d *DeepSeekModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", d.Name())
 }
 
 // AudioSpeech convert text to audio
-func (d *DeepSeekModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (d *DeepSeekModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (d *DeepSeekModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (d *DeepSeekModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", d.Name())
 }
 
 // OCRFile OCR file
-func (d *DeepSeekModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (d *DeepSeekModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
 // ParseFile parse file
-func (d *DeepSeekModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (d *DeepSeekModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (d *DeepSeekModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (d *DeepSeekModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (d *DeepSeekModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (d *DeepSeekModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

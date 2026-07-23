@@ -179,6 +179,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.RerankModel != nil && searchResult.Total > 0 {
 		// External rerank model path - use RerankByModel
 		sim, term_similarity, vector_similarity = RerankByModel(
+			ctx,
 			req.RerankModel,
 			searchResult.Chunks,
 			searchResult.IDs,
@@ -652,7 +653,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if similarityForGetVector <= 0 {
 				similarityForGetVector = 0.1
 			}
-			matchDense, err := s.GetVector(req.Question, req.EmbeddingModel, topk, similarityForGetVector)
+			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, topk, similarityForGetVector)
 			if err != nil {
 				return nil, fmt.Errorf("GetVector failed: %w", err)
 			}
@@ -781,11 +782,11 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 }
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
-func (s *RetrievalService) GetVector(txt string, embModel *models.EmbeddingModel, topk int, similarity float64) (*types.MatchDenseExpr, error) {
+func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, topk int, similarity float64) (*types.MatchDenseExpr, error) {
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig)
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

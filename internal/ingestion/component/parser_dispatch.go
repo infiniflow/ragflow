@@ -24,6 +24,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -138,7 +139,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -159,7 +160,7 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 	}
 	configureParserFromSetups(p, fileType, setups)
 
-	res := p.ParseWithResult(filename, data)
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
 	}
@@ -382,10 +383,13 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
 // / tokenizer / extractor components read the matching family
 // key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType) map[string]any {
+func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
 	out := map[string]any{
 		"pages": toAnyPages(parsed),
 		"name":  name,
+	}
+	if lang != "" {
+		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = dispatched.OutputFormat

@@ -102,7 +102,13 @@
                             "suffix": [
                                 "pdf"
                             ],
-                            "vlm": {}
+                            "vlm": {},
+                            "pages": [
+                                [
+                                    1,
+                                    100000
+                                ]
+                            ]
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
@@ -217,7 +223,8 @@
                         },
                         "auto_keywords": 0,
                         "auto_questions": 0,
-                        "llm_id": ""
+                        "llm_id": "",
+                        "auto_tags": 0
                     }
                 }
             }

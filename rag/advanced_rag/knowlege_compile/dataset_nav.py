@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 import xxhash
@@ -37,6 +38,7 @@ from common.misc_utils import thread_pool_exec
 from rag.utils.redis_conn import RedisDistributedLock
 
 from ._common import encode as _encode
+from ._common import knowledge_compile_gen_conf as _knowledge_compile_gen_conf
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -181,6 +183,8 @@ async def _store_knn(
     fields = [
         "content_with_weight",
         "name",
+        "doc_id",
+        "type_kwd",
         "parent_kwd",
         "depth_int",
         "doc_count_int",
@@ -215,7 +219,7 @@ async def _store_knn(
         scoring = []
         for r in rows:
             stored = r.get(vf)
-            if stored and len(stored) == len(vec):
+            if _vector_len(stored) > 0 and _vector_len(stored) == _vector_len(vec):
                 sim = sum(a * b for a, b in zip(stored, vec))
                 scoring.append((sim, r))
         scoring.sort(key=lambda x: -x[0])
@@ -277,7 +281,7 @@ async def _embed(embd_mdl, text: str) -> list[float]:
     """Encode a single text string and return its embedding vector."""
     global _EMBED_DIM
     vecs = await _encode(embd_mdl, [text])
-    if vecs and len(vecs[0]) > 0:
+    if vecs and _vector_len(vecs[0]) > 0:
         dim = len(vecs[0])
         if _EMBED_DIM is None:
             _EMBED_DIM = dim
@@ -285,9 +289,20 @@ async def _embed(embd_mdl, text: str) -> list[float]:
     return []
 
 
-def _cosine_sim(a: list[float], b: list[float]) -> float:
+def _vector_len(vec) -> int:
+    if vec is None:
+        return 0
+    try:
+        return len(vec)
+    except TypeError:
+        return 0
+
+
+def _cosine_sim(a, b) -> float:
     """Compute cosine similarity between two vectors."""
-    if not a or not b or len(a) != len(b):
+    a_len = _vector_len(a)
+    b_len = _vector_len(b)
+    if a_len == 0 or b_len == 0 or a_len != b_len:
         return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     na = sum(x * x for x in a) ** 0.5
@@ -319,7 +334,7 @@ def _make_nav_doc_row(
         "compile_kwd": _COMPILE_KWD,
         "knowledge_graph_kwd": "entity",
         "type_kwd": "nav_doc",
-        "name": doc_id,
+        "name": f"{parent_kwd}_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}",
         "parent_kwd": parent_kwd,
         "depth_int": depth_int,
         "available_int": 0,
@@ -329,7 +344,7 @@ def _make_nav_doc_row(
     ltks = _tokenize(summary)
     row["content_ltks"] = ltks
     row["content_sm_ltks"] = _fine_tokenize(ltks)
-    if embedding:
+    if _vector_len(embedding) > 0:
         dim = len(embedding)
         row[_vec_field(dim)] = embedding
     return row
@@ -365,7 +380,7 @@ def _make_nav_cluster_row(
     ltks = _tokenize(description)
     row["content_ltks"] = ltks
     row["content_sm_ltks"] = _fine_tokenize(ltks)
-    if embedding:
+    if _vector_len(embedding) > 0:
         dim = len(embedding)
         row[_vec_field(dim)] = embedding
     return row
@@ -422,7 +437,7 @@ async def _find_best_cluster(
     best_parent = best.get("parent_kwd", "")
     # compute actual similarity to root
     stored = best.get(_vec_field(vec_dim))
-    sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+    sim = _cosine_sim(doc_embedding, stored)
 
     # Step 2: recursively descend into children
     while sim >= _RECURSE_THRESHOLD:
@@ -437,7 +452,7 @@ async def _find_best_cluster(
             break
         child = children[0]
         stored = child.get(_vec_field(vec_dim))
-        child_sim = _cosine_sim(doc_embedding, stored) if stored else 0.0
+        child_sim = _cosine_sim(doc_embedding, stored)
         if child_sim < _RECURSE_THRESHOLD:
             break
         best_name = child.get("name", best_name)
@@ -462,7 +477,7 @@ async def _llm_merge(chat_mdl, cluster_desc: str, doc_summary: str) -> str:
         "Return ONLY the merged text, no commentary."
     )
     try:
-        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        resp = await gen_json("", prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
         if isinstance(resp, dict):
             return str(resp.get("merged", resp.get("result", cluster_desc)))
         if isinstance(resp, str) and resp.strip():
@@ -472,23 +487,59 @@ async def _llm_merge(chat_mdl, cluster_desc: str, doc_summary: str) -> str:
     return cluster_desc
 
 
-async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> str:
-    """LLM create a cluster summary from one or more doc summaries."""
+def _clean_title(title: str) -> str:
+    """Normalize an LLM title into a one-line, length-capped display name."""
+    return " ".join((title or "").split())[:48].strip()
+
+
+def _fallback_title(summary: str) -> str:
+    """Derive a short readable title from a summary when the LLM gives none."""
+    words = " ".join((summary or "").split()).split(" ")
+    return " ".join(words[:6]).strip() or "Cluster"
+
+
+def _readable_cluster_name(title: str, seed: str) -> str:
+    """A readable yet unique nav-cluster key: ``"<title> <8-hex>"``.
+
+    The title makes the node name human-readable; the short hash of ``seed``
+    (the cluster description) preserves the per-KB uniqueness the tree keying
+    relies on (``_nav_cluster_id`` / ``parent_kwd``).
+    """
+    suffix = xxhash.xxh64((seed or "").encode("utf-8")).hexdigest()[:8]
+    return f"{_clean_title(title) or 'Cluster'} {suffix}"
+
+
+async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> tuple[str, str]:
+    """LLM-derive a cluster's readable ``(name, summary)`` from doc summaries.
+
+    ``name`` is a short human-readable topic title used to make the nav node
+    name readable (the caller still appends a short hash to keep the tree key
+    unique); ``summary`` is the 1-3 sentence description.
+    """
+    fallback_summary = doc_summaries[0] if doc_summaries else ""
     if not chat_mdl:
-        return doc_summaries[0] if doc_summaries else ""
+        return _fallback_title(fallback_summary), fallback_summary
+
     from rag.prompts.generator import gen_json
 
     texts = "\n---\n".join(doc_summaries)
-    prompt = f"Summarize the common topic of the following document excerpts in 1-3 concise sentences:\n\n{texts}\n\nReturn ONLY the summary text, no commentary."
+    prompt = (
+        "Given the document excerpts below, produce a short human-readable topic "
+        "name and a concise description of their common topic.\n\n"
+        f"{texts}\n\n"
+        'Return ONLY JSON: {"name": "<2-6 word topic title>", "summary": "<1-3 sentence description>"}'
+    )
     try:
-        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        resp = await gen_json("", prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
         if isinstance(resp, dict):
-            return str(resp.get("summary", resp.get("result", doc_summaries[0])))
+            summary = str(resp.get("summary") or resp.get("result") or fallback_summary).strip()
+            name = _clean_title(str(resp.get("name") or "")) or _fallback_title(summary)
+            return name, (summary or fallback_summary)
         if isinstance(resp, str) and resp.strip():
-            return resp.strip()
+            return _fallback_title(resp), resp.strip()
     except Exception:
         logging.exception("dataset_nav: LLM summary failed")
-    return doc_summaries[0] if doc_summaries else ""
+    return _fallback_title(fallback_summary), fallback_summary
 
 
 # ---------------------------------------------------------------------------
@@ -579,7 +630,7 @@ async def upsert_dataset_nav_doc(
                 # Re-compute embedding for the new summary
                 if embd_mdl and new_desc != old_desc:
                     new_emb = await _embed(embd_mdl, new_desc)
-                    if new_emb:
+                    if _vector_len(new_emb) > 0:
                         cluster_row[_vec_field(len(new_emb))] = new_emb
                 await _store_upsert(tenant_id, kb_id, cluster_row)
 
@@ -617,8 +668,8 @@ async def upsert_dataset_nav_doc(
             if parent_row:
                 depth_of_parent = parent_row.get("depth_int", 1)
             new_depth = depth_of_parent + 1
-            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
-            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_title, new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_name = _readable_cluster_name(new_title, summary)
             new_cluster = _make_nav_cluster_row(
                 kb_id,
                 new_name,
@@ -628,7 +679,7 @@ async def upsert_dataset_nav_doc(
                 [doc_id],
                 doc_embedding,
             )
-            if embd_mdl and doc_embedding:
+            if embd_mdl and _vector_len(doc_embedding) > 0:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
             await _store_upsert(tenant_id, kb_id, new_cluster)
 
@@ -644,8 +695,8 @@ async def upsert_dataset_nav_doc(
             await _store_upsert(tenant_id, kb_id, nav_doc_row)
         else:
             # ── Create root-level new cluster ──
-            new_name = f"navc_{xxhash.xxh64(summary.encode()).hexdigest()[:12]}"
-            new_desc = await _llm_create_summary(chat_mdl, [summary])
+            root_title, new_desc = await _llm_create_summary(chat_mdl, [summary])
+            new_name = _readable_cluster_name(root_title, summary)
             new_cluster = _make_nav_cluster_row(
                 kb_id,
                 new_name,
@@ -655,7 +706,7 @@ async def upsert_dataset_nav_doc(
                 [doc_id],
                 doc_embedding,
             )
-            if embd_mdl and doc_embedding:
+            if embd_mdl and _vector_len(doc_embedding) > 0:
                 new_cluster[_vec_field(len(doc_embedding))] = doc_embedding
             await _store_upsert(tenant_id, kb_id, new_cluster)
 
@@ -901,8 +952,11 @@ async def _maybe_split_cluster(
                 for d in dids:
                     if d not in doc_ids:
                         doc_ids.append(d)
-        group_desc = await _llm_create_summary(chat_mdl, descs) if descs else f"Group {gi + 1}"
-        group_name = f"navc_split_{xxhash.xxh64(group_desc.encode()).hexdigest()[:12]}"
+        if descs:
+            group_title, group_desc = await _llm_create_summary(chat_mdl, descs)
+        else:
+            group_title = group_desc = f"Group {gi + 1}"
+        group_name = _readable_cluster_name(group_title, group_desc)
         group_emb = await _embed(embd_mdl, group_desc) if embd_mdl else []
         new_cluster = _make_nav_cluster_row(
             kb_id,
@@ -924,6 +978,118 @@ async def _maybe_split_cluster(
                 row["parent_kwd"] = group_name
                 row["depth_int"] = depth + 1
                 await _store_upsert(tenant_id, kb_id, row)
+
+
+async def search_dataset_nav(
+    tenant_id: str,
+    kb_id: str,
+    query: str,
+    embd_mdl=None,
+    top_k: int = 8,
+) -> list[dict]:
+    """Find the nav-tree nodes most relevant to ``query`` for one KB.
+
+    The nav rows are ``available_int=0`` (invisible to the normal retriever), so
+    this is the sanctioned read seam: a caller uses the returned document ids to
+    route a scoped chunk retrieval. Returns items shaped as::
+
+        {"type": "nav_doc" | "nav_cluster",
+         "doc_id": str | None,      # the document, for a leaf
+         "doc_ids": [str],          # the documents a node covers
+         "name": str, "description": str, "score": float}
+
+    Ranked by vector KNN over the node summaries when ``embd_mdl`` is given;
+    otherwise a best-effort text-ranked scan.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    condition = {"compile_kwd": [_COMPILE_KWD]}
+    rows_with_scores: list[tuple[dict, float]] = []
+
+    if embd_mdl is not None:
+        try:
+            vec = await _embed(embd_mdl, query)
+        except Exception:
+            logging.exception("search_dataset_nav: embed failed for kb=%s", kb_id)
+            vec = []
+        if _vector_len(vec) > 0:
+            try:
+                rows = await _store_knn(tenant_id, kb_id, vec, len(vec), condition, top_k=top_k)
+                vf = _vec_field(len(vec))
+                rows_with_scores = [(r, _cosine_sim(vec, r.get(vf))) for r in rows]
+            except Exception:
+                logging.exception("search_dataset_nav: knn failed for kb=%s", kb_id)
+                rows_with_scores = []
+
+    if not rows_with_scores:
+        fields = ["content_with_weight", "name", "doc_id", "type_kwd", "doc_ids_kwd", "doc_count_int"]
+        try:
+            rows = await _store_search(tenant_id, kb_id, condition, fields, limit=max(top_k * 20, 100))
+        except Exception:
+            logging.exception("search_dataset_nav: scan failed for kb=%s", kb_id)
+            rows = []
+        rows_with_scores = [(r, _nav_text_score(query, r)) for r in rows]
+        rows_with_scores.sort(key=lambda item: item[1], reverse=True)
+
+    # Discard zero-score rows (text match produced no relevant hits)
+    rows_with_scores = [(r, s) for r, s in rows_with_scores if s > 0]
+
+    out: list[dict] = []
+    for r, score in rows_with_scores[:top_k]:
+        try:
+            payload = json.loads(r.get("content_with_weight") or "{}")
+        except Exception:
+            payload = {}
+        typ = payload.get("type") or r.get("type_kwd") or ("nav_cluster" if r.get("doc_ids_kwd") else "nav_doc")
+        name = r.get("name") or ""
+        if typ == "nav_cluster":
+            doc_id = None
+            doc_ids = _as_str_list(r.get("doc_ids_kwd"))
+        else:
+            # Leaf: ``name`` == the document id (see ``_make_nav_doc_row``).
+            doc_id = r.get("doc_id") or name
+            doc_ids = [doc_id] if doc_id else []
+        out.append(
+            {
+                "type": typ,
+                "doc_id": doc_id,
+                "doc_ids": doc_ids,
+                "name": name,
+                "description": payload.get("description") or "",
+                "doc_count": int(r.get("doc_count_int") or len(doc_ids) or 0),
+                "score": float(score or 0.0),
+            }
+        )
+    return out
+
+
+def _as_str_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(v) for v in value if v]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
+
+
+def _nav_text_score(query: str, row: dict) -> float:
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        payload = {}
+    haystack = " ".join(
+        str(x or "")
+        for x in (
+            row.get("name"),
+            payload.get("description"),
+        )
+    ).lower()
+    q_terms = set(re.findall(r"[\w]+", query.lower()))
+    if not q_terms:
+        return 0.0
+    hits = sum(1 for term in q_terms if term in haystack)
+    return hits / max(len(q_terms), 1)
 
 
 def remove_dataset_nav_doc_sync(

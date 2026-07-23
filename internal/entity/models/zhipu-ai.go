@@ -28,7 +28,12 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/clickhouse"
+	"sort"
 	"strings"
+	"time"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
@@ -60,9 +65,10 @@ type ZhipuChatResponse struct {
 		FinishReason string `json:"finish_reason"`
 		Index        int    `json:"index"`
 		Message      struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
-			Role             string `json:"role"`
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Created   int    `json:"created"`
@@ -81,7 +87,7 @@ type ZhipuChatResponse struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -96,45 +102,9 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
-
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -146,6 +116,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 				}
 			}
 		}
+
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -153,7 +124,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -185,6 +156,10 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	if result.Choices == nil || len(result.Choices) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+
 	content := &result.Choices[0].Message.Content
 
 	var reasonContent *string
@@ -192,23 +167,40 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		reasonContent = &result.Choices[0].Message.ReasoningContent
 	}
 
-	usage := &ChatUsage{
+	var toolCalls = result.Choices[0].Message.ToolCalls
+
+	usage := &TokenUsage{
 		PromptTokens:     result.Usage.PromptTokens,
 		CompletionTokens: result.Usage.CompletionTokens,
 		TotalTokens:      result.Usage.TotalTokens,
+	}
+
+	if modelUsage != nil {
+		modelUsage.RequestID = result.RequestId
+		modelUsage.InputTokens = result.Usage.PromptTokens
+		modelUsage.OutputTokens = result.Usage.CompletionTokens
+		modelUsage.TotalTokens = result.Usage.TotalTokens
+		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+
+		clickhouseDriver := clickhouse.GetDriver()
+		err = clickhouseDriver.CollectModelUsage(modelUsage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to collect model usage: %w", err)
+		}
 	}
 
 	chatResponse := &ChatResponse{
 		Answer:        content,
 		ReasonContent: reasonContent,
 		Usage:         usage,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -223,49 +215,9 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -284,7 +236,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -307,8 +259,30 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	// SSE parsing: read line by line
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	accumulatedToolCalls := make(map[int]map[string]any)
+	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsageMap, ok := event["usage"].(map[string]interface{})
+		if ok {
+			tokenUsage := TokenUsage{}
+			if err = mapstructure.Decode(tokenUsageMap, &tokenUsage); err != nil {
+				return err
+			}
+			if chatModelConfig != nil {
+				chatModelConfig.UsageResult = &tokenUsage
+			}
+			if modelUsage != nil {
+				modelUsage.InputTokens = tokenUsage.PromptTokens
+				modelUsage.OutputTokens = tokenUsage.CompletionTokens
+				modelUsage.TotalTokens = tokenUsage.TotalTokens
+				modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+				clickhouseDriver := clickhouse.GetDriver()
+				if err = clickhouseDriver.CollectModelUsage(modelUsage); err != nil {
+					return err
+				}
+			}
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -327,14 +301,64 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
+			}
+		}
+
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				idxF, ok := tcMap["index"].(float64)
+				if !ok {
+					continue
+				}
+				idx := int(idxF)
+				existing, hasExisting := accumulatedToolCalls[idx]
+				if !hasExisting {
+					accumulatedToolCalls[idx] = cloneMap(tcMap)
+					continue
+				}
+				if id, ok := tcMap["id"].(string); ok && id != "" {
+					if eid, ok := existing["id"].(string); ok {
+						existing["id"] = eid + id
+					} else {
+						existing["id"] = id
+					}
+				}
+				if typ, ok := tcMap["type"].(string); ok && typ != "" {
+					existing["type"] = typ
+				}
+				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+					ef, ok := existing["function"].(map[string]interface{})
+					if !ok {
+						ef = make(map[string]interface{})
+						existing["function"] = ef
+					}
+					if name, ok := fn["name"].(string); ok && name != "" {
+						if en, ok := ef["name"].(string); ok {
+							ef["name"] = en + name
+						} else {
+							ef["name"] = name
+						}
+					}
+					if args, ok := fn["arguments"].(string); ok && args != "" {
+						if ea, ok := ef["arguments"].(string); ok {
+							ef["arguments"] = ea + args
+						} else {
+							ef["arguments"] = args
+						}
+					}
+				}
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -344,13 +368,22 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		indices := make([]int, 0, len(accumulatedToolCalls))
+		for idx := range accumulatedToolCalls {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		toolCalls := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, idx := range indices {
+			toolCalls = append(toolCalls, accumulatedToolCalls[idx])
+		}
+		chatModelConfig.ToolCallsResult = &toolCalls
 	}
 
-	return nil
+	// Send [DONE] marker for OpenAI compatibility
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
 }
 
 type zhipuEmbeddingResponse struct {
@@ -372,8 +405,8 @@ type zhipuUsage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+// Embed embeddings a list of texts into embeddings
+func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -396,7 +429,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
 	reqBody["input"] = texts
-	if embeddingConfig.Dimension > 0 {
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
@@ -405,7 +438,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -449,7 +482,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	return embeddings, nil
 }
 
-func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (z *ZhipuAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -461,7 +494,7 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -496,11 +529,11 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 	return ParseListModel(modelList), nil
 }
 
-func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (z *ZhipuAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
+func (z *ZhipuAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -512,7 +545,7 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Files)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -576,7 +609,7 @@ type zhipuOCRResponse struct {
 // Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
-func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (z *ZhipuAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -614,7 +647,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -658,7 +691,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 }
 
 // TranscribeAudio transcribe audio
-func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (z *ZhipuAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -682,13 +715,13 @@ func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfi
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
-	if err := writer.WriteField("stream", "false"); err != nil {
+	if err = writer.WriteField("stream", "false"); err != nil {
 		return nil, fmt.Errorf("failed to write stream field: %w", err)
 	}
-	if err := writeZhipuASRParams(writer, asrConfig); err != nil {
+	if err = writeZhipuASRParams(writer, asrConfig); err != nil {
 		return nil, err
 	}
 
@@ -710,7 +743,7 @@ func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfi
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
@@ -785,12 +818,12 @@ func writeZhipuASRField(writer *multipart.Writer, key string, value interface{})
 	}
 }
 
-func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // AudioSpeech convert text to audio
-func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (z *ZhipuAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -805,7 +838,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -832,7 +865,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -850,7 +883,7 @@ func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -930,7 +963,7 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 }
 
 // OCRFile OCR file
-func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (z *ZhipuAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -974,7 +1007,7 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(z.baseModel.URLSuffix.OCR, "/"))
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -1013,14 +1046,14 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 }
 
 // ParseFile parse file
-func (z *ZhipuAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (z *ZhipuAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (z *ZhipuAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (z *ZhipuAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

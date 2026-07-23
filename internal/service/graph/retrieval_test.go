@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -296,7 +297,8 @@ func (e *searchCaptureEngine) Search(ctx context.Context, req *types.SearchReque
 // --- queryRewrite ---
 
 func TestQueryRewrite_Fallback(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "What is SpaceX?", "{}")
+	ctx := t.Context()
+	typeKeywords, entities := queryRewrite(ctx, nil, "What is SpaceX?", "{}")
 	if typeKeywords != nil {
 		t.Errorf("expected nil typeKeywords when no LLM, got %v", typeKeywords)
 	}
@@ -306,7 +308,8 @@ func TestQueryRewrite_Fallback(t *testing.T) {
 }
 
 func TestQueryRewrite_EmptyQuestion(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "", "")
+	ctx := t.Context()
+	typeKeywords, entities := queryRewrite(ctx, nil, "", "")
 	if typeKeywords != nil || entities != nil {
 		t.Errorf("expected nil for empty question, got type=%v entities=%v", typeKeywords, entities)
 	}
@@ -321,7 +324,7 @@ type spyEmbedDriver struct {
 	err           error
 }
 
-func (s *spyEmbedDriver) Embed(_ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, error) {
+func (s *spyEmbedDriver) Embed(ctx context.Context, _ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	s.capturedTexts = texts
 	if s.err != nil {
 		return nil, s.err
@@ -389,12 +392,13 @@ func TestBuildFusionExpr_AsymmetricWeights(t *testing.T) {
 // --- buildSearchExprs ---
 
 func TestBuildSearchExprs_NoEmbModel(t *testing.T) {
+	ctx := t.Context()
 	matchText := &types.MatchTextExpr{
 		Fields:       []string{"entity_kwd^10"},
 		MatchingText: "test",
 		TopN:         10,
 	}
-	exprs := buildSearchExprs(nil, matchText, 0, 0)
+	exprs := buildSearchExprs(ctx, nil, matchText, 0, 0)
 	if len(exprs) != 1 {
 		t.Fatalf("expected 1 expr, got %d", len(exprs))
 	}
@@ -408,6 +412,7 @@ func TestBuildSearchExprs_NoEmbModel(t *testing.T) {
 }
 
 func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
+	ctx := t.Context()
 	driver := &spyEmbedDriver{vector: []float64{0.1, 0.2, 0.3}}
 	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
 	matchText := &types.MatchTextExpr{
@@ -415,7 +420,7 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 		MatchingText: "Elon Musk SpaceX",
 		TopN:         50,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
+	exprs := buildSearchExprs(ctx, embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Verify Embed was called with matchText.MatchingText, not raw question
 	if len(driver.capturedTexts) != 1 || driver.capturedTexts[0] != "Elon Musk SpaceX" {
 		t.Errorf("expected Embed to receive %q, got %v", "Elon Musk SpaceX", driver.capturedTexts)
@@ -456,6 +461,7 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 }
 
 func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
+	ctx := t.Context()
 	driver := &spyEmbedDriver{err: assertError("embed failed")}
 	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
 	matchText := &types.MatchTextExpr{
@@ -463,7 +469,7 @@ func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
 		MatchingText: "fallback test",
 		TopN:         10,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
+	exprs := buildSearchExprs(ctx, embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Should fall back to text-only when Embed fails
 	if len(exprs) != 1 {
 		t.Fatalf("expected 1 expr (text-only fallback), got %d", len(exprs))
