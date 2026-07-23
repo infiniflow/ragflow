@@ -356,7 +356,7 @@ func NewAgentServiceWithOptions(
 // agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
 // and serialises each row.
 func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTemplate, error) {
-	return s.canvasTemplateDAO.GetAll(ctx)
+	return s.canvasTemplateDAO.GetAll(ctx, dao.DB)
 }
 
 // AgentItem is one entry in the list response.

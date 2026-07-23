@@ -176,7 +176,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
 	// initialization.
-	if err = SeedCanvasTemplates(ctx); err != nil {
+	if err = SeedCanvasTemplates(ctx, DB); err != nil {
 		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
 
