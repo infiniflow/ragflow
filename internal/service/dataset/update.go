@@ -31,9 +31,9 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	tenantID = strings.TrimSpace(tenantID)
 	if _, err := d.kbDAO.GetByID(datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Dataset not found")
+			return nil, common.CodeDataError, errors.New("dataset not found")
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	connectorsProvided := req.Connectors != nil
@@ -61,16 +61,16 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, common.CodeDataError, errors.New("`name` is required.")
+			return nil, common.CodeDataError, errors.New("`name` is required")
 		}
 		if len(name) > 128 {
-			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+			return nil, common.CodeDataError, errors.New("string should have at most 128 characters")
 		}
 		simpleUpdates["name"] = name
 	}
 	if req.Avatar != nil {
 		if len(*req.Avatar) > 65535 {
-			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+			return nil, common.CodeDataError, errors.New("string should have at most 65535 characters")
 		}
 		if err := validateDatasetAvatar(*req.Avatar); err != nil {
 			return nil, common.CodeDataError, err
@@ -79,21 +79,21 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	}
 	if req.Description != nil {
 		if len(*req.Description) > 65535 {
-			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+			return nil, common.CodeDataError, errors.New("string should have at most 65535 characters")
 		}
 		simpleUpdates["description"] = *req.Description
 	}
 	if req.Language != nil {
 		language := strings.TrimSpace(*req.Language)
 		if len(language) > 32 {
-			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
+			return nil, common.CodeDataError, errors.New("string should have at most 32 characters")
 		}
 		simpleUpdates["language"] = language
 	}
 	if req.Permission != nil {
 		permission := strings.TrimSpace(*req.Permission)
 		if permission != "me" && permission != "team" {
-			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+			return nil, common.CodeDataError, errors.New("input should be 'me' or 'team'")
 		}
 		simpleUpdates["permission"] = permission
 	}
@@ -142,10 +142,10 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
-			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
+			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
-			return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+			return nil, common.CodeServerError, errors.New("document engine is not initialized")
 		}
 		if !d.docEngine.SupportsPageRank() {
 			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
@@ -155,7 +155,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 	requestedAnyUpdate := len(simpleUpdates) > 0 || connectorsProvided || parserIDProvided ||
 		pipelineID != nil || embdIDProvided || pagerankRequested || req.ParserConfig != nil || req.ParserConfigProvided
 	if !requestedAnyUpdate {
-		return nil, common.CodeDataError, errors.New("No properties were modified")
+		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
 
 	txCode := common.CodeSuccess
@@ -171,7 +171,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 
 		if req.Permission != nil && lockedKB.TenantID != tenantID {
 			txCode = common.CodeDataError
-			return errors.New("Only dataset owner can change permission")
+			return errors.New("only dataset owner can change permission")
 		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
@@ -184,11 +184,11 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, tenantID, string(entity.StatusValid)).First(&existing).Error
 			if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
 				txCode = common.CodeServerError
-				return errors.New("Database operation failed")
+				return errors.New("database operation failed")
 			}
 			if lookupErr == nil {
 				txCode = common.CodeDataError
-				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
+				return fmt.Errorf("dataset name '%s' already exists", nameValue)
 			}
 		}
 
@@ -286,13 +286,13 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 				if dao.IsDuplicateKeyErr(err) {
 					if nameValue, ok := updates["name"].(string); ok {
 						txCode = common.CodeDataError
-						return fmt.Errorf("Dataset name '%s' already exists", nameValue)
+						return fmt.Errorf("dataset name '%s' already exists", nameValue)
 					}
 					txCode = common.CodeDataError
-					return errors.New("Dataset name already exists")
+					return errors.New("dataset name already exists")
 				}
 				txCode = common.CodeServerError
-				return errors.New("Update dataset error.(Database error)")
+				return errors.New("dataset update error. (database error)")
 			}
 		}
 
@@ -303,20 +303,20 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 					return err
 				}
 				txCode = common.CodeServerError
-				return errors.New("Database operation failed")
+				return errors.New("database operation failed")
 			}
 		}
 
 		updatedKB = &entity.Knowledgebase{}
 		if err = tx.Where("id = ? AND status = ?", lockedKB.ID, string(entity.StatusValid)).First(updatedKB).Error; err != nil {
 			txCode = common.CodeDataError
-			return errors.New("Dataset updated failed")
+			return errors.New("dataset updated failed")
 		}
 
 		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(tx, lockedKB.ID)
 		if err != nil {
 			txCode = common.CodeServerError
-			return errors.New("Database operation failed")
+			return errors.New("database operation failed")
 		}
 
 		return nil
@@ -355,16 +355,16 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, 
 		First(&kb).Error
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Dataset not found")
+			return nil, common.CodeDataError, errors.New("dataset not found")
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	if kb.TenantID == userID {
 		return &kb, common.CodeSuccess, nil
 	}
 	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 
 	var relation entity.UserTenant
@@ -373,9 +373,9 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, 
 		First(&relation).Error
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	return &kb, common.CodeSuccess, nil
