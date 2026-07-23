@@ -70,11 +70,17 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 
 // walkHTMLBlocks emits one normalized item per block-level
 // descendant of root. Inline elements (b, i, a, span, …) are
-// collapsed into the parent's text via leafText. <script> and
-// <style> blocks are skipped entirely so they don't pollute the
-// downstream chunker input.
+// collapsed into the parent's text via leafText. <script>,
+// <style>, and <noscript> blocks are skipped entirely so they
+// don't pollute the downstream chunker input.
 func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.TextNode {
+			if emitsLooseHTMLText(root) {
+				appendHTMLTextItem(out, child.Data, "text")
+			}
+			continue
+		}
 		if child.Type != html.ElementNode {
 			continue
 		}
@@ -83,21 +89,33 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 		case "script", "style", "noscript":
 			// Skip executable / stylistic blocks entirely.
 			continue
-		case "html", "head", "body":
+		case "head":
+			// Skip document metadata so it does not pollute body text.
+			continue
+		case "html", "body":
 			// Wrapper elements: descend into their children.
 			walkHTMLBlocks(child, out)
 			continue
 		}
 		text := htmlLeafText(child)
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		*out = append(*out, map[string]any{
-			"text":         strings.TrimSpace(text),
-			"doc_type_kwd": "text",
-			"ck_type":      htmlTagToCkType(tag),
-		})
+		appendHTMLTextItem(out, text, htmlTagToCkType(tag))
 	}
+}
+
+func emitsLooseHTMLText(root *html.Node) bool {
+	return root.Type == html.ElementNode && root.Data == "body"
+}
+
+func appendHTMLTextItem(out *[]map[string]any, text, ckType string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	*out = append(*out, map[string]any{
+		"text":         text,
+		"doc_type_kwd": "text",
+		"ck_type":      ckType,
+	})
 }
 
 // htmlTagToCkType maps HTML block tags to the python `ck_type`
@@ -124,10 +142,9 @@ func htmlTagToCkType(tag string) string {
 }
 
 // htmlLeafText joins the visible text of an HTML node and its
-// descendants. <script>/<style> subtrees are skipped (mirrors
-// the python html.parser behaviour). The output preserves
-// whitespace runs so headings like "<h1>Hello   world</h1>"
-// round-trip with their spacing intact.
+// descendants. <script>/<style>/<noscript> subtrees are skipped.
+// The output preserves whitespace runs so headings like
+// "<h1>Hello   world</h1>" round-trip with their spacing intact.
 func htmlLeafText(n *html.Node) string {
 	var b strings.Builder
 	walkHTMLLeaf(n, &b)
@@ -139,7 +156,7 @@ func walkHTMLLeaf(n *html.Node, b *strings.Builder) {
 	case html.TextNode:
 		b.WriteString(n.Data)
 	case html.ElementNode:
-		if n.Data == "script" || n.Data == "style" {
+		if n.Data == "script" || n.Data == "style" || n.Data == "noscript" {
 			return
 		}
 		// Add a line break between block children so headings,
