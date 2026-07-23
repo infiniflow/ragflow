@@ -1,5 +1,6 @@
 {
   "name": "OpenRouter",
+  "rank": 989,
   "url": {
     "default": "https://openrouter.ai/api/v1"
   },
@@ -8,7 +9,9 @@
     "models": "models",
     "embedding": "embeddings",
     "rerank": "rerank",
-    "balance": "credits"
+    "balance": "credits",
+    "tts": "audio/speech",
+    "asr": "audio/transcriptions"
   },
   "class": "openrouter",
   "models": [
@@ -44,6 +47,20 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "openai/gpt-audio-mini",
+      "max_tokens": 131072,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "max_tokens": 131072,
+      "model_types": [
+        "asr"
+      ]
     }
   ]
 }

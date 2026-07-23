@@ -10,7 +10,7 @@
 **Install Python dependencies (including test dependencies):**
 
 ```bash
-uv sync --python 3.12 --only-group test --no-default-groups --frozen
+uv sync --python 3.13 --only-group test --no-default-groups --frozen
 
 ```
 
@@ -24,7 +24,7 @@ source .venv/bin/activate
 **Install SDK:**
 
 ```bash
-uv pip install sdk/python 
+uv pip install sdk/python
 
 ```
 
@@ -33,7 +33,7 @@ uv pip install sdk/python
 ```env
 COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu
 TEI_MODEL=BAAI/bge-small-en-v1.5
-RAGFLOW_IMAGE=infiniflow/ragflow:v0.25.2 #Replace with the image you are using
+RAGFLOW_IMAGE=infiniflow/ragflow:v0.26.4 #Replace with the image you are using
 
 ```
 
@@ -53,14 +53,14 @@ docker compose -f docker/docker-compose.yml up -d
 ```bash
 export HTTP_API_TEST_LEVEL=p2
 export HOST_ADDRESS=http://127.0.0.1:9380  # Ensure that this port is the API port mapped to your localhost
-pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 
+pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api
 
 ```
 
 **b) Run http api tests against Elasticsearch:**
 
 ```bash
-pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 
+pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api
 
 ```
 
@@ -78,7 +78,7 @@ DOC_ENGINE=${DOC_ENGINE:-infinity}
 **Start the container:**
 
 ```bash
-docker compose -f docker/docker-compose.yml down -v 
+docker compose -f docker/docker-compose.yml down -v
 docker compose -f docker/docker-compose.yml up -d
 
 ```
@@ -86,13 +86,13 @@ docker compose -f docker/docker-compose.yml up -d
 **a) Run sdk tests against Infinity:**
 
 ```bash
-DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 
+DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api
 
 ```
 
 **b) Run http api tests against Infinity:**
 
 ```bash
-DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 
+DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api
 
 ```

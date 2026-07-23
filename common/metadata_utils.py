@@ -19,28 +19,16 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
-    op_mapping = {
-        "is": "=",
-        "not is": "≠",
-        ">=": "≥",
-        "<=": "≤",
-        "!=": "≠"
-    }
-    return [
-        {
-            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-            "key": cond["name"],
-            "value": cond["value"]
-        }
-        for cond in metadata_condition.get("conditions", [])
-    ]
+    op_mapping = {"is": "=", "not is": "≠", ">=": "≥", "<=": "≤", "!=": "≠"}
+    return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
-    doc_ids = set([])
+    doc_ids = None
 
     def normalize_string_values(value):
         if isinstance(value, str):
@@ -51,31 +39,22 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
     def filter_out(v2docs, operator, value):
         ids = []
+        original_value = value
         for input, docids in v2docs.items():
-
+            # Reset to the pristine filter value each iteration -- the comparison branch
+            # below reassigns `value` in place (date normalization, literal_eval coercion),
+            # and reusing that mutated value on the next dict entry compares it against
+            # the wrong (already-coerced) type/content instead of the original filter value.
+            value = original_value
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 # Check if input is in YYYY-MM-DD date format
                 input_str = str(input).strip()
                 value_str = str(value).strip()
 
                 # Strict date format detection: YYYY-MM-DD (must be 10 chars with correct format)
-                is_input_date = (
-                    len(input_str) == 10 and
-                    input_str[4] == '-' and
-                    input_str[7] == '-' and
-                    input_str[:4].isdigit() and
-                    input_str[5:7].isdigit() and
-                    input_str[8:10].isdigit()
-                )
+                is_input_date = len(input_str) == 10 and input_str[4] == "-" and input_str[7] == "-" and input_str[:4].isdigit() and input_str[5:7].isdigit() and input_str[8:10].isdigit()
 
-                is_value_date = (
-                    len(value_str) == 10 and
-                    value_str[4] == '-' and
-                    value_str[7] == '-' and
-                    value_str[:4].isdigit() and
-                    value_str[5:7].isdigit() and
-                    value_str[8:10].isdigit()
-                )
+                is_value_date = len(value_str) == 10 and value_str[4] == "-" and value_str[7] == "-" and value_str[:4].isdigit() and value_str[5:7].isdigit() and value_str[8:10].isdigit()
 
                 if is_value_date:
                     # Query value is in date format
@@ -91,8 +70,14 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                     try:
                         if isinstance(input, list):
                             input = input[0]
-                        input = ast.literal_eval(input)
-                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+                    # Commit both literal_eval results together, or neither -- assigning
+                    # just one side (e.g. "None" parses but "none" doesn't) would compare
+                    # mismatched types after lowercasing and silently break the
+                    # case-insensitive match below.
+                    try:
+                        input, value = ast.literal_eval(input), ast.literal_eval(value)
                     except Exception:
                         pass
 
@@ -152,16 +137,17 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             v2docs = metas[k]
             ids = filter_out(v2docs, f["op"], f["value"])
 
-        if not doc_ids:
+        if doc_ids is None:
             doc_ids = set(ids)
         else:
             if logic == "and":
                 doc_ids = doc_ids & set(ids)
                 if not doc_ids:
+                    logging.debug(f"meta_filter filters={filters}, logic={logic}, early return []")
                     return []
             else:
                 doc_ids = doc_ids | set(ids)
-    return list(doc_ids)
+    return list(doc_ids or [])
 
 
 async def apply_meta_data_filter(
@@ -182,12 +168,11 @@ async def apply_meta_data_filter(
     - semi_auto: generate conditions using selected metadata keys only
     - manual: directly filter based on provided conditions
 
-    When ``kb_ids`` is supplied and the active doc store is Elasticsearch the
-    generated filter conditions are pushed down to ES via
-    ``DocMetadataService.filter_doc_ids_by_meta_pushdown`` instead of being
-    evaluated in Python over ``metas``. The in-memory ``meta_filter`` path
-    remains the fallback so callers without a KB scope, or backends without
-    push-down support, behave exactly as before.
+    When ``kb_ids`` is supplied, metadata filters are pushed down to the doc metadata
+    index (ES/Infinity) via ``DocMetadataService.filter_doc_ids_by_metadata`` instead
+    of being evaluated in Python over ``metas``. The in-memory ``meta_filter`` path
+    remains the fallback so callers without a KB scope, or backends without push-down
+    support, behave exactly as before.
 
     ``metas`` may be supplied eagerly or via ``metas_loader``. The loader is
     only invoked when the metadata dict is actually needed — i.e. for the LLM
@@ -200,7 +185,7 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
-    from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
+    from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
     doc_ids = list(base_doc_ids) if base_doc_ids else []
 
@@ -220,17 +205,27 @@ async def apply_meta_data_filter(
             cached_metas = metas_loader() if metas_loader else {}
         return cached_metas
 
-    def _evaluate(conditions: list[dict], logic: str) -> list[str]:
-        """Run conditions through ES push-down when possible, in-memory otherwise."""
+    def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
+        """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
         if conditions and kb_ids:
-            pushed = _try_meta_pushdown(kb_ids, conditions, logic)
-            if pushed is not None:
-                return pushed
+            try:
+                from api.db.services.doc_metadata_service import DocMetadataService
+
+                doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
+                logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
+                if doc_ids is not None:
+                    return doc_ids
+            except Exception as e:
+                logging.error(f"Metadata filter push down errored: {e}")
+
+        # In-memory fallback
+        logging.debug("Metadata filter falls back to in-memory filter")
         return meta_filter(_get_metas(), conditions, logic)
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
-        doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))
+        logging.debug(f"Metadata filter(auto) generated: {filters}")
+        doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
     elif method == "semi_auto":
@@ -251,17 +246,20 @@ async def apply_meta_data_filter(
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
-                doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))
+                logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
+                doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
-        doc_ids.extend(_evaluate(filters, meta_data_filter.get("logic", "and")))
+        logging.debug(f"Metadata filter(manual): {filters}")
+        doc_ids.extend(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
         if filters and not doc_ids:
             doc_ids = ["-999"]
 
+    logging.debug(f"apply_meta_data_filter meta_filter={meta_data_filter}, returning doc_ids={doc_ids}")
     return doc_ids
 
 
@@ -335,7 +333,7 @@ def update_metadata_to(metadata, meta):
     return metadata
 
 
-def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
+def metadata_schema(metadata: dict | list | None) -> Dict[str, Any]:
     if not metadata:
         return {}
     properties = {}
@@ -345,9 +343,7 @@ def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
         if not key:
             continue
 
-        prop_schema = {
-            "description": item.get("description", "")
-        }
+        prop_schema = {"description": item.get("description", "")}
         if "enum" in item and item["enum"]:
             prop_schema["enum"] = item["enum"]
             prop_schema["type"] = "string"
@@ -380,11 +376,11 @@ def _is_metadata_list(obj: list) -> bool:
         key = item.get("key")
         if not isinstance(key, str) or not key:
             return False
-        if "enum" in item and not isinstance(item["enum"], list):
+        if "enum" in item and item["enum"] is not None and not isinstance(item["enum"], list):
             return False
-        if "description" in item and not isinstance(item["description"], str):
+        if "description" in item and item["description"] is not None and not isinstance(item["description"], str):
             return False
-        if "descriptions" in item and not isinstance(item["descriptions"], str):
+        if "descriptions" in item and item["descriptions"] is not None and not isinstance(item["descriptions"], str):
             return False
     return True
 
@@ -395,12 +391,12 @@ def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
     if isinstance(obj, list) and _is_metadata_list(obj):
         normalized = []
         for item in obj:
-            description = item.get("description", item.get("descriptions", ""))
+            description = item.get("description") or item.get("descriptions") or ""
             normalized_item = {
                 "key": item.get("key"),
                 "description": description,
             }
-            if "enum" in item:
+            if "enum" in item and item["enum"] is not None:
                 normalized_item["enum"] = item["enum"]
             normalized.append(normalized_item)
         return metadata_schema(normalized)

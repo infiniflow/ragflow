@@ -49,7 +49,7 @@ export default {
       submit: 'Absenden',
       clear: 'Leeren',
       embedIntoSite: 'In Webseite einbetten',
-      openInNewTab: 'Chat in neuem Tab',
+      openInNewTab: 'In neuem Tab öffnen',
       previousPage: 'Zurück',
       nextPage: 'Weiter',
       add: 'Hinzufügen',
@@ -68,6 +68,7 @@ export default {
       },
       selected: 'Ausgewählt',
       seeAll: 'Alle anzeigen',
+      owner: 'Eigentümer',
     },
     login: {
       loginTitle: 'Melden Sie sich bei Ihrem Konto an',
@@ -194,7 +195,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeDetails: {
       metadata: {
-        type: 'Typ',
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
         builtIn: 'Eingebaut',
@@ -238,6 +238,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         value: 'Wert',
         action: 'Aktion',
         field: 'Feld',
+        type: 'Typ',
         description: 'Beschreibung',
         fieldName: 'Feldname',
         editMetadata: 'Metadaten bearbeiten',
@@ -707,6 +708,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         text: 'Text',
       },
       chunk: 'Chunk',
+      createChunk: 'Chunk erstellen',
+      editChunk: 'Chunk bearbeiten',
       bulk: 'Masse',
       selectAll: 'Alle auswählen',
       enabledSelected: 'Ausgewählte aktivieren',
@@ -856,9 +859,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Betten Sie den folgenden iframe an der gewünschten Stelle in Ihre Website ein',
       partialTitle: 'Teilweise Einbettung',
       extensionTitle: 'Chrome-Erweiterung',
-      tokenError: 'Bitte erstellen Sie zuerst einen API-Schlüssel.',
+      tokenError: 'Bitte erstellen Sie zuerst einen API-SCHLÜSSEL.',
       betaError:
-        'Bitte erwerben Sie zuerst einen RAGFlow-API-Schlüssel auf der Systemeinstellungsseite.',
+        'Bitte erwerben Sie zuerst einen RAGFlow-API-SCHLÜSSEL auf der Systemeinstellungsseite.',
       searching: 'Suche...',
       parsing: 'Analysiere',
       uploading: 'Hochladen',
@@ -891,8 +894,8 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       reasoningTip:
         'Ob beim Frage-Antwort-Prozess ein logisches Arbeitsverfahren aktiviert werden soll, wie es bei Modellen wie Deepseek-R1 oder OpenAI o1 der Fall ist. Wenn aktiviert, ermöglicht diese Funktion dem Modell, auf externes Wissen zuzugreifen und komplexe Fragen schrittweise mithilfe von Techniken wie der „Chain-of-Thought“-Argumentation zu lösen. Durch die Zerlegung von Problemen in überschaubare Schritte verbessert dieser Ansatz die Fähigkeit des Modells, präzise Antworten zu liefern, was die Leistung bei Aufgaben, die logisches Denken und mehrschrittige Überlegungen erfordern, steigert.',
       tavilyApiKeyTip:
-        'Wenn hier ein API-Schlüssel korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
-      tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-Schlüssel ein',
+        'Wenn hier ein API-SCHLÜSSEL korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
+      tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-SCHLÜSSEL ein',
       tavilyApiKeyHelp: 'Wie bekomme ich ihn?',
       crossLanguage: 'Sprachübergreifende Suche',
       crossLanguageTip:
@@ -917,16 +920,22 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
+      showChunkMetadata: 'Chunk-Metadaten anzeigen',
+      showChunkMetadataTip:
+        'Dokumentmetadaten (z. B. Titel, Seitenzahl, Uploaddatum) neben den abgerufenen Textabschnitten anzeigen',
+      metadataFields: 'Metadatenfelder',
+      metadataFieldsTip:
+        'Wählen Sie aus, welche Metadatenfelder für jeden Abschnitt angezeigt werden sollen',
     },
     setting: {
       deleteModel: 'Modell löschen',
       bedrockCredentialsHint:
-        'Tipp: Lassen Sie Access Key / Secret Key leer, um AWS IAM-Authentifizierung zu verwenden.',
-      awsAuthModeAccessKeySecret: 'Access Key',
+        'Tipp: Lassen Sie ACCESS KEY / SECRET KEY leer, um AWS IAM-Authentifizierung zu verwenden.',
+      awsAuthModeAccessKeySecret: 'ACCESS KEY',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Bitte geben Sie die AWS Role ARN ein',
       awsAssumeRoleTip:
@@ -946,7 +955,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       confluenceIsCloudTip:
         'Aktivieren Sie dies, wenn es sich um eine Confluence Cloud-Instanz handelt, deaktivieren Sie es für Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
-        'Die Basis-URL Ihrer Confluence-Instanz (z.B. https://your-domain.atlassian.net/wiki)',
+        'Die BASIS-URL Ihrer Confluence-Instanz (z.B. https://your-domain.atlassian.net/wiki)',
       confluenceSpaceKeyTip:
         'Optional: Geben Sie einen Space-Key an, um die Synchronisierung auf einen bestimmten Bereich zu beschränken. Lassen Sie das Feld leer, um alle zugänglichen Bereiche zu synchronisieren. Trennen Sie mehrere Bereiche durch Kommas (z.B. DEV,DOCS,HR)',
       s3PrefixTip: `Geben Sie den Ordnerpfad innerhalb Ihres S3-Buckets an, aus dem Dateien abgerufen werden sollen.
@@ -1033,7 +1042,7 @@ Beispiel: Virtual Hosted Style`,
       moodleDescription:
         'Verbinden Sie sich mit Ihrem Moodle LMS, um Kursinhalte, Foren und Ressourcen zu synchronisieren.',
       moodleUrlTip:
-        'Die Basis-URL Ihrer Moodle-Instanz (z.B. https://moodle.university.edu). Fügen Sie nicht /webservice oder /login hinzu.',
+        'Die BASIS-URL Ihrer Moodle-Instanz (z.B. https://moodle.university.edu). Fügen Sie nicht /webservice oder /login hinzu.',
       moodleTokenTip:
         'Generieren Sie ein Web-Service-Token in Moodle: Gehen Sie zu Website-Administration → Server → Web-Services → Token verwalten. Der Benutzer muss in den Kursen eingeschrieben sein, die Sie synchronisieren möchten.',
       seafileDescription:
@@ -1092,7 +1101,7 @@ Beispiel: Virtual Hosted Style`,
       jiraDescription:
         'Verbinden Sie Ihren Jira-Arbeitsbereich, um Vorgänge, Kommentare und Anhänge zu synchronisieren.',
       jiraBaseUrlTip:
-        'Basis-URL Ihrer Jira-Site (z.B. https://your-domain.atlassian.net).',
+        'BASIS-URL Ihrer Jira-Site (z.B. https://your-domain.atlassian.net).',
       jiraProjectKeyTip:
         'Optional: Beschränken Sie die Synchronisierung auf einen einzelnen Projektschlüssel (z.B. ENG).',
       jiraJqlTip:
@@ -1173,16 +1182,16 @@ Beispiel: Virtual Hosted Style`,
       addedModels: 'Hinzugefügte Modelle',
       modelsToBeAdded: 'Hinzuzufügende Modelle',
       addTheModel: 'Modell hinzufügen',
-      apiKey: 'API-Schlüssel',
+      apiKey: 'API-SCHLÜSSEL',
       apiKeyMessage:
-        'Bitte geben Sie den API-Schlüssel ein (für lokal bereitgestellte Modelle ignorieren Sie dies).',
+        'Bitte geben Sie den API-SCHLÜSSEL ein (für lokal bereitgestellte Modelle ignorieren Sie dies).',
       apiKeyTip:
-        'Der API-Schlüssel kann durch Registrierung beim entsprechenden LLM-Anbieter erhalten werden.',
+        'Der API-SCHLÜSSEL kann durch Registrierung beim entsprechenden LLM-Anbieter erhalten werden.',
       showMoreModels: 'Mehr Modelle anzeigen',
       hideModels: 'Modelle ausblenden',
-      baseUrl: 'Basis-URL',
+      baseUrl: 'BASIS-URL',
       baseUrlTip:
-        'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
+        'Wenn Ihr API-SCHLÜSSEL von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese BASIS-URL mit dem API-SCHLÜSSEL an.',
       tongyiBaseUrlTip:
         'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1224,8 +1233,8 @@ Beispiel: Virtual Hosted Style`,
       modelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
       modelType: 'Modelltyp',
       modelTypeMessage: 'Bitte geben Sie Ihren Modelltyp ein!',
-      addLlmBaseUrl: 'Basis-URL',
-      baseUrlNameMessage: 'Bitte geben Sie Ihre Basis-URL ein!',
+      addLlmBaseUrl: 'BASIS-URL',
+      baseUrlNameMessage: 'Bitte geben Sie Ihre BASIS-URL ein',
       paddleocr: {
         apiUrl: 'PaddleOCR API-URL',
         apiUrlPlaceholder:
@@ -1243,17 +1252,17 @@ Beispiel: Virtual Hosted Style`,
       FishAudioLink: 'Wie verwende ich FishAudio',
       TencentCloudLink: 'Wie verwende ich TencentCloud ASR',
       volcModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
-      addEndpointID: 'EndpointID des Modells',
-      endpointIDMessage: 'Bitte geben Sie Ihre EndpointID des Modells ein',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Bitte geben Sie Ihre Model ID ein',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Bitte geben Sie Ihren ARK_API_KEY ein',
-      bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein!',
+      bedrockModelNameMessage: 'Bitte geben Sie Ihren Modellnamen ein',
       addBedrockEngineAK: 'ZUGRIFFSSCHLÜSSEL',
       bedrockAKMessage: 'Bitte geben Sie Ihren ZUGRIFFSSCHLÜSSEL ein',
       addBedrockSK: 'GEHEIMER SCHLÜSSEL',
       bedrockSKMessage: 'Bitte geben Sie Ihren GEHEIMEN SCHLÜSSEL ein',
       bedrockRegion: 'AWS-Region',
-      bedrockRegionMessage: 'Bitte auswählen!',
+      bedrockRegionMessage: 'Bitte auswählen',
       'us-east-2': 'US-Ost (Ohio)',
       'us-east-1': 'US-Ost (N. Virginia)',
       'us-west-1': 'US-West (N. Kalifornien)',
@@ -1291,26 +1300,26 @@ Beispiel: Virtual Hosted Style`,
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Bitte geben Sie Ihre Secret ID ein',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Bitte geben Sie Ihren Secret Key ein',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Bitte geben Sie Ihren SECRET KEY ein',
       SparkModelNameMessage: 'Bitte wählen Sie das Spark-Modell',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'Bitte geben Sie Ihr APIPassword ein',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'Bitte geben Sie Ihre APP ID ein',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'Bitte geben Sie Ihr APISecret ein',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'Bitte geben Sie Ihr API SECRET ein',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'Bitte geben Sie Ihren APIKey ein',
       yiyanModelNameMessage: 'Bitte geben Sie den Modellnamen ein',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Bitte geben Sie Ihren API KEY ein',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Bitte geben Sie Ihren Secret KEY ein',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Bitte geben Sie Ihren API Key ein',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Bitte geben Sie Ihren SECRET KEY ein',
       FishAudioModelNameMessage:
         'Bitte geben Sie Ihrem Sprachsynthesemodell einen Namen',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Bitte geben Sie Ihren API KEY ein',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Bitte geben Sie Ihren API Key ein',
       addFishAudioRefID: 'FishAudio Referenz-ID',
       addFishAudioRefIDMessage:
         'Bitte geben Sie die Referenz-ID ein (lassen Sie das Feld leer, um das Standardmodell zu verwenden).',
@@ -1671,10 +1680,10 @@ Beispiel: Virtual Hosted Style`,
       relevance: 'Relevanz',
       google: 'Google',
       googleDescription:
-        'Eine Komponente, die auf https://www.google.com/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken. Bitte beachten Sie, dass hierfür ein API-Schlüssel von serpapi.com erforderlich ist.',
+        'Eine Komponente, die auf https://www.google.com/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken. Bitte beachten Sie, dass hierfür ein API-SCHLÜSSEL von serpapi.com erforderlich ist.',
       bing: 'Bing',
       bingDescription:
-        'Eine Komponente, die auf https://www.bing.com/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken. Bitte beachten Sie, dass hierfür ein API-Schlüssel von microsoft.com erforderlich ist.',
+        'Eine Komponente, die auf https://www.bing.com/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken. Bitte beachten Sie, dass hierfür ein API-SCHLÜSSEL von microsoft.com erforderlich ist.',
       apiKey: 'API-SCHLÜSSEL',
       country: 'Land & Region',
       language: 'Sprache',
@@ -1754,7 +1763,7 @@ Beispiel: Virtual Hosted Style`,
         'Eine Komponente, die Wetterinformationen wie Temperatur und Luftqualität von https://www.qweather.com/ abruft.',
       lang: 'Sprache',
       type: 'Typ',
-      webApiKey: 'Web-API-Schlüssel',
+      webApiKey: 'Web-API-SCHLÜSSEL',
       userType: 'Benutzertyp',
       timePeriod: 'Zeitraum',
       qWeatherLangOptions: {
@@ -2360,7 +2369,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
         bodyTemplate: 'Body-Vorlage',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api Key',
+        apiKey: 'API Key',
         queryParameters: 'Abfrageparameter',
         headerParameters: 'Header-Parameter',
         requestBodyParameters: 'Anfrage-Body-Parameter',
@@ -2373,6 +2382,10 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       saveToMemory: 'Im Gedächtnis speichern',
       retrievalFrom: 'Abruf von',
       tocDataSource: 'Datenquelle',
+      tags: 'Tags',
+      canvasCategory: 'Canvas-Kategorie',
+      id: 'ID',
+      logTitle: 'Titel',
     },
     llmTools: {
       bad_calculator: {
@@ -2431,6 +2444,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       okText: 'Speichern',
       cancelText: 'Abbrechen',
       chooseDataset: 'Bitte wählen Sie zuerst einen Datensatz aus',
+      selectLocalePlaceholder: 'Sprache auswählen',
     },
     language: {
       english: 'Englisch',

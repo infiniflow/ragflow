@@ -17,12 +17,9 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
 
@@ -63,7 +60,7 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -73,19 +70,11 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 
 	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }
 
 // SetAPIKey set API key for a LLM factory
@@ -101,112 +90,29 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	var req service.SetAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Invalid request: " + err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, "Invalid request: "+err.Error())
 		return
 	}
 
 	tenantID := user.ID
 	result, err := h.llmService.SetAPIKey(tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 		return
 	}
 
 	if req.Verify {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"message": "success",
-			"data":    result,
-		})
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    true,
-	})
-}
-
-// Factories get model provider factories
-// @Summary Get Model Provider Factories
-// @Description Get list of model provider factories
-// @Tags llm
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {array} FactoryResponse
-// @Router /v1/llm/factories [get]
-func (h *LLMHandler) Factories(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	// Get model providers
-	dao := dao.NewModelProviderDAO()
-	providers := dao.GetAllProviders()
-
-	// Filter out unwanted providers
-	filtered := make([]FactoryResponse, 0)
-	excluded := map[string]bool{
-		"Youdao":    true,
-		"FastEmbed": true,
-		"BAAI":      true,
-		"Builtin":   true,
-	}
-
-	for _, provider := range providers {
-		if excluded[provider.Name] {
-			continue
-		}
-
-		// Collect unique model types from LLMs
-		modelTypes := make(map[string]bool)
-		for _, llm := range provider.LLMs {
-			modelTypes[llm.ModelType] = true
-		}
-
-		// Convert to slice
-		modelTypeSlice := make([]string, 0, len(modelTypes))
-		for mt := range modelTypes {
-			modelTypeSlice = append(modelTypeSlice, mt)
-		}
-
-		// If no model types found, use defaults
-		if len(modelTypeSlice) == 0 {
-			modelTypeSlice = []string{"chat", "embedding", "rerank", "image2text", "speech2text", "tts", "ocr"}
-		}
-
-		filtered = append(filtered, FactoryResponse{
-			Name:       provider.Name,
-			Logo:       provider.Logo,
-			Tags:       provider.Tags,
-			Status:     provider.Status,
-			Rank:       provider.Rank,
-			ModelTypes: modelTypeSlice,
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": filtered,
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListApp lists LLMs grouped by factory
@@ -222,7 +128,7 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 func (h *LLMHandler) ListApp(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -232,17 +138,9 @@ func (h *LLMHandler) ListApp(c *gin.Context) {
 
 	llms, err := h.llmService.ListLLMs(tenantID, modelType)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }

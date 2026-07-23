@@ -15,6 +15,7 @@
 #
 
 import pytest
+from common import valid_chat_llm_id
 from configs import CHAT_ASSISTANT_NAME_LIMIT
 from utils import encode_avatar
 from utils.file_utils import create_image_file
@@ -22,7 +23,7 @@ from utils.file_utils import create_image_file
 
 @pytest.mark.usefixtures("clear_chat_assistants")
 class TestChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_chunks")
     @pytest.mark.parametrize(
         "name, expected_message",
@@ -127,12 +128,14 @@ class TestChatAssistantCreate:
     @pytest.mark.parametrize(
         "llm_id, expected_message",
         [
-            ("glm-4", ""),
+            (valid_chat_llm_id, ""),
             ("unknown", "`llm_id` unknown doesn't exist"),
         ],
     )
     def test_llm_id(self, client, add_chunks, llm_id, expected_message):
         dataset, _, _ = add_chunks
+        if callable(llm_id):
+            llm_id = llm_id(client)
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:

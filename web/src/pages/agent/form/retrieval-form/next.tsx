@@ -33,6 +33,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -134,6 +135,7 @@ export function EmptyResponseField() {
 
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const outputList = useMemo(() => {
     return [
@@ -166,16 +168,17 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields></RerankFormFields>
+                <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}

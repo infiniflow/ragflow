@@ -1,8 +1,9 @@
 {
   "name": "MiniMax",
+  "rank": 987,
   "url": {
-    "default": "https://api.minimaxi.com/",
-    "global": "https://api.minimax.io/"
+    "default": "https://api.minimaxi.com",
+    "global": "https://api.minimax.io"
   },
   "url_suffix": {
     "chat": "v1/text/chatcompletion_v2",
@@ -12,6 +13,17 @@
   },
   "class": "minimax",
   "models": [
+    {
+      "name": "MiniMax-M3",
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
     {
       "name": "minimax-m2.7",
       "max_tokens": 204800,
@@ -99,6 +111,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "speech-2.8-hd",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
     }
   ]
 }

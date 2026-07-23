@@ -7,6 +7,7 @@ import {
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
+  IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
   IPipeLineListRequest,
@@ -26,9 +27,11 @@ import agentService, {
   fetchAgentLogsByCanvasId,
   fetchAgentLogsById,
   fetchPipeLineList,
+  fetchSharedTrace,
   fetchTrace,
   fetchWebhookTrace,
   updateAgent,
+  updateAgentTags,
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -73,6 +76,11 @@ export const enum AgentApiAction {
   FetchSessionByIdManually = 'fetchSessionByIdManually',
   FetchAgentLog = 'fetchAgentLog',
   FetchSharedAgent = 'fetchSharedAgent',
+  FetchAgentTags = 'fetchAgentTags',
+  UpdateAgentTags = 'updateAgentTags',
+  FetchPipelineNodes = 'fetchPipelineNodes',
+  FetchBuiltinPipelineList = 'fetchBuiltinPipelineList',
+  FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
 export const useFetchAgentTemplates = () => {
@@ -95,12 +103,14 @@ const buildAgentListParams = ({
   keywords,
   canvasCategory,
   ownerIds,
+  tags,
 }: {
   page: number;
   pageSize: number;
   keywords?: string;
   canvasCategory?: string;
   ownerIds?: string[];
+  tags?: string[];
 }) => {
   const params: Record<string, unknown> = {
     page,
@@ -116,6 +126,9 @@ const buildAgentListParams = ({
   if (Array.isArray(ownerIds) && ownerIds.length > 0) {
     params.owner_ids = ownerIds.join(',');
   }
+  if (Array.isArray(tags) && tags.length > 0) {
+    params.tags = tags.join(',');
+  }
 
   return params;
 };
@@ -129,6 +142,7 @@ export const useFetchAgentListByPage = () => {
     ? filterValue.canvasCategory
     : [];
   const owner = filterValue.owner;
+  const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
   const requestParams = buildAgentListParams({
     page: pagination.current,
@@ -136,6 +150,7 @@ export const useFetchAgentListByPage = () => {
     keywords: debouncedSearchString,
     canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
     ownerIds: Array.isArray(owner) ? owner : undefined,
+    tags,
   });
 
   const { data, isFetching: loading } = useQuery<{
@@ -232,14 +247,65 @@ export const useUpdateAgentSetting = () => {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret?.data?.code;
     },
   });
 
   return { data, loading, updateAgentSetting: mutateAsync };
+};
+
+export const useDuplicateAgent = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.SetAgent, 'duplicate'],
+    mutationFn: async (agent: Pick<IFlow, 'id' | 'title'>) => {
+      try {
+        const { data: detail } = await agentService.getAgent(agent.id);
+        const source = detail?.data;
+        if (!source) {
+          message.error(i18n.t('message.requestError'));
+          return null;
+        }
+
+        const sourceTitle = agent.title ?? source.title ?? '';
+        const { data } = await agentService.createAgent({
+          title: i18n.t('flow.copyOfAgentName', {
+            name: sourceTitle,
+            defaultValue: `${sourceTitle} (Copy)`,
+          }),
+          dsl: source.dsl,
+          avatar: source.avatar,
+          description: source.description,
+          canvas_category: source.canvas_category,
+        });
+
+        if (data?.code === 0) {
+          message.success(i18n.t('message.created'));
+          queryClient.invalidateQueries({
+            queryKey: [AgentApiAction.FetchAgentListByPage],
+          });
+          return data;
+        }
+
+        message.error(data?.message ?? i18n.t('message.requestError'));
+        return null;
+      } catch (error) {
+        console.error('useDuplicateAgent failed:', error);
+        message.error(
+          (error as { message?: string })?.message ??
+            i18n.t('message.requestError'),
+        );
+        return null;
+      }
+    },
+  });
+
+  return { data, loading, duplicateAgent: mutateAsync };
 };
 
 export const useDeleteAgent = () => {
@@ -264,6 +330,57 @@ export const useDeleteAgent = () => {
   return { data, loading, deleteAgent: mutateAsync };
 };
 
+export interface IAgentTagCount {
+  tag: string;
+  count: number;
+}
+
+export const useFetchAgentTags = (canvasCategory?: string) => {
+  const { data, isFetching: loading } = useQuery<IAgentTagCount[]>({
+    queryKey: [AgentApiAction.FetchAgentTags, canvasCategory],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await agentService.listAgentTags(
+        {
+          params: canvasCategory ? { canvas_category: canvasCategory } : {},
+        },
+        true,
+      );
+      return data?.data ?? [];
+    },
+  });
+  return { data, loading };
+};
+
+export const useUpdateAgentTags = () => {
+  const queryClient = useQueryClient();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [AgentApiAction.UpdateAgentTags],
+    mutationFn: async ({
+      agentId,
+      tags,
+    }: {
+      agentId: string;
+      tags: string[];
+    }) => {
+      const { data } = await updateAgentTags(agentId, tags);
+      if (data?.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentListByPage],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentTags],
+        });
+      } else {
+        message.error(data?.message || 'Update failed');
+      }
+      return data?.code === 0;
+    },
+  });
+  return { loading, updateAgentTags: mutateAsync };
+};
+
 export const useFetchAgent = (): {
   data: IFlow;
   loading: boolean;
@@ -277,7 +394,7 @@ export const useFetchAgent = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentDetail],
+    queryKey: [AgentApiAction.FetchAgentDetail, sharedId || id],
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -367,7 +484,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
         });
         if (agentId) {
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentDetail],
+            queryKey: [AgentApiAction.FetchAgentDetail, agentId],
           });
         }
       }
@@ -470,8 +587,12 @@ export const useUploadAgentFileWithProgress = (identifier?: string | null) => {
   return { data, loading, uploadAgentFile: mutateAsync };
 };
 
-export const useFetchMessageTrace = (canvasId?: string) => {
+export const useFetchMessageTrace = (canvasId?: string, isShare?: boolean) => {
   const { id } = useParams();
+  // In shared mode there's no :id route param and `canvasId` actually carries
+  // the share (beta) APIToken — route through fetchSharedTrace so the request
+  // hits the beta-token-aware endpoint instead of /agents/<id>/logs which
+  // requires a session login (fixes #14985).
   const queryId = id || canvasId;
   const [messageId, setMessageId] = useState('');
   const [isStopFetchTrace, setISStopFetchTrace] = useState(false);
@@ -481,7 +602,7 @@ export const useFetchMessageTrace = (canvasId?: string) => {
     isFetching: loading,
     refetch,
   } = useQuery<ITraceData[]>({
-    queryKey: [AgentApiAction.Trace, queryId, messageId],
+    queryKey: [AgentApiAction.Trace, queryId, messageId, !!isShare],
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
@@ -489,10 +610,15 @@ export const useFetchMessageTrace = (canvasId?: string) => {
     enabled: !!queryId && !!messageId,
     refetchInterval: !isStopFetchTrace ? 3000 : false,
     queryFn: async () => {
-      const { data } = await fetchTrace({
-        canvas_id: queryId as string,
-        message_id: messageId,
-      });
+      const { data } = isShare
+        ? await fetchSharedTrace({
+            shared_id: queryId as string,
+            message_id: messageId,
+          })
+        : await fetchTrace({
+            canvas_id: queryId as string,
+            message_id: messageId,
+          });
 
       return Array.isArray(data?.data) ? data?.data : [];
     },
@@ -626,7 +752,11 @@ export const useFetchVersion = (
 
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IAgentLogsResponse>({
     queryKey: [AgentApiAction.FetchAgentLog, id, searchParams],
     initialData: {} as IAgentLogsResponse,
     gcTime: 0,
@@ -639,7 +769,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 };
 
 export const useFetchSessionsByCanvasId = () => {
@@ -658,7 +788,7 @@ export const useFetchSessionsByCanvasId = () => {
 
       const { data } = await fetchAgentLogsByCanvasId(canvasId, {
         page: 1,
-        page_size: 100000,
+        page_size: 100,
         exp_user_id: tenantInfo.tenant_id,
       });
 
@@ -739,6 +869,37 @@ export const useFetchAgentList = ({
   });
 
   return { data, loading };
+};
+
+export const BuiltinPipelineKeys = {
+  list: (type: string) =>
+    [AgentApiAction.FetchBuiltinPipelineList, type] as const,
+  detail: (id: string) =>
+    [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
+};
+
+export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+  const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
+    queryKey: BuiltinPipelineKeys.list(type),
+    initialData: { canvas: [], total: 0 },
+    gcTime: 0,
+    enabled,
+    queryFn: async () => {
+      const { data } = await agentService.listBuiltinPipelines(
+        { params: { type } },
+        true,
+      );
+      return data?.data ?? { canvas: [], total: 0 };
+    },
+  });
+
+  const options =
+    data?.canvas?.map((item) => ({
+      label: item.title,
+      value: item.id,
+    })) ?? [];
+
+  return { data, loading, options };
 };
 
 export const useCancelDataflow = () => {
@@ -982,13 +1143,34 @@ export const useExportAgentLog = () => {
     mutationFn: async (searchParams: IAgentLogsRequest) => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
-        page: 1,
-        page_size: 100000,
       });
 
-      return data?.data?.sessions ?? [];
+      return data?.data ?? [];
     },
   });
 
   return { exportLogs: mutateAsync, loading };
+};
+
+export const useFetchPipelineDslByPipelineId = (
+  pipelineId?: string,
+  isBuiltin = false,
+) => {
+  const { data: dsl, isFetching: loading } = useQuery({
+    queryKey: isBuiltin
+      ? BuiltinPipelineKeys.detail(pipelineId!)
+      : [AgentApiAction.FetchPipelineNodes, pipelineId],
+    initialData: {},
+    gcTime: 0,
+    enabled: !!pipelineId,
+    queryFn: async () => {
+      const { data } = isBuiltin
+        ? await agentService.getBuiltinPipeline(pipelineId!)
+        : await agentService.getAgent(pipelineId!);
+      const flow = data?.data;
+      return flow?.dsl ?? {};
+    },
+  });
+
+  return { dsl, loading };
 };

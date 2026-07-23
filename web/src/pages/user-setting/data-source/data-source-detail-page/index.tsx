@@ -1,4 +1,3 @@
-import BackButton from '@/components/back-button';
 import {
   DynamicForm,
   DynamicFormRef,
@@ -9,31 +8,35 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { RunningStatus } from '@/constants/knowledge';
-import { t } from 'i18next';
-import { CirclePause, Repeat } from 'lucide-react';
+import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
+import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import {
-  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
+  DataSourceKey,
   getCommonExtraDefaultValues,
+  getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
 import {
   useAddDataSource,
-  useDataSourceResume,
   useFetchDataSourceDetail,
+  useTestDataSource,
+  useUpdateDataSourceStatus,
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
 
 const SourceDetailPage = () => {
+  const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
 
   const { data: detail } = useFetchDataSourceDetail();
-  const { handleResume } = useDataSourceResume();
+  const { updateStatus, loading: statusUpdateLoading } =
+    useUpdateDataSourceStatus();
   const { dataSourceInfo } = useDataSourceInfo();
   const detailInfo = useMemo(() => {
     if (detail) {
@@ -41,86 +44,49 @@ const SourceDetailPage = () => {
     }
   }, [detail, dataSourceInfo]);
 
-  const [fields, setFields] = useState<FormFieldConfig[]>([]);
-  const [defaultValues, setDefaultValues] = useState<FieldValues>(
-    DataSourceFormDefaultValues[
-      detail?.source as keyof typeof DataSourceFormDefaultValues
-    ] as FieldValues,
-  );
-
-  const runSchedule = useCallback(() => {
-    handleResume({
-      resume:
-        detail?.status === RunningStatus.RUNNING ||
-        detail?.status === RunningStatus.SCHEDULE
-          ? false
-          : true,
-    });
-  }, [detail, handleResume]);
+  const [isDirty, setIsDirty] = useState(false);
 
   const customFields = useMemo(() => {
     return [
       {
-        label: 'Refresh Freq',
-        name: 'refresh_freq',
-        type: FormFieldType.Number,
-        required: false,
-        render: (fieldProps: FormFieldConfig) => (
-          <div className="flex items-center gap-1 w-full relative">
-            <div className="flex-1">
-              <Input
-                {...fieldProps}
-                type={FormFieldType.Number}
-                suffix={
-                  <span className="px-2 text-text-secondary italic">
-                    {t('setting.minutes')}
-                  </span>
-                }
-              />
-            </div>
-            <button
-              type="button"
-              className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button hover:bg-border-button hover:text-text-primary"
-              onClick={() => {
-                runSchedule();
-              }}
-            >
-              {detail?.status === RunningStatus.RUNNING ||
-              detail?.status === RunningStatus.SCHEDULE ? (
-                <CirclePause size={12} />
-              ) : (
-                <Repeat size={12} />
-              )}
-            </button>
-          </div>
-        ),
-      },
-      {
-        label: 'Prune Freq',
+        label: t('setting.dataSourcePruneFreq'),
         name: 'prune_freq',
         type: FormFieldType.Number,
         required: false,
-        hidden: true,
+        shouldRender: (values: any) => !!values?.config?.sync_deleted_files,
         render: (fieldProps: FormFieldConfig) => {
           return (
-            <div className="flex items-center gap-1 w-full relative">
-              <div className="flex-1">
-                <Input
-                  {...fieldProps}
-                  type={FormFieldType.Number}
-                  suffix={
-                    <span className="px-2 text-text-secondary italic">
-                      hours
-                    </span>
-                  }
-                />
-              </div>
-            </div>
+            <Input
+              {...fieldProps}
+              type={FormFieldType.Number}
+              suffix={
+                <span className="px-2 text-text-secondary italic">
+                  {t('setting.minutes')}
+                </span>
+              }
+            />
           );
         },
       },
       {
-        label: 'Timeout Secs',
+        label: t('setting.dataSourceRefreshFreq'),
+        name: 'refresh_freq',
+        type: FormFieldType.Number,
+        required: false,
+        render: (fieldProps: FormFieldConfig) => (
+          <Input
+            {...fieldProps}
+            type={FormFieldType.Number}
+            suffix={
+              <span className="px-2 text-text-secondary italic">
+                {t('setting.minutes')}
+              </span>
+            }
+          />
+        ),
+      },
+      {
+        label: t('setting.dataSourceTimeoutSecs'),
         name: 'timeout_secs',
         type: FormFieldType.Number,
         required: false,
@@ -141,60 +107,112 @@ const SourceDetailPage = () => {
         ),
       },
     ];
-  }, [detail, runSchedule]);
+  }, [t]);
+
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    if (!detail) {
+      return [];
+    }
+    const baseFields = getDataSourceFormBaseFields(t).map((field) =>
+      field.name === 'name' ? { ...field, disabled: true } : { ...field },
+    );
+    const allFields = [
+      ...baseFields,
+      ...getDataSourceFieldsWithExtras(t, detail.source as any),
+      ...customFields,
+    ] as FormFieldConfig[];
+    return allFields.map((field) => ({
+      ...field,
+      horizontal: true,
+      onChange: undefined,
+    }));
+  }, [detail, customFields, t]);
+
+  const defaultValues = useMemo<FieldValues>(() => {
+    if (!detail) {
+      return {};
+    }
+    return mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[
+        detail.source as keyof typeof DataSourceFormDefaultValues
+      ] as FieldValues,
+      getCommonExtraDefaultValues(),
+      detail as FieldValues,
+    );
+  }, [detail]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
+  const { loading: testLoading, handleTest } = useTestDataSource();
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
   }, []);
 
-  useEffect(() => {
-    const baseFields = DataSourceFormBaseFields.map((field) => {
-      if (field.name === 'name') {
-        return {
-          ...field,
-          disabled: true,
-        };
-      } else {
-        return {
-          ...field,
-        };
-      }
-    });
-    if (detail) {
-      const fields = [
-        ...baseFields,
-        ...getDataSourceFieldsWithExtras(detail.source as any),
-        ...customFields,
-      ] as FormFieldConfig[];
+  const isUnstarted = useMemo(
+    () =>
+      detail?.status === RunningStatus.UNSTART ||
+      detail?.status === RunningStatusOld.UNSTART,
+    [detail?.status],
+  );
 
-      const newFields = fields.map((field) => {
-        return {
-          ...field,
-          horizontal: true,
-          onChange: undefined,
-        };
-      });
-      setFields(newFields);
+  const isConnectorActive = useMemo(
+    () =>
+      detail?.status === RunningStatus.RUNNING ||
+      detail?.status === RunningStatus.SCHEDULE ||
+      detail?.status === RunningStatusOld.RUNNING ||
+      detail?.status === RunningStatusOld.SCHEDULE,
+    [detail?.status],
+  );
 
-      const defaultValueTemp = {
-        ...mergeDataSourceFormValues(
-          DataSourceFormDefaultValues[
-            detail?.source as keyof typeof DataSourceFormDefaultValues
-          ] as FieldValues,
-          getCommonExtraDefaultValues(),
-          detail as FieldValues,
-        ),
-      };
-      console.log('defaultValue', defaultValueTemp);
-      setDefaultValues(defaultValueTemp);
+  const actionMode = useMemo(() => {
+    if (isDirty) {
+      return 'save' as const;
     }
-  }, [detail, customFields, onSubmit]);
+
+    if (isUnstarted) {
+      return 'save' as const;
+    }
+
+    if (isConnectorActive) {
+      return 'stop' as const;
+    }
+
+    return 'resume' as const;
+  }, [isConnectorActive, isDirty, isUnstarted]);
+
+  const handlePrimaryAction = useCallback(() => {
+    if (actionMode === 'save') {
+      onSubmit();
+      return;
+    }
+    updateStatus(
+      actionMode === 'resume' ? RunningStatus.SCHEDULE : RunningStatus.CANCEL,
+    );
+  }, [actionMode, onSubmit, updateStatus]);
+
+  const primaryActionLabel = useMemo(() => {
+    if (actionMode === 'stop') return t('common.stop');
+    if (actionMode === 'resume') return t('common.resume');
+    return t('common.save');
+  }, [actionMode, t]);
+
+  useEffect(() => {
+    setIsDirty(false);
+  }, [detail]);
+
+  useEffect(() => {
+    const instance = formRef.current;
+    if (!instance) return;
+
+    setIsDirty(!isEqual(instance.getValues(), defaultValues));
+    return instance.watchDirty((_nextIsDirty, values) => {
+      setIsDirty(!isEqual(values, defaultValues));
+    });
+  }, [defaultValues, fields]);
 
   return (
     <div className="px-10 py-5">
-      <BackButton />
+      {/* <BackButton /> */}
       <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
           {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
@@ -204,7 +222,7 @@ const SourceDetailPage = () => {
           </CardTitle>
         </CardHeader>
         <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
-        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-auto">
+        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-230px)] overflow-y-auto scrollbar-auto">
           <div className="max-w-[1200px]">
             <DynamicForm.Root
               ref={formRef}
@@ -213,25 +231,36 @@ const SourceDetailPage = () => {
               defaultValues={defaultValues}
             />
           </div>
-          <div className="max-w-[1200px] flex justify-end">
+          <div className="max-w-[1200px] flex justify-end gap-2">
+            {(detail?.source === DataSourceKey.REST_API ||
+              detail?.source === DataSourceKey.BIGQUERY) && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTest}
+                disabled={testLoading}
+                loading={testLoading}
+              >
+                {t('setting.restApiTestConnection')}
+              </Button>
+            )}
             <Button
               type="button"
-              onClick={onSubmit}
-              disabled={addLoading}
-              loading={addLoading}
+              onClick={handlePrimaryAction}
+              disabled={addLoading || statusUpdateLoading}
+              loading={
+                (addLoading && actionMode === 'save') ||
+                (statusUpdateLoading && actionMode !== 'save')
+              }
             >
-              {t('common.confirm')}
-              {/* {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {addLoading
-                ? t('modal.loadingText', { defaultValue: 'Submitting...' })
-                : t('modal.okText', { defaultValue: 'Submit' })} */}
+              {primaryActionLabel}
             </Button>
           </div>
           <section className="flex flex-col gap-2">
             <div className="text-2xl text-text-primary mb-2">
               {t('setting.log')}
             </div>
-            <DataSourceLogsTable refresh_freq={detail?.refresh_freq || false} />
+            <DataSourceLogsTable autoRefresh={isConnectorActive} />
           </section>
         </CardContent>
       </Card>

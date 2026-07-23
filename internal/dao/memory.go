@@ -20,6 +20,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
@@ -123,8 +124,13 @@ func (dao *MemoryDAO) Create(memory *entity.Memory) error {
 //   - *model.Memory: Memory model pointer
 //   - error: Database operation error
 func (dao *MemoryDAO) GetByID(id string) (*entity.Memory, error) {
+	return dao.GetByIDWithContext(context.Background(), id)
+}
+
+// GetByIDWithContext retrieves a memory record by ID from database with context.
+func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, id string) (*entity.Memory, error) {
 	var memory entity.Memory
-	err := DB.Where("id = ?", id).First(&memory).Error
+	err := DB.WithContext(ctx).Where("id = ?", id).First(&memory).Error
 	if err != nil {
 		return nil, err
 	}
@@ -295,13 +301,18 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*entity.MemoryListItem, e
 // Example:
 //
 //	memories, total, err := dao.GetByFilter([]string{"tenant1"}, []string{"semantic"}, "table", "test", 1, 10)
-func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
+func (dao *MemoryDAO) GetByFilter(userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
 	var conditions []string
 	var args []interface{}
 
 	if len(tenantIDs) > 0 {
 		conditions = append(conditions, "m.tenant_id IN ?")
 		args = append(args, tenantIDs)
+	}
+
+	if userID != "" {
+		conditions = append(conditions, "(m.tenant_id = ? OR m.permissions = ?)")
+		args = append(args, userID, "team")
 	}
 
 	if len(memoryTypes) > 0 {
@@ -342,7 +353,7 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 		FROM memory m
 		LEFT JOIN user u ON m.tenant_id = u.id
 		%s
-		ORDER BY m.update_time DESC
+		ORDER BY m.create_time DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
@@ -366,4 +377,33 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 	}
 
 	return memories, total, nil
+}
+
+// Accessible check if it is possible for user to access the memory
+func (dao *MemoryDAO) Accessible(userID, memoryID string) (bool, error) {
+	memory, err := dao.GetByID(memoryID)
+	if err != nil {
+		return false, err
+	}
+
+	if memory.TenantID == userID {
+		return true, nil
+	}
+
+	if memory.Permissions != string(entity.TenantPermissionTeam) {
+		return false, fmt.Errorf("user %s have no access to this memory", userID)
+	}
+
+	var count int64
+	err = DB.Table("user_tenant").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", memory.TenantID, userID, "1").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	return false, fmt.Errorf("user %s have no access to this memory", userID)
 }

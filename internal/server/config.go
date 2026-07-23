@@ -21,10 +21,11 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -39,15 +40,21 @@ type Config struct {
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
+	Nats             NatsConfig             `mapstructure:"nats"`
 	Log              LogConfig              `mapstructure:"log"`
 	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
 	RegisterEnabled  int                    `mapstructure:"register_enabled"`
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
+	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
+	Ingestor         IngestorConfig         `mapstructure:"ingestor"`
+	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
+	OTel             OtelConfig             `mapstructure:"otel"`
+	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
 }
 
 // AdminConfig admin server configuration
@@ -67,7 +74,36 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
-// UserDefaultLLMConfig user default LLM configuration
+type IngestorConfig struct {
+	MQType string `mapstructure:"mq_type"`
+}
+
+type TaskExecutorConfig struct {
+	MessageQueueType string `mapstructure:"message_queue_type"`
+}
+
+type FileSyncerConfig struct {
+	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
+	SyncInterval       int `mapstructure:"sync_interval"`
+}
+
+type OtelConfig struct {
+	Host        string  `mapstructure:"host"`
+	Port        int     `mapstructure:"port"`
+	SampleRatio float64 `mapstructure:"sample_ratio"`
+	Secure      bool    `mapstructure:"secure"`
+	Stdout      bool    `mapstructure:"stdout"`
+	Enable      bool    `mapstructure:"enable"`
+}
+
+type ClickhouseConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	Database string `mapstructure:"database"`
+}
+
 type UserDefaultLLMConfig struct {
 	DefaultModels DefaultModelsConfig `mapstructure:"default_models"`
 }
@@ -79,6 +115,8 @@ type DefaultModelsConfig struct {
 	RerankModel     ModelConfig `mapstructure:"rerank_model"`
 	ASRModel        ModelConfig `mapstructure:"asr_model"`
 	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+	OCRModel        ModelConfig `mapstructure:"ocr_model"`
+	TTSModel        ModelConfig `mapstructure:"tts_model"`
 }
 
 // ModelConfig model configuration
@@ -89,10 +127,24 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-// OAuthConfig OAuth configuration for a channel
+// OAuthConfig OAuth configuration for a channel.
+// Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
+// selects the auth client flavor (oauth2 / oidc / github), plus the
+// transport URLs and client credentials. For OIDC the URLs are derived
+// from Issuer via the .well-known/openid-configuration document, so they
+// may be left blank.
 type OAuthConfig struct {
-	DisplayName string `mapstructure:"display_name"`
-	Icon        string `mapstructure:"icon"`
+	DisplayName      string `mapstructure:"display_name"`
+	Icon             string `mapstructure:"icon"`
+	Type             string `mapstructure:"type"`
+	ClientID         string `mapstructure:"client_id"`
+	ClientSecret     string `mapstructure:"client_secret"`
+	AuthorizationURL string `mapstructure:"authorization_url"`
+	TokenURL         string `mapstructure:"token_url"`
+	UserinfoURL      string `mapstructure:"userinfo_url"`
+	RedirectURI      string `mapstructure:"redirect_uri"`
+	Scope            string `mapstructure:"scope"`
+	Issuer           string `mapstructure:"issuer"`
 }
 
 // ServerConfig server configuration
@@ -113,10 +165,31 @@ type DatabaseConfig struct {
 	Charset  string `mapstructure:"charset"`
 }
 
-// LogConfig logging configuration
+// LogConfig logging configuration.
+//
+// Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
+// log file. The cmd/* entry points hardcode per-service defaults
+// (e.g. "server_main.log" for the API server, "admin_server.log" for
+// the admin server, "ingestion_server.log" for the ingestion worker),
+// so a typical deployment gets a rotated file without any YAML
+// configuration. When Path is empty (the default) the binary's
+// hardcoded default filename is used — it does NOT disable file
+// output. Set log.path in service_conf.yaml to override the
+// per-service default filename.
+//
+// Compress is a pointer so callers can distinguish "not set" (nil,
+// defaults to true) from "explicitly false" (*bool=false). All other
+// numeric fields use plain int because their zero values are sensible
+// defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
+// reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
+	Level      string `mapstructure:"level"`       // debug, info, warn, error
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use)
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration
@@ -158,12 +231,14 @@ type StorageConfig struct {
 	Minio *MinioConfig `mapstructure:"minio"`
 	S3    *S3Config    `mapstructure:"s3"`
 	OSS   *OSSConfig   `mapstructure:"oss"`
+	GCS   *GCSConfig   `mapstructure:"gcs"`
 }
 
 const (
 	StorageOSS   StorageType = "oss"
 	StorageS3    StorageType = "s3"
 	StorageMinio StorageType = "minio"
+	StorageGCS   StorageType = "gcs"
 )
 
 // OSSConfig holds Aliyun OSS storage configuration
@@ -177,6 +252,12 @@ type OSSConfig struct {
 	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 	SignatureVersion string `mapstructure:"signature_version"` // Signature version
 	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
+}
+
+type GCSConfig struct {
+	Bucket      string `mapstructure:"bucket"`       // Default bucket (optional)
+	PrefixPath  string `mapstructure:"prefix_path"`  // Path prefix (optional)
+	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
 }
 
 // MinioConfig holds MinIO storage configuration
@@ -210,6 +291,11 @@ type RedisConfig struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+type NatsConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
 }
 
 var (
@@ -316,7 +402,7 @@ func Init(configPath string) error {
 			configDict["name"] = "redis"
 			configDict["host"] = host
 			configDict["port"] = port
-			configDict["service_type"] = "message_queue"
+			configDict["service_type"] = "cache"
 			configDict["extra"] = map[string]interface{}{
 				"mq_type":  "redis",
 				"database": db,
@@ -344,15 +430,27 @@ func Init(configPath string) error {
 			delete(configDict, "max_allowed_packet")
 			delete(configDict, "user")
 			delete(configDict, "password")
-		case "task_executor":
-			mqType := getString(configDict, "message_queue_type")
+		case "ingestor":
+			mqType := getString(configDict, "mq_type")
 			configDict["id"] = id
-			configDict["name"] = "task_executor"
-			configDict["service_type"] = "task_executor"
+			configDict["name"] = "ingestor"
+			configDict["service_type"] = "ingestor"
 			configDict["extra"] = map[string]interface{}{
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
+		case "nats":
+			configDict["id"] = id
+			configDict["name"] = "nats"
+			configDict["service_type"] = "message_queue"
+		case "otel":
+			configDict["id"] = id
+			configDict["name"] = "jaeger"
+			configDict["service_type"] = "tracing"
+		case "clickhouse":
+			configDict["id"] = id
+			configDict["name"] = "clickhouse"
+			configDict["service_type"] = "olap"
 		case "admin":
 			// Skip admin section
 			continue
@@ -380,12 +478,12 @@ func Init(configPath string) error {
 
 func FromEnvironments() error {
 	// Secret key
-	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
 		globalConfig.Server.SecretKey = &envVal
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvRegisterEnabled); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.RegisterEnabled = true
@@ -395,7 +493,7 @@ func FromEnvironments() error {
 	}
 
 	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
-	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.DisablePasswordLogin = true
@@ -405,7 +503,7 @@ func FromEnvironments() error {
 	}
 
 	// Doc engine
-	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
+	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	switch docEngine {
 	case "infinity":
 		globalConfig.DocEngine.Type = EngineInfinity
@@ -425,7 +523,7 @@ func FromEnvironments() error {
 
 	// Default super user email
 	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	superUserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
 	if superUserEmail != "" {
 		_, err := mail.ParseAddress(superUserEmail)
 		if err != nil {
@@ -435,19 +533,19 @@ func FromEnvironments() error {
 	}
 
 	globalConfig.DefaultSuperUser.Password = "admin"
-	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
+	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
 	if superUserPassword != "" {
 		globalConfig.DefaultSuperUser.Password = superUserPassword
 	}
 
 	globalConfig.DefaultSuperUser.Nickname = "admin"
-	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
+	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
 	if superUserNickname != "" {
 		globalConfig.DefaultSuperUser.Nickname = superUserNickname
 	}
 
 	// Meta database
-	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
+	databaseType := common.GetEnvSmall(common.EnvDBType)
 	switch databaseType {
 	case "mysql":
 		globalConfig.Database.Driver = "mysql"
@@ -461,7 +559,7 @@ func FromEnvironments() error {
 	}
 
 	// Storage
-	storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
+	storageType := common.GetEnvSmall(common.EnvStorageImpl)
 	switch storageType {
 	case "minio":
 		globalConfig.StorageEngine.Type = StorageMinio
@@ -469,6 +567,8 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Type = StorageS3
 	case "oss":
 		globalConfig.StorageEngine.Type = StorageOSS
+	case "gcs":
+		globalConfig.StorageEngine.Type = StorageGCS
 	case "":
 		// Default
 		if globalConfig.StorageEngine.Type == "" {
@@ -479,32 +579,12 @@ func FromEnvironments() error {
 	}
 
 	// Minio
-	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
-	if minioIP != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
-		}
-		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-		if err != nil {
-			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-		}
-		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
+	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
+	if minioHost != "" {
+		globalConfig.StorageEngine.Minio.Host = minioEndpoint(minioHost, globalConfig.StorageEngine.Minio.Host)
 	}
 
-	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
-	if minioPort != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
-		}
-		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-		if err != nil {
-			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-		}
-		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
-	}
-
-	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
+	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
 	if minioRegion != "" {
 		if globalConfig.StorageEngine.Minio == nil {
 			return fmt.Errorf("Minio config not found")
@@ -518,6 +598,19 @@ func FromEnvironments() error {
 	}
 
 	return nil
+}
+
+func minioEndpoint(host, configuredEndpoint string) string {
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return host
+	}
+
+	port := "9000"
+	if _, configuredPort, err := net.SplitHostPort(configuredEndpoint); err == nil && configuredPort != "" {
+		port = configuredPort
+	}
+
+	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }
 
 func FromConfigFile(configPath string) error {
@@ -723,6 +816,36 @@ func FromConfigFile(configPath string) error {
 			}
 		}
 
+		if v.IsSet("gcs") {
+			gcsConfig := v.Sub("gcs")
+			if gcsConfig != nil {
+				if globalConfig.StorageEngine.GCS == nil {
+					globalConfig.StorageEngine.GCS = &GCSConfig{
+						Bucket:      gcsConfig.GetString("bucket"),
+						PrefixPath:  gcsConfig.GetString("prefix_path"),
+						EndpointURL: gcsConfig.GetString("endpoint_url"),
+					}
+				}
+			}
+		}
+
+		if v.IsSet("minio_0") {
+			minioConfig := v.Sub("minio_0")
+			if minioConfig != nil {
+				if globalConfig.StorageEngine.Minio == nil {
+					globalConfig.StorageEngine.Minio = &MinioConfig{
+						Host:       minioConfig.GetString("host"),
+						User:       minioConfig.GetString("user"),
+						Password:   minioConfig.GetString("password"),
+						Secure:     minioConfig.GetBool("secure"),
+						PrefixPath: minioConfig.GetString("prefix_path"),
+						Verify:     minioConfig.GetBool("verify"),
+						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
 		if v.IsSet("s3") {
 			s3Config := v.Sub("s3")
 			if s3Config != nil {
@@ -830,11 +953,11 @@ func PrintAll() {
 	}
 
 	allSettings := globalViper.AllSettings()
-	zapLogger.Info("=== All Configuration Settings ===")
+	zapLogger.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
-	zapLogger.Info("=== End Configuration ===")
+	zapLogger.Info("=== End Configurations ===")
 }
 
 // parseHostPort parses host:port string and returns host and port
@@ -881,9 +1004,9 @@ func getInt(m map[string]interface{}, key string) int {
 }
 
 func GetLanguage() string {
-	lang := os.Getenv("LANG")
+	lang := common.GetEnv(common.EnvLang)
 	if lang == "" {
-		lang = os.Getenv("LANGUAGE")
+		lang = common.GetEnv(common.EnvLanguage)
 	}
 
 	lang = strings.ToLower(lang)

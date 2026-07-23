@@ -1,7 +1,12 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { formatDate } from '@/utils/date';
-import { ReactNode } from 'react';
+import { ElementType, ReactNode, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface IProps {
@@ -18,11 +23,55 @@ interface IProps {
   icon?: React.ReactNode;
   testId?: string;
   showReleaseTime?: boolean;
+  extra?: ReactNode;
 }
 
 function Time({ time }: { time: string | number | undefined }) {
-  return <p className="text-sm whitespace-nowrap">{formatDate(time)}</p>;
+  return <p className="text-sm truncate">{formatDate(time)}</p>;
 }
+
+function TruncatedText({
+  as: Tag = 'div',
+  className,
+  children,
+  tooltip,
+  testId,
+}: {
+  as?: ElementType;
+  className?: string;
+  children?: ReactNode;
+  tooltip?: ReactNode;
+  testId?: string;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+
+  if (tooltip == null) {
+    return (
+      <Tag ref={ref} className={className} data-testid={testId}>
+        {children}
+      </Tag>
+    );
+  }
+
+  return (
+    <Tooltip
+      open={open}
+      onOpenChange={(next) => {
+        const el = ref.current;
+        setOpen(next && el !== null && el.scrollWidth > el.clientWidth);
+      }}
+    >
+      <TooltipTrigger asChild>
+        <Tag ref={ref} className={className} data-testid={testId} tabIndex={0}>
+          {children}
+        </Tag>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function HomeCard({
   data,
   onClick,
@@ -31,6 +80,7 @@ export function HomeCard({
   icon,
   testId,
   showReleaseTime = false,
+  extra,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -60,12 +110,14 @@ export function HomeCard({
           className="p-0 flex-1 flex flex-row items-center gap-2 space-y-0"
         >
           <CardTitle className="flex-1 inline-flex w-0 me-auto">
-            <h3
+            <TruncatedText
+              as="h3"
               className="flex-1 truncate text-base font-bold leading-snug"
-              data-testid="agent-name"
+              testId="agent-name"
+              tooltip={data.name}
             >
               {data.name}
-            </h3>
+            </TruncatedText>
 
             {icon}
           </CardTitle>
@@ -78,19 +130,27 @@ export function HomeCard({
             <section className="flex justify-between"></section>
 
             <section className="flex flex-col gap-1 mt-1">
-              <div className="whitespace-nowrap overflow-hidden text-ellipsis">
+              <TruncatedText
+                className="whitespace-nowrap overflow-hidden text-ellipsis"
+                tooltip={data.description}
+              >
                 {data.description}
-              </div>
-              <div className="flex justify-between items-center">
+              </TruncatedText>
+              {extra}
+              <div className="flex justify-between items-center min-w-0">
                 {showReleaseTime ? (
-                  <section className="text-sm text-text-secondary space-y-1">
-                    <div className="flex items-center gap-2">
-                      {`${t('flow.lastSavedAt')}:`}
+                  <section className="text-sm text-text-secondary space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="whitespace-nowrap">
+                        {t('flow.lastSavedAt')}:
+                      </span>
                       <Time time={data.update_time}></Time>
                     </div>
                     {data.release_time && (
-                      <div className="flex items-center gap-2">
-                        {`${t('flow.publishedAt')}:`}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="whitespace-nowrap">
+                          {t('flow.publishedAt')}:
+                        </span>
                         <Time time={data.release_time}></Time>
                       </div>
                     )}

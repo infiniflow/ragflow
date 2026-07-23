@@ -171,7 +171,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 
 	// For Infinity: ensure table exists with correct dimension BEFORE inserting
 	if docEngine.GetType() == "infinity" {
-		exists, _ := docEngine.TableExists(ctx, indexName)
+		exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 		if !exists {
 			common.Info(fmt.Sprintf("Creating Infinity table with dimension %d", dimension))
 			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
@@ -252,7 +252,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	if docEngine.GetType() == "infinity" {
 		// For Infinity: must ensure table exists with correct dimension BEFORE inserting
 		common.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
-		exists, err := docEngine.TableExists(ctx, indexName)
+		exists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 		if err != nil {
 			common.Warn(fmt.Sprintf("Error checking index existence: %v", err))
 		}
@@ -436,10 +436,10 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
 	indexName := getSkillIndexName(tenantID, spaceID)
-	exists, _ := docEngine.TableExists(ctx, indexName)
+	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 	if exists {
 		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
-		if err := docEngine.DropTable(ctx, indexName); err != nil {
+		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
 			common.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
 		}
 	}
@@ -846,7 +846,7 @@ func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, spa
 
 	common.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
 
-	exists, err := docEngine.TableExists(ctx, indexName)
+	exists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 	if err != nil {
 		common.Error("Failed to check index existence", err)
 		return fmt.Errorf("failed to check index existence: %w", err)
@@ -883,22 +883,22 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 
 	// For Infinity: check if table exists and needs recreation (dimension mismatch)
 	if docEngine.GetType() == "infinity" {
-		exists, err := docEngine.TableExists(ctx, indexName)
+		exists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 		if err != nil {
 			common.Warn(fmt.Sprintf("Error checking if index exists: %v", err))
 		}
 		if exists {
 			common.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
 				zap.String("indexName", indexName))
-			if err := docEngine.DropTable(ctx, indexName); err != nil {
+			if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
 				common.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
 			}
 		}
 	}
 
-	// Use the doc engine's CreateDataset method with skill-specific mapping
+	// Use the doc engine's CreateChunkStore method with skill-specific mapping
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json
-	err := docEngine.CreateDataset(ctx, indexName, "skill", dimension, "")
+	err := docEngine.CreateChunkStore(ctx, indexName, "skill", dimension, "")
 	if err != nil {
 		common.Error("Failed to create skill index", err)
 		return err
@@ -935,7 +935,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 	truncatedText := truncate(text, maxLen-10)
 
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
@@ -979,7 +979,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	common.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -1026,7 +1026,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}

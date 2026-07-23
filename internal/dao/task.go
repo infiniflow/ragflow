@@ -33,6 +33,14 @@ func (dao *TaskDAO) Create(task *entity.Task) error {
 	return DB.Create(task).Error
 }
 
+// CreateMany creates multiple tasks in one batch.
+func (dao *TaskDAO) CreateMany(tasks []*entity.Task) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+	return DB.Create(&tasks).Error
+}
+
 // GetByID gets task by ID
 func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
 	var task entity.Task
@@ -41,6 +49,15 @@ func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
 		return nil, err
 	}
 	return &task, nil
+}
+
+// DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
+func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(docIDs []string) (int64, error) {
+	if len(docIDs) == 0 {
+		return 0, nil
+	}
+	result := DB.Unscoped().Where("document_id IN ?", docIDs).Delete(&entity.IngestionTask{})
+	return result.RowsAffected, result.Error
 }
 
 // DeleteByDocIDs deletes tasks by document IDs (hard delete)
@@ -56,6 +73,13 @@ func (dao *TaskDAO) DeleteByDocIDs(docIDs []string) (int64, error) {
 func (dao *TaskDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
+}
+
+// GetByDocID gets all tasks by document ID
+func (dao *TaskDAO) GetByDocID(docID string) ([]*entity.Task, error) {
+	var tasks []*entity.Task
+	err := DB.Where("doc_id = ?", docID).Order("from_page ASC, create_time ASC").Find(&tasks).Error
+	return tasks, err
 }
 
 func (dao *TaskDAO) GetAllTasks() ([]*entity.Task, error) {

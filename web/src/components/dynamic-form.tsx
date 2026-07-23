@@ -69,6 +69,7 @@ export interface FormFieldConfig {
   required?: boolean;
   placeholder?: string;
   options?: { label: string; value: string }[];
+  allowCustomValue?: boolean;
   defaultValue?: any;
   validation?: {
     pattern?: RegExp;
@@ -111,10 +112,12 @@ interface DynamicFormProps<T extends FieldValues> {
 // Form ref interface
 export interface DynamicFormRef {
   submit: () => void;
+  isDirty: () => boolean;
   getValues: (name?: string) => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
+  watchDirty: (callback: (isDirty: boolean, values: any) => void) => () => void;
   updateFieldType: (fieldName: string, newType: FormFieldType) => void;
   onFieldUpdate: (
     fieldName: string,
@@ -347,7 +350,6 @@ export const RenderField = ({
   field: FormFieldConfig;
   labelClassName?: string;
 }) => {
-  const form = useFormContext();
   if (field.render) {
     if (field.type === FormFieldType.Custom && field.hideLabel) {
       return <div className="w-full">{field.render({})}</div>;
@@ -455,6 +457,7 @@ export const RenderField = ({
                 triggerClassName="!shrink"
                 {...finalFieldProps}
                 options={field.options}
+                allowCustomValue={field.allowCustomValue}
                 disabled={field.disabled}
               />
             );
@@ -810,6 +813,7 @@ const DynamicForm = {
               onSubmit(filteredValues);
             })();
           },
+          isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
@@ -826,6 +830,12 @@ const DynamicForm = {
               if (values && values[field] !== undefined) {
                 callback(values[field]);
               }
+            });
+            return unsubscribe;
+          },
+          watchDirty: (callback: (isDirty: boolean, values: any) => void) => {
+            const { unsubscribe } = form.watch((values: any) => {
+              callback(form.formState.isDirty, values);
             });
             return unsubscribe;
           },

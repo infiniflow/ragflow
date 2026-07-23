@@ -1,9 +1,11 @@
 {
-  "name": "vllm",
+  "name": "VLLM",
+  "rank": 975,
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
-    "embedding": "embeddings"
+    "embedding": "embeddings",
+    "rerank": "rerank"
   },
   "class": "local"
 }

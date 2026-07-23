@@ -9,12 +9,14 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
+import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -24,7 +26,6 @@ import kbService, {
   listDocument,
   renameDocument,
   uploadDocument,
-  webCrawlDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -38,7 +39,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -56,12 +60,30 @@ export const enum DocumentApiAction {
   SetDocumentMeta = 'setDocumentMeta',
   FetchDocumentFilter = 'fetchDocumentFilter',
   CreateDocument = 'createDocument',
-  WebCrawl = 'webCrawl',
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
 }
 
-export const useUploadNextDocument = () => {
+export const enum DocumentStructureApiAction {
+  FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+  DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
+}
+
+const DocumentKeys = {
+  byIds: (ids: string[]) =>
+    [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
+};
+
+export const DocumentStructureKeys = {
+  graph: (datasetId: string, documentId: string) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+    ] as const,
+};
+
+export const useUploadDocument = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
 
@@ -69,9 +91,13 @@ export const useUploadNextDocument = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
+  } = useMutation<
+    ResponseType<IDocumentInfo[]>,
+    Error,
+    { fileList: File[]; parserConfig?: Record<string, any> }
+  >({
     mutationKey: [DocumentApiAction.UploadDocument],
-    mutationFn: async (fileList) => {
+    mutationFn: async ({ fileList, parserConfig }) => {
       if (!id) {
         return { code: 500, message: 'Dataset ID is required' };
       }
@@ -79,6 +105,9 @@ export const useUploadNextDocument = () => {
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
+      if (parserConfig) {
+        formData.append('parser_config', JSON.stringify(parserConfig));
+      }
 
       try {
         const ret = await uploadDocument(id, formData);
@@ -100,7 +129,13 @@ export const useUploadNextDocument = () => {
     },
   });
 
-  return { uploadDocument: mutateAsync, loading, data };
+  const upload = useCallback(
+    (fileList: File[], parserConfig?: Record<string, any>) =>
+      mutateAsync({ fileList, parserConfig }),
+    [mutateAsync],
+  );
+
+  return { uploadDocument: upload, loading, data };
 };
 
 export const useFetchDocumentList = (loop = true) => {
@@ -203,6 +238,37 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+export const useFetchDocumentsByIds = (ids: string[]) => {
+  const { id: datasetId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: DocumentKeys.byIds(ids),
+    enabled: ids.length > 0 && !!datasetId,
+    initialData: { docs: [], total: 0 },
+    queryFn: async () => {
+      const ret = await listDocument(
+        {
+          id: datasetId,
+          page: 1,
+          page_size: ids.length,
+        },
+        {
+          ids,
+        },
+      );
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+      return { docs: [], total: 0 };
+    },
+  });
+
+  return { documents: data.docs, loading };
+};
+
 // get document filter
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
@@ -253,17 +319,17 @@ export const useSetDocumentStatus = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.UpdateDocumentStatus],
-    mutationFn: async ({
-      status,
-      documentId,
-      datasetId,
-    }: {
+  } = useMutation<
+    any,
+    Error,
+    {
       status: boolean;
       documentId: string | string[];
       datasetId: string;
-    }) => {
+    }
+  >({
+    mutationKey: [DocumentApiAction.UpdateDocumentStatus],
+    mutationFn: async ({ status, documentId, datasetId }) => {
       const ids = Array.isArray(documentId) ? documentId : [documentId];
       const { data } = await changeDocumentsStatus({
         kb_id: datasetId,
@@ -439,6 +505,65 @@ export const useSetDocumentParser = () => {
   return { setDocumentParser: mutateAsync, data, loading };
 };
 
+/**
+ * Go-backend variant of useSetDocumentParser. The Go document endpoint takes
+ * `parser_id` (instead of the legacy `chunk_method`) and expects the
+ * pipeline-shaped parser_config (keyed by operator id) to be sent as-is.
+ * Keep it parallel to the Python version — the original hook stays untouched
+ * and can be dropped once the Python backend is retired.
+ */
+export const useSetDocumentPipelineParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentParser, 'pipeline'],
+    mutationFn: async ({
+      parserId,
+      pipelineId,
+      documentId,
+      datasetId,
+      parserConfig,
+    }: {
+      parserId: string;
+      pipelineId: string;
+      documentId: string;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
+    }) => {
+      const updateData: Record<string, unknown> = {
+        parser_id: parserId,
+        pipeline_id: pipelineId,
+      };
+
+      if (parserConfig) {
+        updateData.parser_config = isPipelineParserConfig(parserConfig)
+          ? parserConfig
+          : extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.code;
+    },
+  });
+
+  return { setDocumentPipelineParser: mutateAsync, data, loading };
+};
+
 export const useSetDocumentMeta = () => {
   const queryClient = useQueryClient();
 
@@ -538,40 +663,6 @@ export const useGetChunkHighlights = (
   return { highlights, setWidthAndHeight };
 };
 
-export const useNextWebCrawl = () => {
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.WebCrawl],
-    mutationFn: async ({ name, url }: { name: string; url: string }) => {
-      if (!knowledgeId) {
-        return 500;
-      }
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('url', url);
-
-      const ret = await webCrawlDocument(knowledgeId, formData);
-      const code = get(ret, 'code');
-      if (code === 0) {
-        message.success(i18n.t('message.uploaded'));
-      }
-
-      return code;
-    },
-  });
-
-  return {
-    data,
-    loading,
-    webCrawl: mutateAsync,
-  };
-};
-
 export const useFetchDocumentThumbnailsByIds = () => {
   const [ids, setDocumentIds] = useState<string[]>([]);
   const { data } = useQuery<Record<string, string>>({
@@ -589,3 +680,56 @@ export const useFetchDocumentThumbnailsByIds = () => {
 
   return { data, setDocumentIds };
 };
+
+export function useFetchDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId;
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      enabled,
+      initialData: null,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } =
+          await documentStructureService.getDocumentStructureGraph(
+            datasetId,
+            documentId,
+          );
+        return data?.data ?? null;
+      },
+    });
+
+  return { data, loading };
+}
+
+export function useDeleteDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentStructureApiAction.DeleteDocumentStructureGraph],
+    mutationFn: async (templateId: string) => {
+      const { data } =
+        await documentStructureService.deleteDocumentStructureGraph(
+          datasetId,
+          documentId,
+          templateId,
+        );
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { deleteDocumentStructureGraph: mutateAsync, loading, data };
+}

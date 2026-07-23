@@ -75,6 +75,15 @@ class FileService(CommonService):
         files = files.paginate(page_number, items_per_page)
 
         res_files = list(files.dicts())
+        # Deduplicate by file ID as a safety net against any leftover duplicate rows
+        # (e.g. duplicate 'skills' or '.knowledgebase' folders created by race conditions).
+        seen_ids = set()
+        unique_files = []
+        for file in res_files:
+            if file["id"] not in seen_ids:
+                seen_ids.add(file["id"])
+                unique_files.append(file)
+        res_files = unique_files
         for file in res_files:
             if file["type"] == FileType.FOLDER.value:
                 file["size"] = cls.get_folder_size(file["id"])
@@ -164,12 +173,12 @@ class FileService(CommonService):
         #     result_ids: List to store results
         # Returns:
         #     List of file IDs
-        subfolders = cls.model.select().where(cls.model.parent_id == folder_id)
-        if subfolders.exists():
-            for subfolder in subfolders:
-                cls.get_all_innermost_file_ids(subfolder.id, result_ids)
-        else:
-            result_ids.append(folder_id)
+        subfiles = cls.model.select().where((cls.model.parent_id == folder_id) & (cls.model.id != folder_id))
+        for subfile in subfiles:
+            if subfile.type == FileType.FOLDER.value:
+                cls.get_all_innermost_file_ids(subfile.id, result_ids)
+            else:
+                result_ids.append(subfile.id)
         return result_ids
 
     @classmethod
@@ -268,7 +277,9 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def new_a_file_from_kb(cls, tenant_id, name, parent_id, ty=FileType.FOLDER.value, size=0, location=""):
-        # Create a new file from dataset
+        # Create a new file from dataset, or return the existing one.
+        # Includes deduplication to handle race conditions where concurrent
+        # requests may have created duplicate entries.
         # Args:
         #     tenant_id: Tenant ID
         #     name: File name
@@ -277,9 +288,22 @@ class FileService(CommonService):
         #     size: File size
         #     location: File location
         # Returns:
-        #     Created file dictionary
-        for file in cls.query(tenant_id=tenant_id, parent_id=parent_id, name=name):
-            return file.to_dict()
+        #     Created or existing file dictionary
+        existing = list(cls.model.select().where((cls.model.tenant_id == tenant_id) & (cls.model.parent_id == parent_id) & (cls.model.name == name)).order_by(cls.model.create_time.asc()))
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate entries named '%s' under parent %s, keeping only the first",
+                    len(existing),
+                    name,
+                    parent_id,
+                )
+                keep_id = existing[0].id
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        File.update(parent_id=keep_id).where(File.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
+            return existing[0].to_dict()
         file = {
             "id": get_uuid(),
             "parent_id": parent_id,
@@ -297,11 +321,26 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def init_skills_folder(cls, root_id, tenant_id):
-        # Initialize skills folder if not exists
+        # Initialize skills folder if not exists.
+        # Deduplicates duplicate entries that may have been created
+        # by concurrent race conditions (TOCTOU).
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        for _ in cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+        existing = list(cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id) & (cls.model.tenant_id == tenant_id)).order_by(cls.model.create_time.asc()))
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate '%s' folders under root %s, keeping only the first",
+                    len(existing),
+                    SKILLS_FOLDER_NAME,
+                    root_id,
+                )
+                keep_id = existing[0].id
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
             return
         file_id = get_uuid()
         file = {
@@ -319,11 +358,28 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def init_knowledgebase_docs(cls, root_id, tenant_id):
-        # Initialize dataset documents
+        # Initialize dataset documents.
+        # Deduplicates duplicate entries that may have been created
+        # by concurrent race conditions (TOCTOU).
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID
-        for _ in cls.model.select().where((cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+        existing = list(
+            cls.model.select().where((cls.model.name == KNOWLEDGEBASE_FOLDER_NAME) & (cls.model.parent_id == root_id) & (cls.model.tenant_id == tenant_id)).order_by(cls.model.create_time.asc())
+        )
+        if existing:
+            if len(existing) > 1:
+                logger.warning(
+                    "Found %d duplicate '%s' folders under root %s, keeping only the first",
+                    len(existing),
+                    KNOWLEDGEBASE_FOLDER_NAME,
+                    root_id,
+                )
+                keep_id = existing[0].id
+                with DB.atomic():
+                    for dup in existing[1:]:
+                        cls.model.update(parent_id=keep_id).where(cls.model.parent_id == dup.id).execute()
+                        cls.delete_by_id(dup.id)
             return
         folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
 
@@ -455,7 +511,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -463,6 +519,13 @@ class FileService(CommonService):
         kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
         safe_parent_path = sanitize_path(parent_path)
+
+        # Merge parser_config_override with KB parser_config if provided
+        base_parser_config = kb.parser_config or {}
+        if parser_config_override and isinstance(parser_config_override, dict):
+            merged_parser_config = {**base_parser_config, **parser_config_override}
+        else:
+            merged_parser_config = base_parser_config
 
         err, files = [], []
         for file in file_objs:
@@ -472,8 +535,7 @@ class FileService(CommonService):
                 try:
                     if str(doc.kb_id) != str(kb.id):
                         logging.warning(
-                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. "
-                            "Skipping update to avoid cross-KB overwrite.",
+                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
                             doc_id,
                             doc.kb_id,
                             kb.id,
@@ -516,7 +578,6 @@ class FileService(CommonService):
                     blob = read_potential_broken_pdf(blob)
                 settings.STORAGE_IMPL.put(kb.id, location, blob)
 
-
                 img = thumbnail_img(filename, blob)
                 thumbnail_location = ""
                 if img is not None:
@@ -529,7 +590,7 @@ class FileService(CommonService):
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
                     "pipeline_id": kb.pipeline_id,
-                    "parser_config": kb.parser_config,
+                    "parser_config": merged_parser_config,
                     "created_by": user_id,
                     "type": filetype,
                     "name": filename,
@@ -671,13 +732,14 @@ class FileService(CommonService):
         written to the log.
         """
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         port_suffix = f":{parsed.port}" if parsed.port else ""
         redacted = f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
         return assert_url_is_safe(redacted, allowed_schemes=FileService._ALLOWED_SCHEMES)
 
     @staticmethod
-    def upload_info(user_id, file, url: str|None=None):
+    def upload_info(user_id, file, url: str | None = None):
         def structured(filename, filetype, blob, content_type):
             nonlocal user_id
             if filetype == FileType.PDF.value:
@@ -694,7 +756,7 @@ class FileService(CommonService):
                 "mime_type": content_type,
                 "created_by": user_id,
                 "created_at": time.time(),
-                "preview_url": None
+                "preview_url": None,
             }
 
         if url:
@@ -736,24 +798,17 @@ class FileService(CommonService):
                 host_pins[_next_hostname] = _next_ip
                 current_url = _next_url
             else:
-                raise ValueError(
-                    f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}"
-                )
+                raise ValueError(f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}")
 
             # Build a single MAP rule string covering every validated hostname
             # in the redirect chain. Chromium uses the pinned IP for each,
             # skipping DNS entirely and eliminating the rebinding window.
             _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 
-            from crawl4ai import (
-                AsyncWebCrawler,
-                BrowserConfig,
-                CrawlerRunConfig,
-                DefaultMarkdownGenerator,
-                PruningContentFilter,
-                CrawlResult
-            )
+            from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
+
             async def adownload():
                 browser_config = BrowserConfig(
                     headless=True,
@@ -761,20 +816,12 @@ class FileService(CommonService):
                     extra_args=[f"--host-resolver-rules={_map_rules}"],
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(
-                        markdown_generator=DefaultMarkdownGenerator(
-                            content_filter=PruningContentFilter()
-                        ),
-                        pdf=True,
-                        screenshot=False
-                    )
+                    crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
                     # Use the final resolved URL so the browser starts at the
                     # redirect destination rather than re-following the chain.
-                    result: CrawlResult = await crawler.arun(
-                        url=current_url,
-                        config=crawler_config
-                    )
+                    result: CrawlResult = await crawler.arun(url=current_url, config=crawler_config)
                     return result
+
             page = asyncio.run(adownload())
             if page.pdf:
                 if filename.split(".")[-1].lower() != "pdf":
@@ -789,15 +836,16 @@ class FileService(CommonService):
     @staticmethod
     def get_files(files: Union[None, list[dict]], raw: bool = False, layout_recognize: str = None) -> Union[list[str], tuple[list[str], list[dict]]]:
         if not files:
-            return  []
+            return []
+
         def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+            return "data:{};base64,{}".format(file["mime_type"], base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+
         with ThreadPoolExecutor(max_workers=5) as exe:
             threads = []
             imgs = []
             for file in files:
-                if file["mime_type"].find("image") >=0:
+                if file["mime_type"].find("image") >= 0:
                     if raw:
                         imgs.append(FileService.get_blob(file["created_by"], file["id"]))
                     else:

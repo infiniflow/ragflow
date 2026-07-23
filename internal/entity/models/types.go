@@ -1,14 +1,27 @@
 package models
 
+import (
+	"context"
+	"encoding/json"
+	"ragflow/internal/common"
+)
+
 // Message represents a chat message with role and content
 //
-// Content is interface{} to support different formats:
-//   - string: plain text message (e.g., "Hello")
-//   - []interface{}: multimodal content array where each element is map[string]interface{}
-//     (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
+//	is interface{} to support different formats:
+//	 - string: plain text message (e.g., "Hello")
+//	 - []interface{}: multimodal content array where each element is map[string]interface{}
+//	   (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 type Message struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role       string                   `json:"role"`
+	Content    interface{}              `json:"content"`
+	ToolCallID string                   `json:"tool_call_id,omitempty"`
+	ToolCalls  []map[string]interface{} `json:"tool_calls,omitempty"`
+}
+
+// ToolCallSession mirrors Python's common.mcp_tool_call_conn.ToolCallSession protocol.
+type ToolCallSession interface {
+	ToolCall(name string, arguments map[string]interface{}) (string, error)
 }
 
 // EmbeddingModel interface for embedding models
@@ -17,31 +30,57 @@ type ModelDriver interface {
 
 	Name() string
 
-	// ChatWithMessages sends multiple messages with role and content
-	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
-	// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
-	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
-	// Encode encodes a list of texts into embeddings
-	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
+	// ChatWithMessages sends multiple messages synchronously
+	ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error)
+	// ChatStreamlyWithSender sends multiple messages asynchronously
+	ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
+	// Embed a list of texts into embeddings
+	Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
-	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
+	Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
+	// TranscribeAudio transcribe audio
+	TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error)
+	TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
+	// AudioSpeech convert text to audio
+	AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error)
+	AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
+	// OCRFile OCR file
+	OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error)
+	// ParseFile parse file
+	ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error)
 	// ListModels List supported models
-	ListModels(apiConfig *APIConfig) ([]string, error)
+	ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error)
 
-	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
+	Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error)
 
-	CheckConnection(apiConfig *APIConfig) error
+	CheckConnection(ctx context.Context, apiConfig *APIConfig) error
+
+	ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error)
+
+	ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error)
 }
 
 type ChatResponse struct {
-	Answer        *string `json:"answer"`
-	ReasonContent *string `json:"reason_content"`
+	Answer        *string                  `json:"answer"`
+	ReasonContent *string                  `json:"reason_content"`
+	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
+	Usage         *TokenUsage              `json:"usage,omitempty"`
+}
+
+// TokenUsage holds token usage split for one LLM call. Consumed by
+// LLMBundle for accurate Langfuse reporting and run aggregation.
+// Mirrors Python's common.token_utils.usage_from_response() split.
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"  mapstructure:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"  mapstructure:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"  mapstructure:"total_tokens"`
 }
 
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
+	// FIXME: add implementation
+	TokenCount int `json:"token_count"`
 }
 
 type RerankResult struct {
@@ -53,36 +92,105 @@ type RerankResponse struct {
 	Data []RerankResult `json:"data"`
 }
 
+type ASRResponse struct {
+	Text string `json:"text"`
+}
+
+type TTSResponse struct {
+	Audio []byte `json:"audio"`
+}
+
+type OCRFileResponse struct {
+	Text *string `json:"text"`
+}
+
+type ListModelResponse struct {
+	Name         string         `json:"name"`
+	MaxTokens    *int           `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
+}
+
+type ParseFileResponse struct {
+	TaskID string `json:"task_id"`
+}
+
+type ListTaskStatus struct {
+	TaskID string `json:"task_id"`
+	Status string `json:"status"`
+}
+
+type TaskSegment struct {
+	Index   int    `json:"index"`
+	Content string `json:"content"`
+}
+
+type TaskResponse struct {
+	Segments []TaskSegment `json:"segments"`
+}
+
+type ModelListItem struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by"`
+}
+
+type ModelList struct {
+	Object string          `json:"object"`
+	Models []ModelListItem `json:"data"`
+}
+
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat        string `json:"chat"`
-	AsyncChat   string `json:"async_chat"`
-	AsyncResult string `json:"async_result"`
-	Embedding   string `json:"embedding"`
-	Rerank      string `json:"rerank"`
-	Models      string `json:"models"`
-	Balance     string `json:"balance"`
-	Files       string `json:"files"`
-	Status      string `json:"status"`
+	Chat          string `json:"chat"`
+	AsyncChat     string `json:"async_chat"`
+	AsyncResult   string `json:"async_result"`
+	Embedding     string `json:"embedding"`
+	Rerank        string `json:"rerank"`
+	TTS           string `json:"tts"`
+	ASR           string `json:"asr"`
+	OCR           string `json:"ocr"`
+	DocumentParse string `json:"doc_parse"`
+	Models        string `json:"models"`
+	Balance       string `json:"balance"`
+	Files         string `json:"files"`
+	Status        string `json:"status"`
+	Tasks         string `json:"tasks"`
+	Task          string `json:"task"`
 }
 
 type ChatConfig struct {
-	Stream      *bool
-	Vision      *bool
-	Thinking    *bool
-	MaxTokens   *int
-	Temperature *float64
-	TopP        *float64
-	DoSample    *bool
-	Stop        *[]string
-	ModelClass  *string
-	Effort      *string
-	Verbosity   *string
+	Stream          *bool
+	Vision          *bool
+	Thinking        *bool
+	MaxTokens       *int
+	Temperature     *float64
+	TopP            *float64
+	DoSample        *bool
+	Stop            *[]string
+	ModelClass      *string
+	Effort          *string
+	Verbosity       *string
+	Tools           interface{}               `json:"tools,omitempty"`
+	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolCallsResult *[]map[string]interface{} `json:"-"`
+	// UsageResult receives the token usage extracted from the final
+	// streaming chunk when stream_options.include_usage is true.
+	// The ChatStreamlyWithSender driver writes to this pointer (if
+	// non-nil) after the stream completes; callers read it the same
+	// way they read ToolCallsResult.
+	UsageResult *TokenUsage `json:"-"`
+	// StreamCallback receives raw content/reasoning deltas as soon as
+	// the model driver streams them.
+	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
 }
 
 type APIConfig struct {
-	ApiKey *string
-	Region *string
+	ApiKey  *string
+	Region  *string
+	BaseURL *string
 }
 
 type EmbeddingConfig struct {
@@ -91,6 +199,23 @@ type EmbeddingConfig struct {
 
 type RerankConfig struct {
 	TopN int
+}
+
+type ASRConfig struct {
+	Params map[string]interface{} `json:"params"`
+}
+
+type TTSConfig struct {
+	Format string                 `json:"format"`
+	Params map[string]interface{} `json:"params"`
+}
+
+type OCRConfig struct {
+	Algorithm string
+}
+
+type ParseFileConfig struct {
+	ParseMethod string `json:"parse_method"`
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
@@ -128,8 +253,16 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity between query and texts
-func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig, rerankConfig)
+func (r *RerankModel) Rerank(ctx context.Context, query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return r.ModelDriver.Rerank(ctx, r.ModelName, query, texts, apiConfig, rerankConfig, modelUsage)
+}
+
+// ToolConfig bundles tool-calling configuration for a ChatModel.
+type ToolConfig struct {
+	Tools           string          // JSON-encoded tools list
+	MaxRounds       int             // max tool-calling rounds (default: 5)
+	MaxRetries      int             // max retries on failure (default: 3)
+	ToolCallSession ToolCallSession // session that executes tool calls
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration
@@ -137,6 +270,11 @@ type ChatModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	ToolConfig  *ToolConfig
+	// LastUsage holds the token usage (prompt/completion/total) of the most
+	// recent chat call. Consumed by callers for accurate Langfuse reporting
+	// and per-run token aggregation. Reset before each call.
+	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel
@@ -145,5 +283,28 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+	}
+}
+
+// BindTools registers tools for the ChatModel to call.
+// Mirrors Python's Base.bind_tools() in rag/llm/chat_model.py.
+func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
+	// Serialize tools to JSON if it's a list/map.
+	toolsJSON := ""
+	switch v := tools.(type) {
+	case string:
+		toolsJSON = v
+	case []byte:
+		toolsJSON = string(v)
+	default:
+		if b, err := json.Marshal(tools); err == nil {
+			toolsJSON = string(b)
+		}
+	}
+	cm.ToolConfig = &ToolConfig{
+		Tools:           toolsJSON,
+		MaxRounds:       defaultMaxRounds,
+		MaxRetries:      defaultMaxRetries,
+		ToolCallSession: session,
 	}
 }

@@ -34,8 +34,12 @@ func NewRouter(handler *Handler) *Router {
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
-	// Health check
-	engine.GET("/health", r.handler.Health)
+	SetupEERouter(engine)
+
+	// Healthz to get system health
+	engine.GET("/healthz", r.handler.Healthz)
+	engine.GET("/", r.handler.Live)
+	engine.GET("/live", r.handler.Live)
 
 	// Admin API routes with prefix /api/v1/admin
 	admin := engine.Group("/api/v1/admin")
@@ -46,17 +50,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		admin.POST("/reports", r.handler.Reports)
 
+		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
+		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
+		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		// Protected routes
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
 		{
-
-			protected.GET("/logout", r.handler.Logout)
+			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
-
-			// Tasks
-			protected.GET("/tasks", r.handler.ListTasks)
 
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
@@ -67,30 +71,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.PUT("/users/:username/activate", r.handler.UpdateUserActivateStatus)
 			protected.PUT("/users/:username/admin", r.handler.GrantAdmin)
 			protected.DELETE("/users/:username/admin", r.handler.RevokeAdmin)
-			protected.GET("/users/:username/datasets", r.handler.GetUserDatasets)
-			protected.GET("/users/:username/agents", r.handler.GetUserAgents)
-
-			// API Keys
-			protected.GET("/users/:username/keys", r.handler.ListUserAPITokens)
-			protected.GET("/users/:username/tokens", r.handler.ListUserAPITokens)
-			protected.POST("/users/:username/keys", r.handler.GenerateUserAPIToken)
-			protected.POST("/users/:username/tokens", r.handler.GenerateUserAPIToken)
-			protected.DELETE("/users/:username/keys/:token", r.handler.DeleteUserAPIToken)
-			protected.DELETE("/users/:username/tokens/:token", r.handler.DeleteUserAPIToken)
-
-			// Role management
-			protected.GET("/roles", r.handler.ListRoles)
-			protected.POST("/roles", r.handler.CreateRole)
-			protected.GET("/roles/:role_name", r.handler.GetRole)
-			protected.PUT("/roles/:role_name", r.handler.UpdateRole)
-			protected.DELETE("/roles/:role_name", r.handler.DeleteRole)
-			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
-			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
-			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
-
-			// User roles and permissions
-			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
-			protected.GET("/users/:username/permission", r.handler.GetUserPermission)
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
@@ -98,19 +78,39 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/services/:service_id", r.handler.GetService)
 			protected.DELETE("/services/:service_id", r.handler.ShutdownService)
 			protected.PUT("/services/:service_id", r.handler.RestartService)
+			protected.POST("/services/:service_id", r.handler.StartService)
 
 			// Variables/Settings
-			protected.GET("/variables", r.handler.GetVariables)
+			protected.GET("/variables", r.handler.ListVariables)
 			protected.PUT("/variables", r.handler.SetVariable)
+			protected.GET("/variables/:var_name", r.handler.ShowVariable)
 
 			// Configs
-			protected.GET("/configs", r.handler.GetConfigs)
+			protected.GET("/configs", r.handler.ListConfigs)
+			// Log level
+			protected.GET("/config/log", r.handler.GetLogLevel)
+			protected.PUT("/config/log", r.handler.SetLogLevel)
 
 			// Environments
-			protected.GET("/environments", r.handler.GetEnvironments)
+			protected.GET("/environments", r.handler.ListEnvironments)
 
 			// Version
 			protected.GET("/version", r.handler.GetVersion)
+
+			queue := protected.Group("/queue")
+			{
+				queue.GET("/", r.handler.ShowMessageQueue)
+				queue.POST("/messages", r.handler.PublishMessageToQueue)
+				queue.GET("/messages", r.handler.ListMessagesFromQueue)
+				queue.PUT("/messages", r.handler.PullMessageFromQueue)
+			}
+
+			protected.GET("/store", r.handler.PingStore)
+			protected.GET("/cache", r.handler.PingCache)
+			protected.GET("/engine", r.handler.PingEngine)
+
+			protected.GET("/ingestors", r.handler.ListIngestors)
+			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 
 			// Sandbox
 			protected.GET("/sandbox/providers", r.handler.ListSandboxProviders)
@@ -119,23 +119,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/sandbox/config", r.handler.SetSandboxConfig)
 			protected.POST("/sandbox/test", r.handler.TestSandboxConnection)
 
-			// Fingerprint
-			protected.GET("/fingerprint", r.handler.GetFingerprint)
-			// License
-			protected.POST("/license", r.handler.SetLicense)
-			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
-			protected.GET("/license", r.handler.ShowLicense)
-			// Log level
-			protected.GET("/log_level", r.handler.GetLogLevel)
-			protected.PUT("/log_level", r.handler.SetLogLevel)
+			protected.GET("/all-models", r.handler.ListAllModels)
+			protected.GET("/all-models/:model_name", r.handler.ShowModel)
 
-			provider := protected.Group("/providers")
-			{
-				provider.GET("/", r.handler.ListProviders)
-				provider.GET("/:provider_name", r.handler.ShowProvider)
-				provider.GET("/:provider_name/models", r.handler.ListModels)
-				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
-			}
+			// Ingestion tasks
+			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
+			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
+			RegisterEERouter(protected, r)
 		}
 	}
 

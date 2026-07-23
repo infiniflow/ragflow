@@ -18,6 +18,7 @@ import {
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
+  useRegenerateMessage,
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import {
@@ -25,8 +26,9 @@ import {
   useGetChatSearchParams,
   usePatchChat,
 } from '@/hooks/use-chat-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation } from '@/interfaces/database/chat';
+import { IClientConversation, IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -49,7 +51,6 @@ import {
 } from '../../hooks/use-button-disabled';
 import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
-import { useSendMessage } from '../../hooks/use-send-chat-message';
 import {
   HandlePressEnterType,
   useSendSingleMessage,
@@ -104,16 +105,20 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { patchChat } = usePatchChat();
 
-  const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
-    useSendSingleMessage({
-      controller,
-      value,
-      setValue,
-      files,
-      clearFiles,
-    });
-
-  const { regenerateMessage } = useSendMessage(controller);
+  const {
+    removeMessageById,
+    derivedMessages,
+    handlePressEnter,
+    sendLoading,
+    sendMessage,
+    removeMessagesAfterCurrentMessage,
+  } = useSendSingleMessage({
+    controller,
+    value,
+    setValue,
+    files,
+    clearFiles,
+  });
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -130,8 +135,23 @@ const ChatCard = forwardRef(function ChatCard(
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
+  // Regenerate within this card: reuse the card's own message state and
+  // resend with the card's model settings (llm_id, temperature, ...).
+  const sendCardMessage = useCallback(
+    ({ message, messages }: { message: IMessage; messages?: IMessage[] }) =>
+      sendMessage({ message, messages, ...form.getValues() }),
+    [sendMessage, form],
+  );
+
+  const { regenerateMessage } = useRegenerateMessage({
+    removeMessagesAfterCurrentMessage,
+    sendMessage: sendCardMessage,
+    messages: derivedMessages,
+  });
+
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
+  const findLlmByUuid = useFindLlmByUuid();
 
   useSetDefaultModel(form);
 
@@ -143,15 +163,19 @@ const ChatCard = forwardRef(function ChatCard(
 
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
+    const llmId = values.llm_id;
     patchChat({
       chatId: dialogId!,
       params: {
         ...currentDialog,
-        llm_id: values.llm_id,
-        llm_setting: omit(values, 'llm_id'),
+        llm_id: llmId,
+        llm_setting: {
+          ...omit(values, 'llm_id'),
+          model_type: findLlmByUuid(llmId)?.model_type || 'chat',
+        },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat]);
+  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,
@@ -178,6 +202,7 @@ const ChatCard = forwardRef(function ChatCard(
               <LargeModelFormFieldWithoutFilter
                 triggerTestId="chat-detail-multimodel-card-model-select"
                 optionTestIdPrefix="chat-detail-llm-option-"
+                ownerTenantId={currentDialog?.tenant_id}
               ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>

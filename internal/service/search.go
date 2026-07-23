@@ -21,12 +21,16 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
+	"strings"
 )
 
 // SearchService search service
 type SearchService struct {
 	searchDAO     *dao.SearchDAO
 	userTenantDAO *dao.UserTenantDAO
+	datasetDAO    *dao.KnowledgebaseDAO
+	tenantService *TenantService
 }
 
 // NewSearchService create search service
@@ -34,6 +38,14 @@ func NewSearchService() *SearchService {
 	return &SearchService{
 		searchDAO:     dao.NewSearchDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
+		datasetDAO:    dao.NewKnowledgebaseDAO(),
+		tenantService: NewTenantService(),
+	}
+}
+
+func (s *SearchService) SetTenantService(tenantService *TenantService) {
+	if tenantService != nil {
+		s.tenantService = tenantService
 	}
 }
 
@@ -55,32 +67,45 @@ type ListSearchAppsResponse struct {
 	Total      int64                    `json:"total"`
 }
 
+type SearchShareDetail struct {
+	ID           string                 `json:"id"`
+	Avatar       *string                `json:"avatar"`
+	TenantID     string                 `json:"tenant_id"`
+	Name         string                 `json:"name"`
+	Description  *string                `json:"description,omitempty"`
+	CreatedBy    string                 `json:"created_by"`
+	SearchConfig map[string]interface{} `json:"search_config"`
+	UpdateTime   *int64                 `json:"update_time,omitempty"`
+}
+
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	var searches []*entity.Search
+	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
 	if len(ownerIDs) == 0 {
-		// Get tenant IDs by user ID (joined tenants)
-		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Use database pagination
-		searches, total, err = s.searchDAO.ListByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(nil, userID, page, pageSize, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// Filter by owner IDs, manual pagination
+		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(userID, ownerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(ownerIDs) == 0 {
+			return &ListSearchAppsResponse{
+				SearchApps: []map[string]interface{}{},
+				Total:      0,
+			}, nil
+		}
+
 		searches, total, err = s.searchDAO.ListByOwnerIDs(ownerIDs, userID, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
 
-		// Manual pagination
 		if page > 0 && pageSize > 0 {
 			start := (page - 1) * pageSize
 			end := start + pageSize
@@ -90,7 +115,7 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 				}
 				searches = searches[start:end]
 			} else {
-				searches = []*entity.Search{}
+				searches = []*entity.SearchListItem{}
 			}
 		}
 	}
@@ -107,8 +132,41 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 	}, nil
 }
 
+func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	allowed := map[string]struct{}{userID: {}}
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID != "" {
+			allowed[tenantID] = struct{}{}
+		}
+	}
+
+	filtered := make([]string, 0, len(ownerIDs))
+	seen := make(map[string]struct{}, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID == "" {
+			continue
+		}
+		if _, ok := allowed[ownerID]; !ok {
+			continue
+		}
+		if _, ok := seen[ownerID]; ok {
+			continue
+		}
+		seen[ownerID] = struct{}{}
+		filtered = append(filtered, ownerID)
+	}
+	return filtered, nil
+}
+
 // toSearchAppResponse converts search model to response format
-func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]interface{} {
+func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":            search.ID,
 		"tenant_id":     search.TenantID,
@@ -118,17 +176,16 @@ func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]in
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": map[string]interface{}(search.SearchConfig),
+		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
 	if search.Avatar != nil {
 		result["avatar"] = *search.Avatar
 	}
-
-	// Add joined fields from user table
-	// Note: These fields are populated by the DAO query with Select clause
-	// but GORM will map them to the model's embedded fields if available
-	// We need to handle the extra fields manually
+	if search.TenantAvatar != nil {
+		result["tenant_avatar"] = *search.TenantAvatar
+	}
 
 	return result
 }
@@ -150,8 +207,12 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
+	if err := common.ValidateName(name); err != nil {
+		return nil, err
+	}
+
 	// Generate UUID for search ID (same as Python get_uuid())
-	searchID := common.GenerateUUID()
+	searchID := utility.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
 	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
@@ -224,6 +285,33 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 	return search, nil
 }
 
+// GetSearchShareDetail returns the joined share-detail payload for public
+// searchbot pages after verifying the caller can access the search app.
+func (s *SearchService) GetSearchShareDetail(userID, searchID string) (*SearchShareDetail, error) {
+	if _, err := s.GetSearchDetail(userID, searchID); err != nil {
+		return nil, err
+	}
+
+	detail, err := s.searchDAO.GetDetailByID(searchID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, fmt.Errorf("can't find this Search App!")
+	}
+
+	return &SearchShareDetail{
+		ID:           detail.ID,
+		Avatar:       detail.Avatar,
+		TenantID:     detail.TenantID,
+		Name:         detail.Name,
+		Description:  detail.Description,
+		CreatedBy:    detail.CreatedBy,
+		SearchConfig: map[string]interface{}(detail.SearchConfig),
+		UpdateTime:   detail.UpdateTime,
+	}, nil
+}
+
 // DeleteSearch deletes a search app by ID
 func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
@@ -240,11 +328,216 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 
 	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
 	// Python: cls.model.delete().where(cls.model.id == pid).execute()
-	if err = s.searchDAO.DeleteByID(searchID); err != nil {
+	if err = s.searchDAO.DeleteByID(userID, searchID); err != nil {
 		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
 	}
 
 	return nil
+}
+
+// AccessibleForCompletion check if it is accessible
+func (s *SearchService) AccessibleForCompletion(userID string, searchID string) (bool, error) {
+	return s.searchDAO.Accessible4Deletion(searchID, userID)
+}
+
+type SearchCompletionPlan struct {
+	UserID     string
+	SearchID   string
+	Question   string
+	DatasetIDs []string
+	ModelID    string
+	Options    AskStreamOptions
+}
+
+func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, common.CodeBadRequest, fmt.Errorf("user id is required")
+	}
+	searchID = strings.TrimSpace(searchID)
+	if searchID == "" {
+		return nil, common.CodeBadRequest, fmt.Errorf("search_id is required")
+	}
+	if req == nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
+	}
+	question := strings.TrimSpace(req.Question)
+	if question == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
+	}
+
+	accessible, err := s.AccessibleForCompletion(userID, searchID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !accessible {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+
+	searchDetail, err := s.GetDetail(searchID)
+	if err != nil || searchDetail == nil {
+		return nil, common.CodeDataError, fmt.Errorf("cannot find search %s", searchID)
+	}
+	searchConfig := searchConfigMapFromValue(searchDetail["search_config"])
+
+	datasetIDs := stringSliceFromSearchConfig(searchConfig["kb_ids"])
+	if len(datasetIDs) == 0 {
+		datasetIDs = stringSliceFromSearchConfig(req.KBIDs)
+	}
+	if len(datasetIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required")
+	}
+
+	for _, datasetID := range datasetIDs {
+		accessible = s.datasetDAO.Accessible(datasetID, userID)
+		if !accessible {
+			return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization for dataset %s", datasetID)
+		}
+	}
+
+	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
+	if modelID == "" {
+		tenantSvc := s.tenantService
+		if tenantSvc == nil {
+			tenantSvc = NewTenantService()
+		}
+		var defaultModelName string
+		defaultModelName, err = tenantSvc.GetDefaultModelName(userID, entity.ModelTypeChat)
+		if err == nil {
+			modelID = strings.TrimSpace(defaultModelName)
+		}
+	}
+
+	return &SearchCompletionPlan{
+		UserID:     userID,
+		SearchID:   searchID,
+		Question:   question,
+		DatasetIDs: datasetIDs,
+		ModelID:    modelID,
+		Options:    askOptionsFromSearchConfig(searchID, searchConfig),
+	}, common.CodeSuccess, nil
+}
+
+func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
+	opts := AskStreamOptions{
+		SearchID:       searchID,
+		DocIDs:         stringSliceFromSearchConfig(searchConfig["doc_ids"]),
+		CrossLanguages: stringSliceFromSearchConfig(searchConfig["cross_languages"]),
+	}
+	if value, ok := searchConfig["use_kg"].(bool); ok {
+		opts.UseKG = &value
+	}
+	if value, ok := intFromSearchConfig(searchConfig["top_k"]); ok {
+		opts.TopK = &value
+	}
+	if value, ok := searchConfigMapValue(searchConfig["meta_data_filter"]); ok {
+		opts.Filter = value
+	}
+	if value, ok := stringFromSearchConfig(searchConfig["tenant_rerank_id"]); ok {
+		opts.TenantRerankID = &value
+	}
+	if value, ok := stringFromSearchConfig(searchConfig["rerank_id"]); ok {
+		opts.RerankID = &value
+	}
+	if value, ok := searchConfig["keyword"].(bool); ok {
+		opts.Keyword = &value
+	}
+	if value, ok := floatFromSearchConfig(searchConfig["similarity_threshold"]); ok {
+		opts.SimilarityThreshold = &value
+	}
+	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
+		opts.VectorSimilarityWeight = &value
+	}
+	return opts
+}
+
+func searchConfigMapFromValue(value interface{}) map[string]interface{} {
+	if result, ok := searchConfigMapValue(value); ok {
+		return result
+	}
+	return map[string]interface{}{}
+}
+
+func searchConfigMapValue(value interface{}) (map[string]interface{}, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return nil, false
+	case map[string]interface{}:
+		return typed, true
+	case entity.JSONMap:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func stringSliceFromSearchConfig(value interface{}) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if item = strings.TrimSpace(item); item != "" {
+				result = append(result, item)
+			}
+		}
+		return result
+	case common.StringSlice:
+		return stringSliceFromSearchConfig([]string(typed))
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value, ok := stringFromSearchConfig(item); ok {
+				result = append(result, value)
+			}
+		}
+		return result
+	default:
+		if value, ok := stringFromSearchConfig(value); ok {
+			return []string{value}
+		}
+		return nil
+	}
+}
+
+func stringFromSearchConfig(value interface{}) (string, bool) {
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	typed = strings.TrimSpace(typed)
+	return typed, typed != ""
+}
+
+func intFromSearchConfig(value interface{}) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func floatFromSearchConfig(value interface{}) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
 }
 
 // UpdateSearchRequest update search request
@@ -256,18 +549,19 @@ type UpdateSearchRequest struct {
 	Name         string                 `json:"name" binding:"required"`
 	Description  *string                `json:"description,omitempty"`
 	SearchConfig map[string]interface{} `json:"search_config" binding:"required"`
+	Avatar       *string                `json:"avatar,omitempty"`
 }
 
 func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
 	// Step 1: Check update permission (same as delete - uses accessible4deletion)
-	// Only creator can update
+	// Only creator can update. A missing or non-owned search is treated as
+	// unauthorized so the contract returns a clear "no authorization" error.
 
-	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	accessible, err := s.searchDAO.Accessible4Deletion(searchID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
 	}
-
-	if !status {
+	if !accessible {
 		return nil, fmt.Errorf("no authorization")
 	}
 
@@ -314,6 +608,9 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 	if req.Description != nil {
 		updates["description"] = *req.Description
 	}
+	if req.Avatar != nil {
+		updates["avatar"] = *req.Avatar
+	}
 
 	// Step 6: Execute update
 	// Python: SearchService.update_by_id(search_id, req)
@@ -348,7 +645,7 @@ func (s *SearchService) GetDetail(searchID string) (map[string]interface{}, erro
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": map[string]interface{}(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {
@@ -356,4 +653,9 @@ func (s *SearchService) GetDetail(searchID string) (map[string]interface{}, erro
 	}
 
 	return result, nil
+}
+
+type SearchCompletionsRequest struct {
+	Question string   `json:"question" binding:"required"`
+	KBIDs    []string `json:"kb_ids,omitempty"`
 }

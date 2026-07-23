@@ -53,7 +53,7 @@ class RAGFlowS3:
     def use_prefix_path(method):
         def wrapper(self, bucket, fnm, *args, **kwargs):
             # If the prefix path is set, use the prefix path.
-            # The bucket passed from the upstream call is 
+            # The bucket passed from the upstream call is
             # used as the file prefix. This is especially useful when you're using the default bucket
             if self.prefix_path:
                 fnm = f"{self.prefix_path}/{bucket}/{fnm}"
@@ -75,25 +75,25 @@ class RAGFlowS3:
             # see doc: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials
             if self.access_key and self.secret_key:
                 s3_params = {
-                    'aws_access_key_id': self.access_key,
-                    'aws_secret_access_key': self.secret_key,
-                    'aws_session_token': self.session_token,
+                    "aws_access_key_id": self.access_key,
+                    "aws_secret_access_key": self.secret_key,
+                    "aws_session_token": self.session_token,
                 }
             if self.region_name:
-                s3_params['region_name'] = self.region_name
+                s3_params["region_name"] = self.region_name
             if self.endpoint_url:
-                s3_params['endpoint_url'] = self.endpoint_url
+                s3_params["endpoint_url"] = self.endpoint_url
 
             # Configure signature_version and addressing_style through Config object
             if self.signature_version:
-                config_kwargs['signature_version'] = self.signature_version
+                config_kwargs["signature_version"] = self.signature_version
             if self.addressing_style:
-                config_kwargs['s3'] = {'addressing_style': self.addressing_style}
+                config_kwargs["s3"] = {"addressing_style": self.addressing_style}
 
             if config_kwargs:
-                s3_params['config'] = Config(**config_kwargs)
+                s3_params["config"] = Config(**config_kwargs)
 
-            self.conn = [boto3.client('s3', **s3_params)]
+            self.conn = [boto3.client("s3", **s3_params)]
         except Exception:
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
 
@@ -160,7 +160,7 @@ class RAGFlowS3:
         for _ in range(1):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
-                object_data = r['Body'].read()
+                object_data = r["Body"].read()
                 return object_data
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
@@ -175,7 +175,7 @@ class RAGFlowS3:
             if self.conn[0].head_object(Bucket=bucket, Key=fnm):
                 return True
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 return False
             else:
                 raise
@@ -185,10 +185,7 @@ class RAGFlowS3:
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
         for _ in range(10):
             try:
-                r = self.conn[0].generate_presigned_url('get_object',
-                                                        Params={'Bucket': bucket,
-                                                                'Key': fnm},
-                                                        ExpiresIn=expires)
+                r = self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
 
                 return r
             except Exception:
@@ -196,6 +193,44 @@ class RAGFlowS3:
                 self.__open__()
                 time.sleep(1)
         return None
+
+    def _resolve_path(self, bucket, fnm):
+        """Apply default_bucket and prefix_path transformations."""
+        actual_bucket = self.bucket if self.bucket else bucket
+        actual_fnm = f"{self.prefix_path}/{bucket}/{fnm}" if self.prefix_path else fnm
+        return actual_bucket, actual_fnm
+
+    def copy(self, src_bucket, src_path, dest_bucket, dest_path):
+        try:
+            actual_src_bucket, actual_src_path = self._resolve_path(src_bucket, src_path)
+            actual_dest_bucket, actual_dest_path = self._resolve_path(dest_bucket, dest_path)
+            copy_source = {"Bucket": actual_src_bucket, "Key": actual_src_path}
+            self.conn[0].copy_object(
+                CopySource=copy_source,
+                Bucket=actual_dest_bucket,
+                Key=actual_dest_path,
+            )
+            return True
+        except Exception:
+            logging.exception(f"Fail to copy {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
+            return False
+
+    def move(self, src_bucket, src_path, dest_bucket, dest_path):
+        try:
+            if self.copy(src_bucket, src_path, dest_bucket, dest_path):
+                actual_src_bucket, actual_src_path = self._resolve_path(src_bucket, src_path)
+                try:
+                    self.conn[0].delete_object(Bucket=actual_src_bucket, Key=actual_src_path)
+                    return True
+                except Exception:
+                    logging.exception(f"Copied but failed to delete source: {src_bucket}/{src_path}")
+                    return False
+            else:
+                logging.error(f"Copy failed, move aborted: {src_bucket}/{src_path}")
+                return False
+        except Exception:
+            logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
+            return False
 
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):

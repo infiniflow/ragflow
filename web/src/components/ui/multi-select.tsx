@@ -188,6 +188,11 @@ interface MultiSelectProps
   showSelectAll?: boolean;
   popoverTestId?: string;
   optionTestIdPrefix?: string;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  isSearching?: boolean;
+  shouldFilter?: boolean;
+  onListScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -209,6 +214,11 @@ export const MultiSelect = React.forwardRef<
       showSelectAll = true,
       popoverTestId,
       optionTestIdPrefix,
+      searchValue,
+      onSearchChange,
+      isSearching = false,
+      shouldFilter,
+      onListScroll,
       ...props
     },
     ref,
@@ -434,15 +444,19 @@ export const MultiSelect = React.forwardRef<
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
           data-testid={popoverTestId}
         >
-          <Command className="p-5 pb-8">
-            {options && options.length > 0 && (
+          <Command className="p-5 pb-8" shouldFilter={shouldFilter}>
+            {((options && options.length > 0) || onSearchChange) && (
               <CommandInput
                 placeholder={t('common.search') + '...'}
                 onKeyDown={handleInputKeyDown}
+                value={searchValue}
+                onValueChange={onSearchChange}
               />
             )}
-            <CommandList className="mt-2">
-              <CommandEmpty>No results found.</CommandEmpty>
+            <CommandList className="mt-2" onScroll={onListScroll}>
+              <CommandEmpty>
+                {isSearching ? t('common.searching') : t('common.noDataFound')}
+              </CommandEmpty>
               <CommandGroup>
                 {showSelectAll && options && options.length > 0 && (
                   <CommandItem
@@ -514,7 +528,7 @@ export const MultiSelect = React.forwardRef<
                         onSelect={handleClear}
                         className="flex-1 justify-center cursor-pointer"
                       >
-                        Clear
+                        {t('common.clear')}
                       </CommandItem>
                       <Separator
                         orientation="vertical"

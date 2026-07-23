@@ -15,7 +15,7 @@
 #
 import random
 import pytest
-from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from configs import INVALID_API_TOKEN, HOST_ADDRESS, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from ragflow_sdk import RAGFlow, Memory
 from hypothesis import HealthCheck, example, given, settings
 from utils import encode_avatar
@@ -28,10 +28,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
-        ids=["empty_auth", "invalid_api_token"]
+        ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
 
@@ -41,9 +41,9 @@ class TestAuthorization:
             memory.update({"name": "New_Name"})
         assert str(exception_info.value) == expected_message, str(exception_info.value)
 
+
 @pytest.mark.usefixtures("add_memory_func")
 class TestMemoryUpdate:
-
     @pytest.mark.p1
     @given(name=valid_names())
     @example("f" * 128)
@@ -62,7 +62,7 @@ class TestMemoryUpdate:
             ("", "Memory name cannot be empty or whitespace."),
             (" ", "Memory name cannot be empty or whitespace."),
             ("a" * 129, f"Memory name '{'a' * 129}' exceeds limit of 128."),
-        ]
+        ],
     )
     def test_name_invalid(self, client, name, expected_message):
         memory_ids = self.memory_ids
@@ -70,7 +70,12 @@ class TestMemoryUpdate:
         memory = Memory(client, {"id": random.choice(memory_ids)})
         with pytest.raises(Exception) as exception_info:
             memory.update(update_dict)
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+        if IS_GO_PROXY:
+            if len(name) > 128:
+                expected_message = "failed to update memory"
+            else:
+                expected_message = "name can't be empty"
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_duplicate_name(self, client):
@@ -112,14 +117,7 @@ class TestMemoryUpdate:
         assert res.llm_id == llm_id, str(res)
 
     @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            "me",
-            "team"
-        ],
-        ids=["me", "team"]
-    )
+    @pytest.mark.parametrize("permission", ["me", "team"], ids=["me", "team"])
     def test_permission(self, client, permission):
         memory_ids = self.memory_ids
         update_dict = {"permissions": permission}

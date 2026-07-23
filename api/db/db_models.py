@@ -43,7 +43,6 @@ from peewee import (
     Metadata,
     Model,
     TextField,
-    PrimaryKeyField,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
@@ -269,19 +268,13 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                error_messages = ["", "Lost connection"]
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"Database connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"DB execution failure: {e}")
                     raise
@@ -311,20 +304,14 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
+                error_messages = ["", "Lost connection"]
 
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -348,17 +335,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 # 08006: connection_failure
                 # 08003: connection_does_not_exist
                 # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
+                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
 
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"PostgreSQL execution failure: {e}")
                     raise
@@ -385,17 +369,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             try:
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
+                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
 
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection lost during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -407,6 +388,7 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
     OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
     This class provides connection pooling and automatic retry for connection issues.
     """
+
     def __init__(self, *args, **kwargs):
         self.max_retries = kwargs.pop("max_retries", 5)
         self.retry_delay = kwargs.pop("retry_delay", 1)
@@ -421,20 +403,18 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
                 # 2013: Lost connection to MySQL server during query
                 # 2006: MySQL server has gone away
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection', 'gone away']
+                error_messages = ["", "Lost connection", "gone away"]
 
                 should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    any(msg in str(e).lower() for msg in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                    (hasattr(e, "args") and e.args and e.args[0] in error_codes)
+                    or any(msg in str(e).lower() for msg in error_messages)
+                    or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
                 )
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"OceanBase connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"OceanBase connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"OceanBase execution failure: {e}")
                     raise
@@ -462,20 +442,14 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
+                error_messages = ["", "Lost connection"]
 
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -500,13 +474,11 @@ class BaseDataBase:
         db_name = database_config.pop("name")
 
         pool_config = {
-            'max_retries': 5,
-            'retry_delay': 1,
+            "max_retries": 5,
+            "retry_delay": 1,
         }
         database_config.update(pool_config)
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
-            db_name, **database_config
-        )
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info("init database on cluster mode successfully")
 
@@ -705,6 +677,8 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, AuthUser):
+    SENSITIVE_FIELDS = {"password", "access_token", "email"}
+
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
@@ -729,6 +703,18 @@ class User(DataBaseModel, AuthUser):
         jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
 
+    def to_safe_dict(self, *, for_self: bool = False):
+        """Return a dict with sensitive fields stripped for API responses.
+
+        Email is treated as sensitive in generic serialization. Pass for_self=True
+        when returning the authenticated user's own record (login, profile, etc.).
+        """
+        result = {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        if for_self:
+            result["email"] = self.email
+        logging.debug("User %s serialized safely, filtered fields: %s", self.id, self.SENSITIVE_FIELDS)
+        return result
+
     class Meta:
         db_table = "user"
 
@@ -738,17 +724,19 @@ class Tenant(DataBaseModel):
     name = CharField(max_length=100, null=True, help_text="Tenant name", index=True)
     public_key = CharField(max_length=255, null=True, index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID", index=True)
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     asr_id = CharField(max_length=128, null=False, help_text="default ASR model ID", index=True)
-    tenant_asr_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_asr_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     img2txt_id = CharField(max_length=128, null=False, help_text="default image to text model ID", index=True)
-    tenant_img2txt_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_img2txt_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID", index=True)
-    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_rerank_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
-    tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_tts_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
+    ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
+    tenant_ocr_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -815,7 +803,6 @@ class LLM(DataBaseModel):
 
 
 class TenantLLM(DataBaseModel):
-    id = PrimaryKeyField()
     tenant_id = CharField(max_length=32, null=False, index=True)
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
     model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
@@ -831,16 +818,14 @@ class TenantLLM(DataBaseModel):
 
     class Meta:
         db_table = "tenant_llm"
-        indexes = (
-            (("tenant_id", "llm_factory", "llm_name"), True),
-        )
+        indexes = ((("tenant_id", "llm_factory", "llm_name"), True),)
 
 
 class TenantLangfuse(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, primary_key=True)
-    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
-    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
+    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY")
+    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY")
+    host = CharField(max_length=128, null=False, help_text="HOST")
 
     def __str__(self):
         return "Langfuse host" + self.host
@@ -857,7 +842,7 @@ class Knowledgebase(DataBaseModel):
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     created_by = CharField(max_length=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
@@ -877,6 +862,10 @@ class Knowledgebase(DataBaseModel):
     raptor_task_finish_at = DateTimeField(null=True)
     mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
     mindmap_task_finish_at = DateTimeField(null=True)
+    artifact_task_id = CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True)
+    artifact_task_finish_at = DateTimeField(null=True)
+    skill_task_id = CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True)
+    skill_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -941,6 +930,60 @@ class File2Document(DataBaseModel):
         db_table = "file2document"
 
 
+class FileCommit(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    folder_id = CharField(max_length=32, null=False, help_text="workspace folder id", index=True)
+    parent_id = CharField(max_length=32, null=True, help_text="parent commit id", index=True)
+    message = CharField(max_length=512, default="", help_text="commit message")
+    author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
+    file_count = IntegerField(default=0, help_text="number of files in this commit")
+    tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+    # ---- Artifact-commit extension ----
+    # Populated only for commits recorded via
+    # ``FileCommitService.record_page_edit`` (i.e. artifact-page saves).
+    # For workspace file commits both fields stay null and the ``message``
+    # column carries the commit body.
+    title = CharField(max_length=255, null=True, help_text="commit title (artifact-page edits)")
+    comments = TextField(null=True, help_text="commit body/description (artifact-page edits)")
+
+    class Meta:
+        db_table = "file_commit"
+
+
+class FileCommitItem(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    commit_id = CharField(max_length=32, null=False, help_text="commit id", index=True)
+    file_id = CharField(max_length=32, null=False, help_text="file id", index=True)
+    operation = CharField(max_length=16, null=False, help_text="add / modify / delete / rename", index=True)
+    old_hash = CharField(max_length=64, null=True, help_text="old content hash", index=True)
+    new_hash = CharField(max_length=64, null=True, help_text="new content hash", index=True)
+    old_location = CharField(max_length=255, null=True, help_text="old storage location")
+    new_location = CharField(max_length=255, null=True, help_text="new storage location")
+    old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
+    new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+    # ---- Artifact-commit extension ----
+    # Populated only for artifact-page saves recorded via
+    # ``FileCommitService.record_page_edit``.
+    diff = LongTextField(null=True, help_text="pre-computed unified diff (artifact-page edits)")
+    content_after_storage = CharField(max_length=16, null=True, help_text="'minio' | 'es' — where the post-save blob lives", index=True)
+    content_after_location = CharField(max_length=512, null=True, help_text="storage key/id for the post-save blob")
+    slug_kwd = CharField(max_length=512, null=True, help_text="artifact page slug (<page_type>/<name>)", index=True)
+    page_type_kwd = CharField(max_length=32, null=True, help_text="artifact page type", index=True)
+
+    class Meta:
+        db_table = "file_commit_item"
+        indexes = (
+            (("commit_id", "file_id"), True),  # unique composite index
+        )
+
+
+# ``ArtifactCommit`` retired — artifact page history is now stored under
+# ``FileCommit`` + ``FileCommitItem`` via ``FileCommitService.record_page_edit``
+# (see the artifact-commit extension columns on those models above).
+# Pre-existing ``artifact_commit`` rows are intentionally left in place;
+# no code path reads them.
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
@@ -967,7 +1010,7 @@ class Dialog(DataBaseModel):
     icon = TextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
@@ -987,7 +1030,7 @@ class Dialog(DataBaseModel):
     do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
 
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
-    tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_rerank_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1051,6 +1094,7 @@ class UserCanvas(DataBaseModel):
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
+    tags = CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1096,6 +1140,35 @@ class MCPServer(DataBaseModel):
 
     class Meta:
         db_table = "mcp_server"
+
+
+class CompilationTemplate(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=True, index=True)
+    group_id = CharField(max_length=32, null=True, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    kind = CharField(max_length=64, null=False, index=True)
+    config = JSONField(null=False, default={})
+    is_builtin = BooleanField(null=False, default=False, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template"
+        indexes = ((("tenant_id", "group_id", "name", "is_builtin", "status"), True),)
+
+
+class CompilationTemplateGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    scope = CharField(max_length=16, null=False, index=True, help_text="file | dataset")
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template_group"
+        indexes = ((("tenant_id", "name", "status"), True),)
 
 
 class Search(DataBaseModel):
@@ -1199,10 +1272,26 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
-class DateTimeTzField(CharField):
-    field_type = 'VARCHAR'
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
+    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
+    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
+    chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    status = IntegerField(default=1, index=True)
 
-    def db_value(self, value: datetime|None) -> str|None:
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "chat_channel"
+
+
+class DateTimeTzField(CharField):
+    field_type = "VARCHAR"
+
+    def db_value(self, value: datetime | None) -> str | None:
         if value is not None:
             if value.tzinfo is not None:
                 return value.isoformat()
@@ -1210,11 +1299,12 @@ class DateTimeTzField(CharField):
                 return value.replace(tzinfo=timezone.utc).isoformat()
         return value
 
-    def python_value(self, value: str|None) -> datetime|None:
+    def python_value(self, value: str | None) -> datetime | None:
         if value is not None:
             dt = datetime.fromisoformat(value)
             if dt.tzinfo is None:
                 import pytz
+
                 return dt.replace(tzinfo=pytz.UTC)
             return dt
         return value
@@ -1223,6 +1313,7 @@ class DateTimeTzField(CharField):
 class SyncLogs(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, index=True)
+    task_type = CharField(max_length=32, null=False, default="sync", index=True)
     status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
     from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
     new_docs_indexed = IntegerField(default=0, index=False)
@@ -1240,81 +1331,17 @@ class SyncLogs(DataBaseModel):
         db_table = "sync_logs"
 
 
-class EvaluationDataset(DataBaseModel):
-    """Ground truth dataset for RAG evaluation"""
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
-    name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
-    description = TextField(null=True, help_text="dataset description")
-    kb_ids = JSONField(null=False, help_text="knowledge base IDs to evaluate against")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="creator user ID")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    update_time = BigIntegerField(null=False, help_text="last update timestamp")
-    status = IntegerField(null=False, default=1, help_text="1=valid, 0=invalid")
-
-    class Meta:
-        db_table = "evaluation_datasets"
-
-
-class EvaluationCase(DataBaseModel):
-    """Individual test case in an evaluation dataset"""
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    question = TextField(null=False, help_text="test question")
-    reference_answer = TextField(null=True, help_text="optional ground truth answer")
-    relevant_doc_ids = JSONField(null=True, help_text="expected relevant document IDs")
-    relevant_chunk_ids = JSONField(null=True, help_text="expected relevant chunk IDs")
-    metadata = JSONField(null=True, help_text="additional context/tags")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_cases"
-
-
-class EvaluationRun(DataBaseModel):
-    """A single evaluation run"""
-    id = CharField(max_length=32, primary_key=True)
-    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
-    name = CharField(max_length=255, null=False, help_text="run name")
-    config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
-    metrics_summary = JSONField(null=True, help_text="aggregated metrics")
-    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
-    created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
-    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
-    complete_time = BigIntegerField(null=True, help_text="completion timestamp")
-
-    class Meta:
-        db_table = "evaluation_runs"
-
-
-class EvaluationResult(DataBaseModel):
-    """Result for a single test case in an evaluation run"""
-    id = CharField(max_length=32, primary_key=True)
-    run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
-    case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
-    generated_answer = TextField(null=False, help_text="generated answer")
-    retrieved_chunks = JSONField(null=False, help_text="chunks that were retrieved")
-    metrics = JSONField(null=False, help_text="all computed metrics")
-    execution_time = FloatField(null=False, help_text="response time in seconds")
-    token_usage = JSONField(null=True, help_text="prompt/completion tokens")
-    create_time = BigIntegerField(null=False, help_text="creation timestamp")
-
-    class Meta:
-        db_table = "evaluation_results"
-
-
 class Memory(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
     memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
-    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
+    storage_type = CharField(max_length=32, default="table", null=False, index=True, help_text="table|graph")
     embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
-    tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_embd_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
-    tenant_llm_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    tenant_llm_id = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
@@ -1326,25 +1353,83 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+
 class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
     value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
+
     class Meta:
         db_table = "system_settings"
+
+
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, index=False, help_text="LLM provider name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = ((("tenant_id", "provider_name"), True),)
+
+
+class TenantModelInstance(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    instance_name = CharField(max_length=128, null=False, index=False, help_text="Model instance name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=512, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model_instance"
+
+
+class TenantModel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=True)
+    model_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=1024, default="{}", index=False)
+
+    class Meta:
+        db_table = "tenant_model"
+
+
+class TenantModelGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    group_type = CharField(max_length=32, null=False, index=False, help_text="Group type")
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    strategy = CharField(max_length=32, default="weighted", index=False, help_text="Routing strategy")
+
+    class Meta:
+        db_table = "tenant_model_group"
+
+
+class TenantModelGroupMapping(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=False)
+    model_id = CharField(max_length=32, null=False, index=True)
+    weight = IntegerField(default=100, index=False, help_text="Routing weight")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_group_mapping"
+        primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))
     except OperationalError as ex:
         error_codes = [1060]
-        error_messages = ['Duplicate column name']
+        error_messages = ["Duplicate column name"]
 
-        should_skip_error = (
-                (hasattr(ex, 'args') and ex.args and ex.args[0] in error_codes) or
-                (str(ex) in error_messages)
-        )
+        should_skip_error = (hasattr(ex, "args") and ex.args and ex.args[0] in error_codes) or (str(ex) in error_messages)
 
         if not should_skip_error:
             logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, operation error: {ex}")
@@ -1353,12 +1438,14 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
         pass
 
+
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
     try:
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
+
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
@@ -1367,6 +1454,52 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # rename fail will lead to a weired error.
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
+
+
+def alter_db_drop_index(migrator, table_name, index_name):
+    try:
+        migrate(migrator.drop_index(table_name, index_name))
+    except Exception:
+        # rename fail will lead to a weired error.
+        # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
+        pass
+
+def ensure_model_indexes(migrator):
+    """Create indexes declared by the Peewee models when they are missing."""
+    members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+    for name, model in members:
+        if model == DataBaseModel or not issubclass(model, DataBaseModel):
+            continue
+
+        table_name = model._meta.table_name
+        expected = {}
+        for field in model._meta.fields.values():
+            if field.primary_key:
+                continue
+            if field.index or field.unique:
+                expected[(field.name,)] = bool(field.unique)
+
+        for columns, unique in model._meta.indexes:
+            expected[tuple(columns)] = bool(unique)
+
+        if not expected:
+            continue
+
+        try:
+            existing = {tuple(index.columns): bool(index.unique) for index in DB.get_indexes(table_name)}
+        except Exception as ex:
+            logging.error(f"Failed to inspect indexes on {table_name}: {ex}")
+            continue
+
+        for columns, unique in expected.items():
+            if columns in existing and (not unique or existing[columns]):
+                continue
+            try:
+                migrate(migrator.add_index(table_name, columns, unique=unique))
+                logging.info(f"Created {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)})")
+            except Exception as ex:
+                logging.error(f"Failed to create {'unique ' if unique else ''}index on {table_name} ({', '.join(columns)}): {ex}")
+
 
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
@@ -1412,13 +1545,7 @@ def migrate_add_unique_email(migrator):
         duplicates = User.select(User.email).group_by(User.email).having(fn.COUNT(User.id) > 1).tuples()
         for (dup_email,) in duplicates:
             # Keep the superuser row, or the oldest row if there is no superuser
-            rows = list(
-                User
-                    .select(User.id)
-                    .where(User.email == dup_email)
-                    .order_by(User.is_superuser.desc(), User.create_time.asc())
-                    .tuples()
-            )
+            rows = list(User.select(User.id).where(User.email == dup_email).order_by(User.is_superuser.desc(), User.create_time.asc()).tuples())
             for (uid,) in rows[1:]:
                 new_email = f"{dup_email}_DUPLICATE_{uid[:8]}"
                 User.update(email=new_email).where(User.id == uid).execute()
@@ -1439,7 +1566,6 @@ def migrate_add_unique_email(migrator):
             logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
     except Exception as ex:
         logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
-
 
 
 def update_tenant_llm_to_id_primary_key():
@@ -1618,38 +1744,114 @@ def migrate_db():
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True))
-    alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
-    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_id", CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "skill_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
     alter_db_add_column(migrator, "api_4_conversation", "name", CharField(max_length=255, null=True, help_text="conversation name", index=False))
     alter_db_add_column(migrator, "api_4_conversation", "exp_user_id", CharField(max_length=255, null=True, help_text="exp_user_id", index=True))
+    alter_db_add_column(migrator, "sync_logs", "task_type", CharField(max_length=32, null=False, default="sync", index=True))
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
-    update_tenant_llm_to_id_primary_key()
-    alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_asr_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_img2txt_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "tenant", "tenant_tts_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "knowledgebase", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
-    alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
+    alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
+    alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
+    alter_db_add_column(migrator, "file_commit", "title", CharField(max_length=255, null=True))
+    alter_db_add_column(migrator, "file_commit", "comments", TextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "diff", LongTextField(null=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_storage", CharField(max_length=16, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
+    alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
+    alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_secret_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_public_key")
+    alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_host")
+
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
+        try:
+            migrate(migrator.drop_index(table_name, index_name))
+        except (OperationalError, ProgrammingError) as ex:
+            msg = str(ex)
+            if "1091" in msg or "can't DROP" in msg.lower() or "does not exist" in msg.lower() or "already exists" in msg.lower():
+                pass
+            else:
+                logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
+        except Exception as ex:
+            logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
+    migrate_model_type_names()
+    ensure_model_indexes(migrator)
+
+
+def migrate_model_type_names():
+    """Rename legacy model_type string values to the canonical asr/vision names.
+
+    Previously the code used speech2text / image2text. LLMType now emits asr /
+    vision, and the backend compares model_type strings directly. This idempotent
+    data migration updates persisted rows in llm and tenant_llm before the new
+    enum values are used at runtime.
+    """
+    RENAME_MAP = {
+        "speech2text": "asr",
+        "image2text": "vision",
+    }
+    tables = ["llm", "tenant_llm"]
+    for table in tables:
+        if not DB.table_exists(table):
+            continue
+        for old_name, new_name in RENAME_MAP.items():
+            try:
+                cursor = DB.execute_sql(
+                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    (new_name, old_name),
+                )
+                if cursor.rowcount:
+                    logging.info(
+                        "Migrated %s rows in %s.model_type from %s to %s",
+                        cursor.rowcount,
+                        table,
+                        old_name,
+                        new_name,
+                    )
+            except Exception as ex:
+                logging.warning(
+                    "Failed to migrate model_type values in %s (from %s to %s): %s",
+                    table,
+                    old_name,
+                    new_name,
+                    ex,
+                )

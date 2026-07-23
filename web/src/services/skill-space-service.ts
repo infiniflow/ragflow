@@ -133,19 +133,12 @@ class SkillSpaceService {
 
   // Create a new skill space
   async createSpace(request: CreateSpaceRequest): Promise<SkillSpace> {
-    return await this.request<SkillSpace>(
-      'POST',
-      api.skillSpaces,
-      request,
-    );
+    return await this.request<SkillSpace>('POST', api.skillSpaces, request);
   }
 
   // Get a skill space by ID
   async getSpace(spaceId: string): Promise<SkillSpace> {
-    return await this.request<SkillSpace>(
-      'GET',
-      api.skillSpace(spaceId),
-    );
+    return await this.request<SkillSpace>('GET', api.skillSpace(spaceId));
   }
 
   // Update a skill space
@@ -162,20 +155,14 @@ class SkillSpaceService {
 
   // Delete a skill space
   async deleteSpace(spaceId: string): Promise<void> {
-    await this.request<void>(
-      'DELETE',
-      api.skillSpace(spaceId),
-    );
+    await this.request<void>('DELETE', api.skillSpace(spaceId));
   }
 
   // Get space by folder ID
   async getSpaceByFolder(folderId: string): Promise<SkillSpace> {
-    return await this.request<SkillSpace>(
-      'GET',
-      api.skillSpaceByFolder,
-      null,
-      { folder_id: folderId },
-    );
+    return await this.request<SkillSpace>('GET', api.skillSpaceByFolder, null, {
+      folder_id: folderId,
+    });
   }
 
   // ==================== Skill Search Config ====================
@@ -210,11 +197,7 @@ class SkillSpaceService {
 
   // Search skills
   async search(request: SearchRequest): Promise<SearchResult> {
-    return await this.request<SearchResult>(
-      'POST',
-      api.skillSearch,
-      request,
-    );
+    return await this.request<SearchResult>('POST', api.skillSearch, request);
   }
 
   // ==================== Skill Indexing ====================
@@ -235,21 +218,12 @@ class SkillSpaceService {
     const params: Record<string, string> = { skill_id: skillId };
     if (spaceId) params.space_id = spaceId;
 
-    await this.request<void>(
-      'DELETE',
-      api.skillIndex,
-      null,
-      params,
-    );
+    await this.request<void>('DELETE', api.skillIndex, null, params);
   }
 
   // Reindex all skills
   async reindex(request: IndexSkillsRequest): Promise<any> {
-    return await this.request<any>(
-      'POST',
-      api.skillReindex,
-      request,
-    );
+    return await this.request<any>('POST', api.skillReindex, request);
   }
 }
 

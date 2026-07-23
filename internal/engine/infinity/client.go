@@ -30,10 +30,18 @@ import (
 	infinity "github.com/infiniflow/infinity-go-sdk"
 )
 
-// infinityClient Infinity SDK client wrapper
 type infinityClient struct {
 	conn   *infinity.InfinityConnection
 	dbName string
+
+	// Original URI from config, used by RunSQL to extract the host.
+	hostURI string
+
+	// Port for psql wire-protocol listener (default 5432).
+	postgresPort int
+
+	// JSON file (under conf/) with the field-name alias map.
+	mappingFileName string
 }
 
 // NewInfinityClient creates a new Infinity client using the SDK
@@ -70,8 +78,11 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 	}
 
 	client := &infinityClient{
-		conn:   conn,
-		dbName: cfg.DBName,
+		conn:            conn,
+		dbName:          cfg.DBName,
+		hostURI:         cfg.URI,
+		postgresPort:    cfg.PostgresPort,
+		mappingFileName: cfg.MappingFileName,
 	}
 
 	return client, nil
@@ -178,6 +189,11 @@ func NewEngine(cfg interface{}) (*infinityEngine, error) {
 // GetType returns the engine type
 func (e *infinityEngine) GetType() string {
 	return "infinity"
+}
+
+// SupportsPageRank returns false because Infinity does not support pagerank.
+func (e *infinityEngine) SupportsPageRank() bool {
+	return false
 }
 
 // Ping checks if Infinity is accessible

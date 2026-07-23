@@ -82,6 +82,7 @@ export declare interface IFlow {
   release_time?: number;
   last_publish_time?: number;
   datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
+  tags?: string;
 }
 
 export interface IFlowTemplate {
@@ -198,6 +199,7 @@ export type BaseNodeData<TForm = any> = {
   name: string; // operator name
   color?: string;
   form?: TForm;
+  operatorId?: string;
 };
 
 export type BaseNode<T = any> = Node<BaseNodeData<T>>;
@@ -265,7 +267,7 @@ export interface IAgentLogResponse {
   source: string;
   user_id: string;
   dsl: string;
-  reference: IReference;
+  reference: IReference[];
   name: string;
   version_title: string;
 }
@@ -298,6 +300,18 @@ export interface IPipeLineListRequest {
   desc?: boolean;
   canvas_category?: AgentCategory;
   ext?: string;
+}
+
+export interface IBuiltinPipeline {
+  id: string;
+  title: string;
+  description?: string;
+  filename?: string;
+}
+
+export interface IBuiltinPipelineListResponse {
+  canvas: IBuiltinPipeline[];
+  total: number;
 }
 
 export interface GlobalVariableType {

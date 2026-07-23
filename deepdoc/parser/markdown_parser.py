@@ -15,9 +15,12 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 
 from markdown import markdown
+
+logger = logging.getLogger(__name__)
 
 
 class RAGFlowMarkdownParser:
@@ -28,10 +31,26 @@ class RAGFlowMarkdownParser:
         tables = []
         working_text = markdown_text
 
+        # a fenced code block can legitimately contain a pipe table, e.g. docs that show
+        # markdown syntax. extracting it would strip the example out of the fence and
+        # re-emit it as a bogus table, leaving a hollow fence behind.
+        # MarkdownElementExtractor already shields fences (see _fenced_code_ranges), so
+        # keep table extraction consistent with it.
+        fence_pattern = re.compile(
+            r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}\1[ \t]*$|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+
         def replace_tables_with_rendered_html(pattern, table_list, render=True):
             new_text = ""
             last_end = 0
+            fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
             for match in pattern.finditer(working_text):
+                if any(start <= match.start() < end for start, end in fenced_spans):
+                    # inside a code fence: leave it in place. last_end is untouched, so
+                    # the block is copied through verbatim.
+                    logger.debug("markdown table pass: skipping match inside a code fence at %d", match.start())
+                    continue
                 raw_table = match.group()
                 table_list.append(raw_table)
                 if separate_tables:
@@ -74,7 +93,13 @@ class RAGFlowMarkdownParser:
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
         table_with_attributes_pattern = re.compile(rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE)
 
+        tag_fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
+
         def replace_tag(m):
+            if any(start <= m.start() < end for start, end in tag_fenced_spans):
+                # an html example inside a fence keeps its attributes verbatim.
+                logger.debug("html tag pass: preserving tag inside a code fence at %d", m.start())
+                return m.group()
             tag_name = re.match(r"<(\w+)", m.group()).group(1)
             return "<{}>".format(tag_name)
 
@@ -106,7 +131,11 @@ class RAGFlowMarkdownParser:
                 nonlocal working_text
                 new_text = ""
                 last_end = 0
+                fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
                 for match in html_table_pattern.finditer(working_text):
+                    if any(start <= match.start() < end for start, end in fenced_spans):
+                        logger.debug("html table pass: skipping match inside a code fence at %d", match.start())
+                        continue
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
@@ -132,6 +161,165 @@ class MarkdownElementExtractor:
         toks = sorted(set(toks), key=lambda x: -len(x))
         return "|".join(re.escape(t) for t in toks if t)
 
+    def _get_fence_marker(self, line):
+        match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)
+        if not match:
+            return None
+        fence = match.group("fence")
+        return fence[0], len(fence)
+
+    def _is_closing_fence(self, line, fence_char, fence_len):
+        pattern = r"^[ \t]{0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
+        return re.match(pattern, line) is not None
+
+    def _line_start_offsets(self, text):
+        offsets = []
+        offset = 0
+        for line in self.lines:
+            offsets.append(offset)
+            offset += len(line) + 1
+        return offsets
+
+    def _fenced_code_ranges(self, text):
+        ranges = []
+        line_offsets = self._line_start_offsets(text)
+
+        i = 0
+        while i < len(self.lines):
+            marker = self._get_fence_marker(self.lines[i])
+            if not marker:
+                i += 1
+                continue
+
+            fence_char, fence_len = marker
+            start_pos = line_offsets[i]
+            end_line = len(self.lines) - 1
+            for j in range(i + 1, len(self.lines)):
+                if self._is_closing_fence(self.lines[j], fence_char, fence_len):
+                    end_line = j
+                    break
+
+            end_pos = min(len(text), line_offsets[end_line] + len(self.lines[end_line]))
+            ranges.append((start_pos, end_pos))
+            i = end_line + 1
+
+        return ranges
+
+    def _table_cells(self, line):
+        stripped = line.strip()
+        if "|" not in stripped:
+            return []
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
+
+    def _is_table_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and any(cell for cell in cells)
+
+    def _is_table_separator_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and all(re.match(r"^:?-+:?$", cell.replace(" ", "")) for cell in cells)
+
+    def _markdown_table_ranges(self, text):
+        ranges = []
+        line_offsets = self._line_start_offsets(text)
+
+        i = 0
+        while i < len(self.lines) - 1:
+            if not self._is_table_row(self.lines[i]) or not self._is_table_separator_row(self.lines[i + 1]):
+                i += 1
+                continue
+
+            end_line = i + 1
+            j = i + 2
+            while j < len(self.lines) and self._is_table_row(self.lines[j]):
+                end_line = j
+                j += 1
+
+            end_pos = min(len(text), line_offsets[end_line] + len(self.lines[end_line]))
+            ranges.append((line_offsets[i], end_pos))
+            i = end_line + 1
+
+        return ranges
+
+    def _html_table_ranges(self, text):
+        table_pattern = re.compile(
+            r"""
+            (?:
+                (?:<html[^>]*>\s*<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>\s*</html>)
+                |
+                (?:<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>)
+                |
+                (?:<table[^>]*>.*?</table>)
+            )
+            """,
+            re.VERBOSE | re.DOTALL | re.IGNORECASE,
+        )
+        return [(match.start(), match.end()) for match in table_pattern.finditer(text)]
+
+    def _merge_ranges(self, ranges):
+        if not ranges:
+            return []
+
+        merged = []
+        for start, end in sorted(ranges):
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        return merged
+
+    def _protected_ranges(self, text):
+        return self._merge_ranges(self._fenced_code_ranges(text) + self._markdown_table_ranges(text) + self._html_table_ranges(text))
+
+    def _append_delimited_section(self, sections, text, start, end, include_meta):
+        part = text[start:end]
+        if not part or not part.strip():
+            return
+        if include_meta:
+            sections.append(
+                {
+                    "content": part.strip(),
+                    "start_line": text.count("\n", 0, start),
+                    "end_line": text.count("\n", 0, end),
+                }
+            )
+        else:
+            sections.append(part.strip())
+
+    def _extract_delimited_elements(self, text, delimiters, include_meta=False):
+        sections = []
+        pattern = re.compile(delimiters)
+        protected_ranges = self._protected_ranges(text)
+        if protected_ranges:
+            logging.debug("markdown_parser: detected %d protected ranges for delimiter extraction", len(protected_ranges))
+        protected_idx = 0
+        last_end = 0
+
+        for match in pattern.finditer(text):
+            while protected_idx < len(protected_ranges) and protected_ranges[protected_idx][1] <= match.start():
+                protected_idx += 1
+
+            if protected_idx < len(protected_ranges):
+                start, end = protected_ranges[protected_idx]
+                if start <= match.start() < end:
+                    logging.debug(
+                        "markdown_parser: skipped delimiter match at pos=%d delimiter=%r inside fenced range %s",
+                        match.start(),
+                        match.group(),
+                        (start, end),
+                    )
+                    continue
+
+            self._append_delimited_section(sections, text, last_end, match.start(), include_meta)
+            last_end = match.end()
+
+        self._append_delimited_section(sections, text, last_end, len(text), include_meta)
+        return sections
+
     def extract_elements(self, delimiter=None, include_meta=False):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
@@ -142,34 +330,79 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            if include_meta:
-                pattern = re.compile(dels)
-                last_end = 0
-                for m in pattern.finditer(text):
-                    part = text[last_end : m.start()]
-                    if part and part.strip():
-                        sections.append(
-                            {
-                                "content": part.strip(),
-                                "start_line": text.count("\n", 0, last_end),
-                                "end_line": text.count("\n", 0, m.start()),
-                            }
-                        )
-                    last_end = m.end()
+            sections = self._extract_delimited_elements(text, dels, include_meta)
 
-                part = text[last_end:]
-                if part and part.strip():
-                    sections.append(
-                        {
-                            "content": part.strip(),
-                            "start_line": text.count("\n", 0, last_end),
-                            "end_line": text.count("\n", 0, len(text)),
-                        }
-                    )
-            else:
-                parts = re.split(dels, text)
-                sections = [p.strip() for p in parts if p and p.strip()]
-            return sections
+            # Attach lone header lines to the section that follows them so that
+            # "## Title\n" never becomes an isolated chunk when the delimiter
+            # splits at every newline.  A header is "lone" when it occupies a
+            # single line (no embedded newline after stripping).
+            def _is_lone_header(section_content):
+                stripped = section_content.strip()
+                return bool(re.match(r"^#{1,6}\s+\S", stripped)) and "\n" not in stripped
+
+            def _is_attachable_body(section_content):
+                """True when the following chunk is prose body, not code/table/list/etc."""
+                stripped = section_content.strip()
+                if not stripped:
+                    return False
+                first_line = stripped.split("\n", 1)[0]
+                if self._get_fence_marker(first_line):
+                    return False
+                if first_line.lstrip().startswith("|"):
+                    return False
+                if re.match(r"^\S+\s*\|", first_line):
+                    return False
+                if first_line.lstrip().startswith("<"):
+                    return False
+                if re.match(r"^\s*[-*+]\s+", first_line) or re.match(r"^\s*\d+\.\s+", first_line):
+                    return False
+                if first_line.lstrip().startswith(">"):
+                    return False
+                return True
+
+            merged = []
+            merged_header_count = 0
+            i = 0
+            while i < len(sections):
+                content = sections[i]["content"] if include_meta else sections[i]
+                if _is_lone_header(content):
+                    header_parts = [content.strip()]
+                    j = i + 1
+                    while j < len(sections):
+                        next_content = sections[j]["content"] if include_meta else sections[j]
+                        if not _is_lone_header(next_content):
+                            break
+                        header_parts.append(next_content.strip())
+                        j += 1
+                    if j < len(sections):
+                        body_content = sections[j]["content"] if include_meta else sections[j]
+                        if _is_attachable_body(body_content):
+                            combined = "\n".join(header_parts) + "\n" + body_content
+                            if include_meta:
+                                merged.append(
+                                    {
+                                        **sections[i],
+                                        "content": combined,
+                                        "end_line": sections[j]["end_line"],
+                                    }
+                                )
+                            else:
+                                merged.append(combined)
+                            merged_header_count += len(header_parts)
+                            i = j + 1
+                            continue
+                    for k in range(i, j):
+                        merged.append(sections[k])
+                    i = j
+                    continue
+                merged.append(sections[i])
+                i += 1
+            if merged_header_count:
+                logging.debug(
+                    "markdown_parser: merged %d lone header line(s) into following sections",
+                    merged_header_count,
+                )
+            return merged
         while i < len(self.lines):
             line = self.lines[i]
 
@@ -178,7 +411,7 @@ class MarkdownElementExtractor:
                 element = self._extract_header(i)
                 sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
-            elif line.strip().startswith("```"):
+            elif self._get_fence_marker(line):
                 # code block
                 element = self._extract_code_block(i)
                 sections.append(element if include_meta else element["content"])
@@ -218,12 +451,13 @@ class MarkdownElementExtractor:
     def _extract_code_block(self, start_pos):
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
+        fence_char, fence_len = self._get_fence_marker(self.lines[start_pos])
 
         # Find the end of the code block
         for i in range(start_pos + 1, len(self.lines)):
             content_lines.append(self.lines[i])
             end_pos = i
-            if self.lines[i].strip().startswith("```"):
+            if self._is_closing_fence(self.lines[i], fence_char, fence_len):
                 break
 
         return {
@@ -292,13 +526,13 @@ class MarkdownElementExtractor:
         while i < len(self.lines):
             line = self.lines[i]
             # stop if we encounter a block element
-            if re.match(r"^#{1,6}\s+.*$", line) or line.strip().startswith("```") or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
+            if re.match(r"^#{1,6}\s+.*$", line) or self._get_fence_marker(line) or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
                 break
             elif not line.strip():
                 # check if the next line is a block element
                 if i + 1 < len(self.lines) and (
                     re.match(r"^#{1,6}\s+.*$", self.lines[i + 1])
-                    or self.lines[i + 1].strip().startswith("```")
+                    or self._get_fence_marker(self.lines[i + 1])
                     or re.match(r"^\s*[-*+]\s+.*$", self.lines[i + 1])
                     or re.match(r"^\s*\d+\.\s+.*$", self.lines[i + 1])
                     or self.lines[i + 1].strip().startswith(">")

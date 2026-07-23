@@ -22,7 +22,7 @@ import { useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
-import { useSelectFilters } from './hooks/use-selelct-filters';
+import { useSelectFilters } from './hooks/use-select-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
@@ -30,6 +30,7 @@ import { useRenameAgent } from './use-rename-agent';
 export default function Agents() {
   const {
     data,
+    loading: listLoading,
     pagination,
     setPagination,
     searchString,
@@ -86,8 +87,11 @@ export default function Agents() {
   return (
     <>
       {data?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="agents-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="agents-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('flow.agents')}
               searchString={searchString}
@@ -98,7 +102,7 @@ export default function Agents() {
               value={filterValue}
             >
               <DropdownMenu>
-                <DropdownMenuTrigger data-testid="create-agent">
+                <DropdownMenuTrigger data-testid="create-agent" asChild>
                   <Button>
                     <Plus className="size-[1em]" />
                     {t('flow.createGraph')}
@@ -167,6 +171,8 @@ export default function Agents() {
             </div>
           )}
         </article>
+      ) : listLoading ? (
+        <article className="size-full" data-testid="agents-list"></article>
       ) : (
         <article
           className="size-full flex items-center justify-center"

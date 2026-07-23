@@ -87,11 +87,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
-        sections = [
-            (item[0], item[1] if item[1] is not None else "")
-            for item in sections
-            if not isinstance(item[1], (Image.Image, LazyImage))
-        ]
+        sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], (Image.Image, LazyImage))]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -173,8 +169,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     # is_english(random_choices([t for t, _ in sections], k=218))
     eng = lang.lower() == "english"
 
-    res = tokenize_table(tbls, doc, eng)
-    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    res = tokenize_table(tbls, doc, eng, language=lang)
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
     if table_ctx or image_ctx:

@@ -1,7 +1,8 @@
 {
   "name": "HuggingFace",
+  "rank": 991,
   "url": {
-    "default": "https://router.huggingface.co/v1/"
+    "default": "https://router.huggingface.co/v1"
   },
   "url-suffix": {
     "chat": "chat/completions",

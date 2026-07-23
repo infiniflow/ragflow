@@ -102,13 +102,14 @@ export const useSendMessage = (controller: AbortController) => {
         {
           chat_id: chatId,
           session_id: sessionId,
+          // An explicitly provided list is authoritative, even when empty
+          // (e.g. regenerating the first question must truncate history).
           messages: [
-            ...(Array.isArray(messages) && messages?.length > 0
-              ? messages
-              : (derivedMessages ?? [])),
+            ...(Array.isArray(messages) ? messages : (derivedMessages ?? [])),
             message,
           ],
-          reasoning: enableThinking,
+          pass_all_history_messages: true,
+          reasoning: Number(enableThinking),
           internet: enableInternet,
         },
         controller,
@@ -146,7 +147,7 @@ export const useSendMessage = (controller: AbortController) => {
       enableThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
-      if (trim(value) === '') return;
+      if (trim(value) === '' || !done) return;
 
       const data = await createConversationBeforeSendMessage(value);
 
@@ -170,7 +171,9 @@ export const useSendMessage = (controller: AbortController) => {
         setValue('');
         sendMessage({
           currentConversationId: targetConversationId,
-          messages: currentMessages,
+          // For an existing conversation currentMessages is empty; fall back
+          // to derivedMessages instead of sending an empty history.
+          messages: currentMessages.length > 0 ? currentMessages : undefined,
           message: {
             id,
             content: value.trim(),
@@ -198,10 +201,10 @@ export const useSendMessage = (controller: AbortController) => {
     },
     [
       value,
+      done,
       createConversationBeforeSendMessage,
       addNewestQuestion,
       files,
-      done,
       clearFiles,
       setValue,
       sendMessage,

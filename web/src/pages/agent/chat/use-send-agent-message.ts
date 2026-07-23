@@ -29,6 +29,7 @@ import {
 import { useParams, useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
+import { MessageWaitSuffix } from '../constant/chat';
 import { AgentChatLogContext } from '../context';
 import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
 import {
@@ -39,6 +40,7 @@ import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
+import { shouldSplitMessage } from '../utils/chat';
 
 export function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
@@ -81,12 +83,21 @@ export function findMessageFromList(eventList: IEventList) {
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
   ) as IMessageEvent;
+  const messageEndEvent = [...eventList]
+    .reverse()
+    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
     audio_binary: audioBinary,
-    attachment: workflowFinished?.data?.outputs?.attachment || {},
-    downloads: workflowFinished?.data?.outputs?.downloads || [],
+    attachment:
+      workflowFinished?.data?.outputs?.attachment ||
+      messageEndEvent?.data?.attachment ||
+      {},
+    downloads:
+      workflowFinished?.data?.outputs?.downloads ||
+      messageEndEvent?.data?.downloads ||
+      [],
   };
 }
 
@@ -298,7 +309,10 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = { agent_id: agentId };
+      const params: Record<string, unknown> = {
+        agent_id: agentId,
+        stream: true,
+      };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
@@ -363,7 +377,7 @@ export const useSendAgentMessage = ({
   );
 
   const sendFormMessage = useCallback(
-    async (body: { agent_id?: string; inputs: Record<string, BeginQuery> }) => {
+    async (body: { inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([, val]) => `${val.name}: ${val.value}`)
@@ -372,12 +386,22 @@ export const useSendAgentMessage = ({
       });
       await send({
         ...body,
+        ...(isShared ? {} : { agent_id: agentId }),
+        stream: true,
         session_id: sessionId,
         ...(releaseMode ? { release: releaseMode } : {}),
       });
       refetch?.();
     },
-    [addNewestOneQuestion, refetch, releaseMode, send, sessionId],
+    [
+      addNewestOneQuestion,
+      agentId,
+      isShared,
+      refetch,
+      releaseMode,
+      send,
+      sessionId,
+    ],
   );
 
   // reset session
@@ -400,7 +424,7 @@ export const useSendAgentMessage = ({
 
   const handlePressEnter = useCallback(
     ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
-      if (trim(value) === '') return;
+      if (trim(value) === '' || !done) return;
       const msgBody = buildRequestBody(value);
       if (done) {
         setValue('');
@@ -450,14 +474,31 @@ export const useSendAgentMessage = ({
     const answer = content || getLatestError(answerList);
 
     if (answerList.length > 0) {
-      addNewestOneAnswer({
-        answer: answer ?? '',
-        audio_binary: audio_binary,
-        attachment: attachment as IAttachment,
-        downloads,
-        id: id,
-        ...inputAnswer,
-      });
+      const shouldSplit = shouldSplitMessage(answerList, content);
+
+      if (shouldSplit) {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+        });
+        addNewestOneAnswer({
+          answer: '',
+          ...inputAnswer,
+          id: `${id}${MessageWaitSuffix}`,
+        });
+      } else {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+          ...inputAnswer,
+        });
+      }
     }
   }, [answerList, addNewestOneAnswer]);
 

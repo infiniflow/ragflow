@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
@@ -40,21 +41,24 @@ const RetrievalForm = () => {
 
   useWatchFormChange(form);
 
+  const ownerTenantId = useOwnerTenantId();
+
   return (
     <Form {...form}>
       <FormWrapper>
         <DescriptionField></DescriptionField>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields></RerankFormFields>
+                <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}

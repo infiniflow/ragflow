@@ -201,7 +201,11 @@ def _load_connector_app(monkeypatch):
             return []
 
         @staticmethod
-        def resume(*_args, **_kwargs):
+        def accessible(*_args, **_kwargs):
+            return True
+
+        @staticmethod
+        def cancel_tasks(*_args, **_kwargs):
             return True
 
         @staticmethod
@@ -237,7 +241,7 @@ def _load_connector_app(monkeypatch):
         "message": message,
         "data": data,
     }
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")
@@ -246,6 +250,7 @@ def _load_connector_app(monkeypatch):
         SERVER_ERROR=500,
         RUNNING=102,
         PERMISSION_ERROR=403,
+        AUTHENTICATION_ERROR=109,
     )
     constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
@@ -259,8 +264,7 @@ def _load_connector_app(monkeypatch):
 
     google_constants_mod = ModuleType("common.data_source.google_util.constant")
     google_constants_mod.WEB_OAUTH_POPUP_TEMPLATE = (
-        "<html><head><title>{title}</title></head>"
-        "<body><h1>{heading}</h1><p>{message}</p><script>{payload_json}</script><script>{auto_close}</script></body></html>"
+        "<html><head><title>{title}</title></head><body><h1>{heading}</h1><p>{message}</p><script>{payload_json}</script><script>{auto_close}</script></body></html>"
     )
     google_constants_mod.GOOGLE_SCOPES = {
         config_mod.DocumentSource.GMAIL: ["scope-gmail"],
@@ -344,7 +348,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     records = {"conn-1": _FakeConnectorRecord({"id": "conn-1", "source": "drive"})}
     update_calls = []
     save_calls = []
-    resume_calls = []
+    cancel_calls = []
     delete_calls = []
 
     monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda cid, payload: update_calls.append((cid, payload)))
@@ -357,7 +361,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda cid: (True, records[cid]))
     monkeypatch.setattr(module.ConnectorService, "list", lambda tenant_id: [{"id": "listed", "tenant": tenant_id}])
     monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda cid, page, page_size: ([{"id": "log-1"}], 9))
-    monkeypatch.setattr(module.ConnectorService, "resume", lambda cid, status: resume_calls.append((cid, status)))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda cid: cancel_calls.append(cid))
     monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda cid: delete_calls.append(cid))
     monkeypatch.setattr(module, "get_uuid", lambda: "generated-id")
 
@@ -367,7 +371,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
     res = _run(module.update_connector("conn-1"))
-    assert update_calls == [("conn-1", {'id': 'conn-1', "refresh_freq": 7, "config": {"x": 1}})]
+    assert update_calls == [("conn-1", {"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
     monkeypatch.setattr(
@@ -396,14 +400,6 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     logs_res = module.list_logs("conn-log")
     assert logs_res["data"] == {"total": 9, "logs": [{"id": "log-1"}]}
 
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": True}))
-    assert _run(module.resume("conn-r1"))["data"] is True
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": False}))
-    assert _run(module.resume("conn-r2"))["data"] is True
-    assert ("conn-r1", module.TaskStatus.SCHEDULE) in resume_calls
-    assert ("conn-r2", module.TaskStatus.CANCEL) in resume_calls
-
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
     monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: "rebuild-failed")
     failed_rebuild = _run(module.rebuild("conn-rb"))
@@ -416,8 +412,43 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
     rm_res = module.rm_connector("conn-rm")
     assert rm_res["data"] is True
-    assert ("conn-rm", module.TaskStatus.CANCEL) in resume_calls
+    assert cancel_calls == ["conn-rm"]
     assert delete_calls == ["conn-rm"]
+
+
+@pytest.mark.p2
+def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
+    """Verify per-id connector routes stop before body parsing or service access."""
+    module = _load_connector_app(monkeypatch)
+
+    touched = []
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda cid, uid: False)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda *_args: touched.append("get_by_id"))
+    monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda *_args: touched.append("list_sync_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda *_args: touched.append("cancel_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda *_args: touched.append("delete_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *_args: touched.append("update_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: touched.append("rebuild"))
+
+    def _get_request_json():
+        touched.append("get_request_json")
+        return _AwaitableValue({"config": {"x": 1}})
+
+    monkeypatch.setattr(module, "get_request_json", _get_request_json)
+
+    responses = [
+        _run(module.update_connector("conn-victim")),
+        module.get_connector("conn-victim"),
+        module.list_logs("conn-victim"),
+        _run(module.rebuild("conn-victim")),
+        module.rm_connector("conn-victim"),
+        _run(module.test_connector("conn-victim")),
+    ]
+
+    assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
+    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["data"] is False for res in responses)
+    assert touched == []
 
 
 @pytest.mark.p2
@@ -572,27 +603,33 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         assert "Authorization session was invalid" in invalid_state.body
         assert module._web_state_cache_key("sid", source) in redis.deleted
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+            }
+        )
         _set_request(module, args={"state": "sid", "error": "denied", "error_description": "permission denied"})
         oauth_error = _run(callback())
         assert "permission denied" in oauth_error.body
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+            }
+        )
         _set_request(module, args={"state": "sid"})
         missing_code = _run(callback())
         assert "Missing authorization code" in missing_code.body
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-            "code_verifier": "state-code-verifier",
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+                "code_verifier": "state-code-verifier",
+            }
+        )
         _set_request(module, args={"state": "sid", "code": "code-123"})
         success = _run(callback())
         assert "Authorization completed successfully." in success.body
@@ -621,16 +658,12 @@ def test_poll_google_web_result_matrix(monkeypatch):
     pending = _run(module.poll_google_web_result())
     assert pending["code"] == module.RetCode.RUNNING
 
-    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps(
-        {"user_id": "another-user", "credentials": "token-x"}
-    )
+    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps({"user_id": "another-user", "credentials": "token-x"})
     _set_request(module, args={"type": "gmail"}, json_body={"flow_id": "flow-1"})
     permission_error = _run(module.poll_google_web_result())
     assert permission_error["code"] == module.RetCode.PERMISSION_ERROR
 
-    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps(
-        {"user_id": "tenant-1", "credentials": "token-ok"}
-    )
+    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps({"user_id": "tenant-1", "credentials": "token-ok"})
     _set_request(module, args={"type": "gmail"}, json_body={"flow_id": "flow-1"})
     success = _run(module.poll_google_web_result())
     assert success["code"] == 0
@@ -683,16 +716,12 @@ def test_box_oauth_start_callback_and_poll_matrix(monkeypatch):
     invalid_session = _run(module.box_web_oauth_callback())
     assert invalid_session["code"] == module.RetCode.ARGUMENT_ERROR
 
-    redis.store[module._web_state_cache_key("flow-box", "box")] = json.dumps(
-        {"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"}
-    )
+    redis.store[module._web_state_cache_key("flow-box", "box")] = json.dumps({"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"})
     _set_request(module, args={"state": "flow-box", "code": "abc", "error": "access_denied", "error_description": "denied"})
     callback_error = _run(module.box_web_oauth_callback())
     assert "denied" in callback_error.body
 
-    redis.store[module._web_state_cache_key("flow-ok", "box")] = json.dumps(
-        {"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"}
-    )
+    redis.store[module._web_state_cache_key("flow-ok", "box")] = json.dumps({"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"})
     _set_request(module, args={"state": "flow-ok", "code": "code-ok"})
     callback_success = _run(module.box_web_oauth_callback())
     assert "Authorization completed successfully." in callback_success.body
@@ -709,9 +738,7 @@ def test_box_oauth_start_callback_and_poll_matrix(monkeypatch):
     permission_error = _run(module.poll_box_web_result())
     assert permission_error["code"] == module.RetCode.PERMISSION_ERROR
 
-    redis.store[module._web_result_cache_key("flow-ok", "box")] = json.dumps(
-        {"user_id": "tenant-1", "access_token": "at", "refresh_token": "rt"}
-    )
+    redis.store[module._web_result_cache_key("flow-ok", "box")] = json.dumps({"user_id": "tenant-1", "access_token": "at", "refresh_token": "rt"})
     poll_success = _run(module.poll_box_web_result())
     assert poll_success["code"] == 0
     assert poll_success["data"]["credentials"]["access_token"] == "at"

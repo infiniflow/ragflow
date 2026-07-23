@@ -28,7 +28,7 @@ It consists of a server-side Service and a command-line client (CLI), both imple
    ```bash
    python admin/server/admin_server.py
    ```
-   The service will start and listen for incoming connections from the CLI on the configured port. 
+   The service will start and listen for incoming connections from the CLI on the configured port.
 
 #### Using docker image
 
@@ -48,7 +48,7 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 1.  Ensure the Admin Service is running.
 2.  Install ragflow-cli.
     ```bash
-    pip install ragflow-cli==0.25.2
+    pip install ragflow-cli==0.26.4
     ```
 3.  Launch the CLI client:
     ```bash
@@ -58,9 +58,9 @@ It consists of a server-side Service and a command-line client (CLI), both imple
     The default password is admin.
 
     **Parameters:**
-    
+
     - -h: RAGFlow admin server host address
-    
+
     - -p: RAGFlow admin server port
 
 

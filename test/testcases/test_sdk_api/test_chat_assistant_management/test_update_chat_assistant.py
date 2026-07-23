@@ -15,13 +15,14 @@
 #
 
 import pytest
+from common import valid_chat_llm_id
 from configs import CHAT_ASSISTANT_NAME_LIMIT
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 
 
 class TestChatAssistantUpdate:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_rejects_non_dict(self, add_chat_assistants_func):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
@@ -30,7 +31,7 @@ class TestChatAssistantUpdate:
             chat_assistant.update.__wrapped__(chat_assistant, "bad")
         assert "`update_message` must be a dict" in str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_update_raises_on_nonzero_response(self, add_chat_assistants_func, monkeypatch):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
@@ -45,7 +46,7 @@ class TestChatAssistantUpdate:
             chat_assistant.update({"name": "error-case"})
         assert "boom" in str(exception_info.value)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_update_uses_patch_for_partial_payload(self, add_chat_assistants_func, monkeypatch):
         _, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
@@ -109,7 +110,7 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "llm_setting, expected_message",
         [
-            ({"model_name": "glm-4"}, ""),
+            ({"model_name": valid_chat_llm_id}, ""),
             ({"model_name": "unknown"}, "`llm_id` unknown doesn't exist"),
             ({"temperature": 0}, ""),
             ({"temperature": 1}, ""),
@@ -142,7 +143,10 @@ class TestChatAssistantUpdate:
     def test_llm_setting(self, client, add_chat_assistants_func, llm_setting, expected_message):
         dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
+        llm_setting = dict(llm_setting)
         llm_id = llm_setting.pop("model_name", None)
+        if callable(llm_id):
+            llm_id = llm_id(client)
         payload = {"name": "llm_test", "dataset_ids": [dataset.id], "llm_setting": llm_setting}
         if llm_id is not None:
             payload["llm_id"] = llm_id

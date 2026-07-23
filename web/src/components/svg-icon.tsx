@@ -72,6 +72,9 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [
@@ -81,11 +84,30 @@ const svgIcons = [
   LLMFactory.Gemini,
   LLMFactory.StepFun,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
+  LLMFactory.PaddleOCRNet,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
   LLMFactory.RAGcon,
+  LLMFactory.SoMark,
+  LLMFactory.NewAPI,
+  LLMFactory.Astraflow,
+  LLMFactory.AstraflowCN,
+  LLMFactory.FuturMix,
+  LLMFactory.Xiaomi,
+  LLMFactory.YouDao,
+  LLMFactory.BAAI,
+  LLMFactory.NomicAI,
+  LLMFactory.SentenceTransformers,
+  LLMFactory.Grok,
+  LLMFactory.FastEmbed,
+  LLMFactory.HuaweiCloud,
+  LLMFactory.OrcaRouter,
+  LLMFactory.Qiniu,
+  LLMFactory.TokenHub,
+  LLMFactory.FunASR,
 ];
 
 export const LlmIcon = ({

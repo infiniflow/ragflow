@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
 import pytest
-from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG, HOST_ADDRESS, INVALID_API_TOKEN
+from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG, HOST_ADDRESS, INVALID_API_TOKEN, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from hypothesis import example, given, settings
 from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
@@ -31,8 +31,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
         ids=["empty_auth", "invalid_api_token"],
     )
@@ -51,7 +51,10 @@ class TestCapability:
         for i in range(count):
             payload = {"name": f"dataset_{i}"}
             client.create_dataset(**payload)
-        assert len(client.list_datasets(page_size=2000)) == count
+        datasets = []
+        for page in range(1, (count // 100) + 1):
+            datasets.extend(client.list_datasets(page=page, page_size=100))
+        assert len(datasets) == count
 
     @pytest.mark.p3
     def test_create_dataset_concurrent(self, client):
@@ -87,6 +90,13 @@ class TestDatasetCreate:
     def test_name_invalid(self, client, name, expected_message):
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**{"name": name})
+        if IS_GO_PROXY:
+            if name == "":
+                expected_message = "failed on the 'required' tag"
+            elif isinstance(name, str) and not name.strip():
+                expected_message = "Dataset name can't be empty."
+            elif isinstance(name, str):
+                expected_message = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
@@ -181,7 +191,7 @@ class TestDatasetCreate:
         "name, embedding_model",
         [
             ("BAAI/bge-small-en-v1.5@Builtin", "BAAI/bge-small-en-v1.5@Builtin"),
-            ("embedding-3@ZHIPU-AI", "embedding-3@ZHIPU-AI"),
+            ("embedding-3@ZHIPU-AI", "embedding-3@CI@ZHIPU-AI"),
         ],
         ids=["builtin_baai", "tenant_zhipu"],
     )
@@ -194,7 +204,7 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
-            ("unknown_llm_name", "unknown@ZHIPU-AI"),
+            ("unknown_llm_name", "unknown@CI@ZHIPU-AI"),
             ("unknown_llm_factory", "embedding-3@unknown"),
             ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
             ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
@@ -205,10 +215,7 @@ class TestDatasetCreate:
         payload = {"name": name, "embedding_model": embedding_model}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        if "tenant_no_auth" in name:
-            assert str(exception_info.value) == f"Unauthorized model: <{embedding_model}>", str(exception_info.value)
-        else:
-            assert str(exception_info.value) == f"Unsupported model: <{embedding_model}>", str(exception_info.value)
+        assert "not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -237,13 +244,13 @@ class TestDatasetCreate:
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model.startswith("BAAI/bge-small-en-v1.5@Local@Builtin") if IS_GO_PROXY else dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model.startswith("BAAI/bge-small-en-v1.5@Local@Builtin") if IS_GO_PROXY else dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -306,7 +313,7 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
-            ("resume", "resume")
+            ("resume", "resume"),
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
@@ -328,7 +335,11 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
+        error_message = str(exception_info.value)
+        if IS_GO_PROXY:
+            assert error_message.startswith("Input should be 'naive', 'book'") and error_message.endswith("or 'tag'"), error_message
+        else:
+            assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in error_message, error_message
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, client):

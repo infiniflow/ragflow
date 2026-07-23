@@ -5,6 +5,10 @@ services:
     image: elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
+    # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
+    # entrypoint.sh needs a writable temp dir for bash here-documents.
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     ports:
       - ${ES_PORT}:9200
     env_file: .env
@@ -72,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.0-dev6
+    image: infiniflow/infinity:v0.7.2-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -100,10 +104,16 @@ services:
     profiles:
       - oceanbase
     image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - ./oceanbase/data:/root/ob
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
@@ -175,7 +185,7 @@ services:
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
+    image: mysql:8.0.40
     env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
@@ -240,6 +250,40 @@ services:
       timeout: 10s
       retries: 120
 
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  nats:
+    profiles:
+      - ragflow-go
+    image: nats:2.14.2
+    ports:
+      - ${NATS_PORT:-4222}:4222
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    command: -js -sd /data
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nats-server", "--health-check"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
 
   tei-cpu:
     profiles:
@@ -298,6 +342,37 @@ services:
     restart: unless-stopped
 
 
+  clickhouse:
+    profiles:
+      - clickhouse
+    image: clickhouse/clickhouse-server:26.5.5.8
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
+    env_file: .env
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-ragflow}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-infini_rag_flow}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USER:-ragflow}", "--password", "${CLICKHOUSE_PASSWORD:-infini_rag_flow}", "-q", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+
 volumes:
   esdata01:
     driver: local
@@ -318,6 +393,10 @@ volumes:
   tei_data:
     driver: local
   kibana_data:
+    driver: local
+  nats_data:
+    driver: local
+  clickhouse_data:
     driver: local
 
 networks:

@@ -14,6 +14,7 @@ import {
 import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -28,7 +29,7 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
+import { isGoBackend } from '@/utils/backend-runtime';
 import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
@@ -89,14 +90,12 @@ export function DatasetTable({
   //   metaRecord,
   // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
-  const { knowledgeBase } = useKnowledgeBaseContext();
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
     showManageMetadataModal,
     showLog,
-    datasetId: knowledgeBase?.id,
   });
 
   const currentPagination = useMemo(() => {
@@ -131,7 +130,7 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+      <Table rootClassName="max-h-[calc(100vh-280px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -179,7 +178,7 @@ export function DatasetTable({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
+      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-8">
         <div className="space-x-2">
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}
@@ -190,19 +189,29 @@ export function DatasetTable({
           ></RAGFlowPagination>
         </div>
       </div>
-      {changeParserVisible && (
-        <ChunkMethodDialog
-          documentId={changeParserRecord.id}
-          parserId={changeParserRecord.chunk_method}
-          pipelineId={changeParserRecord.pipeline_id}
-          parserConfig={changeParserRecord.parser_config}
-          documentExtension={getExtension(changeParserRecord.name)}
-          onOk={onChangeParserOk}
-          visible={changeParserVisible}
-          hideModal={hideChangeParserModal}
-          loading={changeParserLoading}
-        ></ChunkMethodDialog>
-      )}
+      {changeParserVisible &&
+        (isGoBackend() ? (
+          <DocumentPipelineDialog
+            parserId={changeParserRecord.chunk_method}
+            pipelineId={changeParserRecord.pipeline_id}
+            parserConfig={changeParserRecord.parser_config}
+            onOk={onChangeParserOk}
+            hideModal={hideChangeParserModal}
+            loading={changeParserLoading}
+          ></DocumentPipelineDialog>
+        ) : (
+          <ChunkMethodDialog
+            documentId={changeParserRecord.id}
+            parserId={changeParserRecord.chunk_method}
+            pipelineId={changeParserRecord.pipeline_id}
+            parserConfig={changeParserRecord.parser_config}
+            documentExtension={getExtension(changeParserRecord.name)}
+            onOk={onChangeParserOk}
+            visible={changeParserVisible}
+            hideModal={hideChangeParserModal}
+            loading={changeParserLoading}
+          ></ChunkMethodDialog>
+        ))}
 
       {renameVisible && (
         <RenameDialog

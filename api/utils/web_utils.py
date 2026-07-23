@@ -40,83 +40,17 @@ ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
 RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
 
 
-CONTENT_TYPE_MAP = {
-    # Office
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "doc": "application/msword",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    # Text/code
-    "txt": "text/plain",
-    "py": "text/plain",
-    "js": "text/plain",
-    "java": "text/plain",
-    "c": "text/plain",
-    "cpp": "text/plain",
-    "h": "text/plain",
-    "php": "text/plain",
-    "go": "text/plain",
-    "ts": "text/plain",
-    "sh": "text/plain",
-    "cs": "text/plain",
-    "kt": "text/plain",
-    "sql": "text/plain",
-    # Web
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "mdx": "text/markdown",
-    "htm": "text/html",
-    "html": "text/html",
-    "json": "application/json",
-    # Image formats
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "bmp": "image/bmp",
-    "tiff": "image/tiff",
-    "tif": "image/tiff",
-    "webp": "image/webp",
-    "svg": "image/svg+xml",
-    "ico": "image/x-icon",
-    "avif": "image/avif",
-    "heic": "image/heic",
-    # PPTX
-    "ppt": "application/vnd.ms-powerpoint",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-}
-
-
-FORCE_ATTACHMENT_EXTENSIONS = {
-    "htm",
-    "html",
-    "shtml",
-    "xht",
-    "xhtml",
-    "xml",
-    "mhtml",
-    "svg",
-}
-
-
-FORCE_ATTACHMENT_CONTENT_TYPES = {
-    "text/html",
-    "image/svg+xml",
-    "application/xhtml+xml",
-    "text/xml",
-    "application/xml",
-    "multipart/related",
-}
-
-
-def should_force_attachment(ext: str | None, content_type: str | None = None) -> bool:
-    normalized_ext = (ext or "").lower().strip(".")
-    if normalized_ext in FORCE_ATTACHMENT_EXTENSIONS:
-        return True
-    normalized_type = (content_type or "").lower()
-    return normalized_type in FORCE_ATTACHMENT_CONTENT_TYPES
+from api.utils.file_response import (  # noqa: F401
+    CONTENT_TYPE_MAP,
+    FORCE_ATTACHMENT_CONTENT_TYPES,
+    FORCE_ATTACHMENT_EXTENSIONS,
+    agent_attachment_preview_path,
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+    sanitize_content_disposition_filename,
+    should_force_attachment,
+)
 
 
 def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
@@ -173,6 +107,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
     try:
         WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
+        pass
+
+    try:
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -181,8 +118,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         }
         calculated_print_options.update(print_options)
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
-        driver.quit()
         return base64.b64decode(result["data"])
+    finally:
+        driver.quit()
 
 
 def is_valid_url(url: str) -> bool:
@@ -224,7 +162,8 @@ async def send_email_html(to_email: str, subject: str, template_key: str, **cont
     smtp = aiosmtplib.SMTP(
         hostname=settings.MAIL_SERVER,
         port=settings.MAIL_PORT,
-        use_tls=True,
+        use_tls=settings.MAIL_USE_SSL,
+        start_tls=settings.MAIL_USE_TLS,
         timeout=10,
     )
 

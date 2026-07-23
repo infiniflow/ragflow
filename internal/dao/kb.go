@@ -17,16 +17,41 @@
 package dao
 
 import (
+	"errors"
+	"fmt"
 	"path"
 	"ragflow/internal/entity"
 
 	"strconv"
 	"strings"
-	"time"
+
+	"gorm.io/gorm"
 )
+
+// GetTenantIDByKBID is a convenience function that retrieves the tenant ID
+// for a given knowledge base ID. It is a package-level helper so both the
+// service and engine layers can use it without circular imports.
+func GetTenantIDByKBID(kbID string) (string, error) {
+	kbDAO := NewKnowledgebaseDAO()
+	kb, err := kbDAO.GetByID(kbID)
+	if err != nil {
+		return "", fmt.Errorf("knowledgebase not found: %w", err)
+	}
+	return kb.TenantID, nil
+}
 
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
+
+// IsNotFoundErr returns true if the error indicates a record not found
+func IsNotFoundErr(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+// IsDuplicateKeyErr returns true if the error is a unique-constraint violation.
+func IsDuplicateKeyErr(err error) bool {
+	return errors.Is(err, gorm.ErrDuplicatedKey)
+}
 
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
@@ -83,7 +108,7 @@ func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*entity.Knowledgebase, er
 // GetByName retrieves a knowledge base by name and tenant ID
 func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*entity.Knowledgebase, error) {
 	var kb entity.Knowledgebase
-	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
+	err := DB.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +172,7 @@ func (dao *KnowledgebaseDAO) Count(filters map[string]interface{}) (int64, error
 
 // GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
 // This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID string) ([]*entity.KnowledgebaseListItem, int64, error) {
+func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID, id, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
@@ -160,6 +185,14 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
 		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
 			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
+
+	if id != "" {
+		query = query.Where("knowledgebase.id = ?", id)
+	}
+
+	if name != "" {
+		query = query.Where("knowledgebase.name = ?", name)
+	}
 
 	if keywords != "" {
 		query = query.Where("LOWER(knowledgebase.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -233,14 +266,32 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail
 	return &detail, nil
 }
 
-// Accessible checks if a knowledge base is accessible by a user
-// This matches the Python accessible method
-func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
+// Accessible checks if a knowledge base is accessible by a user.
+// This matches the Python accessible method:
+// 1. KB must exist and be VALID
+// 2. If user is the owner tenant, return true
+// 3. If permission is "me", only owner tenant can access
+// 4. If permission is "team", user must be a member of the tenant
+func (dao *KnowledgebaseDAO) Accessible(datasetID, userID string) bool {
+	var kb entity.Knowledgebase
+	err := DB.Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).First(&kb).Error
+	if err != nil {
+		return false
+	}
+
+	// User is the owner tenant itself
+	if kb.TenantID == userID {
+		return true
+	}
+
+	// If permission is "me", only the owner can access
+	if kb.Permission == string(entity.TenantPermissionMe) {
+		return false
+	}
+
 	var count int64
-	err := DB.Table("knowledgebase").
-		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
-		Where("knowledgebase.id = ? AND user_tenant.user_id = ? AND knowledgebase.status = ?",
-			kbID, userID, string(entity.StatusValid)).
+	err = DB.Table("user_tenant").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
 		Count(&count).Error
 
 	if err != nil {
@@ -314,30 +365,22 @@ func splitNameCounter(name string) (string, int) {
 // AtomicIncreaseDocNumByID atomically increments the document count
 // This matches the Python atomic_increase_doc_num_by_id method
 func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num":     DB.Raw("doc_num + 1"),
-			"update_time": now,
-			"update_date": nowDate,
+			"doc_num": DB.Raw("doc_num + 1"),
 		}).Error
 }
 
 // DecreaseDocumentNum decreases document, chunk, and token counts
 // This matches the Python decrease_document_num_in_delete method
 func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, tokenNum int64) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num":     DB.Raw("doc_num - ?", docNum),
-			"chunk_num":   DB.Raw("chunk_num - ?", chunkNum),
-			"token_num":   DB.Raw("token_num - ?", tokenNum),
-			"update_time": now,
-			"update_date": nowDate,
+			"doc_num":   DB.Raw("doc_num - ?", docNum),
+			"chunk_num": DB.Raw("chunk_num - ?", chunkNum),
+			"token_num": DB.Raw("token_num - ?", tokenNum),
 		}).Error
 }
 

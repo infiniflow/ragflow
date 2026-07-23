@@ -54,14 +54,14 @@ CHAT_MDL = ""
 EMBEDDING_MDL = ""
 RERANK_MDL = ""
 ASR_MDL = ""
-IMAGE2TEXT_MDL = ""
+VISION_MDL = ""
 
 
 CHAT_CFG = ""
 EMBEDDING_CFG = ""
 RERANK_CFG = ""
 ASR_CFG = ""
-IMAGE2TEXT_CFG = ""
+VISION_CFG = ""
 API_KEY = None
 PARSERS = None
 HOST_IP = None
@@ -82,9 +82,9 @@ HTTP_APP_KEY = None
 GITHUB_OAUTH = None
 FEISHU_OAUTH = None
 OAUTH_CONFIG = None
-DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
-DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
-DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch")
+DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
+DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
 
 
 docStoreConn = None
@@ -130,16 +130,35 @@ EMBEDDING_BATCH_SIZE: int = 16
 
 PARALLEL_DEVICES: int = 0
 
-STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
+STORAGE_IMPL_TYPE = os.getenv("STORAGE_IMPL", "MINIO")
 STORAGE_IMPL = None
 
-def get_svr_queue_name(priority: int) -> str:
-    if priority == 0:
-        return SVR_QUEUE_NAME
-    return f"{SVR_QUEUE_NAME}_{priority}"
 
-def get_svr_queue_names():
-    return [get_svr_queue_name(priority) for priority in [1, 0]]
+def get_svr_queue_name(priority: int, suffix: str = "common") -> str:
+    """
+    Generate queue name with two dimensions: priority and suffix.
+
+    Args:
+        priority: Task priority (0=low, 1=high)
+        suffix: Task type suffix (common/resume/graphrag/raptor/mindmap)
+               Currently only "common" is used, other suffixes are reserved.
+
+    Returns:
+        Queue name string
+
+    Examples:
+        get_svr_queue_name(0, "common") -> "te.0.common"
+        get_svr_queue_name(1, "common") -> "te.1.common"
+        get_svr_queue_name(0) -> "te.0.common"  # default suffix="common"
+
+    """
+    return f"{SVR_QUEUE_NAME}.{priority}.common"
+
+
+def get_svr_queue_names(suffix: str):
+    """Return queue names sorted by priority (high to low)."""
+    return [get_svr_queue_name(priority, suffix) for priority in [1, 0]]
+
 
 def init_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
@@ -159,6 +178,7 @@ def get_secret_key():
         return _get_or_create_secret_key()
     return SECRET_KEY
 
+
 def _get_or_create_secret_key():
     # secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
     # if secret_key and len(secret_key) >= 32:
@@ -177,6 +197,7 @@ def _get_or_create_secret_key():
     if generated_key == secret_key:
         logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
     return secret_key
+
 
 class StorageFactory:
     storage_mapping = {
@@ -198,7 +219,7 @@ def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
-    
+
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}
     llm_default_models = llm_settings.get("default_models", {}) or {}
@@ -238,19 +259,19 @@ def init_settings():
         "parsers", "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
     )
 
-    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
+    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, VISION_MDL
     chat_entry = _parse_model_entry(llm_default_models.get("chat_model", CHAT_MDL))
     embedding_entry = _parse_model_entry(llm_default_models.get("embedding_model", EMBEDDING_MDL))
     rerank_entry = _parse_model_entry(llm_default_models.get("rerank_model", RERANK_MDL))
     asr_entry = _parse_model_entry(llm_default_models.get("asr_model", ASR_MDL))
-    image2text_entry = _parse_model_entry(llm_default_models.get("image2text_model", IMAGE2TEXT_MDL))
+    vision_entry = _parse_model_entry(llm_default_models.get("vision_model", VISION_MDL))
 
-    global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
+    global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, VISION_CFG
     CHAT_CFG = _resolve_per_model_config(chat_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     RERANK_CFG = _resolve_per_model_config(rerank_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     ASR_CFG = _resolve_per_model_config(asr_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
-    IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
+    VISION_CFG = _resolve_per_model_config(vision_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
     EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
@@ -259,7 +280,7 @@ def init_settings():
         EMBEDDING_MDL = os.getenv("TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5")
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
-    IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
+    VISION_MDL = VISION_CFG.get("model", "") or ""
 
     global HOST_IP, HOST_PORT
     HOST_IP = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
@@ -267,7 +288,6 @@ def init_settings():
 
     global SECRET_KEY
     SECRET_KEY = init_secret_key()
-
 
     # authentication
     authentication_conf = get_base_config("authentication", {})
@@ -282,18 +302,14 @@ def init_settings():
 
     global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
-    DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
-    DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
+    DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
+    DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
@@ -313,44 +329,38 @@ def init_settings():
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif DOC_ENGINE == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
-    if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
+    if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:
         AZURE = get_base_config("azure", {})
-    elif STORAGE_IMPL_TYPE == 'AWS_S3':
+    elif STORAGE_IMPL_TYPE == "AWS_S3":
         S3 = get_base_config("s3", {})
-    elif STORAGE_IMPL_TYPE == 'MINIO':
+    elif STORAGE_IMPL_TYPE == "MINIO":
         MINIO = decrypt_database_config(name="minio")
-    elif STORAGE_IMPL_TYPE == 'OSS':
+    elif STORAGE_IMPL_TYPE == "OSS":
         OSS = get_base_config("oss", {})
-    elif STORAGE_IMPL_TYPE == 'GCS':
+    elif STORAGE_IMPL_TYPE == "GCS":
         GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
     storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
-    
+
     # Define crypto settings
     crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
-    
+
     # Check if encryption is enabled
     if crypto_enabled:
         try:
             from rag.utils.encrypted_storage import create_encrypted_storage
+
             algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
             crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
-            
-            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
-                algorithm=algorithm, 
-                key=crypto_key, 
-                encryption_enabled=crypto_enabled)
+
+            STORAGE_IMPL = create_encrypted_storage(storage_impl, algorithm=algorithm, key=crypto_key, encryption_enabled=crypto_enabled)
         except Exception as e:
             logging.error(f"Failed to initialize encrypted storage: {e}")
             STORAGE_IMPL = storage_impl
@@ -395,10 +405,12 @@ def check_and_install_torch():
     try:
         pip_install_torch()
         import torch.cuda
+
         PARALLEL_DEVICES = torch.cuda.device_count()
         logging.info(f"found {PARALLEL_DEVICES} gpus")
     except Exception:
         logging.info("can't import package 'torch'")
+
 
 def _parse_model_entry(entry):
     if isinstance(entry, str):
@@ -430,7 +442,7 @@ def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup
         "base_url": m_base_url,
     }
 
+
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
     logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
-

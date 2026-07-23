@@ -153,6 +153,8 @@ def change_password(username):
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
+        if current_user.email == username:
+            return error_response(f"can't alter current user status: {username}", 409)
         if not data or "activate_status" not in data:
             return error_response("Activation status is required", 400)
         activate_status = data["activate_status"]
@@ -421,7 +423,7 @@ def get_user_permission(user_name: str):
 def set_variable():
     try:
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
 
         if "var_value" not in data:
@@ -449,7 +451,7 @@ def get_variable():
 
         # get var
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
         var_name: str = data["var_name"]
         res = SettingsMgr.get_by_name(var_name)

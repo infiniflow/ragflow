@@ -55,7 +55,7 @@ export default {
       submit: 'إرسال',
       clear: 'مسح',
       embedIntoSite: 'تضمين في صفحة الويب',
-      openInNewTab: 'الدردشة في علامة تبويب جديدة',
+      openInNewTab: 'فتح في علامة تبويب جديدة',
       previousPage: 'سابق',
       nextPage: 'التالي',
       add: 'يضيف',
@@ -73,6 +73,7 @@ export default {
       },
       selected: 'محدد',
       seeAll: 'عرض الكل',
+      owner: 'المالك',
     },
     login: {
       loginTitle: 'سجّل الدخول إلى حسابك',
@@ -207,7 +208,6 @@ export default {
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',
-        type: 'يكتب',
         fieldNameInvalid:
           'يمكن أن يحتوي اسم الحقل على أحرف أو شرطات سفلية فقط.',
         builtIn: 'مدمج',
@@ -235,6 +235,7 @@ export default {
         value: 'قيمة',
         action: 'فعل',
         field: 'مجال',
+        type: 'نوع',
         description: 'وصف',
         fieldName: 'اسم الحقل',
         editMetadata: 'تحرير البيانات الوصفية',
@@ -625,6 +626,8 @@ export default {
         text: 'نص',
       },
       chunk: 'قطعة',
+      createChunk: 'إنشاء مقطع',
+      editChunk: 'تعديل المقطع',
       bulk: 'حجم كبير',
       selectAll: 'حدد الكل',
       enabledSelected: 'تمكين المحدد',
@@ -830,6 +833,12 @@ export default {
         'أثناء تحليل المستند، تم إنشاء معلومات جدول المحتويات (راجع خيار "تمكين استخراج جدول المحتويات" في الطريقة العامة). يسمح هذا للنموذج الكبير بإرجاع عناصر جدول المحتويات ذات الصلة باستعلام المستخدم، وبالتالي استخدام هذه العناصر لاسترداد الأجزاء ذات الصلة وتطبيق الترجيح على هذه القطع أثناء عملية الفرز. يحاكي هذا الأسلوب سلوك الإنسان في البحث عن المعلومات في الكتب.',
       batchDeleteSessions: 'حذف دفعة',
       deleteSelectedConfirm: 'هل تريد حذف الجلسة/الجلسات المحددة ({{count}})؟',
+      showChunkMetadata: 'عرض بيانات التعريف للمقطع',
+      showChunkMetadataTip:
+        'عرض بيانات التعريف للمستند (مثل العنوان ورقم الصفحة وتاريخ الرفع) جنبًا إلى جنب مع مقاطع النص المسترجعة',
+      metadataFields: 'حقول البيانات التعريفية',
+      metadataFieldsTip:
+        'حدد حقول البيانات التعريفية التي تريد عرضها مع كل مقطع',
     },
     setting: {
       Verify: 'يؤكد',
@@ -942,7 +951,7 @@ export default {
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+        'The Base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
@@ -1127,7 +1136,7 @@ export default {
       modelType: 'نوع النموذج',
       modelTypeMessage: 'الرجاء إدخال نوع النموذج الخاص بك!',
       addLlmBaseUrl: 'عنوان URL الأساسي',
-      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك!',
+      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك',
       paddleocr: {
         apiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
         apiUrlPlaceholder:
@@ -1145,17 +1154,17 @@ export default {
       FishAudioLink: 'كيفية استخدام فيش اوديو',
       TencentCloudLink: 'كيفية استخدام TencentCloud ASR',
       volcModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك!',
-      addEndpointID: 'معرف نقطة النهاية للنموذج',
-      endpointIDMessage: 'يرجى إدخال معرف نقطة النهاية الخاص بك للنموذج',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'يرجى إدخال Model ID للنموذج',
       addArkApiKey: 'فولك ARK_API_KEY',
       ArkApiKeyMessage: 'الرجاء إدخال ARK_API_KEY الخاص بك',
-      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك!',
+      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك',
       addBedrockEngineAK: 'مفتاح الوصول',
       bedrockAKMessage: 'الرجاء إدخال مفتاح الوصول الخاص بك',
       addBedrockSK: 'المفتاح السري',
       bedrockSKMessage: 'الرجاء إدخال المفتاح السري الخاص بك',
       bedrockRegion: 'منطقة أوس',
-      bedrockRegionMessage: 'الرجاء التحديد!',
+      bedrockRegionMessage: 'الرجاء التحديد',
       'us-east-2': 'شرق الولايات المتحدة (أوهايو)',
       'us-east-1': 'شرق الولايات المتحدة (شمال فرجينيا)',
       'us-west-1': 'غرب الولايات المتحدة (شمال كاليفورنيا)',
@@ -1200,8 +1209,8 @@ export default {
       SparkAPIPasswordMessage: 'يرجى إدخال كلمة مرور API الخاصة بك',
       addSparkAPPID: 'معرف تطبيق سبارك',
       SparkAPPIDMessage: 'يرجى إدخال معرف التطبيق الخاص بك',
-      addSparkAPISecret: 'سبارك API Secret',
-      SparkAPISecretMessage: 'يرجى إدخال APISecret الخاص بك',
+      addSparkAPISecret: 'سبارك API SECRET',
+      SparkAPISecretMessage: 'يرجى إدخال API SECRET الخاص بك',
       addSparkAPIKey: 'سبارك APIKey',
       SparkAPIKeyMessage: 'الرجاء إدخال APIKey الخاص بك',
       yiyanModelNameMessage: 'الرجاء إدخال اسم النموذج',
@@ -2227,6 +2236,10 @@ export default {
       },
       saveToMemory: 'حفظ في الذاكرة',
       retrievalFrom: 'الاسترجاع من',
+      tags: 'العلامات',
+      canvasCategory: 'فئة قماش',
+      id: 'ID',
+      logTitle: 'العنوان',
     },
     llmTools: {
       bad_calculator: {
@@ -2284,6 +2297,7 @@ export default {
       okText: 'يحفظ',
       cancelText: 'يلغي',
       chooseDataset: 'الرجاء تحديد مجموعة البيانات أولا',
+      selectLocalePlaceholder: 'اختر لغة',
     },
     language: {
       english: 'الإنجليزية',

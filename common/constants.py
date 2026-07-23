@@ -16,7 +16,7 @@
 
 import os
 from enum import Enum, IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -66,6 +66,18 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveStatusEnum(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
+
+
+class ModelVerifyStatusEnum(Enum):
+    SUCCESS = "success"
+    FAIL = "fail"
+    UNKNOWN = "unknown"
+
+
 class ActiveEnum(Enum):
     ACTIVE = "1"
     INACTIVE = "0"
@@ -74,11 +86,21 @@ class ActiveEnum(Enum):
 class LLMType(StrEnum):
     CHAT = "chat"
     EMBEDDING = "embedding"
-    SPEECH2TEXT = "speech2text"
-    IMAGE2TEXT = "image2text"
+    ASR = "asr"
+    VISION = "vision"
     RERANK = "rerank"
     TTS = "tts"
     OCR = "ocr"
+
+
+class ModelTypeBinary(Enum):
+    CHAT = 0b0000001  # 1 << 0 = 1
+    EMBEDDING = 0b0000010  # 1 << 1 = 2
+    ASR = 0b0000100  # 1 << 2 = 4
+    VISION = 0b0001000  # 1 << 3 = 8
+    RERANK = 0b0010000  # 1 << 4 = 16
+    TTS = 0b0100000  # 1 << 5 = 32
+    OCR = 0b1000000  # 1 << 6 = 64
 
 
 class TaskStatus(StrEnum):
@@ -91,6 +113,11 @@ class TaskStatus(StrEnum):
 
 
 VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
+
+
+class ConnectorTaskType(StrEnum):
+    SYNC = "sync"
+    PRUNE = "prune"
 
 
 class ParserType(StrEnum):
@@ -117,6 +144,7 @@ class FileSource(StrEnum):
     RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
@@ -142,7 +170,12 @@ class FileSource(StrEnum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    BIGQUERY = "bigquery"
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
+    ONEDRIVE = "onedrive"
+    OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -152,9 +185,19 @@ class PipelineTaskType(StrEnum):
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
     MEMORY = "Memory"
+    ARTIFACT = "Artifact"
+    SKILL = "Skill"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
+VALID_PIPELINE_TASK_TYPES = {
+    PipelineTaskType.PARSE,
+    PipelineTaskType.DOWNLOAD,
+    PipelineTaskType.RAPTOR,
+    PipelineTaskType.GRAPH_RAG,
+    PipelineTaskType.MINDMAP,
+    PipelineTaskType.ARTIFACT,
+    PipelineTaskType.SKILL,
+}
 
 
 class MCPServerType(StrEnum):
@@ -223,6 +266,19 @@ class ForgettingPolicy(StrEnum):
 # ENV_MINERU_OUTPUT_DIR = "MINERU_OUTPUT_DIR"
 # ENV_MINERU_BACKEND = "MINERU_BACKEND"
 # ENV_MINERU_DELETE_OUTPUT = "MINERU_DELETE_OUTPUT"
+# ENV_SOMARK_BASE_URL = "SOMARK_BASE_URL"
+# ENV_SOMARK_API_KEY = "SOMARK_API_KEY"
+# ENV_SOMARK_IMAGE_FORMAT = "SOMARK_IMAGE_FORMAT"
+# ENV_SOMARK_FORMULA_FORMAT = "SOMARK_FORMULA_FORMAT"
+# ENV_SOMARK_TABLE_FORMAT = "SOMARK_TABLE_FORMAT"
+# ENV_SOMARK_CS_FORMAT = "SOMARK_CS_FORMAT"
+# ENV_SOMARK_ENABLE_TEXT_CROSS_PAGE = "SOMARK_ENABLE_TEXT_CROSS_PAGE"
+# ENV_SOMARK_ENABLE_TABLE_CROSS_PAGE = "SOMARK_ENABLE_TABLE_CROSS_PAGE"
+# ENV_SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION = "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION"
+# ENV_SOMARK_ENABLE_INLINE_IMAGE = "SOMARK_ENABLE_INLINE_IMAGE"
+# ENV_SOMARK_ENABLE_TABLE_IMAGE = "SOMARK_ENABLE_TABLE_IMAGE"
+# ENV_SOMARK_ENABLE_IMAGE_UNDERSTANDING = "SOMARK_ENABLE_IMAGE_UNDERSTANDING"
+# ENV_SOMARK_KEEP_HEADER_FOOTER = "SOMARK_KEEP_HEADER_FOOTER"
 # ENV_DOCLING_SERVER_URL = "DOCLING_SERVER_URL"
 # ENV_DOCLING_OUTPUT_DIR = "DOCLING_OUTPUT_DIR"
 # ENV_DOCLING_DELETE_OUTPUT = "DOCLING_DELETE_OUTPUT"
@@ -240,7 +296,7 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
 
@@ -260,8 +316,9 @@ MINERU_DEFAULT_CONFIG = {
     "MINERU_DELETE_OUTPUT": 1,
 }
 
-PADDLEOCR_ENV_KEYS = ["PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
+PADDLEOCR_ENV_KEYS = ["PADDLEOCR_BASE_URL", "PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
 PADDLEOCR_DEFAULT_CONFIG = {
+    "PADDLEOCR_BASE_URL": "",
     "PADDLEOCR_API_URL": "",
     "PADDLEOCR_ACCESS_TOKEN": None,
     "PADDLEOCR_ALGORITHM": "PaddleOCR-VL",
@@ -270,4 +327,35 @@ PADDLEOCR_DEFAULT_CONFIG = {
 OPENDATALOADER_ENV_KEYS = ["OPENDATALOADER_APISERVER"]
 OPENDATALOADER_DEFAULT_CONFIG = {
     "OPENDATALOADER_APISERVER": "",
+}
+
+SOMARK_ENV_KEYS = [
+    "SOMARK_BASE_URL",
+    "SOMARK_API_KEY",
+    "SOMARK_IMAGE_FORMAT",
+    "SOMARK_FORMULA_FORMAT",
+    "SOMARK_TABLE_FORMAT",
+    "SOMARK_CS_FORMAT",
+    "SOMARK_ENABLE_TEXT_CROSS_PAGE",
+    "SOMARK_ENABLE_TABLE_CROSS_PAGE",
+    "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION",
+    "SOMARK_ENABLE_INLINE_IMAGE",
+    "SOMARK_ENABLE_TABLE_IMAGE",
+    "SOMARK_ENABLE_IMAGE_UNDERSTANDING",
+    "SOMARK_KEEP_HEADER_FOOTER",
+]
+SOMARK_DEFAULT_CONFIG = {
+    "SOMARK_BASE_URL": "https://somark.cn/api/v1",
+    "SOMARK_API_KEY": "",
+    "SOMARK_IMAGE_FORMAT": "url",
+    "SOMARK_FORMULA_FORMAT": "latex",
+    "SOMARK_TABLE_FORMAT": "html",
+    "SOMARK_CS_FORMAT": "image",
+    "SOMARK_ENABLE_TEXT_CROSS_PAGE": 0,
+    "SOMARK_ENABLE_TABLE_CROSS_PAGE": 0,
+    "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION": 0,
+    "SOMARK_ENABLE_INLINE_IMAGE": 1,
+    "SOMARK_ENABLE_TABLE_IMAGE": 1,
+    "SOMARK_ENABLE_IMAGE_UNDERSTANDING": 1,
+    "SOMARK_KEEP_HEADER_FOOTER": 0,
 }

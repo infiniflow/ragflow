@@ -20,16 +20,31 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
+	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
 
 	rag "ragflow/internal/binding"
 )
+
+// engineTypeProvider is injected at startup by engine.RegisterEngineType
+// to break the tokenizer → engine import cycle.
+var engineTypeProvider = func() string { return "" }
+
+// RegisterEngineType wires the engine package's GetEngineType into the
+// tokenizer, breaking the circular import (engine/elasticsearch → tokenizer → engine).
+func RegisterEngineType(get func() string) {
+	if get == nil {
+		engineTypeProvider = func() string { return "" }
+		return
+	}
+	engineTypeProvider = get
+}
 
 // PoolConfig configures the elastic analyzer pool
 type PoolConfig struct {
@@ -58,6 +73,12 @@ type analyzerPool struct {
 	wg           sync.WaitGroup
 }
 
+// defaultLanguage is applied to every analyzer instance on pool acquisition
+// to clear any sticky language state left by a previous task. Ingestion
+// callers should use the public API variants that accept an explicit
+// language override.
+const defaultLanguage = "English"
+
 var (
 	globalPool    *analyzerPool
 	poolOnce      sync.Once
@@ -80,7 +101,11 @@ func Init(cfg *PoolConfig) error {
 
 		// Set default values
 		if cfg.DictPath == "" {
-			cfg.DictPath = "/usr/share/infinity/resource"
+			if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
+				cfg.DictPath = env
+			} else {
+				cfg.DictPath = "/usr/share/infinity/resource"
+			}
 		}
 		if cfg.MinSize <= 0 {
 			cfg.MinSize = runtime.NumCPU() * 2
@@ -376,8 +401,9 @@ func Close() {
 	}
 }
 
-// withAnalyzer executes the given function with an exclusive analyzer instance
-func withAnalyzer(fn func(*rag.Analyzer) error) error {
+// withAnalyzer acquires an analyzer instance, applies the given language
+// (with "" mapping to defaultLanguage), and executes fn.
+func withAnalyzer(lang string, fn func(*rag.Analyzer) error) error {
 	if globalPool == nil {
 		return fmt.Errorf("tokenizer pool not initialized")
 	}
@@ -388,11 +414,16 @@ func withAnalyzer(fn func(*rag.Analyzer) error) error {
 	}
 	defer globalPool.release(instance)
 
+	if lang == "" {
+		lang = defaultLanguage
+	}
+	instance.analyzer.SetLanguage(lang)
+
 	return fn(instance.analyzer)
 }
 
-// withAnalyzerResult executes the given function with an exclusive analyzer instance and returns a result
-func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
+// withAnalyzerResult is the result-returning variant of withAnalyzer.
+func withAnalyzerResult[T any](lang string, fn func(*rag.Analyzer) (T, error)) (T, error) {
 	var result T
 	if globalPool == nil {
 		return result, fmt.Errorf("tokenizer pool not initialized")
@@ -404,32 +435,63 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 	}
 	defer globalPool.release(instance)
 
+	if lang == "" {
+		lang = defaultLanguage
+	}
+	instance.analyzer.SetLanguage(lang)
+
 	return fn(instance.analyzer)
 }
 
-// Tokenize tokenizes the text and returns a space-separated string of tokens
+type Tokenizer struct {
+	lang string
+}
+
+// New returns a request-scoped tokenizer. Empty language falls back to English.
+func New(lang string) Tokenizer {
+	return Tokenizer{lang: lang}
+}
+
+var defaultTokenizer = New("")
+
+// Tokenize tokenizes the text and returns a space-separated string of tokens.
 // Example: "hello world" -> "hello world"
 //
-// NOTE: For Infinity engine, returns input unchanged to match python's behavior
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior.
 func Tokenize(text string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	return defaultTokenizer.Tokenize(text)
+}
+
+// Tokenize tokenizes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) Tokenize(text string) (string, error) {
+	if engineTypeProvider() == "infinity" {
 		return text, nil
 	}
-	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.Tokenize(text)
 	})
 }
 
-// TokenizeWithPosition tokenizes the text and returns a list of tokens with position information
+// TokenizeWithPosition tokenizes the text and returns a list of tokens with position information.
 func TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
-	return withAnalyzerResult(func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
+	return defaultTokenizer.TokenizeWithPosition(text)
+}
+
+// TokenizeWithPosition tokenizes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
 		return a.TokenizeWithPosition(text)
 	})
 }
 
-// Analyze analyzes the text and returns all tokens
+// Analyze analyzes the text and returns all tokens.
 func Analyze(text string) ([]rag.Token, error) {
-	return withAnalyzerResult(func(a *rag.Analyzer) ([]rag.Token, error) {
+	return defaultTokenizer.Analyze(text)
+}
+
+// Analyze analyzes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) Analyze(text string) ([]rag.Token, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
 		return a.Analyze(text)
 	})
 }
@@ -443,16 +505,23 @@ func SetFineGrained(fineGrained bool) {
 	common.Debug("SetFineGrained is no-op in pool mode", zap.Bool("fine_grained", fineGrained))
 }
 
-// FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
+// FineGrainedTokenize performs fine-grained tokenization on space-separated
+// tokens.
 // Input: space-separated tokens (e.g., "hello world 测试")
 // Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
 //
-// NOTE: For Infinity engine, returns input unchanged to match python's behavior
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior.
 func FineGrainedTokenize(tokens string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	return defaultTokenizer.FineGrainedTokenize(tokens)
+}
+
+// FineGrainedTokenize performs fine-grained tokenization using the tokenizer's
+// request-scoped language.
+func (t Tokenizer) FineGrainedTokenize(tokens string) (string, error) {
+	if engineTypeProvider() == "infinity" {
 		return tokens, nil
 	}
-	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.FineGrainedTokenize(tokens)
 	})
 }
@@ -471,7 +540,7 @@ func IsInitialized() bool {
 // GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
 // Returns: frequency value, or 0 if term not found
 func GetTermFreq(term string) int32 {
-	result, _ := withAnalyzerResult(func(a *rag.Analyzer) (int32, error) {
+	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (int32, error) {
 		return a.GetTermFreq(term), nil
 	})
 	return result
@@ -480,8 +549,65 @@ func GetTermFreq(term string) int32 {
 // GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
 // Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
 func GetTermTag(term string) string {
-	result, _ := withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (string, error) {
 		return a.GetTermTag(term), nil
 	})
 	return result
+}
+
+var cl100kEncoder struct {
+	sync.Once
+	enc *tiktoken.Tiktoken
+	err error
+}
+
+func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
+	cl100kEncoder.Do(func() {
+		cl100kEncoder.enc, cl100kEncoder.err = tiktoken.GetEncoding("cl100k_base")
+	})
+	return cl100kEncoder.enc, cl100kEncoder.err
+}
+
+// NumTokensFromString returns the number of tokens in s using the cl100k_base
+// BPE encoding. Mirrors Python's num_tokens_from_string (common/token_utils.py):
+// returns 0 on encoder error.
+func NumTokensFromString(s string) int {
+	if s == "" {
+		return 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		return 0
+	}
+	return len(enc.Encode(s, nil, nil))
+}
+
+// TrimContentToTokenLimit truncates s to at most limit tokens using the
+// cl100k_base encoder. Mirrors Python's trim_content helper in
+// rag/prompts/generator.py: encoder.decode(encoder.encode(content)[:limit]).
+// Returns the original string if it already fits.
+func TrimContentToTokenLimit(s string, limit int) string {
+	if limit < 0 {
+		limit = 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		// Fail closed: fall back to byte-length trimming with UTF-8 safety.
+		if limit <= 0 {
+			return ""
+		}
+		b := []byte(s)
+		if len(b) <= limit {
+			return s
+		}
+		for limit > 0 && !utf8.Valid(b[:limit]) {
+			limit--
+		}
+		return string(b[:limit])
+	}
+	tokens := enc.Encode(s, nil, nil)
+	if len(tokens) <= limit {
+		return s
+	}
+	return enc.Decode(tokens[:limit])
 }

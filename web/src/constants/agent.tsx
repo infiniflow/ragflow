@@ -1,3 +1,4 @@
+import React from 'react';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 import {
   Circle,
@@ -65,16 +66,6 @@ export enum AgentQuery {
   Category = 'category',
 }
 
-export enum DataflowOperator {
-  Begin = 'File',
-  Note = 'Note',
-  Parser = 'Parser',
-  Tokenizer = 'Tokenizer',
-  TokenChunker = 'TokenChunker',
-  TitleChunker = 'TitleChunker',
-  Extractor = 'Extractor',
-}
-
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
@@ -108,7 +99,10 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  BGPT = 'BGPT',
+  KeenableSearch = 'KeenableSearch',
   DocGenerator = 'DocGenerator',
+  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -120,6 +114,7 @@ export enum Operator {
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
+  Compilation = 'Compiler',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',

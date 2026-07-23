@@ -9,6 +9,7 @@ on:
   push:
     tags:
       - "v*.*.*"                  # normal release
+      - 'nightly'                 # mutable tag
 
 permissions:
   contents: write
@@ -22,8 +23,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release:
+  prepare:
     runs-on: [ "self-hosted", "ragflow-release" ]
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+
     steps:
       - name: Ensure workspace ownership
         run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
@@ -36,7 +41,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Prepare release body
+      # https://github.com/actions/setup-go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare release metadata
+        id: release
         run: |
           if [[ ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             RELEASE_TAG=${GITHUB_REF#refs/tags/}
@@ -53,8 +66,8 @@ jobs:
           fi
           echo "RELEASE_TAG=${RELEASE_TAG}" >> ${GITHUB_ENV}
           echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
-          RELEASE_DATETIME=$(date --rfc-3339=seconds)
-          echo Release ${RELEASE_TAG} created from ${GITHUB_SHA} at ${RELEASE_DATETIME} > release_body.md
+          echo "release_tag=${RELEASE_TAG}" >> ${GITHUB_OUTPUT}
+          echo "prerelease=${PRERELEASE}" >> ${GITHUB_OUTPUT}
 
       - name: Move the existing mutable tag
         # https://github.com/softprops/action-gh-release/issues/171
@@ -72,20 +85,197 @@ jobs:
             fi
           fi
 
-      - name: Create or overwrite a release
-        # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
+  build_cli:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-24.04
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+          - goos: darwin
+            goarch: amd64
+            runner: macos-15-intel
+          - goos: darwin
+            goarch: arm64
+            runner: macos-14
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            output_ext: .exe
+          - goos: windows
+            goarch: arm64
+            runner: windows-11-arm
+            output_ext: .exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      CLI_NAME: ragflow-cli
+      CLI_MAIN: ./cmd/ragflow-cli.go
+      DIST_DIR: dist/cli
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # https://github.com/actions/setup-go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Go CLI release binaries on non-Windows
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${DIST_DIR}"
+
+          if [[ ! -e "${CLI_MAIN}" ]]; then
+            echo "::error::Go CLI entry does not exist: ${CLI_MAIN}"
+            echo "::error::Please update CLI_MAIN in .github/workflows/release.yml"
+            exit 1
+          fi
+
+          echo "Building Go CLI release binaries"
+          echo "CLI name: ${CLI_NAME}"
+          echo "CLI main: ${CLI_MAIN}"
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Commit: ${GITHUB_SHA}"
+
+          output="${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          echo "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> ${output}"
+
+          CGO_ENABLED=0 \
+          GOOS="${{ matrix.goos }}" \
+          GOARCH="${{ matrix.goarch }}" \
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${RELEASE_TAG} -X main.commit=${GITHUB_SHA}" \
+            -o "${output}" \
+            "${CLI_MAIN}"
+
+          chmod +x "${output}"
+
+      - name: Build Go CLI release binaries on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:DIST_DIR | Out-Null
+
+          if (-not (Test-Path $env:CLI_MAIN)) {
+            Write-Error "Go CLI entry does not exist: $env:CLI_MAIN"
+            exit 1
+          }
+
+          $output = Join-Path $env:DIST_DIR "${env:CLI_NAME}-${env:RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.output_ext }}"
+          Write-Host "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> $output"
+
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "${{ matrix.goos }}"
+          $env:GOARCH = "${{ matrix.goarch }}"
+
+          go build `
+            -trimpath `
+            -ldflags="-s -w -X main.version=$env:RELEASE_TAG -X main.commit=$env:GITHUB_SHA" `
+            -o "$output" `
+            "$env:CLI_MAIN"
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/cli/*
+          if-no-files-found: error
+
+  publish_cli_assets:
+    needs:
+      - prepare
+      - build_cli
+    runs-on: [ "self-hosted", "ragflow-release" ]
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: cli-*
+          path: dist/cli
+          merge-multiple: true
+
+      - name: Prepare CLI release assets
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_DATETIME=$(date --rfc-3339=seconds)
+          echo Release ${RELEASE_TAG} created from ${GITHUB_SHA} at ${RELEASE_DATETIME} > release_body.md
+
+          cd dist/cli
+          sha256sum * > SHA256SUMS
+          cd -
+
+          echo "Generated CLI release assets:"
+          ls -lh dist/cli
+
+      - name: Upload Go CLI release assets
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
-          prerelease: ${{ env.PRERELEASE }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          # The body field does not support environment variable substitution directly.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
           body_path: release_body.md
+          files: |
+            dist/cli/*
+            tools/scripts/install.sh
+            tools/scripts/install.ps1
+
+  release:
+    needs:
+      - prepare
+      - publish_cli_assets
+    runs-on: [ "self-hosted", "ragflow-release" ]
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Build and push image
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
           sudo docker push infiniflow/ragflow:latest

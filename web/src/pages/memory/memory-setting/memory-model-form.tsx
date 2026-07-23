@@ -1,11 +1,12 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
-import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { MemoryOptions, MemoryType } from '@/pages/memories/constants';
 import { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useFetchMemoryMessageList } from '../memory-message/hook';
+import { useMemorySettingContext } from './memory-setting-context';
 
 export const memoryModelFormSchema = (t: TFunction) => ({
   embd_id: z.string(),
@@ -28,9 +29,10 @@ export const defaultMemoryModelForm = {
   memory_size: 0,
 };
 export const MemoryModelForm = () => {
-  const { modelOptions } = useModelOptions();
   const { t } = useTranslation();
   const { data } = useFetchMemoryMessageList();
+  const { data: configData } = useMemorySettingContext();
+  const ownerTenantId = configData?.tenant_id;
   return (
     <>
       <RenderField
@@ -40,7 +42,6 @@ export const MemoryModelForm = () => {
           placeholder: t('memories.selectModel'),
           required: true,
           horizontal: true,
-          // hideLabel: true,
           type: FormFieldType.Custom,
           disabled: true,
           render: (field) => (
@@ -48,6 +49,7 @@ export const MemoryModelForm = () => {
               field={field}
               isEdit={false}
               disabled={data?.messages?.total_count > 0}
+              ownerTenantId={ownerTenantId}
             />
           ),
 
@@ -58,12 +60,18 @@ export const MemoryModelForm = () => {
         field={{
           name: 'llm_id',
           label: t('memories.llm'),
-          placeholder: t('memories.selectModel'),
           required: true,
           horizontal: true,
-          type: FormFieldType.Select,
+          type: FormFieldType.Custom,
           disabled: data?.messages?.total_count > 0,
-          options: modelOptions as { value: string; label: string }[],
+          render: (field) => (
+            <ModelTreeSelect
+              value={field.value}
+              onChange={field.onChange}
+              placeholder={t('memories.selectModel')}
+              ownerTenantId={ownerTenantId}
+            />
+          ),
           tooltip: t('memories.llmTooltip'),
         }}
       />
@@ -93,7 +101,6 @@ export const MemoryModelForm = () => {
           type: FormFieldType.Number,
           horizontal: true,
           tooltip: t('memory.config.memorySizeTooltip'),
-          // placeholder: t('memory.config.memorySizePlaceholder'),
           required: false,
         }}
       />

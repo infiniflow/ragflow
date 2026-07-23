@@ -55,6 +55,7 @@ import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { ChunkerNode } from './node/chunker-node';
+import { CompilationNode } from './node/compilation-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
@@ -88,7 +89,7 @@ export const nodeTypes: NodeTypes = {
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   // emailNode: EmailNode,
-  group: IterationNode,
+  iterationNode: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
@@ -96,6 +97,7 @@ export const nodeTypes: NodeTypes = {
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
   chunkerNode: ChunkerNode,
+  compilationNode: CompilationNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
   listOperationsNode: ListOperationsNode,
@@ -163,11 +165,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     setCurrentMessageId,
   });
 
-  const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
-
   const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const [currentSendLoading, setCurrentSendLoading] = useState(false);
+
+  const { stopMessage } = useStopMessageUnmount(
+    chatVisible && currentSendLoading,
+    latestTaskId,
+  );
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -179,10 +184,18 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
-      stopMessage(latestTaskId);
+      if (currentSendLoading) {
+        stopMessage(latestTaskId);
+      }
       clearEventList();
     }
-  }, [chatVisible, clearEventList, latestTaskId, stopMessage]);
+  }, [
+    chatVisible,
+    clearEventList,
+    currentSendLoading,
+    latestTaskId,
+    stopMessage,
+  ]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     setCurrentSendLoading(!!loading);
