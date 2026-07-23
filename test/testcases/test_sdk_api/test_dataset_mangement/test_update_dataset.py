@@ -299,6 +299,7 @@ class TestDatasetUpdate:
             "naive",
             "book",
             "email",
+            "knowledge_graph",
             "laws",
             "manual",
             "one",
@@ -309,7 +310,7 @@ class TestDatasetUpdate:
             "table",
             "tag",
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
     )
     def test_chunk_method(self, client, add_dataset_func, chunk_method):
         dataset = add_dataset_func
@@ -339,14 +340,14 @@ class TestDatasetUpdate:
         elif IS_GO_PROXY:
             assert error_message.startswith("Input should be 'naive', 'book'") and error_message.endswith("or 'tag'"), error_message
         else:
-            assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in error_message, error_message
+            assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag', 'resume' or 'knowledge_graph'" in error_message, error_message
 
     @pytest.mark.p3
     def test_chunk_method_none(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": None})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag', 'resume' or 'knowledge_graph'" in str(exception_info.value), str(
             exception_info.value
         )
 

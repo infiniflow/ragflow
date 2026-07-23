@@ -190,6 +190,7 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         "naive",
         "book",
         "email",
+        "knowledge_graph",
         "laws",
         "manual",
         "one",
@@ -199,8 +200,9 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         "qa",
         "table",
         "tag",
+        "resume",
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
 )
 def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk_method):
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_chunk_{chunk_method}"})
@@ -894,7 +896,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     assert create_payload["code"] == 0, create_payload
     dataset_id = create_payload["data"]["id"]
 
-    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag', 'resume' or 'knowledge_graph'"
     for chunk_method in ("", "unknown", []):
         res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: chunk_method})
         assert res.status_code == 200
@@ -1166,6 +1168,7 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
         ("naive", "naive"),
         ("book", "book"),
         ("email", "email"),
+        ("knowledge_graph", "knowledge_graph"),
         ("laws", "laws"),
         ("manual", "manual"),
         ("one", "one"),
@@ -1175,8 +1178,9 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
         ("qa", "qa"),
         ("table", "table"),
         ("tag", "tag"),
+        ("resume", "resume"),
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "knowledge_graph", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
 )
 def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
     res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
@@ -1670,7 +1674,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         ("chunk_unknown", "unknown"),
         ("chunk_type_error", []),
     ]
-    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag', 'resume' or 'knowledge_graph'"
     for name, chunk_method in chunk_method_invalid_cases:
         res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
         assert res.status_code == 200
