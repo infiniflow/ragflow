@@ -28,10 +28,12 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   const datasetId = useWatch({ name, control: form.control });
   const [searchString, setSearchString] = useState('');
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { list: datasetListOrigin, loading } = useFetchKnowledgeList(
-    true,
-    debouncedSearchString,
-  );
+  const {
+    list: datasetListOrigin,
+    loading,
+    handleScroll,
+    hasMore,
+  } = useFetchKnowledgeList(true, debouncedSearchString);
   const datasetCacheRef = useRef(new Map<string, IDataset>());
 
   const datasetList = useMemo(() => {
@@ -96,6 +98,8 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     handleSearchChange,
     loading,
     searchString,
+    handleScroll,
+    hasMore,
   };
 }
 
@@ -110,8 +114,14 @@ export function KnowledgeBaseFormField({
 }) {
   const { t } = useTranslation();
 
-  const { datasetOptions, handleSearchChange, loading, searchString } =
-    useDisableDifferenceEmbeddingDataset(name);
+  const {
+    datasetOptions,
+    handleSearchChange,
+    loading,
+    searchString,
+    handleScroll,
+    hasMore,
+  } = useDisableDifferenceEmbeddingDataset(name);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -178,6 +188,7 @@ export function KnowledgeBaseFormField({
           onSearchChange={handleSearchChange}
           isSearching={loading}
           shouldFilter={false}
+          onListScroll={hasMore ? handleScroll : undefined}
           {...field}
         />
       )}

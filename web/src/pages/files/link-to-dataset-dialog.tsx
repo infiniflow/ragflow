@@ -47,7 +47,7 @@ function LinkToDatasetForm({
     },
   });
 
-  const options = useSelectKnowledgeOptions();
+  const { options, handleScroll, hasMore } = useSelectKnowledgeOptions();
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onConnectToKnowledgeOk(data.knowledgeIds);
@@ -77,6 +77,7 @@ function LinkToDatasetForm({
                   defaultValue={field.value}
                   placeholder={t('fileManager.pleaseSelect')}
                   maxCount={100}
+                  onListScroll={hasMore ? handleScroll : undefined}
                   //   {...field}
                   modalPopover
                 />

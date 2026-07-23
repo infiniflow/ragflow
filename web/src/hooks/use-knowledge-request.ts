@@ -51,7 +51,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -826,56 +826,106 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
+const KNOWLEDGE_LIST_PAGE_SIZE = 10;
+
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
 ): {
   list: IDataset[];
   loading: boolean;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  handleScroll: (e: React.UIEvent<HTMLDivElement>) => void;
 } => {
-  const { data, isFetching: loading } = useQuery({
-    queryKey: [
-      KnowledgeApiAction.FetchKnowledgeList,
-      shouldFilterListWithoutDocument,
-      keywords,
-    ],
-    initialData: [],
-    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
-    queryFn: async () => {
-      const pageSize = 200;
-      const all: IDataset[] = [];
-      let page = 1;
-      // Loop through pages until all knowledge bases are fetched.
-      let hasMore = true;
-      while (hasMore) {
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{ items: IDataset[] }>({
+      queryKey: [
+        KnowledgeApiAction.FetchKnowledgeList,
+        shouldFilterListWithoutDocument,
+        keywords,
+      ],
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
         const { data } = await listDataset({
           page,
-          page_size: pageSize,
+          page_size: KNOWLEDGE_LIST_PAGE_SIZE,
           ...(keywords ? { ext: { keywords } } : {}),
         });
-        const pageData = data?.data ?? [];
-        all.push(...pageData);
-        hasMore = pageData.length >= pageSize;
-        page++;
-      }
-      return shouldFilterListWithoutDocument
-        ? all.filter((x: IDataset) => x.chunk_count > 0)
-        : all;
-    },
-  });
+        return { items: (data?.data ?? []) as IDataset[] };
+      },
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.items.length >= KNOWLEDGE_LIST_PAGE_SIZE
+          ? allPages.length + 1
+          : undefined,
+    });
 
-  return { list: data, loading };
+  const list = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.items) ?? [];
+    return shouldFilterListWithoutDocument
+      ? all.filter((x) => x.chunk_count > 0)
+      : all;
+  }, [data, shouldFilterListWithoutDocument]);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    list,
+    loading: isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    handleScroll,
+  };
+};
+
+/**
+ * For consumers that need the COMPLETE list (no scroll UI).
+ * Auto-loads all pages sequentially until exhausted.
+ */
+export const useFetchAllKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+): { list: IDataset[]; loading: boolean } => {
+  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
+    shouldFilterListWithoutDocument,
+    keywords,
+  );
+
+  useEffect(() => {
+    if (hasNextPage && !loading) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, loading, fetchNextPage]);
+
+  return { list, loading };
 };
 
 export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchKnowledgeList();
+  const { list, loading, handleScroll, hasNextPage } = useFetchKnowledgeList();
 
   const options = list?.map((item) => ({
     label: item.name,
     value: item.id,
   }));
 
-  return options;
+  return { options, loading, handleScroll, hasMore: hasNextPage };
 };
 
 //#region tags

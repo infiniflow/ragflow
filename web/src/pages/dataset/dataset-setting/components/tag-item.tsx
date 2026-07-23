@@ -18,7 +18,11 @@ export const TagSetItem = () => {
   const { t } = useTranslation();
   const form = useFormContext();
 
-  const { list: knowledgeList } = useFetchKnowledgeList(true);
+  const {
+    list: knowledgeList,
+    handleScroll,
+    hasNextPage,
+  } = useFetchKnowledgeList(true);
 
   const knowledgeOptions = knowledgeList
     .filter((x) => x.chunk_method === 'tag')
@@ -60,6 +64,7 @@ export const TagSetItem = () => {
                 <MultiSelect
                   options={knowledgeOptions}
                   onValueChange={field.onChange}
+                  onListScroll={hasNextPage ? handleScroll : undefined}
                   // placeholder={t('chat.knowledgeBasesMessage')}
                   variant="inverted"
                   maxCount={10}
