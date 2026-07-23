@@ -8,8 +8,9 @@ config:
       compressed descriptions. Extract each heading as an entity. The
       entity's `name` must be the exact clean heading text. For each heading,
       write a strongly compressed summary of only the content belonging to
-      that heading: normally 1–2 sentences and roughly half the length of a
-      normal summary. Keep only the 2–4 most important facts, prioritizing key
+      that heading: normally 1–2 sentences, aiming for about 50–100 English
+      words or 80–180 Chinese characters when the source is long enough. Keep
+      only the 2–4 most important facts, prioritizing key
       numbers, dates, names, locations, and conclusions. Do not copy long
       passages verbatim and do not reduce the description to a generic label.
       For detailed lists, give the overall result and only the most important
@@ -34,7 +35,7 @@ config:
           - If a chunk contains multiple headings, expand them in order:
               - Each heading → {"title":"...","chunk_id":"<chunk_ID>","description":"a compact summary of only that heading's section"}.
           - A parent heading with no direct body must still receive a short higher-level overview based on its child-section content for later merging; do not copy a child's summary verbatim.
-          - Prefer 1–2 concise sentences and roughly half the length of a normal summary; preserve only the most important facts, dates, numbers, names, and conclusions.
+          - Prefer 1–2 concise sentences, aiming for about 50–100 English words or 80–180 Chinese characters when the source is long enough; preserve only the most important facts, dates, numbers, names, and conclusions.
           - When ambiguous, prefer `-1` unless the text strongly looks like a heading.
           - Keep language of "title" the same as the input.
           - Prefix like following must be titles: 第x章, 第N条, 第N节, 1, 1.1, 1.1.1 ...
