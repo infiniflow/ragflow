@@ -24,7 +24,7 @@ Configure sandbox providers from the admin page:
 - `self_managed`: Uses the executor manager service.
 - `local`: Runs code on the current machine.
 - `ssh`: Runs code on a remote machine over SSH.
-- `aliyun_codeinterpreter` and `e2b`: Cloud providers.
+- `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
 
 <img width="2547" height="1475" alt="admin-sandbox-settings" src="https://github.com/user-attachments/assets/59ab948e-b98a-45a8-9db4-f1afbf6c3685" />
 
@@ -38,6 +38,25 @@ Admin > Sandbox Settings after the services are up.
 - `local`: Runs code as local Python or Node.js subprocesses. Use this only in trusted development environments.
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
+- `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+
+### Tenki
+
+`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
+- `project_id` (required): the Tenki project that sandboxes are created under.
+- `base_url` (optional): override the Tenki API endpoint.
+- `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
+- `timeout`, `max_lifetime`, `cpu_cores`, `memory_mb`, `disk_size_gb`, and the output/artifact limits have sensible defaults and can be tuned in the same page.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
+- The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
 
 ## Prerequisites
 
