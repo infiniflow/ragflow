@@ -38,9 +38,9 @@ type AuthHandler struct {
 // so the test suite can swap in a stub without spinning up the
 // full UserService (which requires a live Redis + JWT secret).
 type userTokenResolver interface {
-	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
+	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
+	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
 }
 
 // NewAuthHandler create auth handler
@@ -96,7 +96,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		// Fall back to beta API token (public bot access).
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
+		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Next()
 			return
