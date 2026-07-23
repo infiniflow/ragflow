@@ -51,13 +51,16 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
@@ -169,10 +172,8 @@ export const useFetchNextKnowledgeListByPage = () => {
         filterValue,
       },
     ],
-    initialData: {
-      kbs: [],
-      total_datasets: 0,
-    },
+    placeholderData: (previousData) =>
+      previousData ?? { kbs: [], total_datasets: 0 },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await listDataset({
@@ -233,7 +234,9 @@ export const useCreateKnowledge = () => {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+        });
       }
       return data;
     },
@@ -264,15 +267,6 @@ export const useDeleteKnowledge = () => {
 
   return { data, loading, deleteKnowledge: mutateAsync };
 };
-
-function isPipelineParserConfig(
-  parserConfig: Record<string, any> | undefined,
-): boolean {
-  if (!parserConfig || typeof parserConfig !== 'object') {
-    return false;
-  }
-  return Object.keys(parserConfig).some((key) => key.includes(':'));
-}
 
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
@@ -826,43 +820,114 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
-export const useFetchKnowledgeList = (
-  shouldFilterListWithoutDocument: boolean = false,
-  keywords = '',
-): {
-  list: IDataset[];
-  loading: boolean;
-} => {
-  const { data, isFetching: loading } = useQuery({
-    queryKey: [
+const KNOWLEDGE_LIST_PAGE_SIZE = 10;
+
+export const KnowledgeListKeys = {
+  list: (
+    shouldFilterListWithoutDocument: boolean,
+    keywords: string,
+    pageSize: number,
+  ) =>
+    [
       KnowledgeApiAction.FetchKnowledgeList,
       shouldFilterListWithoutDocument,
       keywords,
-    ],
-    initialData: [],
-    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
-    queryFn: async () => {
-      const { data } = await listDataset(
-        keywords
-          ? {
-              ext: {
-                keywords,
-              },
-            }
-          : undefined,
-      );
-      const list = data?.data ?? [];
-      return shouldFilterListWithoutDocument
-        ? list.filter((x: IDataset) => x.chunk_count > 0)
-        : list;
-    },
-  });
+      pageSize,
+    ] as const,
+};
 
-  return { list: data, loading };
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+  pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
+): {
+  list: IDataset[];
+  loading: boolean;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  handleScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+} => {
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{ items: IDataset[] }>({
+      queryKey: KnowledgeListKeys.list(
+        shouldFilterListWithoutDocument,
+        keywords,
+        pageSize,
+      ),
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listDataset({
+          page,
+          page_size: pageSize,
+          ...(keywords ? { ext: { keywords } } : {}),
+        });
+        return { items: (data?.data ?? []) as IDataset[] };
+      },
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.items.length >= pageSize ? allPages.length + 1 : undefined,
+    });
+
+  const list = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.items) ?? [];
+    return shouldFilterListWithoutDocument
+      ? all.filter((x) => x.chunk_count > 0)
+      : all;
+  }, [data, shouldFilterListWithoutDocument]);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    list,
+    loading: isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    handleScroll,
+  };
+};
+
+/**
+ * For consumers that need the COMPLETE list (no scroll UI).
+ * Uses a large page size to minimize round-trips, and auto-loads
+ * until exhausted.
+ */
+export const useFetchAllKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+): { list: IDataset[]; loading: boolean } => {
+  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
+    shouldFilterListWithoutDocument,
+    keywords,
+    200,
+  );
+
+  useEffect(() => {
+    if (hasNextPage && !loading) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, loading, fetchNextPage]);
+
+  return { list, loading };
 };
 
 export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchKnowledgeList();
+  const { list } = useFetchAllKnowledgeList();
 
   const options = list?.map((item) => ({
     label: item.name,

@@ -26,9 +26,10 @@ func TestPPTXParser_FormatField(t *testing.T) {
 // JSON items. Uses office_oxide's own PptxWriter to produce the
 // test data so no external file is needed.
 func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
+	ctx := t.Context()
 	p := NewPPTXParser()
 	data := buildPPTX(t, "Hello World")
-	res := p.ParseWithResult("test.pptx", data)
+	res := p.ParseWithResult(ctx, "test.pptx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -47,12 +48,13 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 // delegates correctly to PPTXParser{format:"ppt"} and produces
 // output with File["format"] = "ppt".
 func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
+	ctx := t.Context()
 	p := NewPPTParser()
 	// Use PPTX content — office_oxide may reject it with format="ppt"
 	// hint (expects OLE binary). When it does, skip gracefully; when
 	// it succeeds, verify the metadata contract.
 	data := buildPPTX(t, "Hello")
-	res := p.ParseWithResult("test.ppt", data)
+	res := p.ParseWithResult(ctx, "test.ppt", data)
 	if res.Err != nil {
 		t.Skip("PPTParser with PPTX data (expected maybe to fail):", res.Err)
 	}

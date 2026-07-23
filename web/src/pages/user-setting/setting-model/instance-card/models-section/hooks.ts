@@ -280,13 +280,20 @@ export function useModelsDerived({
     });
   }, [sourceItems, catalogFeatures]);
 
-  // Union of instance models + catalog, keyed by `name`. Catalog entries
-  // win on conflict; instance set listed first so already-added models
-  // stay at the top on the initial render.
+  // Union of instance models + catalog, keyed by `name`. Instance entries
+  // win on conflict so that editing an already-added model loads the
+  // instance-specific values (e.g. a user-customised `max_tokens`) rather
+  // than the upstream catalog defaults; catalog entries are only used to
+  // fill in models that have not been added yet. Instance set is listed
+  // first so already-added models stay at the top on the initial render.
   const models: IProviderModelItem[] = useMemo(() => {
     const byName = new Map<string, IProviderModelItem>();
     instanceItems.forEach((m) => byName.set(m.name, m));
-    catalog.forEach((m) => byName.set(m.name, m));
+    catalog.forEach((m) => {
+      if (!byName.has(m.name)) {
+        byName.set(m.name, m);
+      }
+    });
     return Array.from(byName.values());
   }, [instanceItems, catalog]);
 

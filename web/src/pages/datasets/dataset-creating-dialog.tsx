@@ -1,4 +1,6 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -28,10 +30,8 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
-  BuiltinPipelineItem,
   ChunkMethodItem,
   EmbeddingModelItem,
-  ParseTypeItem,
 } from '../dataset/dataset-setting/configuration/common-item';
 import { isGoBackend } from '@/utils/backend-runtime';
 
@@ -39,7 +39,7 @@ const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const defaultModelDictionary = useFetchDefaultModelDictionary(true);
   const ChunkMethodName = isGoBackend() ? 'parser_id' : 'chunk_method';
 
   const FormSchema = z

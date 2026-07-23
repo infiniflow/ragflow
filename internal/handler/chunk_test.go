@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -20,7 +21,7 @@ import (
 // Only the methods actually called by the test are set; others panic.
 type mockChunkSvc struct {
 	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-	addChunkFn      func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
+	addChunkFn      func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
 	listFn          func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	switchChunksFn  func(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
 	updateChunkFn   func(req *service.UpdateChunkRequest, userID string) error
@@ -82,9 +83,9 @@ func (m *mockChunkSvc) StopParsing(userID, datasetID string, req service.StopPar
 func (m *mockChunkSvc) Parse(string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+func (m *mockChunkSvc) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 	if m.addChunkFn != nil {
-		return m.addChunkFn(req, userID)
+		return m.addChunkFn(ctx, req, userID)
 	}
 	return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
 }
@@ -641,7 +642,7 @@ func (e addChunkTestError) Code() common.ErrorCode { return e.code }
 
 func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 			if userID != "user1" {
 				t.Fatalf("userID = %q, want user1", userID)
 			}
@@ -679,7 +680,7 @@ func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 
 func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 			if req.DatasetID != "kb1" || req.DocumentID != "doc1" {
 				t.Fatalf("path IDs were not preserved: %#v", req)
 			}
@@ -710,7 +711,7 @@ func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
 
 func TestChunkHandlerAddChunkCodedError(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 			return nil, addChunkTestError{code: common.CodeDataError, msg: "`content` is required"}
 		},
 	}
@@ -761,7 +762,7 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockChunkSvc{
-				addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+				addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 					t.Fatal("service should not be called for invalid request")
 					return nil, nil
 				},
@@ -792,7 +793,7 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 
 func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 			return nil, addChunkTestError{code: common.CodeServerError, msg: "encode chunk embedding: provider secret"}
 		},
 	}

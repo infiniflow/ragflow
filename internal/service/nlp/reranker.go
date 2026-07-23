@@ -15,6 +15,7 @@
 package nlp
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -53,6 +54,7 @@ type SearchResult struct {
 //   - tsim: token similarity scores
 //   - vsim: vector similarity scores
 func Rerank(
+	ctx context.Context,
 	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	total int,
@@ -67,7 +69,7 @@ func Rerank(
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// If reranker model is provided and there are results, use model reranking
 	if rerankModel != nil && total > 0 {
-		return RerankByModel(rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
 	}
 
 	// Otherwise, use fallback logic based on engine type
@@ -87,6 +89,7 @@ func Rerank(
 
 // RerankByModel performs reranking using a reranker model
 func RerankByModel(
+	ctx context.Context,
 	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	ids []string,
@@ -148,7 +151,7 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.ModelDriver.Rerank(ctx, rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
 		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
