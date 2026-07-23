@@ -38,10 +38,9 @@ type AuthHandler struct {
 // so the test suite can swap in a stub without spinning up the
 // full UserService (which requires a live Redis + JWT secret).
 type userTokenResolver interface {
-	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error)
+	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
+	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
+	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
 }
 
 // NewAuthHandler create auth handler
@@ -96,26 +95,9 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		// Fall back to beta API token (public bot access). The
-		// middleware also looks up the APIToken directly so the
-		// downstream handler can read its DialogID (the real
-		// agent_id) without re-parsing the Authorization header.
-		// Mirrors the python
-		// `APIToken.query(beta=token).dialog_id` lookup in
-		// bot_api.py:agent_bot_logs.
-		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+		// Fall back to beta API token (public bot access).
+		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
-			if tok, terr := h.userService.GetAPITokenByBeta(ctx, auth); terr == nil && tok != nil && tok.DialogID != nil {
-				// tok.DialogID is *string (nullable in the schema), but
-				// downstream handlers (GetAgentbotLogs, GetAgentLogs)
-				// read "agent_id" with agentID.(string) — they cannot
-				// type-assert a *string. Dereference and gate on nil so a
-				// row with a NULL dialog_id still surfaces the
-				// "not bound" sentinel rather than silently leaking the
-				// pointer (which would later fail the string assertion).
-				c.Set("agent_id", *tok.DialogID)
-				c.Set("api_token", tok)
-			}
 			c.Next()
 			return
 		}
