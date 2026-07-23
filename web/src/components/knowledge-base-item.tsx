@@ -32,7 +32,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     list: datasetListOrigin,
     loading,
     handleScroll,
-    hasMore,
+    hasNextPage,
   } = useFetchKnowledgeList(true, debouncedSearchString);
   const datasetCacheRef = useRef(new Map<string, IDataset>());
 
@@ -99,7 +99,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     loading,
     searchString,
     handleScroll,
-    hasMore,
+    hasNextPage,
   };
 }
 
@@ -120,7 +120,7 @@ export function KnowledgeBaseFormField({
     loading,
     searchString,
     handleScroll,
-    hasMore,
+    hasNextPage,
   } = useDisableDifferenceEmbeddingDataset(name);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
@@ -188,7 +188,7 @@ export function KnowledgeBaseFormField({
           onSearchChange={handleSearchChange}
           isSearching={loading}
           shouldFilter={false}
-          onListScroll={hasMore ? handleScroll : undefined}
+          onListScroll={hasNextPage ? handleScroll : undefined}
           {...field}
         />
       )}
