@@ -368,12 +368,24 @@ class RAGFlowConnector:
                         docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}", api_key=api_key)
                         if not docs_res:
                             # Transport-level failure: stop without caching a partial result.
+                            logging.warning("Stopping document metadata pagination: dataset_id=%s page=%s (no response)", dataset_id, page)
                             break
                         docs_data = docs_res.json()
                         if docs_data.get("code") != 0:
                             # API error: stop instead of re-requesting the same page forever.
+                            logging.warning(
+                                "Stopping document metadata pagination: dataset_id=%s page=%s backend_code=%s",
+                                dataset_id,
+                                page,
+                                docs_data.get("code"),
+                            )
                             break
-                        page_docs = docs_data.get("data", {}).get("docs") or []
+                        docs_payload = docs_data.get("data", {}) or {}
+                        page_docs = docs_payload.get("docs") or []
+                        if not page_docs:
+                            logging.debug("Stopping document metadata pagination: dataset_id=%s page=%s (empty docs page)", dataset_id, page)
+                            self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
+                            break
                         for doc in page_docs:
                             doc_id = doc.get("id")
                             if not doc_id:
@@ -394,7 +406,6 @@ class RAGFlowConnector:
                             }
                             doc_id_meta_list.append((doc_id, doc_meta))
                             docs[doc_id] = doc_meta
-
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
 
                         # A page smaller than page_size (including an empty one) is the
