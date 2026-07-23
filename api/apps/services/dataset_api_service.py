@@ -35,7 +35,22 @@ from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_
 from common.misc_utils import thread_pool_exec
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
-_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
+# KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
+# rows for one structure kind via ``rebuild_dataset_structure_graph_json``; the
+# task_type equals the index_type and the KB task-id column is ``<type>_task_id``.
+# The value is the friendly kind resolvable through ``_resolve_dataset_structure_kind``
+# (defined below), except ``structure`` which is the merge-all variant.
+_STRUCTURE_INDEX_TYPE_TO_KIND = {
+    "structure_graph": "graph",
+    "structure_mindmap": "mindmap",
+    "timeline": "timeline",
+    "session_graph": "session_graph",
+    "session_essence": "session_essence",
+    "structure": None,  # merge-all: rebuild every dataset-merge kind
+}
+_STRUCTURE_INDEX_TYPES = frozenset(_STRUCTURE_INDEX_TYPE_TO_KIND)
+
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"} | set(_STRUCTURE_INDEX_TYPES)
 
 _INDEX_TYPE_TO_TASK_TYPE = {
     "graph": "graphrag",
@@ -43,6 +58,9 @@ _INDEX_TYPE_TO_TASK_TYPE = {
     "mindmap": "mindmap",
     "artifact": "artifact",
     "skill": "skill",
+    # Structure merge types carry their own task_type (== index_type) so the
+    # executor can resolve which kind to merge from the task body.
+    **{t: t for t in _STRUCTURE_INDEX_TYPES},
 }
 
 _INDEX_TYPE_TO_TASK_ID_FIELD = {
@@ -51,6 +69,7 @@ _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "mindmap": "mindmap_task_id",
     "artifact": "artifact_task_id",
     "skill": "skill_task_id",
+    **{t: f"{t}_task_id" for t in _STRUCTURE_INDEX_TYPES},
 }
 
 _INDEX_TYPE_TO_DISPLAY_NAME = {
@@ -59,6 +78,12 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
     "mindmap": "Mindmap",
     "artifact": "Artifact",
     "skill": "Skill",
+    "structure_graph": "Structure Graph",
+    "structure_mindmap": "Structure Mindmap",
+    "timeline": "Timeline",
+    "session_graph": "Session Graph",
+    "session_essence": "Session Essence",
+    "structure": "Structure",
 }
 
 
@@ -884,6 +909,18 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
         from rag.nlp import search
 
         settings.docStoreConn.delete({"compile_kwd": ["skill", "skill_all"]}, search.index_name(kb.tenant_id), dataset_id)
+    elif wipe and index_type in _STRUCTURE_INDEX_TYPES:
+        from rag.nlp import search
+
+        # Wipe the merged KB-wide dataset_graph rows for the requested kind
+        # (all kinds for the merge-all "structure" type). The per-document
+        # entity/relation rows the merge reads from are left intact.
+        friendly = _STRUCTURE_INDEX_TYPE_TO_KIND.get(index_type)
+        resolved_kind = _resolve_dataset_structure_kind(friendly) if friendly else None
+        condition: dict = {"knowledge_graph_kwd": ["dataset_graph"]}
+        if resolved_kind:
+            condition["compilation_template_kind_kwd"] = [resolved_kind]
+        settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}

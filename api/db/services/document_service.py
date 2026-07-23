@@ -647,7 +647,7 @@ class DocumentService(CommonService):
         # Drop rows this document solely owned (delete by id in batches).
         for i in range(0, len(sole_owner_ids), page_size):
             settings.docStoreConn.delete(
-                {"id": sole_owner_ids[i:i + page_size]},
+                {"id": sole_owner_ids[i : i + page_size]},
                 index,
                 doc.kb_id,
             )
@@ -1207,7 +1207,20 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap", "artifact", "skill"], "type should be graphrag, raptor, mindmap, artifact or skill"
+    assert ty in [
+        "graphrag",
+        "raptor",
+        "mindmap",
+        "artifact",
+        "skill",
+        # KB-wide structure-graph merge task types (rebuild dataset_graph rows).
+        "structure_graph",
+        "structure_mindmap",
+        "timeline",
+        "session_graph",
+        "session_essence",
+        "structure",
+    ], f"unsupported task type '{ty}'"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
