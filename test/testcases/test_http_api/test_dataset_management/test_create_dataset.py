@@ -326,7 +326,7 @@ class TestDatasetCreate:
         payload = {"name": name, "permission": permission}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101
-        assert "input should be 'me' or 'team'" in res["message"]
+        assert "Input should be 'me' or 'team'" in res["message"]
 
     @pytest.mark.p2
     def test_permission_unset(self, HttpApiAuth):
@@ -340,7 +340,7 @@ class TestDatasetCreate:
         payload = {"name": "permission_none", "permission": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "input should be 'me' or 'team'" in res["message"], res
+        assert "Input should be 'me' or 'team'" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

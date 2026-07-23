@@ -876,14 +876,14 @@ def test_dataset_update_permission_invalid_and_none_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(permission, str):
             assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
         else:
-            assert "input should be 'me' or 'team'" in payload["message"], payload
+            assert "Input should be 'me' or 'team'" in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
     _skip_go_ignored_null(none_payload, "permission")
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
-    assert "input should be 'me' or 'team'" in none_payload["message"], none_payload
+    assert "Input should be 'me' or 'team'" in none_payload["message"], none_payload
 
 
 @pytest.mark.p2
@@ -1649,7 +1649,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(permission, str):
             assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
         else:
-            assert "input should be 'me' or 'team'" in payload["message"], payload
+            assert "Input should be 'me' or 'team'" in payload["message"], payload
 
     permission_none_res = rest_client.post("/datasets", json={"name": "permission_none", "permission": None})
     assert permission_none_res.status_code == 200
@@ -1657,7 +1657,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     if IS_GO_PROXY and permission_none_payload.get("code") == 0:
         pytest.skip("Go dataset create accepts a null permission as the default")
     assert permission_none_payload["code"] == ARGUMENT_ERROR_CODE, permission_none_payload
-    assert "input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
+    assert "Input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
 
     permission_unset_res = rest_client.post("/datasets", json={"name": "permission_unset"})
     assert permission_unset_res.status_code == 200

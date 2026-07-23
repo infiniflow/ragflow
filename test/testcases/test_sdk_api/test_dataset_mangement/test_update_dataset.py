@@ -290,7 +290,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"permission": None})
-        assert "input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
