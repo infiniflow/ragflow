@@ -73,7 +73,7 @@ class UserCanvasService(CommonService):
         # find team agents and owned agents
         agents = cls.model.select(*fields).where((cls.model.user_id.in_(tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id))
         # sort by create_time, asc
-        agents.order_by(cls.model.create_time.asc())
+        agents = agents.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 50
         res = []
