@@ -7,6 +7,7 @@ import { Routes } from '@/routes';
 import { useCallback, useMemo } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { BlueprintSection } from './components/blueprint-section';
 import { TemplateConfiguration } from './components/template-configuration';
@@ -16,6 +17,8 @@ const SelectedTemplateIndex = 0;
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const {
     form,
@@ -28,6 +31,12 @@ export default function EditNextCompilationTemplate() {
   } = useEditNextCompilationTemplateGroup();
   const { data: group } = useFetchCompilationTemplateGroup();
 
+  const source = searchParams.get('source');
+  const backTo =
+    source === 'agents'
+      ? `${Routes.Agents}?tab=compiler`
+      : `${Routes.UserSetting}${Routes.CompilationTemplates}`;
+
   const selectedKind = useWatch({
     control: form.control,
     name: `templates.${SelectedTemplateIndex}.kind`,
@@ -36,8 +45,12 @@ export default function EditNextCompilationTemplate() {
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
 
   const handleBack = useCallback(() => {
-    navigateToCompilationTemplates();
-  }, [navigateToCompilationTemplates]);
+    if (source === 'agents') {
+      navigate(`${Routes.Agents}?tab=compiler`);
+    } else {
+      navigateToCompilationTemplates();
+    }
+  }, [source, navigate, navigateToCompilationTemplates]);
 
   const handleSave = useMemo(
     () => form.handleSubmit(onSubmit),
@@ -47,9 +60,7 @@ export default function EditNextCompilationTemplate() {
   return (
     <section className="h-full flex flex-col bg-bg-base">
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
-        <BackButton
-          to={`${Routes.UserSetting}${Routes.CompilationTemplates}`}
-        />
+        <BackButton to={backTo} />
         <h2 className="font-medium text-text-secondary">
           {isCreate
             ? t('setting.addTemplateGroup')

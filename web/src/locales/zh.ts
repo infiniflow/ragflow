@@ -2774,6 +2774,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       duplicate: '复制',
       copyOfAgentName: '{{name}} (副本)',
       chooseAgentType: '选择智能体类型',
+      tabList: {
+        ingestionPipeline: '数据管道',
+        compilationOperator: '编译算子',
+        workflow: '工作流',
+      },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: '分词器',

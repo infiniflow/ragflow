@@ -3178,6 +3178,11 @@ This process aggregates variables from multiple branches into a single variable 
       copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
+      tabList: {
+        ingestionPipeline: 'Ingestion pipeline',
+        compilationOperator: 'Compilation operator',
+        workflow: 'Workflow',
+      },
       chooseAgentType: 'Choose agent type',
       parser: 'Parser',
       parserDescription:

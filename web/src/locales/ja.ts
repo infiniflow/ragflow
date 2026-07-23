@@ -2864,6 +2864,11 @@ export default {
       copyOfAgentName: '{{name}} (コピー)',
       ceateAgent: 'ワークフロー',
       createPipeline: '取り込みパイプライン',
+      tabList: {
+        ingestionPipeline: '取り込みパイプライン',
+        compilationOperator: 'コンパイルオペレーター',
+        workflow: 'ワークフロー',
+      },
       chooseAgentType: 'エージェントタイプを選択',
       parser: 'パーサー',
       parserDescription:
