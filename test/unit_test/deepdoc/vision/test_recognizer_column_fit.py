@@ -61,9 +61,7 @@ _STUB_MODULE_NAMES = (
 
 @pytest.fixture
 def recognizer_module():
-    project_root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
-    )
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
     snapshot = {name: sys.modules.get(name) for name in _STUB_MODULE_NAMES}
 
@@ -87,12 +85,8 @@ def recognizer_module():
     _stub("deepdoc.vision.operators", preprocess=lambda *a, **k: None)
     _stub("deepdoc.vision.ocr", load_model=lambda *a, **k: None)
 
-    recognizer_path = os.path.join(
-        project_root, "deepdoc", "vision", "recognizer.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "deepdoc.vision.recognizer", recognizer_path
-    )
+    recognizer_path = os.path.join(project_root, "deepdoc", "vision", "recognizer.py")
+    spec = importlib.util.spec_from_file_location("deepdoc.vision.recognizer", recognizer_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules["deepdoc.vision.recognizer"] = module
     spec.loader.exec_module(module)
@@ -143,8 +137,8 @@ def test_column_fit_still_picks_closest_within_same_page(recognizer_module):
 
     box = {"layoutno": "table-0", "x0": 100.0, "x1": 150.0, "top": 210.0, "bottom": 240.0}
     clmns = [
-        _column("table-0", 10.0, 60.0, 200.0, 270.0),    # far left
-        _column("table-0", 98.0, 152.0, 200.0, 270.0),   # closest, same band
+        _column("table-0", 10.0, 60.0, 200.0, 270.0),  # far left
+        _column("table-0", 98.0, 152.0, 200.0, 270.0),  # closest, same band
         _column("table-0", 300.0, 360.0, 200.0, 270.0),  # far right
     ]
 
