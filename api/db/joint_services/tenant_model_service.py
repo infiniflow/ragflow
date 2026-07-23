@@ -294,7 +294,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
 
-def resolve_layout_recognizer(layout_recognizer_raw):
+def resolve_layout_recognizer(tenant_id: str, layout_recognizer_raw):
     layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognizer_raw)
     if not isinstance(layout_recognizer_raw, str):
         return layout_recognizer, parser_model_name
@@ -313,6 +313,15 @@ def resolve_layout_recognizer(layout_recognizer_raw):
     ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not ok:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={raw}.")
+
+    # Same tenant-scope check as get_model_config_by_id (owner or joined tenant).
+    if tenant_id != provider_obj.tenant_id:
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+        if provider_obj.tenant_id not in joined_tenant_ids:
+            raise LookupError(
+                f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}."
+            )
 
     parser_kind = _OCR_PARSER_BY_PROVIDER.get(provider_obj.provider_name)
     if parser_kind:

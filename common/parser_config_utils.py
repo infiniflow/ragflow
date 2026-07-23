@@ -65,5 +65,5 @@ def resolve_layout_recognizer(
             resolve_layout_recognizer as _resolve_from_db,
         )
 
-        return _resolve_from_db(layout_recognizer_raw)
+        return _resolve_from_db(tenant_id, layout_recognizer_raw)
     return normalize_layout_recognizer(layout_recognizer_raw)

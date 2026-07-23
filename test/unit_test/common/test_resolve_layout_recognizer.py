@@ -29,7 +29,7 @@ def test_resolve_layout_recognizer_legacy_suffix():
 def test_resolve_layout_recognizer_model_id_for_mineru(provider_get_by_id, model_get_by_id):
     model_obj = MagicMock(provider_id="provider-1")
     model_get_by_id.return_value = (True, model_obj)
-    provider_obj = MagicMock(provider_name="MinerU")
+    provider_obj = MagicMock(provider_name="MinerU", tenant_id="tenant-1")
     provider_get_by_id.return_value = (True, provider_obj)
 
     layout, model_ref = resolve_layout_recognizer(
@@ -45,7 +45,7 @@ def test_resolve_layout_recognizer_model_id_for_mineru(provider_get_by_id, model
 def test_resolve_layout_recognizer_model_id_for_paddleocr(provider_get_by_id, model_get_by_id):
     model_obj = MagicMock(provider_id="provider-1")
     model_get_by_id.return_value = (True, model_obj)
-    provider_obj = MagicMock(provider_name="PaddleOCR")
+    provider_obj = MagicMock(provider_name="PaddleOCR", tenant_id="tenant-1")
     provider_get_by_id.return_value = (True, provider_obj)
 
     layout, model_ref = resolve_layout_recognizer(
@@ -61,3 +61,39 @@ def test_resolve_layout_recognizer_missing_model_id(model_get_by_id):
     model_get_by_id.return_value = (False, None)
     with pytest.raises(LookupError, match="TenantModel id=.* not found"):
         resolve_layout_recognizer("tenant-1", "5a32e0d280f111f1a6f0e50d83a56ab6")
+
+
+@patch("api.db.joint_services.tenant_model_service.TenantService.get_joined_tenants_by_user_id")
+@patch("api.db.joint_services.tenant_model_service.TenantModelService.get_by_id")
+@patch("api.db.joint_services.tenant_model_service.TenantModelProviderService.get_by_id")
+def test_resolve_layout_recognizer_rejects_foreign_tenant(
+    provider_get_by_id, model_get_by_id, get_joined
+):
+    model_obj = MagicMock(provider_id="provider-1")
+    model_get_by_id.return_value = (True, model_obj)
+    provider_obj = MagicMock(provider_name="MinerU", tenant_id="other-tenant")
+    provider_get_by_id.return_value = (True, provider_obj)
+    get_joined.return_value = []
+
+    with pytest.raises(LookupError, match="has no access to provider"):
+        resolve_layout_recognizer("tenant-1", "5a32e0d280f111f1a6f0e50d83a56ab6")
+
+
+@patch("api.db.joint_services.tenant_model_service.TenantService.get_joined_tenants_by_user_id")
+@patch("api.db.joint_services.tenant_model_service.TenantModelService.get_by_id")
+@patch("api.db.joint_services.tenant_model_service.TenantModelProviderService.get_by_id")
+def test_resolve_layout_recognizer_allows_joined_tenant(
+    provider_get_by_id, model_get_by_id, get_joined
+):
+    model_obj = MagicMock(provider_id="provider-1")
+    model_get_by_id.return_value = (True, model_obj)
+    provider_obj = MagicMock(provider_name="MinerU", tenant_id="owner-tenant")
+    provider_get_by_id.return_value = (True, provider_obj)
+    get_joined.return_value = [{"tenant_id": "owner-tenant"}]
+
+    layout, model_ref = resolve_layout_recognizer(
+        "joined-tenant",
+        "5a32e0d280f111f1a6f0e50d83a56ab6",
+    )
+    assert layout == "MinerU"
+    assert model_ref == "5a32e0d280f111f1a6f0e50d83a56ab6"
