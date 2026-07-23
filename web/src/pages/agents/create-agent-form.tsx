@@ -10,7 +10,7 @@ import { Form } from '@/components/ui/form';
 import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
-import { BrainCircuit, Check, Route } from 'lucide-react';
+import { BrainCircuit, Check, Route, Shapes } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FlowType } from './constant';
@@ -24,6 +24,16 @@ type FlowTypeCardProps = {
   value?: FlowType;
   onChange?: (value: FlowType) => void;
 };
+
+const FLOW_TYPE_CONFIG: Record<
+  FlowType,
+  { icon: typeof BrainCircuit; labelKey: string }
+> = {
+  [FlowType.Flow]: { icon: Route, labelKey: 'createPipeline' },
+  [FlowType.Compiler]: { icon: Shapes, labelKey: 'compiler' },
+  [FlowType.Agent]: { icon: BrainCircuit, labelKey: 'createAgent' },
+};
+
 function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
   const { t } = useTranslation();
   const handleChange = useCallback(
@@ -35,8 +45,10 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
 
   return (
     <section className="flex gap-10">
-      {Object.values(FlowType).map((val) => {
+      {[FlowType.Flow, FlowType.Compiler, FlowType.Agent].map((val) => {
         const isActive = value === val;
+        const config = FLOW_TYPE_CONFIG[val];
+        const Icon = config.icon;
         return (
           <Card
             key={val}
@@ -55,16 +67,8 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
               )}
             >
               <div className="flex gap-2">
-                {val === FlowType.Agent ? (
-                  <BrainCircuit className="size-6" />
-                ) : (
-                  <Route className="size-6" />
-                )}
-                <p>
-                  {t(
-                    `flow.${val === FlowType.Agent ? 'createAgent' : 'createPipeline'}`,
-                  )}
-                </p>
+                <Icon className="size-6" />
+                <p>{t(`flow.${config.labelKey}`)}</p>
               </div>
               {isActive && <Check />}
             </CardContent>
