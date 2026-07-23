@@ -15,6 +15,7 @@
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
+  <a href="./README_ru.md"><img alt="Русская версия README" src="https://img.shields.io/badge/Русский-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -46,7 +47,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -63,8 +64,8 @@
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 업데이트
@@ -88,7 +89,7 @@
 ⭐️우리의 저장소를 즐겨찾기에 등록하여 흥미로운 새로운 기능과 업데이트를 최신 상태로 유지하세요! 모든 새로운 릴리스에 대한 즉시 알림을 받으세요! 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 주요 기능
@@ -122,7 +123,7 @@
 ## 🔎 시스템 아키텍처
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 자체 호스팅
@@ -146,14 +147,14 @@
    > `vm.max_map_count`의 값을 아래 명령어를 통해 확인하세요:
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > 만약 `vm.max_map_count` 이 262144 보다 작다면 값을 쟈설정하세요.
    >
    > ```bash
    > # 이 경우에 262144로 설정했습니다.:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > 이 변경 사항은 시스템 재부팅 후에 초기화됩니다. 변경 사항을 영구적으로 적용하려면 /etc/sysctl.conf 파일에 vm.max_map_count 값을 추가하거나 업데이트하세요:
@@ -165,7 +166,7 @@
 2. 레포지토리를 클론하세요:
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
@@ -177,14 +178,14 @@
    > 아래 명령어는 RAGFlow Docker 이미지의 v0.26.4 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.26.4와 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오.
 
    ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
    git checkout v0.26.4
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
 
    # Use CPU for DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
@@ -203,7 +204,7 @@
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _다음 출력 결과로 시스템이 성공적으로 시작되었음을 확인합니다:_
@@ -245,7 +246,7 @@
 > 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
 >
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### Elasticsearch 에서 Infinity 로 문서 엔진 전환
@@ -312,7 +313,7 @@ docker build --platform linux/amd64 \
 
    `/etc/hosts` 에 다음 줄을 추가하여 **conf/service_conf.yaml** 에 지정된 모든 호스트를 `127.0.0.1` 로 해결합니다:
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
@@ -330,7 +331,7 @@ docker build --platform linux/amd64 \
    # centos
    sudo yum install jemalloc
    # mac
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 
 6. 백엔드 서비스를 시작합니다:
@@ -356,7 +357,7 @@ docker build --platform linux/amd64 \
 
    _다음 인터페이스는 시스템이 성공적으로 시작되었음을 나타냅니다:_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 
 9. 개발이 완료된 후 RAGFlow 프론트엔드 및 백엔드 서비스를 중지합니다.

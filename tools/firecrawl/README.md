@@ -186,7 +186,7 @@ The integration includes robust error handling for:
 
 ## 🤝 **Contributing**
 
-This integration was created as part of the [Firecrawl bounty program](https://github.com/firecrawl/firecrawl/issues/2167). 
+This integration was created as part of the [Firecrawl bounty program](https://github.com/firecrawl/firecrawl/issues/2167).
 
 ### Development
 1. Fork the RAGFlow repository

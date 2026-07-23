@@ -353,7 +353,7 @@ func (dao *MemoryDAO) GetByFilter(userID string, tenantIDs []string, memoryTypes
 		FROM memory m
 		LEFT JOIN user u ON m.tenant_id = u.id
 		%s
-		ORDER BY m.update_time DESC
+		ORDER BY m.create_time DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 

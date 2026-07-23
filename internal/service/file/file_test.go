@@ -108,7 +108,7 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{
+	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
 		"id":         "loc-1",
 		"name":       "secret.txt",
 		"mime_type":  "text/plain",
@@ -136,7 +136,7 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{
+	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
 		"id":         "loc-1",
 		"name":       "doc.txt",
 		"mime_type":  "text/plain",
@@ -154,6 +154,7 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 }
 
 func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	if err := memory.Put("user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
 		t.Fatalf("put text: %v", err)
@@ -166,7 +167,7 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	contents, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	contents, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "text-id", "name": "notes.txt", "mime_type": "text/plain", "created_by": "user-1"},
 		{"id": "image-id", "name": "photo.bin", "mime_type": "image/png", "created_by": "user-1"},
 	}, "Plain Text")
@@ -185,13 +186,14 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 }
 
 func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "file-id", "name": "secret.txt", "mime_type": "text/plain", "created_by": "user-2"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "created_by does not match") {
@@ -200,13 +202,14 @@ func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
 }
 
 func TestFileService_ParseAgentUploads_MissingObjectFails(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "missing", "name": "missing.txt", "mime_type": "text/plain", "created_by": "user-1"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "read upload") {

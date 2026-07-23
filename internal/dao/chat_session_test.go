@@ -96,11 +96,12 @@ func TestChatSessionDAOUpdateByIDRefreshesTimestampsOnEmptyUpdate(t *testing.T) 
 	oldUpdateTime := int64(1000)
 	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", oldUpdateTime)
 
-	if err := NewChatSessionDAO().UpdateByID("session-1", map[string]interface{}{}); err != nil {
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, "session-1", map[string]interface{}{}); err != nil {
 		t.Fatalf("UpdateByID failed: %v", err)
 	}
 
-	session, err := NewChatSessionDAO().GetByID("session-1")
+	session, err := NewChatSessionDAO().GetByID(ctx, "session-1")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}
@@ -118,7 +119,8 @@ func TestChatSessionDAOUpdateByIDSameValueSucceeds(t *testing.T) {
 
 	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", 1000)
 
-	if err := NewChatSessionDAO().UpdateByID("session-1", map[string]interface{}{"name": "same"}); err != nil {
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, "session-1", map[string]interface{}{"name": "same"}); err != nil {
 		t.Fatalf("UpdateByID failed: %v", err)
 	}
 }
@@ -127,7 +129,8 @@ func TestChatSessionDAOUpdateByIDMissingSession(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
 	pushDB(t, db)
 
-	err := NewChatSessionDAO().UpdateByID("missing", nil)
+	ctx := t.Context()
+	err := NewChatSessionDAO().UpdateByID(ctx, "missing", nil)
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected ErrRecordNotFound, got %v", err)
 	}
@@ -142,7 +145,8 @@ func TestChatSessionDAOListAgentSessionsOrdersByUpdateTimeDesc(t *testing.T) {
 	createAgentSessionForDAOTest(t, db, "session-middle", "agent-1", "user-1", 2000)
 	createAgentSessionForDAOTest(t, db, "session-other-agent", "agent-2", "user-1", 9999)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		Page:     1,
 		PageSize: 10,
@@ -180,7 +184,8 @@ func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	createAgentSessionForDAOTest(t, db, "session-3", "agent-1", "user-1", 3000)
 	createAgentSessionForDAOTest(t, db, "session-other-user", "agent-1", "user-2", 4000)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		UserID:   "user-1",
 		Page:     2,

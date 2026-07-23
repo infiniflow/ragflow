@@ -9,10 +9,11 @@ import (
 )
 
 func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
+	ctx := t.Context()
 	p := NewDOCXParser()
 	p.outputFormat = "json"
 	data := minimalDOCX(t, "Hello from JSON path")
-	res := p.ParseWithResult("sample.docx", data)
+	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -33,6 +34,7 @@ func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 }
 
 func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
+	ctx := t.Context()
 	p := NewDOCXParser()
 	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 	if p.outputFormat != "json" {
@@ -43,7 +45,7 @@ func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
 	}
 	// Full round-trip: json config → json output
 	data := minimalDOCX(t, "Config test")
-	res := p.ParseWithResult("sample.docx", data)
+	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -56,13 +58,14 @@ func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
 }
 
 func TestDOCXParser_ConfigureFromSetup_Markdown(t *testing.T) {
+	ctx := t.Context()
 	p := NewDOCXParser()
 	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
 	if p.outputFormat != "markdown" {
 		t.Fatalf("After ConfigureFromSetup, outputFormat = %q, want %q", p.outputFormat, "markdown")
 	}
 	data := minimalDOCX(t, "Config md test")
-	res := p.ParseWithResult("sample.docx", data)
+	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -75,9 +78,10 @@ func TestDOCXParser_ConfigureFromSetup_Markdown(t *testing.T) {
 }
 
 func TestDOCXParser_ParseWithResult_CGOMinimalDocument(t *testing.T) {
+	ctx := t.Context()
 	p := NewDOCXParser()
 	data := minimalDOCX(t, "Hello from DOCX parser")
-	res := p.ParseWithResult("sample.docx", data)
+	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
