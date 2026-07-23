@@ -212,6 +212,9 @@ func printHelp(args *serverArgs) {
 }
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	defer cancel()
+
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
@@ -340,7 +343,7 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -371,7 +374,6 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
@@ -478,11 +480,11 @@ func runAdmin(args *serverArgs) error {
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	quitCtx, quitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer quitCancel()
 
 	// Shutdown HTTP server
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(quitCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 

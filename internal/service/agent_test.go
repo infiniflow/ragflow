@@ -931,7 +931,8 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	session, code, err := NewAgentService().GetAgentSession("user-1", "canvas-1", "session-1")
+	ctx := t.Context()
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -955,7 +956,8 @@ func TestGetAgentSessionServiceNotFoundWhenSessionBelongsToAnotherAgent(t *testi
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
-	session, code, err := NewAgentService().GetAgentSession("user-1", "canvas-1", "session-other")
+	ctx := t.Context()
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-other")
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -974,7 +976,8 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 2000)
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "canvas-1", "session-1")
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-1")
 	if err != nil {
 		t.Fatalf("DeleteAgentSessionItem failed: %v", err)
 	}
@@ -986,14 +989,14 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
 		t.Fatalf("expected session-1 to be deleted, count=%d", count)
 	}
 
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count other session: %v", err)
 	}
 	if count != 1 {
@@ -1007,7 +1010,8 @@ func TestDeleteAgentSessionItemServiceNoopForSessionFromAnotherAgent(t *testing.
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "canvas-1", "session-other")
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-other")
 	if err != nil {
 		t.Fatalf("DeleteAgentSessionItem failed: %v", err)
 	}
@@ -1035,7 +1039,8 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-2", "canvas-1", "user-1", 2000)
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 3000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", nil, true)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", nil, true)
 	if err != nil {
 		t.Fatalf("DeleteAgentSessions failed: %v", err)
 	}
@@ -1050,7 +1055,7 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	}
 
 	var ownCount int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
 		t.Fatalf("failed to count own sessions: %v", err)
 	}
 	if ownCount != 0 {
@@ -1058,7 +1063,7 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	}
 
 	var otherCount int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
 		t.Fatalf("failed to count other session: %v", err)
 	}
 	if otherCount != 1 {
@@ -1072,7 +1077,8 @@ func TestDeleteAgentSessionsServiceDuplicateIDsPartial(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"session-1", "session-1"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"session-1", "session-1"}, false)
 	if err != nil {
 		t.Fatalf("DeleteAgentSessions failed: %v", err)
 	}
@@ -1090,7 +1096,7 @@ func TestDeleteAgentSessionsServiceDuplicateIDsPartial(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
@@ -1103,7 +1109,8 @@ func TestDeleteAgentSessionsServiceMissingSessionError(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"missing-session"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"missing-session"}, false)
 	if err == nil {
 		t.Fatal("expected missing session error")
 	}
@@ -1124,7 +1131,8 @@ func TestDeleteAgentSessionsServiceRequiresOwner(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"session-1"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"session-1"}, false)
 	if err == nil {
 		t.Fatal("expected owner error")
 	}
@@ -1136,7 +1144,7 @@ func TestDeleteAgentSessionsServiceRequiresOwner(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count session: %v", err)
 	}
 	if count != 1 {
@@ -1841,7 +1849,8 @@ func TestGetAgentSession_RejectsIDOR(t *testing.T) {
 	createAgentSessionTestCanvas(t, "agent-2", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
-	data, code, err := NewAgentService().GetAgentSession("user-1", "agent-2", "session-1")
+	ctx := t.Context()
+	data, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-2", "session-1")
 	if err == nil {
 		t.Fatal("expected non-nil error for cross-agent session access")
 	}
@@ -1863,7 +1872,8 @@ func TestGetAgentSession_SuccessWhenAgentMatches(t *testing.T) {
 	createAgentSessionTestCanvas(t, "agent-1", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
-	data, code, err := NewAgentService().GetAgentSession("user-1", "agent-1", "session-1")
+	ctx := t.Context()
+	data, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-1", "session-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1892,7 +1902,8 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 	createAgentSessionTestCanvas(t, "agent-2", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "agent-2", "session-1")
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "agent-2", "session-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1904,7 +1915,7 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 	}
 
 	// The session must still exist — the cross-agent delete was a no-op.
-	verify, _, err := NewAgentService().GetAgentSession("user-1", "agent-1", "session-1")
+	verify, _, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-1", "session-1")
 	if err != nil {
 		t.Fatalf("session should still exist for the legitimate owner: %v", err)
 	}

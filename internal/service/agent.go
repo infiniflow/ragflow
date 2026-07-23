@@ -355,8 +355,8 @@ func NewAgentServiceWithOptions(
 // ListTemplates returns every canvas template. Mirrors Python
 // agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
 // and serialises each row.
-func (s *AgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
-	return s.canvasTemplateDAO.GetAll()
+func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTemplate, error) {
+	return s.canvasTemplateDAO.GetAll(ctx)
 }
 
 // AgentItem is one entry in the list response.
