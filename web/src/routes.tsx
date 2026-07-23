@@ -81,12 +81,6 @@ export enum Routes {
   AdminMonitoring = `${Admin}/monitoring`,
 }
 
-const defaultRouteFallback = (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-[1px]">
-    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
-  </div>
-);
-
 type LazyRouteConfig = Omit<RouteObject, 'Component' | 'children'> & {
   Component?: () => Promise<{ default: React.ComponentType<any> }>;
   children?: LazyRouteConfig[];
@@ -94,11 +88,10 @@ type LazyRouteConfig = Omit<RouteObject, 'Component' | 'children'> & {
 
 const withLazyRoute = (
   importer: () => Promise<{ default: React.ComponentType<any> }>,
-  fallback: React.ReactNode = defaultRouteFallback,
 ) => {
   const LazyComponent = lazy(importer);
   const Wrapped: React.FC<any> = (props) => (
-    <Suspense fallback={fallback}>
+    <Suspense fallback={null}>
       <LazyComponent {...props} />
     </Suspense>
   );

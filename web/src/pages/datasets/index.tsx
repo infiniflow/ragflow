@@ -5,7 +5,6 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { Spin } from '@/components/ui/spin';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
@@ -73,12 +72,7 @@ export default function Datasets() {
   return (
     <>
       {loading && !kbs?.length ? (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="datasets-list"
-        >
-          <Spin size="large" />
-        </article>
+        <article className="size-full" data-testid="datasets-list"></article>
       ) : kbs?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"

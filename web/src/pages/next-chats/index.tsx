@@ -5,7 +5,6 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { Spin } from '@/components/ui/spin';
 import { useFetchChatList } from '@/hooks/use-chat-request';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
@@ -104,12 +103,7 @@ export default function ChatList() {
   return (
     <>
       {loading && !data.chats?.length ? (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="chats-list"
-        >
-          <Spin size="large" />
-        </article>
+        <article className="size-full" data-testid="chats-list"></article>
       ) : data.chats?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
