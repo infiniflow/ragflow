@@ -97,7 +97,6 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -122,8 +121,6 @@ func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	}
 }
 
-====== =
->>>>>>> upstream/main
 func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
