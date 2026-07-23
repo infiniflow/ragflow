@@ -49,6 +49,7 @@ from ._common import (
     build_chunk_batches as _build_chunk_batches,
     bulk_dedup_items as _bulk_dedup_items,
     ensure_llm_bundle as _ensure_llm_bundle,
+    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id,
 )
@@ -839,7 +840,12 @@ async def _wiki_extract_one_batch(
     )
     try:
         res = await asyncio.wait_for(
-            gen_json(WIKI_MAP_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
+            gen_json(
+                WIKI_MAP_SYSTEM,
+                user_prompt,
+                chat_mdl,
+                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -1930,7 +1936,12 @@ async def _wiki_resolve_maybe_items(
 
         try:
             res = await asyncio.wait_for(
-                gen_json(WIKI_PLAN_RECONCILE_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.0}),
+                gen_json(
+                    WIKI_PLAN_RECONCILE_SYSTEM,
+                    user_prompt,
+                    chat_mdl,
+                    gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
+                ),
                 timeout=llm_timeout,
             )
         except asyncio.TimeoutError:
@@ -2011,7 +2022,12 @@ async def _wiki_planning_call(
 
     try:
         res = await asyncio.wait_for(
-            gen_json(WIKI_PLAN_PLANNING_SYSTEM, user_prompt, chat_mdl, gen_conf={"temperature": 0.1}),
+            gen_json(
+                WIKI_PLAN_PLANNING_SYSTEM,
+                user_prompt,
+                chat_mdl,
+                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
@@ -3056,7 +3072,11 @@ async def _wiki_chat_text(
         logging.exception("wiki_refine: message_fit_in failed; sending untrimmed")
     try:
         raw = await asyncio.wait_for(
-            chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": temperature}),
+            chat_mdl.async_chat(
+                msg[0]["content"],
+                msg[1:],
+                _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
+            ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
