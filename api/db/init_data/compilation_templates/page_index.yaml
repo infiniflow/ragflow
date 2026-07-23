@@ -24,19 +24,19 @@ config:
       usable source content at all. Do not invent content.
     fields:
       - type: title
-        description: the exact heading text as the entity name, cleaned of page numbers and leader dots
+        description: the heading text (clean, no page numbers or leader dots)
         rule: |
           - Length restriction:
               • Chinese heading: ≤25 characters
               • English heading: ≤80 characters
-          - `name` must be non-empty (or exactly `-1`).
-          - If any part of a chunk has no valid heading, output that part as {"name":"-1", ...}.
+          - "title" must be non-empty (or exactly "-1").
+          - If any part of a chunk has no valid heading, output that part as {"title":"-1", ...}.
           - If a chunk contains multiple headings, expand them in order:
-              - Each heading → {"name":"...","description":"a compact summary of only that heading's section"}.
+              - Each heading → {"title":"...","chunk_id":"<chunk_ID>","description":"a compact summary of only that heading's section"}.
           - A parent heading with no direct body must still receive a short higher-level overview based on its child-section content for later merging; do not copy a child's summary verbatim.
           - Prefer 1–2 concise sentences and roughly half the length of a normal summary; preserve only the most important facts, dates, numbers, names, and conclusions.
           - When ambiguous, prefer `-1` unless the text strongly looks like a heading.
-          - Keep the language of `name` the same as the input.
+          - Keep language of "title" the same as the input.
           - Prefix like following must be titles: 第x章, 第N条, 第N节, 1, 1.1, 1.1.1 ...
   relation:
     description: >-
