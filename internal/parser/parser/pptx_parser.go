@@ -19,6 +19,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -45,7 +46,7 @@ func (p *PPTXParser) String() string {
 // ParseWithResult emits one JSON item per slide with the slide's
 // plain text. Mirrors the python parser.py:slides branch which
 // forces output_format="json" for the slide family.
-func (p *PPTXParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, p.format)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("presentation open: %w", err)}

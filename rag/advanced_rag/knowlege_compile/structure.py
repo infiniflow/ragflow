@@ -55,18 +55,29 @@ _ES_DEDUP_INSERT_BATCH_SIZE = 256
 class LLMCallPool:
     """Task-scoped priority scheduler for actual chat-model calls."""
 
-    def __init__(self, max_concurrency: int = 10):
+    def __init__(self, max_concurrency: int = 10, max_pending: int | None = None):
         self.max_concurrency = max(1, int(max_concurrency))
+        self.max_pending = max(self.max_concurrency, int(max_pending or self.max_concurrency))
         self._active = 0
         self._ticket = 0
         self._waiting: list[tuple[int, int]] = []
         self._condition = asyncio.Condition()
+
+    @property
+    def active_count(self) -> int:
+        return self._active
+
+    @property
+    def pending_count(self) -> int:
+        return self._active + len(self._waiting)
 
     def wrap(self, chat_mdl, *, priority: int, label: str, context: str | None = None):
         return PooledChatModel(self, chat_mdl, priority=priority, label=label, context=context)
 
     async def call(self, fn, *, priority: int, label: str, context: str | None = None):
         async with self._condition:
+            while self.pending_count >= self.max_pending:
+                await self._condition.wait()
             ticket = (int(priority), self._ticket)
             self._ticket += 1
             heapq.heappush(self._waiting, ticket)

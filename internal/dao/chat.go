@@ -54,8 +54,8 @@ func (dao *ChatDAO) ListByTenantID(tenantID string, status string) ([]*entity.Ch
 }
 
 // ListByTenantIDs list chats by tenant IDs with pagination and filtering
-func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
-	var chats []*entity.Chat
+func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.ChatListItem, int64, error) {
+	var chats []*entity.ChatListItem
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
@@ -93,11 +93,11 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
 		offset := (page - 1) * pageSize
-		if err := query.Offset(offset).Limit(pageSize).Find(&chats).Error; err != nil {
+		if err := query.Offset(offset).Limit(pageSize).Scan(&chats).Error; err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := query.Find(&chats).Error; err != nil {
+		if err := query.Scan(&chats).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -106,8 +106,8 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 }
 
 // ListByOwnerIDs list chats by owner IDs with filtering (manual pagination)
-func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
-	var chats []*entity.Chat
+func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.ChatListItem, int64, error) {
+	var chats []*entity.ChatListItem
 
 	// Build query with join to user table
 	query := DB.Model(&entity.Chat{}).
@@ -135,7 +135,7 @@ func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby str
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records
-	if err := query.Find(&chats).Error; err != nil {
+	if err := query.Scan(&chats).Error; err != nil {
 		return nil, 0, err
 	}
 

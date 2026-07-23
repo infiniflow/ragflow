@@ -34,6 +34,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"strings"
 )
 
@@ -60,7 +61,7 @@ func NewTextParser() *TextParser {
 // The items slice is always non-nil so downstream chunkers see a
 // non-empty JSON payload even for an empty input (mirrors the
 // MarkdownParser convention at markdown_parser.go:71-76).
-func (p *TextParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if !utf8Valid(data) {
 		return ParseResult{Err: errInvalidUTF8}
 	}
