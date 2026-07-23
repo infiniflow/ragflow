@@ -668,7 +668,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 				return agentTitleAlreadyExistsError(title)
 			}
-			return errors.New("Agent title already exists.")
+			return errors.New("agent title already exists")
 		}
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}

@@ -303,7 +303,7 @@ func (s *BotService) ChatbotCompletion(
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
 	// so a returned row is valid; we still nil-check defensively
 	// before dereferencing for symmetry with the session path.
-	dialog, err := s.chatDAO.GetDialogByID(ctx, dialogID)
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil || dialog == nil ||
 		dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {

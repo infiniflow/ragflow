@@ -51,7 +51,7 @@ func (dao *APITokenDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenan
 	return result.RowsAffected, result.Error
 }
 
-// GetByToken gets API token by access key
+// GetUserByAPIToken gets user by API token
 func (dao *APITokenDAO) GetUserByAPIToken(ctx context.Context, db *gorm.DB, token string) (*entity.APIToken, error) {
 	var apiToken entity.APIToken
 	err := db.WithContext(ctx).Where("token = ?", token).First(&apiToken).Error
@@ -106,7 +106,7 @@ type ConversationStatsRow struct {
 // Create inserts a new api_4_conversation row. The caller is responsible
 // for setting ID, DialogID, UserID and the BaseModel time fields; the
 // DAO does not assign defaults because session creation paths in the
-// Python agent API generate a uuid + tenant timestamp and rely on the
+// Python agent API generate an uuid + tenant timestamp and rely on the
 // round-trip shape being byte-identical.
 func (dao *API4ConversationDAO) Create(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
 	if conv == nil {
