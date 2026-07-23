@@ -386,7 +386,7 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(arguments); err != nil {
+		if err = runAPI(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
@@ -648,7 +648,7 @@ func runSyncer(args *serverArgs) error {
 	return nil
 }
 
-func runAPI(args *serverArgs) error {
+func runAPI(ctx context.Context, args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -668,14 +668,14 @@ func runAPI(args *serverArgs) error {
 	}
 
 	config := server.GetConfig()
-	startServer(config)
+	startServer(ctx, config)
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(config *server.Config) {
+func startServer(ctx context.Context, config *server.Config) {
 
 	// Set Gin mode
 	if config.Server.Mode == "release" {
@@ -742,7 +742,7 @@ func startServer(config *server.Config) {
 			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
 		},
 		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(chatService, userID, page, pageSize, orderBy, desc)
+			return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderBy, desc)
 		},
 		func(userID string, req mcp.RetrievalRequest) (string, error) {
 			return handler.MCPRetrieval(datasetsService, userID, req)

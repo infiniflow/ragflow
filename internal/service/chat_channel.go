@@ -15,6 +15,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/utility"
@@ -58,13 +59,13 @@ func (s *ChatChannelService) GetByID(id string) (*entity.ChatChannel, error) {
 	return s.chatChannelDAO.GetByIDOnly(id)
 }
 
-func (s *ChatChannelService) List(tenantID string) ([]*entity.ChatChannelListResponse, error) {
+func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
 	return s.chatChannelDAO.ListByTenantID(tenantID)
 }
 
-func (s *ChatChannelService) CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	if chatID != nil && *chatID != "" {
-		dialog, err := s.chatDAO.GetByID(*chatID)
+		dialog, err := s.chatDAO.GetByID(ctx, *chatID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, errors.New("Can't find this chat assistant!")
@@ -122,7 +123,7 @@ func (s *ChatChannelService) accessible(userID, channelID string) (*entity.ChatC
 	return channel, false, nil
 }
 
-func (s *ChatChannelService) GetChatChannel(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
 	_, ok, err := s.accessible(userID, channelID)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -141,7 +142,7 @@ func (s *ChatChannelService) GetChatChannel(userID, channelID string) (*entity.C
 	return channel, common.CodeSuccess, nil
 }
 
-func (s *ChatChannelService) UpdateChatChannel(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
 	channel, ok, err := s.accessible(userID, channelID)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -184,7 +185,7 @@ func (s *ChatChannelService) UpdateChatChannel(userID, channelID string, req map
 				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
 			}
 			if chatID != "" {
-				dialog, err := s.chatDAO.GetByID(chatID)
+				dialog, err := s.chatDAO.GetByID(ctx, chatID)
 				if err != nil {
 					if dao.IsNotFoundErr(err) {
 						return nil, common.CodeDataError, errors.New("Can't find this chat assistant!")
@@ -215,7 +216,7 @@ func (s *ChatChannelService) UpdateChatChannel(userID, channelID string, req map
 	return updated, common.CodeSuccess, nil
 }
 
-func (s *ChatChannelService) DeleteChatChannel(userID, channelID string) (bool, common.ErrorCode, error) {
+func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
 	channel, ok, err := s.accessible(userID, channelID)
 	if err != nil {
 		return false, common.CodeServerError, err
