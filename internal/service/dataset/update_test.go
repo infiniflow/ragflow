@@ -205,7 +205,8 @@ func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) 
 		"Parser:CustomP": map[string]interface{}{"chunk_token_num": float64(256)},
 	}
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:     &chunkMethod,
 		PipelineID:   &pipelineID,
 		ParseType:    &parseType,
@@ -248,7 +249,8 @@ func TestUpdateDatasetRejectsInvalidPages(t *testing.T) {
 
 	chunkMethod := "manual"
 	parseType := 1
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
