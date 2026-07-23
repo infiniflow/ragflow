@@ -34,7 +34,7 @@ class TestRquest:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({})
-        assert "No properties were modified" in str(exception_info.value), str(exception_info.value)
+        assert "no properties were modified" in str(exception_info.value), str(exception_info.value)
 
 
 class TestCapability:

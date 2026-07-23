@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"ragflow/internal/dao"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
@@ -302,7 +303,7 @@ func (s *BotService) ChatbotCompletion(
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
 	// so a returned row is valid; we still nil-check defensively
 	// before dereferencing for symmetry with the session path.
-	dialog, err := s.chatDAO.GetDialogByID(ctx, dialogID)
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil || dialog == nil ||
 		dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
@@ -351,7 +352,7 @@ func (s *BotService) ChatbotCompletion(
 			UserID:   tenantID,
 			Message:  seedMsg,
 		}
-		if err = s.api4ConversationDAO.Create(ctx, session); err != nil {
+		if err = s.api4ConversationDAO.Create(ctx, dao.DB, session); err != nil {
 			return nil, common.CodeServerError, err
 		}
 
@@ -375,7 +376,7 @@ func (s *BotService) ChatbotCompletion(
 		return out, common.CodeSuccess, nil
 	}
 
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, req.SessionID, dialogID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -580,7 +581,7 @@ func (s *BotService) persistChatbotTurn(
 	lock := s.persistLock(session.ID)
 	lock.Lock()
 	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, session.ID, session.DialogID)
+	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
 	if err != nil {
 		return err
 	}
@@ -632,7 +633,7 @@ func (s *BotService) persistChatbotTurn(
 	}
 	session.Reference = rawRef
 
-	return s.api4ConversationDAO.Update(ctx, session)
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

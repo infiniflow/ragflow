@@ -32,7 +32,7 @@ PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
 
 
 def _skip_go_ignored_null(payload, field):
-    if IS_GO_PROXY and payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and payload.get("message") == "no properties were modified":
         pytest.skip(f"Go dataset update ignores an explicit null {field}")
 
 
@@ -676,7 +676,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
     assert empty_payload_res.status_code == 200
     empty_payload = empty_payload_res.json()
     assert empty_payload["code"] == 102, empty_payload
-    assert empty_payload["message"] == "No properties were modified", empty_payload
+    assert empty_payload["message"] == "no properties were modified", empty_payload
 
     unset_payload_res = rest_client.put(f"/datasets/{dataset_id}")
     assert unset_payload_res.status_code == 200
@@ -778,7 +778,7 @@ def test_dataset_update_description_validation_contract(rest_client, clear_datas
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    if IS_GO_PROXY and none_payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and none_payload.get("message") == "no properties were modified":
         pytest.skip("Go dataset update does not clear description with an explicit null")
     assert none_payload["code"] == 0, none_payload
 
