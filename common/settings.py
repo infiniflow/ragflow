@@ -46,6 +46,7 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+import memory.utils.gaussdb_conn as memory_gaussdb_conn
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
@@ -432,6 +433,11 @@ def init_settings():
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
+    elif lower_case_doc_engine == "gaussdb":
+        # Memory Store uses a dedicated adapter for message tables. It reads the
+        # same GaussDB configuration and shares the lazy connection pool with
+        # docStoreConn, but keeps its own table layout and query semantics.
+        msgStoreConn = memory_gaussdb_conn.GaussDBMemoryConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:
