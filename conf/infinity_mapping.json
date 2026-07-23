@@ -44,9 +44,9 @@
 	"extra": {"type": "varchar", "default": ""},
 
 	"compile_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
-	"source_chunk_ids": {"type": "json", "default": "[]"},
-	"source_doc_ids": {"type": "json", "default": "[]"},
-	"compilation_template_ids": {"type": "json", "default": "[]"},
+	"source_chunk_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"source_doc_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"compilation_template_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"compilation_template_kind_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"chunk_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"input_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
