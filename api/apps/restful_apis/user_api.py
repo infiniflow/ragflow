@@ -172,7 +172,7 @@ async def oauth_login(channel):
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
-    logging.info("OAuth login initiated: channel='%s', state='%s'", channel, state)
+    logging.info("OAuth login initiated: channel='%s'", channel)
     return redirect(auth_url)
 
 
@@ -645,7 +645,11 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
-        TenantService.update_by_id(tid, req)
+        if tid != current_user.id:
+            logging.warning("IDOR attempt blocked: user %s requested tenant_id %s on %s", current_user.id, tid, request.path)
+            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        update_dict = ensure_tenant_model_id_for_params(tid, req)
+        TenantService.update_by_id(tid, update_dict)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

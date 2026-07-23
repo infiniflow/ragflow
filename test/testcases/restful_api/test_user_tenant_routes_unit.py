@@ -1114,10 +1114,21 @@ def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
     assert "tenant info boom" in res["message"], res
 
+    # IDOR: tenant_id from request body must match the authenticated user
     _set_request_json(
         monkeypatch,
         module,
-        {"tenant_id": "tenant-1", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
+        {"tenant_id": "other-tenant", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
+    )
+    res = _run(module.set_tenant_info())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["message"] == "No authorization.", res
+
+    # Authorized request: tenant_id matches current_user.id ("current-user")
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"tenant_id": "current-user", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
     )
 
     def _raise_update(_tenant_id, _payload):
