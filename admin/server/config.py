@@ -16,6 +16,8 @@
 
 
 import logging
+import os
+import re
 import threading
 from enum import Enum
 
@@ -36,6 +38,7 @@ class BaseConfig(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "host": self.host, "port": self.port, "service_type": self.service_type}
 
+
 class ServiceConfigs:
     configs = list[BaseConfig]
 
@@ -45,6 +48,63 @@ class ServiceConfigs:
 
 
 SERVICE_CONFIGS = ServiceConfigs
+# The Admin service list reads the same service_conf/local.service_conf files,
+# but the GaussDB metadata connection does not come from those files because
+# their top-level gaussdb section belongs to DocEngine and Memory Store. This
+# lightweight parser keeps Admin's metadata display aligned with the main
+# service DATABASE settings instead of showing an inactive mysql/postgres block.
+GAUSSDB_ENV_DEFAULTS = {
+    "name": "rag_flow",
+    "user": "rag_flow",
+    "password": "infini_rag_flow",
+    "host": "gaussdb",
+    "port": 8000,
+    "schema": "public",
+}
+_GAUSSDB_SCHEMA_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def normalize_database_type(database_type: str | None = None) -> str:
+    # Only normalize the new GaussDB values. Existing metadata database
+    # selection retains the upstream behavior.
+    raw_value = database_type or "mysql"
+    normalized = raw_value.strip().lower()
+    if normalized in {"gaussdb", "gauss"}:
+        return "gaussdb"
+    return raw_value
+
+
+def _get_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_gaussdb_metadata_schema(value: str | None = None) -> str:
+    # Admin only displays the schema and does not create the connection, but it
+    # must apply the same validation. Otherwise an invalid
+    # GAUSSDB_METADATA_SCHEMA could look valid in Admin while the main service
+    # fails during startup.
+    schema = (value or GAUSSDB_ENV_DEFAULTS["schema"]).strip() or GAUSSDB_ENV_DEFAULTS["schema"]
+    if not _GAUSSDB_SCHEMA_PATTERN.match(schema):
+        raise ValueError(f"invalid GAUSSDB_METADATA_SCHEMA: {schema}")
+    return schema
+
+
+def _gaussdb_env_config() -> dict[str, Any]:
+    # This configuration is only for Admin display and health checks; it does
+    # not create the application ORM connection. Keep the flat metadata fields
+    # aligned with common.settings._gaussdb_env_config() so both surfaces report
+    # the same connection information.
+    return {
+        "name": os.environ.get("GAUSSDB_METADATA_DBNAME", GAUSSDB_ENV_DEFAULTS["name"]),
+        "user": os.environ.get("GAUSSDB_METADATA_USER", GAUSSDB_ENV_DEFAULTS["user"]),
+        "password": os.environ.get("GAUSSDB_METADATA_PASSWORD", GAUSSDB_ENV_DEFAULTS["password"]),
+        "host": os.environ.get("GAUSSDB_METADATA_HOST", GAUSSDB_ENV_DEFAULTS["host"]),
+        "port": _get_int_env("GAUSSDB_METADATA_PORT", GAUSSDB_ENV_DEFAULTS["port"]),
+        "schema": _normalize_gaussdb_metadata_schema(os.environ.get("GAUSSDB_METADATA_SCHEMA")),
+    }
 
 
 class ServiceType(Enum):
@@ -81,6 +141,16 @@ class MySQLConfig(MetaConfig):
         extra_dict["username"] = self.username
         extra_dict["password"] = self.password
         result["extra"] = extra_dict
+        return result
+
+
+class GaussDBMetadataConfig(MySQLConfig):
+    metadata_schema: str
+
+    def to_dict(self) -> dict[str, Any]:
+        result = super().to_dict()
+        result["extra"]["schema"] = self.metadata_schema
+        result["extra"]["password"] = "*" * 8
         return result
 
 
@@ -233,6 +303,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
     configurations = []
     ragflow_count = 0
     id_count = 0
+    metadata_db_type = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
     for k, v in raw_configs.items():
         match k:
             case "ragflow":
@@ -308,20 +379,33 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 configurations.append(config)
                 id_count += 1
             case "mysql":
+                if metadata_db_type == "gaussdb":
+                    continue
                 name: str = "mysql"
                 host: str = v.get("host")
                 port: int = v.get("port")
                 username = v.get("user")
                 password = v.get("password")
                 config = MySQLConfig(
-                    id=id_count, name=name, host=host, port=port, username=username, password=password, service_type="meta_data", meta_type="mysql", detail_func_name="get_mysql_status"
+                    id=id_count,
+                    name=name,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    service_type="meta_data",
+                    meta_type="mysql",
+                    detail_func_name="get_mysql_status",
                 )
                 configurations.append(config)
                 id_count += 1
             case "gaussdb":
                 # The gaussdb block in the configuration file belongs to
-                # DocEngine and Memory Store.
-                doc_config = v.get("config", {})
+                # DocEngine and Memory Store, not the DB_TYPE=gaussdb metadata
+                # connection. Add metadata GaussDB separately from
+                # GAUSSDB_METADATA_* after the loop so Admin does not merge the
+                # two services.
+                doc_config = v
                 host = doc_config.get("host")
                 port = doc_config.get("port")
                 if not host or port in (None, ""):
@@ -369,5 +453,24 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
             case _:
                 logging.warning(f"Unknown configuration key: {k}")
                 continue
+
+    if metadata_db_type == "gaussdb":
+        # Display the metadata database from the same GAUSSDB_METADATA_*
+        # variables as the main service, never from the DocEngine/Memory Store
+        # GAUSSDB_* variables.
+        v = _gaussdb_env_config()
+        config = GaussDBMetadataConfig(
+            id=id_count,
+            name="gaussdb",
+            host=v.get("host"),
+            port=v.get("port"),
+            username=v.get("user"),
+            password=v.get("password"),
+            metadata_schema=v.get("schema"),
+            service_type="meta_data",
+            meta_type="gaussdb",
+            detail_func_name="get_database_status",
+        )
+        configurations.append(config)
 
     return configurations

@@ -22,6 +22,10 @@ env:
   # DOC_ENGINE: opensearch
   # DOC_ENGINE: gaussdb
 
+  # The business metadata database type.
+  # Available options: mysql (default), postgres, gaussdb, oceanbase.
+  DB_TYPE: mysql
+
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 
@@ -50,6 +54,17 @@ env:
   # MYSQL_PORT: "3306"
   # External MySQL user (only when mysql.enabled=false), default is root if omitted
   # MYSQL_USER: "root"
+
+  # External GaussDB metadata database settings, used when DB_TYPE=gaussdb.
+  # These are separate from the GAUSSDB_* DocEngine settings above.
+  # GAUSSDB_METADATA_HOST: gaussdb.example.com
+  # GAUSSDB_METADATA_PORT: "8000"
+  # GAUSSDB_METADATA_USER: rag_flow
+  # GAUSSDB_METADATA_PASSWORD: "<your-gaussdb-password>"
+  # GAUSSDB_METADATA_DBNAME: rag_flow
+  GAUSSDB_METADATA_SCHEMA: public
+  # GAUSSDB_METADATA_MAX_CONNECTIONS: "100"
+  # GAUSSDB_METADATA_STALE_TIMEOUT: "30"
 
   # The username for MinIO.
   MINIO_ROOT_USER: rag_flow

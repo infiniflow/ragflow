@@ -30,10 +30,17 @@ helm uninstall ragflow -n ragflow
         - name: regcred
     ```
 
-## External Services (MySQL / MinIO / Redis)
+## External Services (Metadata DB / MinIO / Redis)
 
 The chart can deploy in-cluster services or connect to external ones. Toggle with `*.enabled`. When disabled, provide host/port via `env.*`.
 
+- Metadata DB
+  - `env.DB_TYPE`: defaults to `mysql`. Supported metadata DB values include `mysql`, `postgres`, `gaussdb`, and `oceanbase`.
+  - For `DB_TYPE=mysql`, use the MySQL settings below.
+  - For `DB_TYPE=gaussdb`, set `mysql.enabled=false` and provide:
+    - `env.GAUSSDB_METADATA_HOST`, `env.GAUSSDB_METADATA_PORT`
+    - `env.GAUSSDB_METADATA_DBNAME`, `env.GAUSSDB_METADATA_USER`, `env.GAUSSDB_METADATA_PASSWORD`
+    - Optional: `env.GAUSSDB_METADATA_SCHEMA`, `env.GAUSSDB_METADATA_MAX_CONNECTIONS`, `env.GAUSSDB_METADATA_STALE_TIMEOUT`
 - MySQL
   - `mysql.enabled`: default `true`
   - If `false`, set:
@@ -54,6 +61,7 @@ The chart can deploy in-cluster services or connect to external ones. Toggle wit
 Notes:
 - When `*.enabled=true`, the chart renders in-cluster resources and injects corresponding `*_HOST`/`*_PORT` automatically.
 - Sensitive variables like `MYSQL_PASSWORD` are required; `MINIO_PASSWORD` and `REDIS_PASSWORD` are optional. All secrets are stored in a Secret.
+- `MYSQL_HOST` / `MYSQL_PASSWORD` are not required when `env.DB_TYPE` is not `mysql` and `mysql.enabled=false`.
 
 ### Example: use external MySQL, MinIO, and Redis
 
@@ -68,6 +76,7 @@ redis:
 
 env:
   # MySQL
+  DB_TYPE: mysql
   MYSQL_HOST: mydb.example.com
   MYSQL_PORT: "3306"
   MYSQL_USER: root
@@ -89,6 +98,28 @@ env:
 Apply:
 ```bash
 helm upgrade --install ragflow ./helm -n ragflow -f values.override.yaml
+```
+
+### Example: use a GaussDB instance as metadata DB
+
+```yaml
+# values.gaussdb.yaml
+mysql:
+  enabled: false
+
+env:
+  DB_TYPE: gaussdb
+  GAUSSDB_METADATA_HOST: gaussdb.example.com
+  GAUSSDB_METADATA_PORT: "8000"
+  GAUSSDB_METADATA_USER: rag_flow
+  GAUSSDB_METADATA_DBNAME: rag_flow
+  GAUSSDB_METADATA_SCHEMA: public
+  GAUSSDB_METADATA_PASSWORD: "<your-gaussdb-password>"
+```
+
+Apply:
+```bash
+helm upgrade --install ragflow ./helm -n ragflow -f values.gaussdb.yaml
 ```
 
 ## Document Engine Selection

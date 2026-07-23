@@ -101,6 +101,8 @@ user_default_llm:
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30
+# GaussDB metadata DB is configured through GAUSSDB_METADATA_* environment
+# variables and is intentionally not rendered into service_conf.yaml.
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
