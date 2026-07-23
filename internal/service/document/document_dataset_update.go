@@ -143,6 +143,10 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
+		// Normalize "pages" ranges before persistence so the stored config
+		// carries clean, merged ranges (invalid ranges are dropped by the
+		// normalizer; all-invalid values are left untouched).
+		pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig))
 		// Resolve effective pipeline to load the DSL for cleaning.
 		isCanvas := kb.PipelineID != nil && strings.TrimSpace(*kb.PipelineID) != ""
 		if req.PipelineID != nil {
@@ -180,22 +184,31 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 		}
 	}
 
-	if present["pipeline_id"] {
-		if req.PipelineID != nil && strings.TrimSpace(*req.PipelineID) != "" {
-			if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, req.PipelineID); err != nil {
-				return nil, common.CodeDataError, err
-			}
-		} else {
-			// Explicitly cleared: drop the custom canvas so the worker falls
-			// back to the built-in template, matching validation.
-			empty := ""
-			if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, &empty); err != nil {
-				return nil, common.CodeDataError, err
+	// Apply parser_id / pipeline_id changes. parse_type is validated earlier
+	// (in validateDatasetDocumentUpdate), so this block only handles the two
+	// valid modes: BuiltIn writes parser_id and clears any prior canvas; Pipeline
+	// writes pipeline_id.
+	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
+	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
+
+	var reparseParserID, reparsePipelineID *string
+	switch {
+	case isBuiltinMode:
+		if present["parser_id"] && req.ParserID != nil {
+			if p := strings.TrimSpace(*req.ParserID); p != "" {
+				reparseParserID = &p
 			}
 		}
-	} else if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
-		parserID := strings.TrimSpace(*req.ParserID)
-		if err := s.resetDocumentForReparse(doc, kb.TenantID, &parserID, nil); err != nil {
+		// Drop any prior canvas so the worker falls back to the builtin template.
+		empty := ""
+		reparsePipelineID = &empty
+	case isPipelineMode:
+		if present["pipeline_id"] && req.PipelineID != nil {
+			reparsePipelineID = req.PipelineID
+		}
+	}
+	if reparseParserID != nil || reparsePipelineID != nil {
+		if err := s.resetDocumentForReparse(doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -247,10 +260,18 @@ func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, u
 		}
 	}
 
-	if present["parser_id"] && req.ParserID != nil {
-		parserID := strings.TrimSpace(*req.ParserID)
-		if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
-			return common.CodeDataError, errors.New("Not supported yet!")
+	if present["parse_type"] || present["parser_id"] || present["pipeline_id"] {
+		isBuiltin, _, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		if err != nil {
+			return common.CodeDataError, err
+		}
+		// The parser_id type constraint (visual/presentation) only applies in
+		// builtin mode — in pipeline mode parser_id is not applicable.
+		if isBuiltin && present["parser_id"] && req.ParserID != nil {
+			parserID := strings.TrimSpace(*req.ParserID)
+			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
+				return common.CodeDataError, errors.New("Not supported yet!")
+			}
 		}
 	}
 	if present["name"] && req.Name != nil {

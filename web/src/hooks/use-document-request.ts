@@ -524,12 +524,14 @@ export const useSetDocumentPipelineParser = () => {
     mutationFn: async ({
       parserId,
       pipelineId,
+      parseType,
       documentId,
       datasetId,
       parserConfig,
     }: {
       parserId: string;
       pipelineId: string;
+      parseType?: number;
       documentId: string;
       datasetId: string;
       parserConfig?: IChangeParserConfigRequestBody;
@@ -539,11 +541,20 @@ export const useSetDocumentPipelineParser = () => {
         pipeline_id: pipelineId,
       };
 
+      if (parseType !== undefined) {
+        updateData.parse_type = parseType;
+      }
+
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
           : extractParserConfigExt(parserConfig);
       }
+
+      console.log(
+        '[useSetDocumentPipelineParser] updateData:',
+        JSON.stringify(updateData),
+      );
 
       const { data } = await changeDocumentParser(
         datasetId,

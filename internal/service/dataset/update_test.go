@@ -41,6 +41,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	permission := string(entity.TenantPermissionTeam)
 	chunkMethod := string(entity.ParserTypeBook)
 	embeddingModel := "BAAI/bge-large-zh-v1.5@Builtin"
+	parseType := 1
 
 	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name:           &name,
@@ -48,6 +49,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 		Language:       &language,
 		Permission:     &permission,
 		ParserID:       &chunkMethod,
+		ParseType:      &parseType,
 		EmbeddingModel: &embeddingModel,
 	})
 	if err != nil {
@@ -91,29 +93,6 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	// parser_config stores DSL runtime component params directly.
 	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
 		t.Fatalf("expected Parser:HipSignsRhyme in parser_config, got %#v", persisted.ParserConfig)
-	}
-}
-
-func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-
-	chunkMethod := "book"
-	pipelineID := "abcdef0123456789abcdef0123456789"
-
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-	})
-	if err == nil {
-		t.Fatal("expected mutual-exclusivity error when both parser_id and pipeline_id are set")
-	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
-	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("expected error to mention 'mutually exclusive', got: %v", err)
 	}
 }
 
@@ -1008,8 +987,10 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
 	chunkMethod := "naive"
+	parseType := 1
 	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserID: &chunkMethod,
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
 			// Valid for the "general" builtin template, not the canvas.
 			"Parser:HipSignsRhyme": map[string]interface{}{

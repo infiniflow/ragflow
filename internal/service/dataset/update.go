@@ -98,14 +98,17 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		simpleUpdates["permission"] = permission
 	}
 
-	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
-	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
-
-	if isBuiltinMode && req.PipelineID != nil {
-		req.PipelineID = nil
-	}
-	if isPipelineMode && req.ParserID != nil {
-		req.ParserID = nil
+	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		if modeErr != nil {
+			return nil, common.CodeDataError, modeErr
+		}
+		if isBuiltin && req.PipelineID != nil {
+			req.PipelineID = nil
+		}
+		if isPipeline && req.ParserID != nil {
+			req.ParserID = nil
+		}
 	}
 
 	var pipelineID *string
@@ -122,10 +125,6 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		return nil, common.CodeDataError, err
 	}
 
-	if req.ParseType == nil && parserIDProvided && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
-	}
-
 	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
 	if err != nil {
 		return nil, common.CodeDataError, err
@@ -135,6 +134,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
+		pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig))
 	}
 
 	var requestedPagerank int64

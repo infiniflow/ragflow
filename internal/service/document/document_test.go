@@ -1645,10 +1645,12 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	}
 
 	parserID := "naive"
+	parseType := 1
 	svc := testDocumentService(t)
 	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID: &parserID,
-	}, map[string]bool{"parser_id": true})
+		ParserID:  &parserID,
+		ParseType: &parseType,
+	}, map[string]bool{"parser_id": true, "parse_type": true})
 	if err == nil {
 		t.Fatal("expected parser_id visual error")
 	}
@@ -1696,11 +1698,13 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
+	parseType := 1
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
 	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID: &chunkMethod,
-	}, map[string]bool{"parser_id": true})
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
+	}, map[string]bool{"parser_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -2270,11 +2274,63 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	chunkMethod := "manual"
+	parseType := 2
 	svc := testDocumentService(t)
 	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID: &pipelineID,
 		ParserID:   &chunkMethod,
-	}, map[string]bool{"pipeline_id": true, "parser_id": true})
+		ParseType:  &parseType,
+	}, map[string]bool{"pipeline_id": true, "parser_id": true, "parse_type": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
+		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+	}
+	if resp.ParserID != "naive" {
+		t.Fatalf("parser_id = %q, want original naive", resp.ParserID)
+	}
+}
+
+func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	parseType := 1
+	parserID := "manual"
+	pipelineIDEmpty := ""
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		ParserID:   &parserID,
+		PipelineID: &pipelineIDEmpty,
+	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.ParserID != "manual" {
+		t.Fatalf("parser_id = %q, want %q", resp.ParserID, "manual")
+	}
+	if resp.PipelineID != nil && *resp.PipelineID != "" {
+		t.Fatalf("pipeline_id = %v, want empty", resp.PipelineID)
+	}
+}
+
+func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
