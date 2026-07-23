@@ -574,6 +574,7 @@ export default {
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
       autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoTags: '自动标签提取',
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -1947,7 +1948,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       modelMaxTokensMinMessage: '最大 Token 数不能小于 0',
     },
     knowledgeCompilation: {
-      builtinTemplates: '内置模板',
+      builtinTemplates: '模板',
     },
     datasetSkill: {
       folders: '技能',
@@ -2682,6 +2683,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       },
       systemPrompt: '系统提示词',
       userPrompt: '用户提示词',
+      tagFile: '标签文件',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -2788,8 +2790,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '知识编译',
-      compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
+      compiler: '算子',
+      compilerDescription: '使用算子模板将文档块处理为结构化工件。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
       fileFormatOptions: {

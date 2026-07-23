@@ -302,7 +302,7 @@ func (s *BotService) ChatbotCompletion(
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
 	// so a returned row is valid; we still nil-check defensively
 	// before dereferencing for symmetry with the session path.
-	dialog, err := s.chatDAO.GetDialogByID(dialogID)
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dialogID)
 	if err != nil || dialog == nil ||
 		dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
@@ -351,7 +351,7 @@ func (s *BotService) ChatbotCompletion(
 			UserID:   tenantID,
 			Message:  seedMsg,
 		}
-		if err = s.api4ConversationDAO.Create(session); err != nil {
+		if err = s.api4ConversationDAO.Create(ctx, session); err != nil {
 			return nil, common.CodeServerError, err
 		}
 
@@ -375,7 +375,7 @@ func (s *BotService) ChatbotCompletion(
 		return out, common.CodeSuccess, nil
 	}
 
-	session, err := s.api4ConversationDAO.GetBySessionID(req.SessionID, dialogID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, req.SessionID, dialogID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -508,7 +508,7 @@ func (s *BotService) ChatbotCompletion(
 		// pipeline-level error ("**ERROR**" answer) nothing is
 		// persisted, matching the python exception path.
 		if !errored {
-			if pErr := s.persistChatbotTurn(session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
+			if pErr := s.persistChatbotTurn(ctx, session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
 				common.Error("bot: ChatbotCompletion session update failed",
 					pErr,
 					zap.String("dialog_id", dialogID),
@@ -570,7 +570,7 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 // turn in its history. Mirrors python
 // API4ConversationService.append_message.
 func (s *BotService) persistChatbotTurn(
-	session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
+	ctx context.Context, session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
 ) error {
 	// Serialise the read-modify-write per session and re-read the row
 	// inside the lock: the caller's session was loaded before the
@@ -580,7 +580,7 @@ func (s *BotService) persistChatbotTurn(
 	lock := s.persistLock(session.ID)
 	lock.Lock()
 	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(session.ID, session.DialogID)
+	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, session.ID, session.DialogID)
 	if err != nil {
 		return err
 	}
@@ -632,7 +632,7 @@ func (s *BotService) persistChatbotTurn(
 	}
 	session.Reference = rawRef
 
-	return s.api4ConversationDAO.Update(session)
+	return s.api4ConversationDAO.Update(ctx, session)
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

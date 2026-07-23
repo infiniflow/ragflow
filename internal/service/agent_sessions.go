@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -311,7 +312,7 @@ func checkDuplicateSessionIDs(ids []string) ([]string, []string) {
 }
 
 // ListAgentSessions returns paginated agent sessions visible to the caller.
-func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgentSessions(ctx context.Context, userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
@@ -335,7 +336,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 	sessionDAO := dao.NewChatSessionDAO()
 
 	if req.ExpUserID != "" {
-		rows, err := sessionDAO.ListAgentSessionNames(agentID, req.ExpUserID)
+		rows, err := sessionDAO.ListAgentSessionNames(ctx, agentID, req.ExpUserID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -351,7 +352,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 		return nil, common.CodeArgumentError, err
 	}
 
-	total, sessions, err := sessionDAO.ListAgentSessions(dao.ListAgentSessionsParams{
+	total, sessions, err := sessionDAO.ListAgentSessions(ctx, dao.ListAgentSessionsParams{
 		AgentID:    agentID,
 		Page:       req.Page,
 		PageSize:   req.PageSize,
@@ -377,7 +378,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 }
 
 // GetAgentSession fetches a single conversation belonging to agentID.
-func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) GetAgentSession(ctx context.Context, userID, agentID, sessionID string) (*entity.API4Conversation, common.ErrorCode, error) {
 	if sessionID == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("session_id is required")
 	}
@@ -392,7 +393,7 @@ func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*enti
 		return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
 	}
 
-	data, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	data, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}
@@ -403,7 +404,7 @@ func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*enti
 }
 
 // DeleteAgentSessionItem removes one conversation if it belongs to agentID.
-func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
+func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
 	if sessionID == "" {
 		return false, common.CodeArgumentError, errors.New("session_id is required")
 	}
@@ -418,7 +419,7 @@ func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string)
 		return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
 	}
 
-	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID)
+	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
@@ -431,7 +432,7 @@ func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string)
 // DeleteAgentSessions removes multiple conversations owned by agentID.
 // When ids is empty and deleteAll is true, every session under agentID is
 // removed.
-func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
+func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
@@ -450,7 +451,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 		}
 
-		ids, err = s.api4ConversationDAO.ListIDsByAgentID(agentID)
+		ids, err = s.api4ConversationDAO.ListIDsByAgentID(ctx, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -470,7 +471,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			continue
 		}
 
-		conv, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+		conv, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -479,7 +480,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			continue
 		}
 
-		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID); err != nil {
+		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, sessionID, agentID); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -686,7 +687,7 @@ type CreateAgentSessionRequest struct {
 //   - update_time : unix-millis
 //   - create_date : local-time.Truncate(time.Second)
 //   - update_date : local-time.Truncate(time.Second)
-func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentSessionRequest) (*entity.API4Conversation, common.ErrorCode, error) {
 	if req == nil {
 		return nil, common.CodeArgumentError, errors.New("create agent session: nil request")
 	}
@@ -751,7 +752,7 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		Source:    sourcePtr,
 		DSL:       dsl,
 	}
-	if err := s.api4ConversationDAO.Create(row); err != nil {
+	if err := s.api4ConversationDAO.Create(ctx, row); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("create agent session: %w", err)
 	}
 	return row, common.CodeSuccess, nil

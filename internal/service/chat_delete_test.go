@@ -60,12 +60,13 @@ func TestChatServiceDeleteChatRejectsNonOwner(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-1", "tenant-1")
 
 	svc := NewChatService()
-	err := svc.DeleteChat("user-1", "chat-1")
+	ctx := t.Context()
+	err := svc.DeleteChat(ctx, "user-1", "chat-1")
 	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("expected no authorization, got %v", err)
 	}
 
-	chat, getErr := svc.chatDAO.GetByID("chat-1")
+	chat, getErr := svc.chatDAO.GetByID(ctx, "chat-1")
 	if getErr != nil {
 		t.Fatalf("failed to fetch chat: %v", getErr)
 	}
@@ -81,7 +82,8 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 	createChatDeleteServiceTestChat(t, db, "chat-3", "tenant-2")
 
 	svc := NewChatService()
-	result, err := svc.BulkDeleteChats("user-1", &BulkDeleteChatsRequest{DeleteAll: true})
+	ctx := t.Context()
+	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{DeleteAll: true})
 	if err != nil {
 		t.Fatalf("BulkDeleteChats failed: %v", err)
 	}
@@ -90,7 +92,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected success_count 2, got %+v", result["success_count"])
 	}
 
-	owned1, err := svc.chatDAO.GetByID("chat-1")
+	owned1, err := svc.chatDAO.GetByID(ctx, "chat-1")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-1: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected chat-1 invalid, got %+v", owned1.Status)
 	}
 
-	owned2, err := svc.chatDAO.GetByID("chat-2")
+	owned2, err := svc.chatDAO.GetByID(ctx, "chat-2")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-2: %v", err)
 	}
@@ -106,7 +108,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected chat-2 invalid, got %+v", owned2.Status)
 	}
 
-	other, err := svc.chatDAO.GetByID("chat-3")
+	other, err := svc.chatDAO.GetByID(ctx, "chat-3")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-3: %v", err)
 	}
@@ -121,7 +123,8 @@ func TestChatServiceBulkDeleteChatsReturnsPartialSuccessErrors(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-2", "tenant-2")
 
 	svc := NewChatService()
-	result, err := svc.BulkDeleteChats("user-1", &BulkDeleteChatsRequest{
+	ctx := t.Context()
+	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{
 		IDs: []string{"chat-1", "chat-2", "chat-1"},
 	})
 	if err != nil {
