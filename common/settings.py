@@ -17,6 +17,7 @@ import os
 import json
 import secrets
 import logging
+import re
 from datetime import date
 
 from common.constants import RAG_FLOW_SERVICE_NAME
@@ -71,8 +72,89 @@ SECRET_KEY = None
 FACTORY_LLM_INFOS = None
 ALLOWED_LLM_FACTORIES = None
 
-DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
-DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+# The metadata database and DocEngine/Memory Store may all use GaussDB while
+# targeting different databases, schemas, compatibility modes, or credentials.
+# The metadata database therefore reads only GAUSSDB_METADATA_*. The gaussdb
+# section in service_conf.yaml remains exclusive to DOC_ENGINE=gaussdb.
+GAUSSDB_ENV_DEFAULTS = {
+    "name": "rag_flow",
+    "user": "rag_flow",
+    "password": "infini_rag_flow",
+    "host": "gaussdb",
+    "port": 8000,
+    "schema": "public",
+    "max_connections": 100,
+    "stale_timeout": 30,
+    "options": "-c client_encoding=UTF8 -c default_transaction_read_only=off",
+}
+_GAUSSDB_SCHEMA_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def normalize_database_type(database_type: str | None = None) -> str:
+    # Only normalize the new GaussDB values. Existing database names retain
+    # their upstream spelling and lookup behavior.
+    raw_value = database_type or "mysql"
+    normalized = raw_value.strip().lower()
+    if normalized in {"gaussdb", "gauss"}:
+        return "gaussdb"
+    return raw_value
+
+
+def _get_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_gaussdb_metadata_schema(value: str | None = None) -> str:
+    # The schema is interpolated into search_path in the libpq options. Restrict
+    # it to a plain SQL identifier so quotes, semicolons, or extra options cannot
+    # be injected. The metadata database currently accepts one schema only.
+    schema = (value or GAUSSDB_ENV_DEFAULTS["schema"]).strip() or GAUSSDB_ENV_DEFAULTS["schema"]
+    if not _GAUSSDB_SCHEMA_PATTERN.match(schema):
+        raise ValueError(f"invalid GAUSSDB_METADATA_SCHEMA: {schema}")
+    return schema
+
+
+def _gaussdb_metadata_options(schema: str) -> str:
+    explicit_options = os.environ.get("GAUSSDB_METADATA_OPTIONS")
+    if explicit_options is not None:
+        # An explicit value replaces the complete options string. Advanced
+        # deployments can control search_path, encoding, read-only behavior,
+        # and other libpq options, but must also include any required defaults.
+        return explicit_options
+    return f"-c search_path={schema} {GAUSSDB_ENV_DEFAULTS['options']}"
+
+
+def _gaussdb_env_config() -> dict:
+    # Read only GAUSSDB_METADATA_* so the metadata database does not share
+    # connection parameters with DOC_ENGINE=gaussdb.
+    schema = _normalize_gaussdb_metadata_schema(os.environ.get("GAUSSDB_METADATA_SCHEMA"))
+    return {
+        "name": os.environ.get("GAUSSDB_METADATA_DBNAME", GAUSSDB_ENV_DEFAULTS["name"]),
+        "user": os.environ.get("GAUSSDB_METADATA_USER", GAUSSDB_ENV_DEFAULTS["user"]),
+        "password": os.environ.get("GAUSSDB_METADATA_PASSWORD", GAUSSDB_ENV_DEFAULTS["password"]),
+        "host": os.environ.get("GAUSSDB_METADATA_HOST", GAUSSDB_ENV_DEFAULTS["host"]),
+        "port": _get_int_env("GAUSSDB_METADATA_PORT", GAUSSDB_ENV_DEFAULTS["port"]),
+        "max_connections": _get_int_env("GAUSSDB_METADATA_MAX_CONNECTIONS", GAUSSDB_ENV_DEFAULTS["max_connections"]),
+        "stale_timeout": _get_int_env("GAUSSDB_METADATA_STALE_TIMEOUT", GAUSSDB_ENV_DEFAULTS["stale_timeout"]),
+        "options": _gaussdb_metadata_options(schema),
+    }
+
+
+def load_database_config(database_type: str) -> dict:
+    database_type = normalize_database_type(database_type)
+    if database_type == "gaussdb":
+        # Always build DB_TYPE=gaussdb from GAUSSDB_METADATA_* so the metadata
+        # connection remains isolated from the gaussdb section used by
+        # DOC_ENGINE=gaussdb.
+        return decrypt_database_config(database=_gaussdb_env_config())
+    return decrypt_database_config(name=database_type)
+
+
+DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
+DATABASE = load_database_config(DATABASE_TYPE)
 
 # authentication
 AUTHENTICATION_CONF = None
@@ -223,8 +305,8 @@ class StorageFactory:
 
 def init_settings():
     global DATABASE_TYPE, DATABASE
-    DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
-    DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+    DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
+    DATABASE = load_database_config(DATABASE_TYPE)
 
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}

@@ -309,6 +309,10 @@ def check_oceanbase_health() -> dict:
 
 
 def get_mysql_status():
+    if settings.DATABASE_TYPE.lower() == "gaussdb":
+        # GaussDB cannot execute MySQL's SHOW PROCESSLIST.
+        return get_database_status()
+
     try:
         cursor = DB.execute_sql("SHOW PROCESSLIST;")
         res_rows = cursor.fetchall()
@@ -319,6 +323,29 @@ def get_mysql_status():
         return {
             "status": "timeout",
             "message": f"error: {str(e)}",
+        }
+
+
+def get_database_status():
+    try:
+        # SELECT 1 is the smallest probe supported by MySQL, PostgreSQL, and
+        # GaussDB. Admin uses it for a GaussDB metadata database instead of a
+        # MySQL-specific status query.
+        cursor = DB.execute_sql("SELECT 1;")
+        row = cursor.fetchone()
+        cursor.close()
+        return {
+            "status": "alive",
+            "message": {
+                "database": settings.DATABASE_TYPE.lower(),
+                "result": row[0] if row else None,
+            },
+        }
+    except Exception as e:
+        masked_error = _log_gaussdb_error("GaussDB metadata database status check failed", e)
+        return {
+            "status": "timeout",
+            "message": f"error: {masked_error}",
         }
 
 
