@@ -354,9 +354,7 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     node_prompt, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language)
 
     user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
-    node_res = await gen_json(
-        node_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1})
-    )
+    node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
     nodes = _struct_unwrap_items(node_res)
 
     id_field = _struct_entity_id_field(parser_config)
@@ -374,9 +372,7 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
         return nodes, []
 
     edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
-    edge_res = await gen_json(
-        edge_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1})
-    )
+    edge_res = await gen_json(edge_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
     edges = _struct_unwrap_items(edge_res)
 
     return nodes, edges
@@ -944,9 +940,7 @@ async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict |
         item_incoming=json.dumps(incoming_payload, ensure_ascii=False),
     )
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + MERGE_DECISION_INSTRUCTION
-    res = await gen_json(
-        system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
-    )
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     if not isinstance(res, dict):
         return None
     if not res.get("duplicated"):
@@ -1187,9 +1181,7 @@ async def _struct_judge_es_group_batch(group_specs: list[dict], chat_mdl) -> dic
 
     user_prompt = ES_GROUP_DECISION_BATCH_PROMPT.format(groups=json.dumps(prompt_groups, ensure_ascii=False))
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + ES_GROUP_DECISION_BATCH_PROMPT.split("Groups:", 1)[0]
-    res = await gen_json(
-        system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
-    )
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     raw_groups = res.get("groups") if isinstance(res, dict) else None
     if not isinstance(raw_groups, list):
         return {spec["request_group_id"]: set() for spec in group_specs}
@@ -1240,9 +1232,7 @@ async def _struct_merge_es_group_batch(group_specs: list[dict], chat_mdl) -> dic
 
     user_prompt = ES_GROUP_BATCH_MERGE_PROMPT.format(groups=json.dumps(prompt_groups, ensure_ascii=False))
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + ES_GROUP_BATCH_MERGE_PROMPT.split("Groups:", 1)[0]
-    res = await gen_json(
-        system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
-    )
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     raw_groups = res.get("groups") if isinstance(res, dict) else None
     if not isinstance(raw_groups, list):
         return {spec["old_id"]: (list(spec["incoming_docs"]), None) for spec in group_specs}
@@ -1298,9 +1288,7 @@ async def _struct_merge_es_group(old_doc: dict, incoming_docs: list[dict], chat_
             ensure_ascii=False,
         ),
     )
-    res = await gen_json(
-        system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
-    )
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     if not isinstance(res, dict):
         return list(incoming_docs), None
     indices = res.get("duplicate_indices")

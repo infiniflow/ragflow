@@ -797,11 +797,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         if bucket_id not in ordered_ids:
             ordered_ids.append(bucket_id)
 
-    page_index_groups = [
-        group
-        for group in grouped.values()
-        if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}
-    ]
+    page_index_groups = [group for group in grouped.values() if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}]
     if page_index_groups:
         # PageIndex nodes should follow the document's chunk order. Use the
         # current chunk query order directly. Do not derive the order
@@ -834,11 +830,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             original_entities = list(group.get("entities") or [])
 
             def entity_position(entity: dict, fallback: int):
-                chunk_indexes = [
-                    chunk_order[chunk_id]
-                    for chunk_id in entity.get("source_chunk_ids") or []
-                    if isinstance(chunk_id, str) and chunk_id in chunk_order
-                ]
+                chunk_indexes = [chunk_order[chunk_id] for chunk_id in entity.get("source_chunk_ids") or [] if isinstance(chunk_id, str) and chunk_id in chunk_order]
                 return (min(chunk_indexes), fallback) if chunk_indexes else (float("inf"), fallback)
 
             group["entities"] = [
