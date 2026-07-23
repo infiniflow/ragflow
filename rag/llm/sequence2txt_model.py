@@ -332,7 +332,7 @@ class XinferenceSeq2txt(Base):
         self.model_name = model_name
         self.key = key
 
-    def transcription(self, audio, language="zh", prompt=None, response_format="json", temperature=0.7):
+    def transcription(self, audio, language="zh", prompt=None, response_format="json"):
         if isinstance(audio, str):
             with open(audio, "rb") as audio_file:
                 audio_data = audio_file.read()
@@ -341,7 +341,7 @@ class XinferenceSeq2txt(Base):
             audio_data = audio
             audio_file_name = "audio.wav"
 
-        payload = {"model": self.model_name, "language": language, "prompt": prompt, "response_format": response_format, "temperature": temperature}
+        payload = {"model": self.model_name, "language": language, "prompt": prompt, "response_format": response_format}
 
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 

@@ -53,6 +53,8 @@ class CompilerParam(ProcessParamBase, LLMParam):
     def check(self):
         super().check()
         self.check_empty(self.compilation_template_group_ids, "Compilation Template Groups")
+        if isinstance(self.compilation_template_group_ids, str):
+            self.compilation_template_group_ids = [self.compilation_template_group_ids]
 
 
 class Compiler(ProcessBase, LLM):
@@ -133,7 +135,7 @@ class Compiler(ProcessBase, LLM):
                     chat_mdl=chat_mdl_by_tid[template_id],
                     embd_mdl=embedding_model,
                     tree_builder="raptor",
-                    clustering_method="gmm",
+                    clustering_method="ahc",
                     max_errors=3,
                 )
             except Exception:

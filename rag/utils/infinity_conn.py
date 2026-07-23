@@ -38,7 +38,11 @@ class InfinityConnection(InfinityConnectionBase):
     @staticmethod
     def field_keyword(field_name: str):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
-        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]):
+        # source_doc_ids / source_chunk_ids are multi-valued provenance lists (artifact/wiki rows) and must be
+        # stored/read/updated as keyword lists so the delete-time ref-count (remove one id, drop row when empty) works.
+        if field_name in ("source_id", "source_doc_ids", "source_chunk_ids") or (
+            field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]
+        ):
             return True
         return False
 

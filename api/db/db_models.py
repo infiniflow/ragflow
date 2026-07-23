@@ -866,6 +866,21 @@ class Knowledgebase(DataBaseModel):
     artifact_task_finish_at = DateTimeField(null=True)
     skill_task_id = CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True)
     skill_task_finish_at = DateTimeField(null=True)
+    # KB-wide structure-graph merge tasks, one traceable task id per merged kind
+    # (rebuild_dataset_structure_graph_json). ``structure_task_id`` is the
+    # merge-all variant that rebuilds every dataset-merge kind at once.
+    structure_graph_task_id = CharField(max_length=32, null=True, help_text="Structure graph merge task ID", index=True)
+    structure_graph_task_finish_at = DateTimeField(null=True)
+    structure_mindmap_task_id = CharField(max_length=32, null=True, help_text="Structure mindmap merge task ID", index=True)
+    structure_mindmap_task_finish_at = DateTimeField(null=True)
+    timeline_task_id = CharField(max_length=32, null=True, help_text="Timeline merge task ID", index=True)
+    timeline_task_finish_at = DateTimeField(null=True)
+    session_graph_task_id = CharField(max_length=32, null=True, help_text="Session graph merge task ID", index=True)
+    session_graph_task_finish_at = DateTimeField(null=True)
+    session_essence_task_id = CharField(max_length=32, null=True, help_text="Session essence merge task ID", index=True)
+    session_essence_task_finish_at = DateTimeField(null=True)
+    structure_task_id = CharField(max_length=32, null=True, help_text="Structure merge-all task ID", index=True)
+    structure_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1464,6 +1479,7 @@ def alter_db_drop_index(migrator, table_name, index_name):
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
+
 def ensure_model_indexes(migrator):
     """Create indexes declared by the Peewee models when they are missing."""
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
@@ -1756,6 +1772,9 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "skill_task_id", CharField(max_length=32, null=True, help_text="Skill generation task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "skill_task_finish_at", DateTimeField(null=True))
+    for _structure_type in ("structure_graph", "structure_mindmap", "timeline", "session_graph", "session_essence", "structure"):
+        alter_db_add_column(migrator, "knowledgebase", f"{_structure_type}_task_id", CharField(max_length=32, null=True, help_text=f"{_structure_type} merge task ID", index=True))
+        alter_db_add_column(migrator, "knowledgebase", f"{_structure_type}_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
