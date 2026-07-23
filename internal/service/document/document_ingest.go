@@ -3,6 +3,7 @@ package document
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 
 	"ragflow/internal/common"
@@ -13,8 +14,8 @@ func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, p
 	return s.ingestionTaskSvc.ListByUser(userID, datasetID, page, pageSize)
 }
 
-func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	responses, err := s.ingestionTaskSvc.CreateForDocuments(datasetID, userID, docIDs)
+func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -30,10 +31,10 @@ func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([
 	return s.ingestionTaskSvc.RemoveMany(tasks, &userID)
 }
 
-func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
+func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
 	run := fmt.Sprint(req.Run)
 
-	docs, err := s.documentDAO.GetByIDs(req.DocIDs)
+	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
 	if err != nil {
 		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
 	}
@@ -72,7 +73,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 	// Batch pre-check for re-parse with delete: use the validated doc IDs
 	// so we don't silently skip non-existent or unauthorized documents.
 	if run == string(entity.TaskStatusRunning) && req.Delete {
-		if err := s.AssertIngestionTasksTerminal(validatedIDs); err != nil {
+		if err = s.AssertIngestionTasksTerminal(validatedIDs); err != nil {
 			return common.CodeDataError, err
 		}
 	}
@@ -85,7 +86,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 		// document run status is set by service.IngestionTaskService.StartRunning
 		// when the task transitions from CREATED, not here.
 		if run == string(entity.TaskStatusRunning) {
-			if err := s.StartParseDocuments(doc, kb, userID, StartParseOptions{
+			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 				ApplyKB:         req.ApplyKB,
 				RerunWithDelete: req.Delete,
 			}); err != nil {
@@ -101,11 +102,11 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 		// worker detects STOPPING and transitions to STOPPED, the task
 		// is terminal and can be safely cleaned up.
 		if run == string(entity.TaskStatusCancel) {
-			if err := s.CancelDocParse(doc); err != nil {
+			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
 				return common.CodeDataError, err
 			}
-			if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"run":      string(entity.TaskStatusCancel),
 				"progress": 0,
 			}); err != nil {
@@ -117,7 +118,7 @@ func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (com
 
 		// Delete-only: user asked to remove prior parse results without
 		// starting a new parse. RUNNING already continued above.
-		if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 			"run":      run,
 			"progress": 0,
 		}); err != nil {

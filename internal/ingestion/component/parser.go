@@ -573,7 +573,7 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}

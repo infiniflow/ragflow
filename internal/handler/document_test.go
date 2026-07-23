@@ -18,6 +18,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -134,7 +135,7 @@ func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*docume
 		FileName:    "doc.pdf",
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentByID(id string) (*document.DocumentResponse, error) {
+func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error) {
 	if f.docErr != nil {
 		return nil, f.docErr
 	}

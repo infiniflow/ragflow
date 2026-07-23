@@ -28,7 +28,7 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 
 // GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
 // Matches Python's File2DocumentService.get_storage_address function
-func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
 	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
 	if err != nil || len(f2d) == 0 {
@@ -61,7 +61,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	}
 
 	documentDAO := dao.NewDocumentDAO()
-	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	doc, err := documentDAO.GetByID(ctx, dao.DB, *f2d[0].DocumentID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}

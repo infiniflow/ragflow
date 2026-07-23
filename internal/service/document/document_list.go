@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -21,9 +22,9 @@ func escapeSQLLikePattern(s string) string {
 }
 
 // ListDocuments list documents
-func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse, int64, error) {
+func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.List(offset, pageSize)
+	documents, total, err := s.documentDAO.List(ctx, dao.DB, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -36,7 +37,7 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
 	if len(docIDs) == 0 {
 		return map[string]string{}, nil
 	}
@@ -50,7 +51,7 @@ func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[str
 		tenantIDs = append(tenantIDs, ids...)
 	}
 
-	documents, err := s.documentDAO.GetByIDsAndTenantIDs(docIDs, tenantIDs)
+	documents, err := s.documentDAO.GetByIDsAndTenantIDs(ctx, dao.DB, docIDs, tenantIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}
@@ -81,8 +82,8 @@ func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[str
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
-	return s.ListDocumentsByDatasetIDWithOptions(dao.DocumentListOptions{
+func (s *DocumentService) ListDocumentsByDatasetID(ctx context.Context, kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	return s.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
 		KbID:     kbID,
 		Keywords: keywords,
 		OrderBy:  "create_time",
@@ -91,13 +92,13 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, 
 }
 
 // ListDocumentsByDatasetIDWithOptions lists documents by knowledge base ID with filters.
-func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	opts.Offset = (page - 1) * pageSize
 	opts.Limit = pageSize
 	if opts.OrderBy == "" {
 		opts.OrderBy = "create_time"
 	}
-	documents, total, err := s.documentDAO.ListByKBIDWithOptions(opts)
+	documents, total, err := s.documentDAO.ListByKBIDWithOptions(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -111,12 +112,12 @@ func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentL
 }
 
 // GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
-func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
-	filters, total, err := s.documentDAO.GetFilterByKBID(opts)
+func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	filters, total, err := s.documentDAO.GetFilterByKBID(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
-	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(opts)
+	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -164,14 +165,14 @@ func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string
 }
 
 // ListDocumentIDsByDatasetIDWithOptions lists matching document IDs without pagination.
-func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
-	return s.documentDAO.ListIDsByKBIDWithOptions(opts)
+func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error) {
+	return s.documentDAO.ListIDsByKBIDWithOptions(ctx, dao.DB, opts)
 }
 
 // GetDocumentsByAuthorID get documents by author ID
-func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*DocumentResponse, int64, error) {
+func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.GetByAuthorID(fmt.Sprintf("%d", authorID), offset, pageSize)
+	documents, total, err := s.documentDAO.GetByAuthorID(ctx, dao.DB, fmt.Sprintf("%d", authorID), offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}

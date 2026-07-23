@@ -35,7 +35,7 @@ func checkType(indexType string) bool {
 	return haveType
 }
 
-func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
+func (d *DatasetService) newRaptorOrGraphRagTask(ctx context.Context, sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
 	if docIDs == nil || len(docIDs) == 0 {
 		docIDs = make([]string, 0)
 	}
@@ -43,7 +43,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		return nil, nil, errors.New("type should be graphrag, raptor or mindmap")
 	}
 
-	chunkingConfig, err := d.documentDAO.GetChunkingConfig(sampleDoc.ID)
+	chunkingConfig, err := d.documentDAO.GetChunkingConfig(ctx, dao.DB, sampleDoc.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -262,7 +262,7 @@ func clearGraphPhaseMarkers(redisClient *redisengine.Client, datasetID string) {
 	}
 }
 
-func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) RunIndex(ctx context.Context, userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
@@ -285,7 +285,7 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	taskType := indexTypeToTaskType[indexType]
 	displayName := indexTypeToDisplayName[indexType]
 
-	documents, code, err := d.getDocumentsByDatasetForIndex(datasetID)
+	documents, code, err := d.getDocumentsByDatasetForIndex(ctx, datasetID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -298,7 +298,7 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 		documentIDs[i] = doc.ID
 	}
 
-	task, queueMessage, err := d.newRaptorOrGraphRagTask(sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
+	task, queueMessage, err := d.newRaptorOrGraphRagTask(ctx, sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
 	if err != nil {
 		common.Warn("Failed to build dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")
@@ -354,8 +354,8 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	return map[string]interface{}{"task_id": task.ID}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
-	documents, _, err := d.documentDAO.GetByKBID(datasetID)
+func (d *DatasetService) getDocumentsByDatasetForIndex(ctx context.Context, datasetID string) ([]*entity.Document, common.ErrorCode, error) {
+	documents, _, err := d.documentDAO.GetByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
 		common.Warn("Failed to load dataset documents for index", zap.String("dataset_id", datasetID), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")

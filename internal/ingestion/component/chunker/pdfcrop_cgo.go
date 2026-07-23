@@ -35,7 +35,7 @@ func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream
 		data, err = component.FetchBinary(ctx, up.Bucket, up.Path)
 	case up.DocID != "":
 		var ref *component.DocumentStorageRef
-		ref, err = component.ResolveDocumentStorage(up.DocID)
+		ref, err = component.ResolveDocumentStorage(ctx, up.DocID)
 		if err == nil && ref != nil {
 			data, err = component.FetchBinary(ctx, ref.Bucket, ref.Path)
 		}

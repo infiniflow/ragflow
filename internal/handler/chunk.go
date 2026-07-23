@@ -33,15 +33,15 @@ import (
 
 // chunkService is the consumer-side interface for ChunkHandler's service dependency.
 type chunkService interface {
-	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-	Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error)
-	List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
-	SwitchChunks(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
-	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
-	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
-	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
+	RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+	Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error)
+	List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
+	SwitchChunks(ctx context.Context, userID string, datasetID, documentID string, availableInt int, chunkIDs []string) error
+	UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error
+	RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error)
+	Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
 	AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
-	StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 // ChunkHandler chunk handler
@@ -125,8 +125,9 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Call service with user ID for permission checks
-	resp, err := h.chunkService.RetrievalTest(&req, user.ID)
+	resp, err := h.chunkService.RetrievalTest(ctx, &req, user.ID)
 	if err != nil {
 		common.Warn("dataset search failed", zap.String("error", err.Error()))
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "dataset search failed")
@@ -164,7 +165,8 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		ChunkID: chunkID,
 	}
 
-	resp, err := h.chunkService.Get(req, user.ID)
+	ctx := c.Request.Context()
+	resp, err := h.chunkService.Get(ctx, req, user.ID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -198,7 +200,8 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.chunkService.Parse(userID, datasetId, &req)
+	ctx := c.Request.Context()
+	data, code, err := h.chunkService.Parse(ctx, userID, datasetId, &req)
 	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -249,7 +252,8 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		req.AvailableInt = &available
 	}
 
-	resp, err := h.chunkService.List(&req, user.ID)
+	ctx := c.Request.Context()
+	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
@@ -306,7 +310,8 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		return
 	}
 
-	resp, code, err := h.chunkService.StopParsing(user.ID, datasetID, req)
+	ctx := c.Request.Context()
+	resp, code, err := h.chunkService.StopParsing(ctx, user.ID, datasetID, req)
 	if err != nil {
 		var data interface{}
 		if resp != nil {
@@ -361,7 +366,8 @@ func (h *ChunkHandler) List(c *gin.Context) {
 		req.Size = &defaultSize
 	}
 
-	resp, err := h.chunkService.List(&req, user.ID)
+	ctx := c.Request.Context()
+	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -420,7 +426,8 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		return
 	}
 
-	if err = h.chunkService.SwitchChunks(userID, datasetID, documentID, availableInt, chunkIDs); err != nil {
+	ctx := c.Request.Context()
+	if err = h.chunkService.SwitchChunks(ctx, userID, datasetID, documentID, availableInt, chunkIDs); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -581,7 +588,8 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	req.DocumentID = documentID
 	req.ChunkID = chunkID
 
-	err := h.chunkService.UpdateChunk(&req, user.ID)
+	ctx := c.Request.Context()
+	err := h.chunkService.UpdateChunk(ctx, &req, user.ID)
 	if err != nil {
 		var coded interface {
 			Code() common.ErrorCode
@@ -637,7 +645,8 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
-	deletedCount, err := h.chunkService.RemoveChunks(&req, user.ID)
+	ctx := c.Request.Context()
+	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return

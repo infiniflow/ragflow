@@ -18,6 +18,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,10 +63,10 @@ type documentServiceIface interface {
 	GetThumbnails(userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(imageID string) ([]byte, error)
 	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
-	SetDocumentMetadata(docID string, meta map[string]interface{}) error
+	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
-	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
+	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(filename, userID string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
@@ -84,8 +85,8 @@ type documentServiceIface interface {
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
 type fileUploadIface interface {
-	UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
-	UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -539,6 +540,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	docs := make([]map[string]interface{}, 0, len(documents))
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
@@ -547,7 +549,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		if opts.CreateTimeTo > 0 && doc.CreateTime != nil && *doc.CreateTime > opts.CreateTimeTo {
 			continue
 		}
-		metaFields, err := h.documentService.GetDocumentMetadataByID(doc.ID)
+		metaFields, err := h.documentService.GetDocumentMetadataByID(ctx, doc.ID)
 		if err != nil {
 			metaFields = make(map[string]interface{})
 		}
@@ -1226,7 +1228,8 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		return
 	}
 
-	err = h.documentService.SetDocumentMetadata(req.DocID, meta)
+	ctx := c.Request.Context()
+	err = h.documentService.SetDocumentMetadata(ctx, req.DocID, meta)
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
@@ -1644,8 +1647,9 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	if rawURL != "" {
-		data, code, err := h.fileService.UploadDocumentInfoByURL(user.ID, rawURL)
+		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -1654,7 +1658,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.fileService.UploadDocumentInfos(user.ID, fileHeaders)
+	data, code, err := h.fileService.UploadDocumentInfos(ctx, user.ID, fileHeaders)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

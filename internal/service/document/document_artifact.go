@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -192,8 +193,8 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
-	doc, err := s.documentDAO.GetByID(docID)
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, err
 	}

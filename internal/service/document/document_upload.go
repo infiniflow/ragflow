@@ -1,11 +1,13 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"ragflow/internal/dao"
 	"strings"
 
 	"ragflow/internal/common"
@@ -25,7 +27,7 @@ import (
 //
 // Gaps vs Python (documented, not yet ported): thumbnail generation and
 // read_potential_broken_pdf repair.
-func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, []string{"storage not initialized"}
@@ -52,7 +54,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 
 	// Don't silently disable dedupe protection: a transient lookup failure means
 	// the existing-name set is unknown, so fail rather than risk duplicates.
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -115,10 +117,10 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 }
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
-func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
 	// A transient lookup failure means the existing-name set is unknown; fail
 	// rather than write blind and risk a duplicate.
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -226,7 +228,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 	return nil
 }
 
-func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
@@ -237,7 +239,7 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 		return nil, common.CodeServerError, err
 	}
 
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

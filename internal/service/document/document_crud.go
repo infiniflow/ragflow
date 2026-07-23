@@ -18,11 +18,11 @@ import (
 // the caller has access to. Returns false on any lookup failure or
 // empty inputs so callers can treat a denial as a 404-equivalent
 // and avoid leaking whether the document exists at all.
-func (s *DocumentService) Accessible(docID, userID string) bool {
+func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) bool {
 	if docID == "" || userID == "" {
 		return false
 	}
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc == nil {
 		return false
 	}
@@ -62,11 +62,11 @@ func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (strin
 	return doc.KbID, *doc.Location, nil
 }
 
-func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDocumentResp, error) {
+func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*DownloadDocumentResp, error) {
 	if docID == "" {
 		return nil, fmt.Errorf("Specify document_id please.")
 	}
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc.KbID != datasetID {
 		return nil, fmt.Errorf("Document not found!")
 	}
@@ -101,8 +101,8 @@ func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDo
 }
 
 // GetDocumentByID get document by ID
-func (s *DocumentService) GetDocumentByID(id string) (*DocumentResponse, error) {
-	document, err := s.documentDAO.GetByID(id)
+func (s *DocumentService) GetDocumentByID(ctx context.Context, id string) (*DocumentResponse, error) {
+	document, err := s.documentDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +111,8 @@ func (s *DocumentService) GetDocumentByID(id string) (*DocumentResponse, error) 
 }
 
 // UpdateDocument update document
-func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) error {
-	document, err := s.documentDAO.GetByID(id)
+func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) error {
+	document, err := s.documentDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return err
 	}
@@ -136,11 +136,11 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 		document.ProgressMsg = req.ProgressMsg
 	}
 
-	return s.documentDAO.Update(document)
+	return s.documentDAO.Update(ctx, dao.DB, document)
 }
 
 // IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction
-func (s *DocumentService) IncrementChunkNum(docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		// Update document
 		if err := tx.Model(&entity.Document{}).
@@ -171,8 +171,8 @@ func (s *DocumentService) IncrementChunkNum(docID, kbID string, chunkNum, tokenN
 // row so the document-list endpoint (which reads document.progress/run/
 // progress_msg) reflects in-flight Go pipeline progress. Best-effort by
 // design; callers log and continue on error.
-func (s *DocumentService) UpdateRunProgress(docID string, progress float64, run, progressMsg string) error {
-	return s.documentDAO.UpdateByID(docID, map[string]interface{}{
+func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
 		"progress":     progress,
 		"run":          run,
 		"progress_msg": progressMsg,
@@ -180,15 +180,15 @@ func (s *DocumentService) UpdateRunProgress(docID string, progress float64, run,
 }
 
 // DeleteDocument delete document — delegates to full cleanup logic.
-func (s *DocumentService) DeleteDocument(id string) error {
-	return s.deleteDocumentFull(id)
+func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
+	return s.deleteDocumentFull(ctx, id)
 }
 
 // DeleteDocuments deletes multiple documents under a dataset.
 //
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
-func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
 	if !s.kbDAO.Accessible(datasetID, userID) {
 		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
@@ -211,7 +211,7 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 
 	// 4. Validate IDs belong to this dataset (only for explicit ids; deleteAll is already scoped)
 	if !deleteAll {
-		if _, err := s.validateDocsInDataset(ids, datasetID); err != nil {
+		if _, err := s.validateDocsInDataset(ctx, ids, datasetID); err != nil {
 			return 0, err
 		}
 	}
@@ -219,7 +219,7 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 	// 5. Delete each document (non-critical failures are tolerated per doc)
 	deleted := 0
 	for _, docID := range ids {
-		if err := s.deleteDocumentFull(docID); err != nil {
+		if err := s.deleteDocumentFull(ctx, docID); err != nil {
 			common.Warn(fmt.Sprintf("DeleteDocuments: failed to delete %s: %v", docID, err))
 			continue
 		}
@@ -232,8 +232,8 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 // deleteDocumentFull performs full document cleanup. Non-critical failures
 // are tolerated (logged and continue). Critical failures (e.g. document or
 // KB not found) return an error immediately.
-func (s *DocumentService) deleteDocumentFull(docID string) error {
-	doc, kb, err := s.resolveDocAndKB(docID)
+func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) error {
+	doc, kb, err := s.resolveDocAndKB(ctx, docID)
 	if err != nil {
 		return err
 	}
@@ -267,8 +267,8 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 // deleting the underlying file record, its storage blob, or its file2document
 // mappings. Mirrors Python DocumentService.remove_document — the caller is
 // responsible for cleaning up the file2document mappings separately.
-func (s *DocumentService) RemoveDocumentKeepFile(docID string) error {
-	doc, kb, err := s.resolveDocAndKB(docID)
+func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID string) error {
+	doc, kb, err := s.resolveDocAndKB(ctx, docID)
 	if err != nil {
 		return err
 	}
@@ -310,8 +310,8 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 // mirroring Python duplicate_name(DocumentService.query, name=..., kb_id=...).
 // Returns an error when the existing-name lookup fails so callers never write
 // blind and risk duplicated document names.
-func (s *DocumentService) UniqueDocumentName(kbID, name string) (string, error) {
-	names, err := s.documentDAO.ListNamesByKbID(kbID)
+func (s *DocumentService) UniqueDocumentName(ctx context.Context, kbID, name string) (string, error) {
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kbID)
 	if err != nil {
 		return "", err
 	}
@@ -324,8 +324,8 @@ func (s *DocumentService) UniqueDocumentName(kbID, name string) (string, error) 
 
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
 // an error.
-func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {
-	doc, err := s.documentDAO.GetByID(docID)
+func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*entity.Document, *entity.Knowledgebase, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("document not found: %w", err)
 	}
@@ -348,7 +348,7 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
 	if s.metadataSvc != nil {
-		_ = s.DeleteDocumentAllMetadata(docID) // logs internally
+		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
 	}
 }
 

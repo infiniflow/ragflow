@@ -178,7 +178,7 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 
 	data := datasetToMap(kb)
 
-	size, err := d.documentDAO.SumSizeByDatasetID(datasetID)
+	size, err := d.documentDAO.SumSizeByDatasetID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}

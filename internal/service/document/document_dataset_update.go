@@ -19,10 +19,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -32,7 +32,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 	result := make(map[string]interface{}, len(documentIDs))
 	hasError := false
 
-	documents, err := s.documentDAO.GetByIDs(documentIDs)
+	documents, err := s.documentDAO.GetByIDs(ctx, dao.DB, documentIDs)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch documents: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 		if doc.Status != nil {
 			previousStatus = *doc.Status
 		}
-		if err := s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": status}); err != nil {
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": status}); err != nil {
 			result[docID] = map[string]string{"error": "Database error (Document update)!"}
 			hasError = true
 			continue
@@ -75,7 +75,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 
 		if doc.ChunkNum > 0 {
 			if s.docEngine == nil {
-				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				result[docID] = map[string]string{"error": "Document store update failed: document engine not initialized"}
 				hasError = true
 				continue
@@ -88,7 +88,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 				doc.KbID,
 			)
 			if err != nil {
-				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
 				if strings.Contains(msg, "3022") {
 					result[docID] = map[string]string{"error": "Document store table missing."}
@@ -103,41 +103,41 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 	}
 
 	if hasError {
-		return result, common.CodeServerError, fmt.Errorf("Partial failure")
+		return result, common.CodeServerError, fmt.Errorf("partial failure")
 	}
 	return result, common.CodeSuccess, nil
 }
 
-func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	tenantID := userID
 	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+			return nil, common.CodeDataError, errors.New("you don't own the dataset")
 		}
-		return nil, common.CodeDataError, errors.New("Can't find this dataset!")
+		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}
 
-	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("The dataset doesn't own the document.")
+			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
 	}
 
-	if code, err := s.validateDatasetDocumentUpdate(datasetID, documentID, userID, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
 	if present["meta_fields"] {
-		if err := s.replaceDocumentMetadata(documentID, req.MetaFields); err != nil {
+		if err = s.replaceDocumentMetadata(ctx, documentID, req.MetaFields); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
 	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
-		if err := s.updateDocumentNameOnly(doc, kb.TenantID, *req.Name); err != nil {
+		if err = s.updateDocumentNameOnly(ctx, doc, kb.TenantID, *req.Name); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -153,19 +153,20 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	if present["parser_config"] && req.ParserConfig != nil {
 		// Normalize "pages" ranges before persistence. Invalid ranges are
 		// rejected (fail-fast) — the request is aborted with a clear error.
-		if err := pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig)); err != nil {
+		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		dslJSON, err := service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
+		var dslJSON []byte
+		dslJSON, err = service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
 		if err != nil {
 			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
 				zap.Error(err))
-			if err := s.updateDocumentParserConfig(doc.ID, req.ParserConfig); err != nil {
+			if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
 				return nil, common.CodeDataError, err
 			}
 		} else {
-			cleaned := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
-			if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{
+			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
 				return nil, common.CodeDataError, err
@@ -196,49 +197,49 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 		}
 	}
 	if reparseParserID != nil || reparsePipelineID != nil {
-		if err := s.resetDocumentForReparse(doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
+		if err = s.resetDocumentForReparse(ctx, doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
 	if present["enabled"] && req.Enabled != nil {
-		if err := s.updateDocumentStatusOnly(doc, kb, *req.Enabled); err != nil {
+		if err = s.updateDocumentStatusOnly(ctx, doc, kb, *req.Enabled); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}
 
-	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	updatedDoc, err := s.documentDAO.GetByID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("Can not get document by id:%s", doc.ID)
+			return nil, common.CodeDataError, fmt.Errorf("can not get document by id:%s", doc.ID)
 		}
-		return nil, common.CodeDataError, errors.New("Database operation failed")
+		return nil, common.CodeDataError, errors.New("database operation failed")
 	}
 
 	metaFields := map[string]interface{}{}
 	if s.docEngine != nil && s.metadataSvc != nil {
-		metaFields, _ = s.GetDocumentMetadataByID(updatedDoc.ID)
+		metaFields, _ = s.GetDocumentMetadataByID(ctx, updatedDoc.ID)
 	}
 
 	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
-		return common.CodeDataError, errors.New("Invalid request payload")
+		return common.CodeDataError, errors.New("invalid request payload")
 	}
 	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
-		return common.CodeDataError, errors.New("Can't change `chunk_count`.")
+		return common.CodeDataError, errors.New("can't change `chunk_count`")
 	}
 	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
-		return common.CodeDataError, errors.New("Can't change `token_count`.")
+		return common.CodeDataError, errors.New("can't change `token_count`")
 	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
 			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%v>", *req.Progress)
 		}
 		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-			return common.CodeDataError, errors.New("Can't change `progress`.")
+			return common.CodeDataError, errors.New("can't change `progress`")
 		}
 	}
 
@@ -258,12 +259,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, u
 		if isBuiltin && present["parser_id"] && req.ParserID != nil {
 			parserID := strings.TrimSpace(*req.ParserID)
 			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
-				return common.CodeDataError, errors.New("Not supported yet!")
+				return common.CodeDataError, errors.New("not supported yet")
 			}
 		}
 	}
 	if present["name"] && req.Name != nil {
-		if err := s.validateDocumentName(doc, *req.Name); err != nil {
+		if err := s.validateDocumentName(ctx, doc, *req.Name); err != nil {
 			return common.CodeDataError, err
 		}
 	}
@@ -277,12 +278,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(datasetID, documentID, u
 	return common.CodeSuccess, nil
 }
 
-func (s *DocumentService) validateDocumentName(doc *entity.Document, newName string) error {
+func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) error {
 	if strings.TrimSpace(newName) == "" {
-		return errors.New("File name can't be empty.")
+		return errors.New("file name can't be empty")
 	}
 	if len([]byte(newName)) > 255 {
-		return errors.New("File name must be 255 bytes or less.")
+		return errors.New("file name must be 255 bytes or less")
 	}
 
 	oldName := ""
@@ -291,16 +292,16 @@ func (s *DocumentService) validateDocumentName(doc *entity.Document, newName str
 	}
 
 	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
-		return errors.New("The extension of file can't be changed")
+		return errors.New("the extension of file can't be changed")
 	}
 
-	docs, err := s.documentDAO.GetByNameAndKBID(newName, doc.KbID)
+	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
 	if err != nil {
 		return err
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return errors.New("Duplicated document name in the same dataset.")
+			return errors.New("duplicated document name in the same dataset")
 		}
 	}
 
@@ -330,20 +331,20 @@ func validateMetaFields(meta map[string]any) error {
 				case string, float64, int, int64, float32:
 					continue
 				default:
-					return fmt.Errorf("The type is not supported in list: %v", typed)
+					return fmt.Errorf("the type is not supported in list: %v", typed)
 				}
 			}
 		default:
-			return fmt.Errorf("The type is not supported: %v", v)
+			return fmt.Errorf("the type is not supported: %v", v)
 		}
 	}
 
 	return nil
 }
 
-func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID, newName string) error {
-	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("Database error (Document rename)!")
+func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, tenantID, newName string) error {
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
+		return errors.New("database error (Document rename)")
 	}
 
 	mappings, err := s.file2DocumentDAO.GetByDocumentID(doc.ID)
@@ -371,22 +372,22 @@ func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID,
 	)
 }
 
-func (s *DocumentService) updateDocumentParserConfig(documentID string, config map[string]any) error {
+func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, documentID string, config map[string]any) error {
 	if len(config) == 0 {
 		return nil
 	}
 
-	doc, err := s.documentDAO.GetByID(documentID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, documentID)
 	if err != nil {
-		return fmt.Errorf("Document(%s) not found.", documentID)
+		return fmt.Errorf("document(%s) not found", documentID)
 	}
 
-	merged := common.DeepMergeMaps(map[string]interface{}(doc.ParserConfig), map[string]interface{}(config))
+	merged := common.DeepMergeMaps(doc.ParserConfig, config)
 	if _, ok := config["raptor"]; !ok {
 		delete(merged, "raptor")
 	}
 
-	return s.documentDAO.UpdateByID(documentID, map[string]interface{}{
+	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),
 	})
 }
@@ -401,7 +402,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, 
 		DatasetID:       doc.KbID,
 		ParserID:        doc.ParserID,
 		PipelineID:      doc.PipelineID,
-		ParserConfig:    map[string]interface{}(doc.ParserConfig),
+		ParserConfig:    doc.ParserConfig,
 		SourceType:      doc.SourceType,
 		Type:            doc.Type,
 		CreatedBy:       doc.CreatedBy,
