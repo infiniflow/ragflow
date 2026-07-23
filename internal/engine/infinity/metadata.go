@@ -39,10 +39,11 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 	tableName := buildMetadataTableName(tenantID)
 
 	// Get database
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	// Check if table already exists
 	exists, err := e.tableExists(ctx, tableName)
@@ -136,10 +137,11 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.InsertMetadata called", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -233,10 +235,11 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -338,10 +341,11 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -397,10 +401,11 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -596,10 +601,11 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	}
 
 	// Get database and table
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	tbl, err := db.GetTable(tableName)
 	if err != nil {
@@ -822,10 +828,11 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 	whereClause = kbFilter + " AND (" + whereClause + ")"
 
 	// Use Infinity connection to execute query
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil || db == nil {
 		return nil
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil || table == nil {

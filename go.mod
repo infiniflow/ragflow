@@ -220,4 +220,4 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260424025959-72028e662929
+replace github.com/infiniflow/infinity-go-sdk => ../infinity_new_3/go

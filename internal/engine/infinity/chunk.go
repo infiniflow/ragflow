@@ -83,10 +83,11 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 	}
 
 	// Get database
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	// Determine vector column name
 	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
@@ -268,10 +269,11 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.InsertChunks called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -387,10 +389,11 @@ func (e *infinityEngine) UpdateChunks(ctx context.Context, condition map[string]
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.UpdateChunks called", zap.String("tableName", tableName), zap.Any("condition", condition))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return fmt.Errorf("Failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -540,7 +543,7 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if e.client == nil || e.client.conn == nil {
+	if e.client == nil || e.client.pool == nil {
 		return fmt.Errorf("Infinity client not initialized")
 	}
 
@@ -549,10 +552,11 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 	lock.Lock()
 	defer lock.Unlock()
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 	table, err := db.GetTable(tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get table %s: %w", tableName, err)
@@ -626,10 +630,11 @@ func (e *infinityEngine) AdjustChunkPagerank(ctx context.Context, baseName, chun
 func (e *infinityEngine) DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error) {
 	tableName := buildChunkTableName(baseName, datasetID)
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -700,10 +705,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		offset = 0
 	}
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	isSkillIndex := false
 	for _, idx := range req.IndexNames {
@@ -1201,7 +1207,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 // GetChunk gets a chunk by ID
 func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string, datasetIDs []string) (interface{}, error) {
-	if e.client == nil || e.client.conn == nil {
+	if e.client == nil || e.client.pool == nil {
 		return nil, fmt.Errorf("Infinity client not initialized")
 	}
 
@@ -1217,10 +1223,11 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 	}
 
 	// Try each table and collect results from all tables
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	// Collect chunks from all tables (same as Python's concat_dataframes)
 	allChunks := make(map[string]map[string]interface{})

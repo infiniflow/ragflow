@@ -44,10 +44,11 @@ func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error 
 		return fmt.Errorf("table '%s' does not exist", tableName)
 	}
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "common.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
 	if err != nil {
@@ -64,10 +65,11 @@ func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (boo
 		return false, fmt.Errorf("table name cannot be empty")
 	}
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "common.go")
 	if err != nil {
 		return false, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	// Try to get the table - if it exists, no error
 	_, err = db.GetTable(tableName)
