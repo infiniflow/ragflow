@@ -60,8 +60,8 @@ func (m *OpenAIAPICompatibleModel) NewInstance(baseURL map[string]string) ModelD
 // ListModels overrides VllmModel.ListModels to apply hint-based model type
 // inference and filter out models whose types cannot be mapped to any known
 // RAGFlow LLM type (e.g. image-generation-only models).
-func (m *OpenAIAPICompatibleModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	models, err := m.VllmModel.ListModels(apiConfig)
+func (m *OpenAIAPICompatibleModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	models, err := m.VllmModel.ListModels(ctx, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func ttsVoiceForModel(modelName string) string {
 // POST /v1/audio/speech endpoint. It does not require a voice parameter,
 // matching the behaviour of many OpenAI-compatible gateway providers (e.g.
 // SiliconFlow) where voice is optional or provider-specific.
-func (m *OpenAIAPICompatibleModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (m *OpenAIAPICompatibleModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (m *OpenAIAPICompatibleModel) AudioSpeech(modelName *string, audioContent *
 		return nil, fmt.Errorf("%s TTS URL suffix is not configured", m.Name())
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
@@ -204,7 +204,7 @@ func (m *OpenAIAPICompatibleModel) AudioSpeech(modelName *string, audioContent *
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -236,13 +236,13 @@ func (m *OpenAIAPICompatibleModel) AudioSpeech(modelName *string, audioContent *
 // intentionally not implemented; the non-streaming AudioSpeech suffices for
 // connection verification and the streaming path is not currently required
 // for OpenAI-API-Compatible providers.
-func (m *OpenAIAPICompatibleModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *OpenAIAPICompatibleModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s audio speech streaming not implemented", m.Name())
 }
 
 // TranscribeAudio sends an audio file for speech-to-text transcription via
 // the OpenAI-compatible POST /v1/audio/transcriptions endpoint (multipart).
-func (m *OpenAIAPICompatibleModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (m *OpenAIAPICompatibleModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -256,7 +256,7 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(modelName *string, file *stri
 		return nil, fmt.Errorf("%s ASR URL suffix is not configured", m.Name())
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
@@ -298,7 +298,7 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(modelName *string, file *stri
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	req, err := http.NewRequestWithContext(reqCtx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -336,6 +336,6 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(modelName *string, file *stri
 // TranscribeAudioWithSender streams ASR transcription. This stub is
 // intentionally not implemented; the non-streaming TranscribeAudio suffices
 // for connection verification.
-func (m *OpenAIAPICompatibleModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *OpenAIAPICompatibleModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s ASR streaming not implemented", m.Name())
 }

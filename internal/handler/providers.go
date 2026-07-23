@@ -171,7 +171,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 					ApiKey: &apiKey,
 					Region: &region,
 				}
-				if liveModels, err := driver.ListModels(apiConfig); err == nil {
+				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
 					for _, m := range liveModels {
 						remoteModels = append(remoteModels, map[string]interface{}{
 							"name":        m.Name,
