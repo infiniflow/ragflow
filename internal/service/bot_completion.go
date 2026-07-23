@@ -429,11 +429,14 @@ func (s *BotService) ChatbotCompletion(
 	}
 
 	// 5. Translate pipeline results into chatbot frames. The
-	// pipeline streams deltas; the python iframe contract sends the
-	// full accumulated answer in every frame, so we accumulate here
-	// (the front-end accepts both shapes, but full-text frames are
-	// byte-parity with python). The final pipeline result carries
-	// the decorated full answer plus the retrieval reference.
+	// pipeline streams deltas; the python iframe contract also yields
+	// deltas (async_chat yields the value from _stream_with_think_delta).
+	// We accumulate the full answer locally for persistence and for the
+	// final frame, but forward each result's own delta in the SSE frame
+	// so the front-end can build the <think>-wrapped answer correctly.
+	// Sending accumulated full text on every frame interacts badly with
+	// the front-end's start_to_think/end_to_think marker append, causing
+	// reasoning content to leak into the visible answer.
 	out := make(chan ChatbotSSEFrame, 16)
 	go func() {
 		defer close(out)
@@ -468,8 +471,10 @@ func (s *BotService) ChatbotCompletion(
 				continue
 			}
 			if res.StartToThink || res.EndToThink {
+				// Marker frames carry no text; the front-end appends
+				// <think> / </think> to the accumulated answer.
 				out <- ChatbotSSEFrame{
-					Data:         fullAnswer,
+					Data:         "",
 					Reference:    map[string]any{},
 					SessionID:    session.ID,
 					StartToThink: res.StartToThink,
@@ -489,7 +494,7 @@ func (s *BotService) ChatbotCompletion(
 				finalRef = res.Reference
 			}
 			out <- ChatbotSSEFrame{
-				Data:      fullAnswer,
+				Data:      res.Answer,
 				Reference: map[string]any{},
 				SessionID: session.ID,
 			}

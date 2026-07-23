@@ -193,7 +193,7 @@ func NewDriverHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 60 * time.Second
+	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
 	return &http.Client{Transport: t}
 }
@@ -238,6 +238,32 @@ func buildChatMessages(messages []Message) []map[string]any {
 		apiMessages[i] = apiMsg
 	}
 	return apiMessages
+}
+
+// applyChatToolConfig adds OpenAI-compatible tool configuration to a request.
+func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig) {
+	if chatConfig == nil || chatConfig.Tools == nil {
+		return
+	}
+	reqBody["tools"] = chatConfig.Tools
+	if chatConfig.ToolChoice != nil {
+		reqBody["tool_choice"] = *chatConfig.ToolChoice
+	}
+}
+
+// extractToolCalls converts an OpenAI-compatible message's tool calls.
+func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
+	rawToolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
+	for _, rawToolCall := range rawToolCalls {
+		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
+			toolCalls = append(toolCalls, toolCall)
+		}
+	}
+	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

@@ -45,8 +45,8 @@ type SearchDetailRow struct {
 }
 
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
-	var searches []*entity.Search
+func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+	var searches []*entity.SearchListItem
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
@@ -84,11 +84,11 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
 		offset := (page - 1) * pageSize
-		if err := query.Offset(offset).Limit(pageSize).Find(&searches).Error; err != nil {
+		if err := query.Offset(offset).Limit(pageSize).Scan(&searches).Error; err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := query.Find(&searches).Error; err != nil {
+		if err := query.Scan(&searches).Error; err != nil {
 			return nil, 0, err
 		}
 	}
@@ -97,8 +97,8 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 }
 
 // ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
-	var searches []*entity.Search
+func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+	var searches []*entity.SearchListItem
 
 	// Build query with join to user table
 	query := DB.Model(&entity.Search{}).
@@ -126,7 +126,7 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records
-	if err := query.Find(&searches).Error; err != nil {
+	if err := query.Scan(&searches).Error; err != nil {
 		return nil, 0, err
 	}
 
