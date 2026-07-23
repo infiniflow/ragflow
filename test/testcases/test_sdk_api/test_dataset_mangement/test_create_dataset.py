@@ -81,7 +81,7 @@ class TestDatasetCreate:
         [
             ("", "String should have at least 1 character"),
             (" ", "String should have at least 1 character"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "string should have at most 128 characters"),
             (0, "not instance of"),
             (None, "not instance of"),
         ],
@@ -132,7 +132,7 @@ class TestDatasetCreate:
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -172,7 +172,7 @@ class TestDatasetCreate:
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_unset(self, client):
@@ -282,7 +282,7 @@ class TestDatasetCreate:
         payload = {"name": name, "permission": permission}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'me' or 'team'" in str(exception_info.value)
+        assert "input should be 'me' or 'team'" in str(exception_info.value)
 
     @pytest.mark.p2
     def test_permission_unset(self, client):

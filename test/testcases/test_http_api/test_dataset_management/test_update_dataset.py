@@ -77,7 +77,7 @@ class TestRquest:
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
         assert res["code"] == 102, res
-        assert res["message"] == "No properties were modified", res
+        assert res["message"] == "no properties were modified", res
 
     @pytest.mark.p3
     def test_payload_unset(self, HttpApiAuth, add_dataset_func):
@@ -142,7 +142,7 @@ class TestDatasetUpdate:
         [
             ("", "String should have at least 1 character"),
             (" ", "String should have at least 1 character"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "string should have at most 128 characters"),
             (0, "Input should be a valid string"),
             (None, "Input should be a valid string"),
         ],
@@ -208,7 +208,7 @@ class TestDatasetUpdate:
         payload = {"avatar": "a" * 65536}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "String should have at most 65535 characters" in res["message"], res
+        assert "string should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -257,7 +257,7 @@ class TestDatasetUpdate:
         payload = {"description": "a" * 65536}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "String should have at most 65535 characters" in res["message"], res
+        assert "string should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     def test_description_none(self, HttpApiAuth, add_dataset_func):
@@ -401,7 +401,7 @@ class TestDatasetUpdate:
         payload = {"permission": permission}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101
-        assert "Input should be 'me' or 'team'" in res["message"]
+        assert "input should be 'me' or 'team'" in res["message"]
 
     @pytest.mark.p3
     def test_permission_none(self, HttpApiAuth, add_dataset_func):
@@ -409,7 +409,7 @@ class TestDatasetUpdate:
         payload = {"permission": None}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'me' or 'team'" in res["message"], res
+        assert "input should be 'me' or 'team'" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

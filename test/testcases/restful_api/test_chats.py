@@ -1685,7 +1685,7 @@ def test_chat_update_name_contract(rest_client, clear_chats):
             f"chat name length is {CHAT_ASSISTANT_NAME_LIMIT + 1} which is larger than {CHAT_ASSISTANT_NAME_LIMIT}",
             None,
         ),
-        ("name wrong type", {"name": 1}, 102, "Chat name must be a string.", None),
+        ("name wrong type", {"name": 1}, 102, "chat name must be a string", None),
         ("name empty", {"name": ""}, 102, "`name` cannot be empty", None),
         ("duplicate lowercase", {"name": "restful_chat_update_duplicate"}, 102, "duplicated chat name", None),
         ("duplicate uppercase", {"name": "RESTFUL_CHAT_UPDATE_DUPLICATE"}, 102, "duplicated chat name", None),

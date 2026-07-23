@@ -214,7 +214,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 	}
 
 	// Detect an explicitly provided parser_config key (even {} or null) so it is not
-	// rejected as "No properties were modified", mirroring the Python contract.
+	// rejected as "no properties were modified", mirroring the Python contract.
 	var providedFields map[string]json.RawMessage
 	if err := json.Unmarshal(bodyBytes, &providedFields); err == nil {
 		_, req.ParserConfigProvided = providedFields["parser_config"]

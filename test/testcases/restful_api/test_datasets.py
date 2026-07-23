@@ -32,7 +32,7 @@ PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
 
 
 def _skip_go_ignored_null(payload, field):
-    if IS_GO_PROXY and payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and payload.get("message") == "no properties were modified":
         pytest.skip(f"Go dataset update ignores an explicit null {field}")
 
 
@@ -665,7 +665,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
     assert empty_payload_res.status_code == 200
     empty_payload = empty_payload_res.json()
     assert empty_payload["code"] == 102, empty_payload
-    assert empty_payload["message"] == "No properties were modified", empty_payload
+    assert empty_payload["message"] == "no properties were modified", empty_payload
 
     unset_payload_res = rest_client.put(f"/datasets/{dataset_id}")
     assert unset_payload_res.status_code == 200
@@ -712,7 +712,7 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
     assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
-    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+    assert "string should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "dataset_update_avatar_invalid.png")
     encoded_avatar = encode_avatar(image_path)
@@ -762,12 +762,12 @@ def test_dataset_update_description_validation_contract(rest_client, clear_datas
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
     assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
-    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+    assert "string should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    if IS_GO_PROXY and none_payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and none_payload.get("message") == "no properties were modified":
         pytest.skip("Go dataset update does not clear description with an explicit null")
     assert none_payload["code"] == 0, none_payload
 
@@ -794,7 +794,7 @@ def test_dataset_update_name_invalid_and_duplicate_contract(rest_client, clear_d
     invalid_cases = [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
         (0, "Input should be a valid string"),
         (None, "Input should be a valid string"),
     ]
@@ -876,14 +876,14 @@ def test_dataset_update_permission_invalid_and_none_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(permission, str):
             assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
         else:
-            assert "Input should be 'me' or 'team'" in payload["message"], payload
+            assert "input should be 'me' or 'team'" in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
     _skip_go_ignored_null(none_payload, "permission")
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
-    assert "Input should be 'me' or 'team'" in none_payload["message"], none_payload
+    assert "input should be 'me' or 'team'" in none_payload["message"], none_payload
 
 
 @pytest.mark.p2
@@ -1105,7 +1105,7 @@ def test_dataset_update_field_unset_and_unsupported_contract(rest_client, clear_
     [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
     ],
     ids=["empty", "spaces", "too_long"],
 )
@@ -1510,7 +1510,7 @@ def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_d
     invalid_cases = [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"string should have at most {DATASET_NAME_LIMIT} characters"),
         (0, "Input should be a valid string"),
         (None, "Input should be a valid string"),
     ]
@@ -1570,7 +1570,7 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
     assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
-    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+    assert "string should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "ragflow_test.png")
     encoded_avatar = encode_avatar(image_path)
@@ -1616,7 +1616,7 @@ def test_dataset_create_description_contract(rest_client, clear_datasets):
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
     assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
-    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+    assert "string should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     unset_res = rest_client.post("/datasets", json={"name": "description_unset"})
     assert unset_res.status_code == 200
@@ -1649,7 +1649,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         if IS_GO_PROXY and not isinstance(permission, str):
             assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
         else:
-            assert "Input should be 'me' or 'team'" in payload["message"], payload
+            assert "input should be 'me' or 'team'" in payload["message"], payload
 
     permission_none_res = rest_client.post("/datasets", json={"name": "permission_none", "permission": None})
     assert permission_none_res.status_code == 200
@@ -1657,7 +1657,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     if IS_GO_PROXY and permission_none_payload.get("code") == 0:
         pytest.skip("Go dataset create accepts a null permission as the default")
     assert permission_none_payload["code"] == ARGUMENT_ERROR_CODE, permission_none_payload
-    assert "Input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
+    assert "input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
 
     permission_unset_res = rest_client.post("/datasets", json={"name": "permission_unset"})
     assert permission_unset_res.status_code == 200

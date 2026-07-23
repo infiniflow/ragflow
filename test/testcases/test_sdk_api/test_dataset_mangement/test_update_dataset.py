@@ -34,7 +34,7 @@ class TestRquest:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({})
-        assert "No properties were modified" in str(exception_info.value), str(exception_info.value)
+        assert "no properties were modified" in str(exception_info.value), str(exception_info.value)
 
 
 class TestCapability:
@@ -68,7 +68,7 @@ class TestDatasetUpdate:
         [
             ("", "String should have at least 1 character"),
             (" ", "String should have at least 1 character"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "string should have at most 128 characters"),
             (0, "Input should be a valid string"),
             (None, "Input should be a valid string"),
         ],
@@ -119,7 +119,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"avatar": "a" * 65536})
-        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -162,7 +162,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"description": "a" * 65536})
-        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
+        assert "string should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_none(self, client, add_dataset_func):
@@ -283,14 +283,14 @@ class TestDatasetUpdate:
         if IS_GO_PROXY and not isinstance(permission, str):
             assert "cannot unmarshal" in error_message and ".permission" in error_message, error_message
         else:
-            assert "Input should be 'me' or 'team'" in error_message, error_message
+            assert "input should be 'me' or 'team'" in error_message, error_message
 
     @pytest.mark.p3
     def test_permission_none(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"permission": None})
-        assert "Input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
+        assert "input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

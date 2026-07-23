@@ -56,7 +56,7 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 	if req.Permission != nil {
 		permission = strings.TrimSpace(*req.Permission)
 		if permission != "me" && permission != "team" {
-			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+			return nil, common.CodeDataError, errors.New("input should be 'me' or 'team'")
 		}
 	}
 	if req.ParserID != nil {

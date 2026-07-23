@@ -144,7 +144,7 @@ def _validate_name(name, *, required=True):
             return None, "`name` is required"
         return None, None
     if not isinstance(name, str):
-        return None, "Chat name must be a string."
+        return None, "chat name must be a string"
     name = name.strip()
     if not name:
         return None, "`name` is required" if required else "`name` cannot be empty"
