@@ -243,3 +243,49 @@ def test_tenki_provider_config_schema_and_validation():
 
 def test_tenki_provider_supported_languages():
     assert TenkiProvider().get_supported_languages() == ["python", "javascript", "nodejs"]
+
+
+def test_tenki_provider_initialize_maps_auth_error(monkeypatch):
+    provider = TenkiProvider()
+    monkeypatch.setattr(provider, "_tenki_errors", lambda: _FakeErrors)
+
+    class _UnauthorizedClient:
+        def who_am_i(self):
+            raise _FakeErrors.UnauthorizedError("bad token")
+
+    monkeypatch.setattr(provider, "_create_client", lambda: _UnauthorizedClient())
+
+    with pytest.raises(SandboxProviderConfigError, match="authentication failed"):
+        provider.initialize({"api_key": "tk_bad", "project_id": "proj-1"})
+
+
+def test_tenki_provider_instances_are_independent(monkeypatch):
+    sandboxes: list[_FakeSandbox] = []
+
+    class _MultiClient(_FakeClient):
+        def create(self, **kwargs):
+            sb = _FakeSandbox()
+            sb.id = f"sbx-{len(sandboxes)}"
+            sandboxes.append(sb)
+            return sb
+
+    provider = TenkiProvider()
+    provider.api_key = "tk_test"
+    provider.project_id = "proj-1"
+    provider.timeout = 30
+    provider._initialized = True
+    provider._client = _MultiClient(None)
+    monkeypatch.setattr(provider, "_tenki_errors", lambda: _FakeErrors)
+
+    a = provider.create_instance("python")
+    b = provider.create_instance("python")
+
+    assert a.instance_id != b.instance_id
+    assert a.metadata["sandbox_id"] != b.metadata["sandbox_id"]
+
+    provider.destroy_instance(a.instance_id)
+    assert sandboxes[0].terminated is True
+    assert sandboxes[1].terminated is False  # destroying one leaves the other running
+
+    provider.destroy_instance(b.instance_id)
+    assert sandboxes[1].terminated is True
