@@ -894,7 +894,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     assert create_payload["code"] == 0, create_payload
     dataset_id = create_payload["data"]["id"]
 
-    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+    expected_chunk_message = "input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for chunk_method in ("", "unknown", []):
         res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: chunk_method})
         assert res.status_code == 200
@@ -903,7 +903,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
