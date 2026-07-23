@@ -55,6 +55,13 @@ func (Chat) TableName() string {
 	return "dialog"
 }
 
+// ChatListItem represents a chat list row with owner profile fields.
+type ChatListItem struct {
+	Chat
+	Nickname     *string `gorm:"column:nickname" json:"nickname,omitempty"`
+	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
+}
+
 // Conversation conversation model
 type ChatSession struct {
 	ID        string          `gorm:"column:id;primaryKey;size:32" json:"id"`

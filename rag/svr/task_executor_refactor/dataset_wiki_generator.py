@@ -55,6 +55,7 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
+from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile.wiki import (
     wiki_map_from_chunks,
     wiki_plan_from_reduction,
@@ -71,6 +72,22 @@ from rag.svr.task_executor_refactor.task_context import TaskContext
 # memory footprint. 64 keeps the resume-set re-reads cheap while leaving
 # room for the function's internal split_chunks packing to do real work.
 WIKI_MAP_BATCH_CHUNKS = 64
+
+# The pool limits actual MAP LLM calls rather than the surrounding batch
+# tasks. This lets the next waiting batch start as soon as a model call
+# finishes, without waiting for the previous batch's ES persistence work.
+WIKI_MAP_LLM_POOL_SIZE = 20
+
+# Global MAP admission limit: active calls plus calls waiting in the pool.
+WIKI_MAP_MAX_PENDING = 25
+
+# Keep only a small number of outer batches buffered. With 20 workers this
+# bounds the in-memory MAP work to roughly 25 batches (20 active + 5 waiting).
+WIKI_MAP_QUEUE_SIZE = 5
+
+# REFINE pages are independent. Keep enough page workers to feed the shared
+# pool; the pool itself still caps actual LLM requests at 20.
+WIKI_REFINE_WORKERS = WIKI_MAP_LLM_POOL_SIZE
 
 # Per-node cap on ``source_chunk_ids`` carried by the canvas graph blob.
 # Pages can accumulate hundreds of source chunks; the graph response is
@@ -1076,61 +1093,86 @@ async def run_wiki(
     # were already processed in a prior run — this is the incremental
     # behavior the user asked for.
     #
-    # ``kb_chat_llm_id`` is captured from the first eligible template
-    # and used as the canonical chat model for REDUCE/PLAN/REFINE.
-    # ``kb_writer_example`` follows the same first-template-wins rule:
-    # the REFINE writer's page-structure section is pulled from the
-    # first eligible artifact template's ``parser_config.example``
-    # override (None falls back to the built-in ``WIKI_TEMPLATE_EXAMPLE``).
-    kb_chat_llm_id: Optional[str] = None
-    kb_writer_example: Optional[str] = None
-    n_docs = len(eligible)
-    for i, (doc, template_id) in enumerate(eligible):
-        doc_id = doc["id"]
-        progress(
-            0.05 + 0.6 * (i / n_docs),
-            f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}",
-        )
-
+    # Resolve templates before starting workers so the first eligible
+    # template remains the deterministic source for KB-wide REDUCE/PLAN/
+    # REFINE, independent of which document worker happens to finish first.
+    resolved_eligible: list[tuple[dict, str, dict]] = []
+    for doc, template_id in eligible:
         template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
         if not template:
             logging.warning(
                 "artifact: template %s not found for doc %s; skipping",
                 template_id,
-                doc_id,
+                doc["id"],
             )
             continue
-        parser_cfg = template.get("config") or {}
+        resolved_eligible.append((doc, template_id, template.get("config") or {}))
 
-        map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
-        map_chat_mdl = _bundle_for(map_llm_id)
-        if kb_chat_llm_id is None:
-            # First eligible template wins — canonical for KB-wide
-            # REDUCE/PLAN/REFINE further down.
-            kb_chat_llm_id = map_llm_id or None
-            tmpl_example = parser_cfg.get("example") if isinstance(parser_cfg, dict) else None
-            if isinstance(tmpl_example, str) and tmpl_example.strip():
-                kb_writer_example = tmpl_example
+    if not resolved_eligible:
+        progress(1.0, "No valid templates resolved for wiki compilation.")
+        return
 
-        # Stream the doc's chunks in batches and call MAP per batch so
-        # peak memory stays bounded for long docs.
-        agg = {"entities": 0, "concepts": 0, "claims": 0, "relations": 0}
-        agg_delta = {"new": 0, "changed": 0, "unchanged": 0, "deleted": 0}
-        doc_had_delta = False
-        saw_any = False
-        batch_no = 0
-        async for batch in load_chunks_for_doc(
-            ctx.tenant_id,
-            ctx.kb_id,
-            doc_id,
-            batch_size=WIKI_MAP_BATCH_CHUNKS,
-        ):
-            saw_any = True
-            batch_no += 1
+    # ``kb_chat_llm_id`` is captured from the first eligible template and
+    # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
+    # ``kb_writer_example`` follows the same first-template-wins rule.
+    first_parser_cfg = resolved_eligible[0][2]
+    first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
+    kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
+    first_example = first_parser_cfg.get("example")
+    kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
+    map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
+    n_docs = len(resolved_eligible)
+    map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
+    doc_stats = {
+        i: {
+            "doc": doc,
+            "batch_count": 0,
+            "saw_any": False,
+            "status": "ok",
+            "agg": {"entities": 0, "concepts": 0, "claims": 0, "relations": 0},
+            "delta": {"new": 0, "changed": 0, "unchanged": 0, "deleted": 0},
+            "had_delta": False,
+        }
+        for i, (doc, _, _) in enumerate(resolved_eligible)
+    }
+
+    async def _produce_document(i: int, job: tuple[dict, str, dict]) -> None:
+        doc, template_id, parser_cfg = job
+        doc_id = doc["id"]
+        stats = doc_stats[i]
+        progress(0.05 + 0.6 * (i / n_docs), f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}")
+        try:
+            async for batch in load_chunks_for_doc(
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                batch_size=WIKI_MAP_BATCH_CHUNKS,
+            ):
+                stats["saw_any"] = True
+                stats["batch_count"] += 1
+                await map_queue.put((i, doc, template_id, parser_cfg, batch, stats["batch_count"]))
+        except Exception:
+            logging.exception("wiki: loading MAP chunks failed for doc %s", doc_id)
+            stats["status"] = "error"
+
+    async def _map_worker() -> None:
+        while True:
+            item = await map_queue.get()
             try:
+                if item is None:
+                    return
+                i, doc, template_id, parser_cfg, batch, batch_no = item
+                doc_id = doc["id"]
+                stats = doc_stats[i]
+                map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
-                    chat_mdl=map_chat_mdl,
+                    chat_mdl=map_llm_pool.wrap(
+                        _bundle_for(map_llm_id),
+                        priority=30,
+                        label=f"wiki-map:{doc_id}",
+                        context=f"{ctx.kb_id}:{doc_id}:map",
+                    ),
                     embd_mdl=embedding_model,
                     doc_id=doc_id,
                     tenant_id=ctx.tenant_id,
@@ -1140,14 +1182,29 @@ async def run_wiki(
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
+                    # Keep a bounded internal worker queue. The shared pool
+                    # globally limits active + admitted waiting calls to
+                    # WIKI_MAP_MAX_PENDING, while this prevents every outer
+                    # batch from creating all of its sub-batch tasks at once.
+                    max_workers=6,
                 )
+                for key in stats["agg"]:
+                    stats["agg"][key] += len(phase1.get(key) or [])
+                meta = phase1.get("_meta") or {}
+                if isinstance(meta, dict):
+                    for key in stats["delta"]:
+                        stats["delta"][key] += int(meta.get(key, 0) or 0)
+                    stats["had_delta"] |= bool(meta.get("had_delta"))
             except Exception:
                 logging.exception(
                     "wiki: MAP failed for doc %s batch %d",
                     doc_id,
                     batch_no,
                 )
-                continue
+                stats["status"] = "error"
+            finally:
+                map_queue.task_done()
+                
             for k in agg.keys():
                 agg[k] += len(phase1.get(k) or [])
             meta = phase1.get("_meta") or {}
@@ -1186,6 +1243,26 @@ async def run_wiki(
                 agg_delta["deleted"],
             )
             continue
+
+    producers = [asyncio.create_task(_produce_document(i, job)) for i, job in enumerate(resolved_eligible)]
+    workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
+    try:
+        await asyncio.gather(*producers)
+        await map_queue.join()
+    finally:
+        for task in producers + workers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*producers, *workers, return_exceptions=True)
+
+    for i, stats in doc_stats.items():
+        doc = stats["doc"]
+        doc_id = doc["id"]
+        if not stats["saw_any"] and stats["status"] == "ok":
+            stats["status"] = "empty"
+            logging.info("wiki: no chunks for doc %s; skipping", doc_id)
+        agg = stats["agg"]
+        delta = stats["delta"]
         logging.info(
             "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, new=%d changed=%d unchanged=%d deleted=%d, delta=%s)",
             doc_id,
@@ -1193,23 +1270,28 @@ async def run_wiki(
             agg["concepts"],
             agg["claims"],
             agg["relations"],
-            batch_no,
-            agg_delta["new"],
-            agg_delta["changed"],
-            agg_delta["unchanged"],
-            agg_delta["deleted"],
-            doc_had_delta,
+            stats["batch_count"],
+            delta["new"],
+            delta["changed"],
+            delta["unchanged"],
+            delta["deleted"],
+            stats["had_delta"],
         )
-
     # 5. REDUCE / PLAN / REFINE KB-wide. Each phase has its own
     # input_hash gate (REDUCE keys off the MAP-state hash, PLAN off
     # REDUCE's hash, REFINE off PLAN's hash) so re-runs without an
     # upstream delta short-circuit at the cache layer.
     kb_chat_mdl = _bundle_for(kb_chat_llm_id)
+
     try:
         progress(0.65, "Reducing extracts KB-wide...")
         await wiki_reduce_from_extracts(
-            chat_mdl=kb_chat_mdl,
+            chat_mdl=map_llm_pool.wrap(
+                kb_chat_mdl,
+                priority=20,
+                label="wiki-reduce",
+                context=f"{ctx.kb_id}:reduce",
+            ),
             embd_mdl=embedding_model,
             tenant_id=ctx.tenant_id,
             kb_id=ctx.kb_id,
@@ -1229,10 +1311,16 @@ async def run_wiki(
 
         progress(0.85, "Refining pages...")
         pages = await wiki_refine_from_plan(
-            chat_mdl=kb_chat_mdl,
+            chat_mdl=map_llm_pool.wrap(
+                kb_chat_mdl,
+                priority=30,
+                label="wiki-refine",
+                context=f"{ctx.kb_id}:refine",
+            ),
             embd_mdl=embedding_model,
             tenant_id=ctx.tenant_id,
             kb_id=ctx.kb_id,
+            max_workers=WIKI_REFINE_WORKERS,
             callback=_stage_cb("[wiki REFINE]"),
             example=kb_writer_example,
         )
@@ -1243,13 +1331,13 @@ async def run_wiki(
 
     # 6. Persist searchable artifact_page rows.
     try:
-        await persist_wiki_pages_to_es(ctx, pages or [], embedding_model)
+        await persist_wiki_pages_to_es(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
     except Exception:
         logging.exception("wiki: ES persist failed for kb %s", ctx.kb_id)
 
     # 7. Materialize the canvas graph from the refined pages.
     try:
-        await persist_wiki_page_graph_to_es(ctx, pages or [])
+        await persist_wiki_page_graph_to_es(ctx=ctx, pages=pages or [])
     except Exception:
         logging.exception("wiki: page-graph persist failed for kb %s", ctx.kb_id)
 

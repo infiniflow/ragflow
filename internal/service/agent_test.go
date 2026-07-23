@@ -1469,86 +1469,87 @@ func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentPermissionOwnerOnly(t *testing.T) {
+func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
-	status := "1"
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        "ut-owner",
-		UserID:    "user-1",
-		TenantID:  "user-1",
-		Role:      "owner",
-		InvitedBy: "user-1",
-		Status:    &status,
-	}).Error; err != nil {
-		t.Fatalf("failed to seed owner tenant: %v", err)
-	}
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        "ut-member",
-		UserID:    "user-2",
-		TenantID:  "user-1",
-		Role:      "normal",
-		InvitedBy: "user-1",
-		Status:    &status,
-	}).Error; err != nil {
-		t.Fatalf("failed to seed member tenant: %v", err)
-	}
 	if err := dao.DB.Create(&entity.UserCanvas{
-		ID:             "canvas-team",
+		ID:             "canvas-same-title",
 		UserID:         "user-1",
-		Title:          sptr("Team Agent"),
-		Avatar:         sptr("owner-avatar"),
-		Permission:     "team",
+		Title:          sptr("Same Title"),
+		Description:    sptr("old description"),
 		CanvasCategory: "agent_canvas",
 		DSL:            entity.JSONMap{},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed canvas: %v", err)
 	}
 
-	// Team member tries to make the agent private while updating title/avatar.
-	err := NewAgentService().UpdateAgent(context.Background(), "user-2", "canvas-team", map[string]interface{}{
-		"title":      "Renamed by member",
-		"avatar":     "member-avatar",
-		"permission": "me",
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-same-title", map[string]interface{}{
+		"title":       "Same Title",
+		"description": "new description",
 	})
 	if err != nil {
-		t.Fatalf("team member update should succeed for non-permission fields: %v", err)
+		t.Fatalf("UpdateAgent failed for unchanged title: %v", err)
 	}
-	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-team")
-	if err != nil {
-		t.Fatalf("failed to reload canvas: %v", err)
+}
+
+func TestUpdateAgentRejectsDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-source-category",
+		UserID:         "user-1",
+		Title:          sptr("Source Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
 	}
-	if persisted.Permission != "team" {
-		t.Fatalf("team member changed permission to %q; want team", persisted.Permission)
-	}
-	if persisted.Title == nil || *persisted.Title != "Renamed by member" {
-		t.Fatalf("title = %v, want Renamed by member", persisted.Title)
-	}
-	if persisted.Avatar == nil || *persisted.Avatar != "member-avatar" {
-		t.Fatalf("avatar = %v, want member-avatar", persisted.Avatar)
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-destination-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Duplicate Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
 	}
 
-	// Owner can change permission together with title/avatar.
-	err = NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-team", map[string]interface{}{
-		"title":      "Owner updated",
-		"avatar":     "owner-avatar-2",
-		"permission": "me",
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-source-category", map[string]interface{}{
+		"title":           "Duplicate Title",
+		"canvas_category": "dataflow_canvas",
 	})
-	if err != nil {
-		t.Fatalf("owner update failed: %v", err)
+	if err == nil || err.Error() != "Duplicate Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Duplicate Title already exists.", err)
 	}
-	persisted, err = dao.NewUserCanvasDAO().GetByID("canvas-team")
-	if err != nil {
-		t.Fatalf("failed to reload canvas: %v", err)
+}
+
+func TestUpdateAgentRejectsCategoryOnlyDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-source",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
 	}
-	if persisted.Permission != "me" {
-		t.Fatalf("owner permission = %q, want me", persisted.Permission)
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
 	}
-	if persisted.Title == nil || *persisted.Title != "Owner updated" {
-		t.Fatalf("title = %v, want Owner updated", persisted.Title)
-	}
-	if persisted.Avatar == nil || *persisted.Avatar != "owner-avatar-2" {
-		t.Fatalf("avatar = %v, want owner-avatar-2", persisted.Avatar)
+
+	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-category-only-source", map[string]interface{}{
+		"canvas_category": "dataflow_canvas",
+	})
+	if err == nil || err.Error() != "Shared Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Shared Title already exists.", err)
 	}
 }
 

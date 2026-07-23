@@ -28,6 +28,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -53,6 +54,7 @@ var (
 // path produces JSON items with doc_type_kwd == "image" and an
 // "image" base64 field. It returns (result, handled, error).
 func maybeDispatchMarkdownVision(
+	ctx context.Context,
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
@@ -122,7 +124,7 @@ func maybeDispatchMarkdownVision(
 			}
 
 			messages := buildVisionMessages(prompt, item.imageB64)
-			resp, err := visionChatInvoker(driver, modelName, messages, apiConfig)
+			resp, err := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
 			if err != nil {
 				return
 			}

@@ -1245,7 +1245,7 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 	return deletedCount, nil
 }
 
-func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, addChunkError{code: common.CodeServerError, message: "doc engine not initialized"}
 	}
@@ -1351,7 +1351,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
