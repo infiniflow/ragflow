@@ -273,6 +273,16 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "agent_id is required")
 		return
 	}
+	boundAgentID, _ := c.Get("agent_id")
+	boundAgentIDStr, _ := boundAgentID.(string)
+	if boundAgentIDStr == "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "API token is not bound to an agent.")
+		return
+	}
+	if boundAgentIDStr != agentIDStr {
+		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
+		return
+	}
 	messageID := c.Param("message_id")
 	if messageID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")

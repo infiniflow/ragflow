@@ -41,6 +41,7 @@ type userTokenResolver interface {
 	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
 	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
 	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error)
 }
 
 // NewAuthHandler create auth handler
@@ -98,6 +99,9 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		// Fall back to beta API token (public bot access).
 		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			if tok, terr := h.userService.GetAPITokenByBeta(ctx, auth); terr == nil && tok != nil && tok.DialogID != nil {
+				c.Set("agent_id", *tok.DialogID)
+			}
 			c.Next()
 			return
 		}
