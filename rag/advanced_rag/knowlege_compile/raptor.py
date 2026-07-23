@@ -778,7 +778,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             to materialize.
         """
         if len(chunks) <= 1:
-            return None if is_tree else ([], [])
+            return (None, None) if is_tree else ([], [])
 
         # Normalize input to the 3-tuple shape. Reject empties / bad
         # vectors at the same time the legacy path used to.
@@ -800,7 +800,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         normalized = [t for t in (_normalize(c) for c in chunks) if t is not None]
         if len(normalized) <= 1:
-            return None if is_tree else (normalized, [(0, len(normalized))])
+            return (None, None) if is_tree else (normalized, [(0, len(normalized))])
         chunks = normalized
 
         if self._tree_builder == PSI_TREE_BUILDER:
