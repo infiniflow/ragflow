@@ -28,7 +28,7 @@ from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title
 from rag.nlp import rag_tokenizer, Node
 from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from rag.app.naive import by_plaintext, PARSERS
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import resolve_layout_recognizer
 
 
 class Docx(DocxParser):
@@ -183,7 +183,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return tokenize_chunks(chunks, doc, eng, None, language=lang)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognizer, parser_model_name = resolve_layout_recognizer(
+            kwargs.get("tenant_id"),
+            parser_config.get("layout_recognize", "DeepDOC"),
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"

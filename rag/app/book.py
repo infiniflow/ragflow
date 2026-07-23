@@ -22,7 +22,7 @@ from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.app.naive import by_plaintext, PARSERS
 from common.constants import MAXIMUM_PAGE_NUMBER
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import resolve_layout_recognizer
 from rag.nlp import bullets_category, is_english, remove_contents_table, hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, tokenize_chunks, attach_media_context
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, HtmlParser
@@ -91,7 +91,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognizer, parser_model_name = resolve_layout_recognizer(
+            kwargs.get("tenant_id"),
+            parser_config.get("layout_recognize", "DeepDOC"),
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"

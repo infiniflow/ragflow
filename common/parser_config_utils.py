@@ -14,7 +14,14 @@
 #  limitations under the License.
 #
 
+import re
 from typing import Any
+
+_MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.I)
+
+
+def is_tenant_model_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(_MODEL_ID_RE.match(value.strip()))
 
 
 def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | None]:
@@ -41,3 +48,22 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
             layout_recognizer = "SoMark"
 
     return layout_recognizer, parser_model_name
+
+
+def resolve_layout_recognizer(
+    tenant_id: str | None,
+    layout_recognizer_raw: Any,
+) -> tuple[Any, str | None]:
+    """Resolve layout_recognize to (parser_kind, model_ref).
+
+    When tenant_id is set, hex tenant_model.id values are resolved via DB.
+    Otherwise only static names and ``model@instance@provider`` suffixes
+    are normalized.
+    """
+    if tenant_id:
+        from api.db.joint_services.tenant_model_service import (
+            resolve_layout_recognizer as _resolve_from_db,
+        )
+
+        return _resolve_from_db(layout_recognizer_raw)
+    return normalize_layout_recognizer(layout_recognizer_raw)

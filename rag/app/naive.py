@@ -46,7 +46,7 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import resolve_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
@@ -978,7 +978,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognizer, parser_model_name = resolve_layout_recognizer(
+            kwargs.get("tenant_id"),
+            parser_config.get("layout_recognize", "DeepDOC"),
+        )
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
         if layout_recognizer == "OpenDataLoader" and parser_model_name:
             opendataloader_llm_name = parser_model_name

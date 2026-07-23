@@ -27,7 +27,7 @@ from PIL import Image
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, resolve_model_config, ensure_paddleocr_from_env
 from common.constants import LLMType
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import resolve_layout_recognizer
 from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
@@ -111,7 +111,10 @@ def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):
     if not layout_recognize:
         return ""
 
-    layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize)
+    layout_recognizer, parser_model_name = resolve_layout_recognizer(
+        tenant_id,
+        layout_recognize,
+    )
     if layout_recognizer != "PaddleOCR":
         return ""
 
