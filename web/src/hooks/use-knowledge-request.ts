@@ -831,6 +831,7 @@ const KNOWLEDGE_LIST_PAGE_SIZE = 10;
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
+  pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -845,6 +846,7 @@ export const useFetchKnowledgeList = (
         KnowledgeApiAction.FetchKnowledgeList,
         shouldFilterListWithoutDocument,
         keywords,
+        pageSize,
       ],
       gcTime: 0,
       initialPageParam: 1,
@@ -852,15 +854,13 @@ export const useFetchKnowledgeList = (
         const page = pageParam as number;
         const { data } = await listDataset({
           page,
-          page_size: KNOWLEDGE_LIST_PAGE_SIZE,
+          page_size: pageSize,
           ...(keywords ? { ext: { keywords } } : {}),
         });
         return { items: (data?.data ?? []) as IDataset[] };
       },
       getNextPageParam: (lastPage, allPages) =>
-        lastPage.items.length >= KNOWLEDGE_LIST_PAGE_SIZE
-          ? allPages.length + 1
-          : undefined,
+        lastPage.items.length >= pageSize ? allPages.length + 1 : undefined,
     });
 
   const list = useMemo(() => {
@@ -897,7 +897,8 @@ export const useFetchKnowledgeList = (
 
 /**
  * For consumers that need the COMPLETE list (no scroll UI).
- * Auto-loads all pages sequentially until exhausted.
+ * Uses a large page size to minimize round-trips, and auto-loads
+ * until exhausted.
  */
 export const useFetchAllKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
@@ -906,6 +907,7 @@ export const useFetchAllKnowledgeList = (
   const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
     shouldFilterListWithoutDocument,
     keywords,
+    200,
   );
 
   useEffect(() => {
