@@ -89,6 +89,8 @@ def resolve_template_ids_from_groups(group_ids, tenant_id: str) -> list[str]:
     ids directly (the ``rag.flow`` Compiler carries them as a component
     parameter rather than inside ``parser_config``).
     """
+    if isinstance(group_ids, str):
+        group_ids = [group_ids]
     template_ids: list[str] = []
     seen: set[str] = set()
     for group_id in group_ids or []:

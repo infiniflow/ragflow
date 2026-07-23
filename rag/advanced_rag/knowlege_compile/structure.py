@@ -35,10 +35,15 @@ from ._common import (
     tokenize_for_search as _tokenize_for_search,
     union_ordered as _union_ordered,
     run_chunked_pipeline as _run_chunked_pipeline,
+    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
 )
 
 
 _STRUCT_TYPES = ("list", "set", "hypergraph")
+_STRUCT_TYPE_ALIASES = {
+    "graph": "hypergraph",
+    "knowledge_graph": "hypergraph",
+}
 
 _ES_DEDUP_KNN_CONCURRENCY = 8
 _ES_DEDUP_LLM_CONCURRENCY = 16
@@ -131,6 +136,7 @@ class PooledChatModel:
         return getattr(self._chat_mdl, name)
 
     async def async_chat(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = _knowledge_compile_gen_conf(self._chat_mdl, gen_conf)
         return await self._pool.call(
             lambda: self._chat_mdl.async_chat(system, history, gen_conf=gen_conf, **kwargs),
             priority=self._priority,
@@ -181,10 +187,12 @@ def _struct_get(cfg: dict, *keys, default=None):
 def _struct_infer_type(parser_config: dict) -> str:
     explicit = _struct_get(parser_config, "compile_type")
     normalized_explicit = _struct_normalize_kind(explicit)
+    normalized_explicit = _STRUCT_TYPE_ALIASES.get(normalized_explicit, normalized_explicit)
     if normalized_explicit in _STRUCT_TYPES:
         return normalized_explicit
     kind = _struct_get(parser_config, "kind")
     normalized_kind = _struct_normalize_kind(kind)
+    normalized_kind = _STRUCT_TYPE_ALIASES.get(normalized_kind, normalized_kind)
     if normalized_kind:
         return normalized_kind
     output = _struct_get(parser_config, "output", default={}) or {}
@@ -197,7 +205,9 @@ def _struct_supported_type(parser_config: dict, autotype: str) -> bool:
     if autotype in _STRUCT_TYPES:
         return True
     kind = _struct_get(parser_config, "kind")
-    return _struct_normalize_kind(kind) == autotype
+    normalized_kind = _struct_normalize_kind(kind)
+    normalized_kind = _STRUCT_TYPE_ALIASES.get(normalized_kind, normalized_kind)
+    return normalized_kind == autotype
 
 
 def _struct_render_fields(fields: list, language: str) -> Tuple[str, str]:
@@ -385,8 +395,8 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     node_prompt, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language)
 
     user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
-    node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
-    nodes = [node for node in _struct_unwrap_items(node_res) if not _struct_is_invalid_entity_payload(node, parser_config)]
+    node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
+    nodes = _struct_unwrap_items(node_res)
 
     id_field = _struct_entity_id_field(parser_config)
     known_keys = []
@@ -402,9 +412,9 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     if not edge_prompt_template:
         return nodes, []
 
-    edge_user = user_prompt + f"\n\n## Known Entities to link:\n{known_str}"
-    edge_res = await gen_json(edge_prompt_template, edge_user, chat_mdl, gen_conf={"temperature": 0.1})
-    edges = [edge for edge in _struct_unwrap_items(edge_res) if not _struct_is_invalid_relation_payload(edge, parser_config)]
+    edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
+    edge_res = await gen_json(edge_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
+    edges = _struct_unwrap_items(edge_res)
 
     return nodes, edges
 
@@ -775,6 +785,7 @@ async def compile_structure_from_text(
         chunks,
         chat_mdl,
         prompt_overhead_tokens=prompt_overhead,
+        batch_size_cap=1 if str(template_kind).strip().lower().replace("-", "_") in {"page_index", "pageindex"} else None,
     )
     if not packed_batches:
         return []
@@ -970,7 +981,7 @@ async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict |
         item_incoming=json.dumps(incoming_payload, ensure_ascii=False),
     )
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + MERGE_DECISION_INSTRUCTION
-    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0})
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     if not isinstance(res, dict):
         return None
     if not res.get("duplicated"):
@@ -1217,7 +1228,7 @@ async def _struct_judge_doc_storage_group_batch(group_specs: list[dict], chat_md
 
     user_prompt = ES_GROUP_DECISION_BATCH_PROMPT.format(groups=json.dumps(prompt_groups, ensure_ascii=False))
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + ES_GROUP_DECISION_BATCH_PROMPT.split("Groups:", 1)[0]
-    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0})
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     raw_groups = res.get("groups") if isinstance(res, dict) else None
     if not isinstance(raw_groups, list):
         return {spec["request_group_id"]: set() for spec in group_specs}
@@ -1268,7 +1279,7 @@ async def _struct_merge_doc_storage_group_batch(group_specs: list[dict], chat_md
 
     user_prompt = ES_GROUP_BATCH_MERGE_PROMPT.format(groups=json.dumps(prompt_groups, ensure_ascii=False))
     system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + ES_GROUP_BATCH_MERGE_PROMPT.split("Groups:", 1)[0]
-    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0})
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     raw_groups = res.get("groups") if isinstance(res, dict) else None
     if not isinstance(raw_groups, list):
         return {spec["old_id"]: (list(spec["incoming_docs"]), None) for spec in group_specs}
@@ -1324,7 +1335,7 @@ async def _struct_merge_doc_storage_group(old_doc: dict, incoming_docs: list[dic
             ensure_ascii=False,
         ),
     )
-    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.0})
+    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
     if not isinstance(res, dict):
         return list(incoming_docs), None
     indices = res.get("duplicate_indices")
@@ -2471,7 +2482,7 @@ async def validate_and_correct_chain(
                     "You correct extracted graph relations to satisfy a strict-chain constraint.",
                     prompt,
                     chat_mdl,
-                    gen_conf={"temperature": 0.0},
+                    gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
                 )
             keep_raw = res.get("keep") if isinstance(res, dict) else None
             if isinstance(keep_raw, list):

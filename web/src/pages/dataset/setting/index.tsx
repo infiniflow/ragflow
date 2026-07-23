@@ -52,6 +52,7 @@ export default function DatasetSetting() {
       description: '',
       avatar: null,
       permission: '',
+      language: 'English',
       embedding_model: '',
       pagerank: 0,
       connectors: [],

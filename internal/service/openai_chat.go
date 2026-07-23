@@ -217,7 +217,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	dialogResp, err := s.chatSvc.GetChat(userID, chatID)
+	ctx := c.Request.Context()
+	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
 		s.writeDataError(c, err.Error())
 		return
@@ -263,7 +264,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	ctx := c.Request.Context()
 	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)

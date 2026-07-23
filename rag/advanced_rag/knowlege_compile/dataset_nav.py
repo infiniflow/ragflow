@@ -38,6 +38,7 @@ from common.misc_utils import thread_pool_exec
 from rag.utils.redis_conn import RedisDistributedLock
 
 from ._common import encode as _encode
+from ._common import knowledge_compile_gen_conf as _knowledge_compile_gen_conf
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -476,7 +477,7 @@ async def _llm_merge(chat_mdl, cluster_desc: str, doc_summary: str) -> str:
         "Return ONLY the merged text, no commentary."
     )
     try:
-        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        resp = await gen_json("", prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
         if isinstance(resp, dict):
             return str(resp.get("merged", resp.get("result", cluster_desc)))
         if isinstance(resp, str) and resp.strip():
@@ -529,7 +530,7 @@ async def _llm_create_summary(chat_mdl, doc_summaries: list[str]) -> tuple[str, 
         'Return ONLY JSON: {"name": "<2-6 word topic title>", "summary": "<1-3 sentence description>"}'
     )
     try:
-        resp = await gen_json("", prompt, chat_mdl, gen_conf={"temperature": 0.1})
+        resp = await gen_json("", prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
         if isinstance(resp, dict):
             summary = str(resp.get("summary") or resp.get("result") or fallback_summary).strip()
             name = _clean_title(str(resp.get("name") or "")) or _fallback_title(summary)
