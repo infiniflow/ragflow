@@ -299,6 +299,12 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		if userID == "" {
 			userID = m.userID
 		}
+		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
+		// resolve it against the current state. Mirrors Python's
+		// agent/component/message.py:569-571.
+		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
+			userID = runtime.ResolveTemplateForDisplay(userID, state)
+		}
 		saver := GetMemorySaver()
 		saveErr := saver.Save(ctx, MemorySaveRequest{
 			MemoryIDs:     memIDs,
