@@ -2230,9 +2230,7 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
-            completion_args.update({"api_base": self.base_url})
-        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
 
             completion_args.pop("api_key", None)
@@ -2250,7 +2248,7 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_region_name": bedrock_region})
                 completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
                 completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
-            elif mode == "iam_role":
+            elif mode in {"iam_role", "iam"}:
                 aws_role_arn = bedrock_key.get("aws_role_arn")
                 sts_client = boto3.client("sts", region_name=bedrock_region)
                 resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
@@ -2263,6 +2261,8 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_region_name": bedrock_region})
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            if self.base_url:
+                completion_args.update({"api_base": self.base_url})
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -2295,6 +2295,13 @@ class LiteLLMBase(ABC):
                     "api_key": self.api_key,
                     "api_base": self.base_url,
                     "api_version": self.api_version,
+                }
+            )
+        elif self.base_url:
+            logging.debug("LiteLLM provider %s using generic api_base fallback: %s", self.provider, self.base_url)
+            completion_args.update(
+                {
+                    "api_base": self.base_url,
                 }
             )
 
