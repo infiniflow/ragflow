@@ -362,22 +362,6 @@ def _struct_is_invalid_sentinel(value) -> bool:
     return isinstance(value, str) and value.strip() in _STRUCT_INVALID_SENTINELS
 
 
-def _struct_is_invalid_entity_payload(payload: dict, parser_config: dict) -> bool:
-    id_field = _struct_entity_id_field(parser_config)
-    for key in (id_field, "name", "text", "term", "title"):
-        if _struct_is_invalid_sentinel(payload.get(key)):
-            return True
-    return False
-
-
-def _struct_is_invalid_relation_payload(payload: dict, parser_config: dict) -> bool:
-    src_field, target_field = _struct_relation_member_fields(parser_config)
-    for key in (src_field, target_field, "source", "src", "from", "target", "tgt", "to"):
-        if key and _struct_is_invalid_sentinel(payload.get(key)):
-            return True
-    return False
-
-
 def _struct_unwrap_items(res) -> list:
     if res is None:
         return []
@@ -419,9 +403,6 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     return nodes, edges
 
 
-# Backwards-compat alias for the shared helper. New code should use
-# ``_common.encode`` directly; kept here so existing references inside this
-# module keep working without a wider rename.
 _struct_embed = _encode
 
 
