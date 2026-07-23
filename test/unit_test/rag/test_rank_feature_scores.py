@@ -2,6 +2,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 from common.constants import PAGERANK_FLD, TAG_FLD
 
@@ -95,3 +96,33 @@ def test_rank_feature_scores_returns_pagerank_when_no_tag_feature():
     sres = _make_search_res("{'apple': 2.0}")
     scores = dealer._rank_feature_scores({PAGERANK_FLD: 10}, sres)
     assert np.isclose(scores[0], 0.0)
+
+
+@pytest.mark.p1
+def test_calc_rerank_limit_keeps_reranked_windows_page_aligned():
+    for page_size, expected in [(10, 60), (30, 60), (31, 62), (64, 64)]:
+        limit = Dealer._rerank_window(page_size, top=1024)
+        assert limit == expected
+        assert limit <= 64
+        assert limit % page_size == 0
+
+
+@pytest.mark.p1
+def test_calc_rerank_limit_avoids_short_block_boundary_pages():
+    page_size = 10
+    limit = Dealer._rerank_window(page_size, top=1024)
+    global_offset = 6 * page_size
+    begin = global_offset % limit
+    end = begin + page_size
+
+    assert begin == 0
+    assert end <= limit
+
+
+@pytest.mark.p2
+def test_calc_rerank_limit_preserves_existing_non_rerank_and_small_top_behavior():
+    assert Dealer._rerank_window(page_size=10) == 70
+    assert Dealer._rerank_window(page_size=10, top=20) == 20
+    assert Dealer._rerank_window(page_size=30, top=50) == 50
+    with pytest.raises(ValueError, match=r"_rerank_window.*page_size=100.*top=1024"):
+        Dealer._rerank_window(page_size=100, top=1024)
