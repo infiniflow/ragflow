@@ -1,7 +1,10 @@
 {
   "name": "Tencent Hunyuan",
   "url": {
-    "default": "https://api.hunyuan.cloud.tencent.com/v1"
+    "default": "https://tokenhub.tencentmaas.com/v1",
+    "default-backup": "https://tokenhub.tencentmaas.cn/v1",
+    "intl": "https://tokenhub-intl.tencentmaas.com/v1",
+    "intl-backup": "https://tokenhub-intl.tencentmaas.cn/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -11,39 +14,299 @@
   "class": "hunyuan",
   "models": [
     {
-      "name": "hunyuan-pro",
+      "name": "hy3",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy3-preview",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k3",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2.7-code-highspeed",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2.7-code",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "glm-5.2",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "minimax-m3",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v4-flash-202605",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v4-pro-202606",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-mt2-pro",
+      "max_tokens": 8192,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-mt2-plus",
+      "max_tokens": 8192,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-mt2-lite",
+      "max_tokens": 8192,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-role",
       "max_tokens": 32768,
-      "model_types": [
-        "chat"
-      ]
+      "model_types": ["chat"]
     },
     {
-      "name": "hunyuan-standard",
+      "name": "hunyuan-role-latest",
       "max_tokens": 32768,
-      "model_types": [
-        "chat"
-      ]
+      "model_types": ["chat"]
     },
     {
-      "name": "hunyuan-standard-256K",
-      "max_tokens": 262144,
-      "model_types": [
-        "chat"
-      ]
+      "name": "qwen3.5-flash",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
     },
     {
-      "name": "hunyuan-lite",
-      "max_tokens": 262144,
-      "model_types": [
-        "chat"
-      ]
+      "name": "qwen3.5-plus",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
     },
     {
-      "name": "hunyuan-embedding",
-      "max_tokens": 16384,
-      "model_types": [
-        "embedding"
-      ]
+      "name": "glm-5.1",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "glm-5",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "glm-5-turbo",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2.6",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2.5",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "minimax-m2.7",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "minimax-m2.5",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v3.2",
+      "max_tokens": 131072,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "glm-5v-turbo",
+      "max_tokens": 131072,
+      "model_types": ["chat", "vision"]
+    },
+    {
+      "name": "hy-vision-2.0-instruct",
+      "max_tokens": 32768,
+      "model_types": ["chat", "vision"]
+    },
+    {
+      "name": "youtu-vita",
+      "max_tokens": 32768,
+      "model_types": ["chat", "vision"]
+    },
+    {
+      "name": "hunyuan-t1-vision-20250916",
+      "max_tokens": 32768,
+      "model_types": ["chat", "vision"]
+    },
+    {
+      "name": "hunyuan-turbos-vision-video-20250728",
+      "max_tokens": 32768,
+      "model_types": ["chat", "vision"]
+    },
+    {
+      "name": "kinfra-text-embedding-0.6b",
+      "max_tokens": 8192,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "kinfra-text-embedding-4b",
+      "max_tokens": 8192,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "kinfra-vl-embedding-2b",
+      "max_tokens": 8192,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "kinfra-vl-embedding-8b",
+      "max_tokens": 8192,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "hy-image-v3.0",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-image-lite",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-video-1.5",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v3",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v2-6",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v2-5-turbo",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v2-1",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v2-1-master",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v2-master",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v1-6",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v1-5",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kl-video-v1",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q3-pro",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q3-turbo",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q2",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q2-turbo",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q2-pro-fast",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "vd-video-q2-pro",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "yt-video-2.0",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "yt-video-humanactor",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "yt-video-fx",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-3d-3.1",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-3d-3.0",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hy-3d-express",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
     }
   ]
 }
