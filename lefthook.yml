@@ -18,25 +18,25 @@ pre-commit:
       stage_fixed: true
       run: |
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          python3 tools/hooks/check_files.py eof
+          python tools/hooks/check_files.py eof
         else
-          python3 tools/hooks/check_files.py eof --fix
+          python tools/hooks/check_files.py eof --fix
         fi
     - name: trailing-whitespace
       stage_fixed: true
       run: |
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          python3 tools/hooks/check_files.py trailing-whitespace
+          python tools/hooks/check_files.py trailing-whitespace
         else
-          python3 tools/hooks/check_files.py trailing-whitespace --fix
+          python tools/hooks/check_files.py trailing-whitespace --fix
         fi
     - name: mixed-line-ending
       stage_fixed: true
       run: |
         if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          python3 tools/hooks/check_files.py mixed-line-ending
+          python tools/hooks/check_files.py mixed-line-ending
         else
-          python3 tools/hooks/check_files.py mixed-line-ending --fix
+          python tools/hooks/check_files.py mixed-line-ending --fix
         fi
     - name: ruff
       glob: "*.py"
@@ -111,12 +111,12 @@ pre-commit:
                 npx eslint --fix {staged_files}
               fi
     - name: check-yaml
-      run: python3 tools/hooks/check_files.py yaml
+      run: python tools/hooks/check_files.py yaml
     - name: check-json
-      run: python3 tools/hooks/check_files.py json
+      run: python tools/hooks/check_files.py json
     - name: check-case-conflict
-      run: python3 tools/hooks/check_files.py case-conflict
+      run: python tools/hooks/check_files.py case-conflict
     - name: check-merge-conflict
-      run: python3 tools/hooks/check_files.py merge-conflict
+      run: python tools/hooks/check_files.py merge-conflict
     - name: check-symlinks
-      run: python3 tools/hooks/check_files.py symlinks
+      run: python tools/hooks/check_files.py symlinks

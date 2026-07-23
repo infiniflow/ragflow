@@ -322,9 +322,7 @@ async def _wiki_delete_deleted_doc_state(
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
         except Exception:
-            logging.exception(
-                "wiki: failed to scan derived rows for removed docs in kb=%s", kb_id
-            )
+            logging.exception("wiki: failed to scan derived rows for removed docs in kb=%s", kb_id)
             return
         if not field_map:
             break
@@ -350,7 +348,7 @@ async def _wiki_delete_deleted_doc_state(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"id": to_delete[i:i + page_size]},
+                {"id": to_delete[i : i + page_size]},
                 index,
                 kb_id,
             )
@@ -368,9 +366,7 @@ async def _wiki_delete_deleted_doc_state(
                 kb_id,
             )
         except Exception:
-            logging.exception(
-                "wiki: failed to shrink source_doc_ids for row=%s in kb=%s", row_id, kb_id
-            )
+            logging.exception("wiki: failed to shrink source_doc_ids for row=%s in kb=%s", row_id, kb_id)
 
     logging.info(
         "wiki: ref-counted cleanup for %d deleted doc(s) in kb=%s (dropped=%d, shrunk=%d)",
@@ -1204,45 +1200,6 @@ async def run_wiki(
                 stats["status"] = "error"
             finally:
                 map_queue.task_done()
-                
-            for k in agg.keys():
-                agg[k] += len(phase1.get(k) or [])
-            meta = phase1.get("_meta") or {}
-            if isinstance(meta, dict):
-                for k in agg_delta.keys():
-                    agg_delta[k] += int(meta.get(k, 0) or 0)
-                if meta.get("had_delta"):
-                    doc_had_delta = True
-
-        if not saw_any:
-            try:
-                phase1 = await wiki_map_from_chunks(
-                    chunks=[],
-                    chat_mdl=map_chat_mdl,
-                    embd_mdl=embedding_model,
-                    doc_id=doc_id,
-                    tenant_id=ctx.tenant_id,
-                    kb_id=ctx.kb_id,
-                    language=ctx.language,
-                    callback=_stage_cb(f"[wiki MAP {i + 1}/{n_docs} empty]"),
-                    parser_config=parser_cfg,
-                    batch_size_cap=8,
-                    window_fraction=0.5,
-                )
-                meta = phase1.get("_meta") or {}
-                if isinstance(meta, dict):
-                    for k in agg_delta.keys():
-                        agg_delta[k] += int(meta.get(k, 0) or 0)
-                    if meta.get("had_delta"):
-                        doc_had_delta = True
-            except Exception:
-                logging.exception("wiki: MAP empty-doc sweep failed for doc %s", doc_id)
-            logging.info(
-                "wiki: no chunks for doc %s (deleted stale MAP rows=%d)",
-                doc_id,
-                agg_delta["deleted"],
-            )
-            continue
 
     producers = [asyncio.create_task(_produce_document(i, job)) for i, job in enumerate(resolved_eligible)]
     workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
@@ -1277,6 +1234,7 @@ async def run_wiki(
             delta["deleted"],
             stats["had_delta"],
         )
+
     # 5. REDUCE / PLAN / REFINE KB-wide. Each phase has its own
     # input_hash gate (REDUCE keys off the MAP-state hash, PLAN off
     # REDUCE's hash, REFINE off PLAN's hash) so re-runs without an
