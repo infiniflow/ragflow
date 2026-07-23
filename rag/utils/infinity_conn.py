@@ -26,6 +26,20 @@ from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDense
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
 
 
+_JSON_LIST_FIELDS = frozenset(
+    (
+        "source_chunk_ids",
+        "source_doc_ids",
+        "compilation_template_ids",
+        "doc_ids_kwd",
+        "entity_names_kwd",
+        "outlinks_kwd",
+        "related_kb_pages_kwd",
+        "rechunked_from_chunk_ids",
+    )
+)
+
+
 @singleton
 class InfinityConnection(InfinityConnectionBase):
     """
@@ -440,6 +454,8 @@ class InfinityConnection(InfinityConnectionBase):
                     elif k == "question_tks":
                         if not d.get("question_kwd"):
                             d["questions"] = self.list2str(v)
+                    elif k in _JSON_LIST_FIELDS:
+                        d[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                     elif self.field_keyword(k):
                         if isinstance(v, list):
                             d[k] = "###".join(v)
@@ -579,6 +595,8 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k == "question_tks":
                     if not new_value.get("question_kwd"):
                         new_value["questions"] = self.list2str(v)
+                elif k in _JSON_LIST_FIELDS:
+                    new_value[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                 elif self.field_keyword(k):
                     if isinstance(v, list):
                         new_value[k] = "###".join(v)
@@ -794,7 +812,22 @@ class InfinityConnection(InfinityConnectionBase):
 
         for column in list(res2.columns):
             k = column.lower()
-            if self.field_keyword(k):
+            if k in _JSON_LIST_FIELDS:
+
+                def parse_json_list(value):
+                    if isinstance(value, list):
+                        return value
+                    if not value:
+                        return []
+                    try:
+                        parsed = json.loads(value)
+                        return parsed if isinstance(parsed, list) else [parsed]
+                    except (TypeError, json.JSONDecodeError):
+                        # Read rows written by the previous varchar encoding.
+                        return [item for item in str(value).split("###") if item]
+
+                res2[column] = res2[column].apply(parse_json_list)
+            elif self.field_keyword(k):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})

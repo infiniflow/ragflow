@@ -846,6 +846,12 @@ func (s *ChatPipelineService) AsyncChat(
 		// If empty_response is not configured, fall through to the LLM call
 		// with an empty knowledge context.
 		//
+		// EXCEPTION: when the user attached files to their message, the
+		// attachment text provides context that should be sent to the LLM
+		// even if KB retrieval returned nothing. In that case we skip the
+		// early return and fall through to the normal LLM call where
+		// attachments are appended to the system prompt.
+		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
 		//      actually display the fallback message.
@@ -854,7 +860,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      final event (dialog_service.py:807); consumers that only look at
 		//      the final event (e.g. the OpenAI-compatible endpoint) would
 		//      otherwise see an empty reply.
-		if len(knowledges) == 0 {
+		if len(knowledges) == 0 && attachments == "" {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
