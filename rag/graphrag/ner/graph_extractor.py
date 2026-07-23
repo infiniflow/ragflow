@@ -324,6 +324,10 @@ def ner_all_keywords(spacy_doc) -> set[str]:
 # Main extractor class
 # ---------------------------------------------------------------------------
 
+from rag.graphrag.extractor_registry import register_graphrag_extractor
+
+
+@register_graphrag_extractor("ner")
 
 class GraphExtractor(Extractor):
     """Extract entities and relationships using spaCy (no LLM calls).
