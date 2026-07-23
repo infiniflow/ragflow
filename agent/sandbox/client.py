@@ -77,6 +77,7 @@ def _load_provider_from_settings() -> None:
             E2BProvider,
             LocalProvider,
             SSHProvider,
+            TenkiProvider,
         )
 
         provider_classes = {
@@ -85,6 +86,7 @@ def _load_provider_from_settings() -> None:
             "e2b": E2BProvider,
             "local": LocalProvider,
             "ssh": SSHProvider,
+            "tenki": TenkiProvider,
         }
 
         if provider_type not in provider_classes:
@@ -97,7 +99,7 @@ def _load_provider_from_settings() -> None:
         # Initialize the provider
         if not provider.initialize(config):
             message = f"Failed to initialize sandbox provider: {provider_type}. Config keys: {list(config.keys())}"
-            if provider_type in {"local", "ssh"}:
+            if provider_type in {"local", "ssh", "tenki"}:
                 raise SandboxProviderConfigError(message)
             logger.error(message)
             return
