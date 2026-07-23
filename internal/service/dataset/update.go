@@ -98,6 +98,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["permission"] = permission
 	}
 
+	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
+		return nil, common.CodeDataError, errors.New("mutually exclusive")
+	}
+
 	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if modeErr != nil {
