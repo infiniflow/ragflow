@@ -142,32 +142,21 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 		}
 	}
 
-	if present["parser_config"] && req.ParserConfig != nil {
-		// Normalize "pages" ranges before persistence so the stored config
-		// carries clean, merged ranges (invalid ranges are dropped by the
-		// normalizer; all-invalid values are left untouched).
-		pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig))
-		// Resolve effective pipeline to load the DSL for cleaning.
-		isCanvas := kb.PipelineID != nil && strings.TrimSpace(*kb.PipelineID) != ""
-		if req.PipelineID != nil {
-			isCanvas = strings.TrimSpace(*req.PipelineID) != ""
-		}
-		if req.ParserID != nil {
-			isCanvas = false
-		}
-		effParserID := kb.ParserID
-		if req.ParserID != nil {
-			effParserID = strings.TrimSpace(*req.ParserID)
-		}
-		effPipelineID := kb.PipelineID
-		if req.PipelineID != nil {
-			effPipelineID = req.PipelineID
-		}
-		if req.ParserID != nil && req.PipelineID == nil && kb.PipelineID != nil {
-			effPipelineID = nil
-		}
+	// Resolve the effective parse mode once: parse_type is authoritative when
+	// present, otherwise inherit the dataset's current mode. Both the
+	// parser_config cleaning and the reparse targeting derive from this single
+	// resolution so they can never disagree. (See service.ResolveParseMode.)
+	isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
+		req.ParseType, req.ParserID, req.PipelineID,
+		service.ParseModeState{ParserID: kb.ParserID, PipelineID: kb.PipelineID})
 
-		dslJSON, err := service.LoadPipelineDSL(isCanvas, effParserID, effPipelineID)
+	if present["parser_config"] && req.ParserConfig != nil {
+		// Normalize "pages" ranges before persistence. Invalid ranges are
+		// rejected (fail-fast) — the request is aborted with a clear error.
+		if err := pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig)); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		dslJSON, err := service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
 		if err != nil {
 			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
 				zap.Error(err))
@@ -185,26 +174,25 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 	}
 
 	// Apply parser_id / pipeline_id changes. parse_type is validated earlier
-	// (in validateDatasetDocumentUpdate), so this block only handles the two
-	// valid modes: BuiltIn writes parser_id and clears any prior canvas; Pipeline
-	// writes pipeline_id.
-	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
-	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
-
+	// (in validateDatasetDocumentUpdate); reparse only fires when parse_type
+	// explicitly selects a mode. The mode direction comes from the same
+	// isPipeline resolution above.
 	var reparseParserID, reparsePipelineID *string
-	switch {
-	case isBuiltinMode:
-		if present["parser_id"] && req.ParserID != nil {
-			if p := strings.TrimSpace(*req.ParserID); p != "" {
-				reparseParserID = &p
+	if req.ParseType != nil {
+		switch {
+		case !isPipeline: // BuiltIn
+			if present["parser_id"] && req.ParserID != nil {
+				if p := strings.TrimSpace(*req.ParserID); p != "" {
+					reparseParserID = &p
+				}
 			}
-		}
-		// Drop any prior canvas so the worker falls back to the builtin template.
-		empty := ""
-		reparsePipelineID = &empty
-	case isPipelineMode:
-		if present["pipeline_id"] && req.PipelineID != nil {
-			reparsePipelineID = req.PipelineID
+			// Drop any prior canvas so the worker falls back to the builtin template.
+			empty := ""
+			reparsePipelineID = &empty
+		case isPipeline: // Pipeline
+			if present["pipeline_id"] && req.PipelineID != nil {
+				reparsePipelineID = req.PipelineID
+			}
 		}
 	}
 	if reparseParserID != nil || reparsePipelineID != nil {

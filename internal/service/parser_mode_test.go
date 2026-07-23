@@ -94,3 +94,115 @@ func TestValidateParseTypeMode_PipelineOK(t *testing.T) {
 		t.Fatalf("expected builtin=false pipeline=true, got builtin=%v pipeline=%v", builtin, pipeline)
 	}
 }
+
+func TestResolveParseMode_BuiltinIgnoresPipelineID(t *testing.T) {
+	pt := 1
+	parserID := "manual"
+	pipelineID := "should-be-ignored"
+	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
+	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, &parserID, &pipelineID, cur)
+	if isPipeline {
+		t.Fatalf("isPipeline = true, want false (builtin mode)")
+	}
+	if effParserID != "manual" {
+		t.Fatalf("effParserID = %q, want manual", effParserID)
+	}
+	if effPipelineID != nil {
+		t.Fatalf("effPipelineID = %v, want nil (canvas cleared)", effPipelineID)
+	}
+}
+
+// TestResolveParseMode_PipelineIgnoresParserID reproduces the comment-3 bug
+// contract: parse_type=2 must ignore a dirty req.ParserID and keep isPipeline
+// true so parser_config is cleaned against the canvas DSL, not the builtin DSL.
+func TestResolveParseMode_PipelineIgnoresParserID(t *testing.T) {
+	pt := 2
+	parserID := "should-be-ignored"
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	cur := ParseModeState{ParserID: "naive", PipelineID: nil}
+	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, &parserID, &pipelineID, cur)
+	if !isPipeline {
+		t.Fatalf("isPipeline = false, want true (pipeline mode)")
+	}
+	if effParserID != "naive" {
+		t.Fatalf("effParserID = %q, want current naive (parser_id not applicable in pipeline mode)", effParserID)
+	}
+	if effPipelineID == nil || *effPipelineID != pipelineID {
+		t.Fatalf("effPipelineID = %v, want %q", effPipelineID, pipelineID)
+	}
+}
+
+func TestResolveParseMode_BuiltinFallsBackToCurrentParserID(t *testing.T) {
+	pt := 1
+	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
+	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, nil, nil, cur)
+	if isPipeline {
+		t.Fatalf("isPipeline = true, want false")
+	}
+	if effParserID != "naive" {
+		t.Fatalf("effParserID = %q, want naive", effParserID)
+	}
+	if effPipelineID != nil {
+		t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
+	}
+}
+
+func TestResolveParseMode_PipelineFallsBackToCurrentPipelineID(t *testing.T) {
+	pt := 2
+	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
+	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, nil, nil, cur)
+	if !isPipeline {
+		t.Fatalf("isPipeline = false, want true")
+	}
+	if effParserID != "naive" {
+		t.Fatalf("effParserID = %q, want naive", effParserID)
+	}
+	if effPipelineID == nil || *effPipelineID != "prior-canvas" {
+		t.Fatalf("effPipelineID = %v, want prior-canvas", effPipelineID)
+	}
+}
+
+// TestResolveParseMode_NilParseTypeInheritsCurrent covers the "only
+// parser_config changed" path: no mode switch, inherit current state.
+func TestResolveParseMode_NilParseTypeInheritsCurrent(t *testing.T) {
+	t.Run("current is pipeline", func(t *testing.T) {
+		cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("canvas-1")}
+		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, nil, nil, cur)
+		if !isPipeline {
+			t.Fatalf("isPipeline = false, want true")
+		}
+		if effParserID != "naive" {
+			t.Fatalf("effParserID = %q, want naive", effParserID)
+		}
+		if effPipelineID == nil || *effPipelineID != "canvas-1" {
+			t.Fatalf("effPipelineID = %v, want canvas-1", effPipelineID)
+		}
+	})
+	t.Run("current is builtin", func(t *testing.T) {
+		cur := ParseModeState{ParserID: "manual", PipelineID: nil}
+		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, nil, nil, cur)
+		if isPipeline {
+			t.Fatalf("isPipeline = true, want false")
+		}
+		if effParserID != "manual" {
+			t.Fatalf("effParserID = %q, want manual", effParserID)
+		}
+		if effPipelineID != nil {
+			t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
+		}
+	})
+	t.Run("incremental parser_id update applied", func(t *testing.T) {
+		cur := ParseModeState{ParserID: "naive", PipelineID: nil}
+		newParser := "laws"
+		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, &newParser, nil, cur)
+		if isPipeline {
+			t.Fatalf("isPipeline = true, want false")
+		}
+		if effParserID != "laws" {
+			t.Fatalf("effParserID = %q, want laws", effParserID)
+		}
+		if effPipelineID != nil {
+			t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
+		}
+	})
+}

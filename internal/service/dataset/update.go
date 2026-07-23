@@ -134,7 +134,9 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig))
+		if err := pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig)); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	var requestedPagerank int64
@@ -222,21 +224,17 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		}
 
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			effectiveParserID := lockedKB.ParserID
-			if parserIDProvided {
-				effectiveParserID = parserID
-			}
-			effectivePipelineID := lockedKB.PipelineID
-			if pipelineID != nil {
-				effectivePipelineID = pipelineID
-			} else if parserIDProvided && lockedKB.PipelineID != nil {
-				effectivePipelineID = nil
-			}
-			isCanvas := effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != ""
-			dslJSON, dslErr := service.LoadPipelineDSL(isCanvas, effectiveParserID, effectivePipelineID)
+			// Resolve effective mode/IDs once via the shared helper. parse_type
+			// is authoritative; the per-mode req IDs were already cleaned above,
+			// but ResolveParseMode does not rely on that — it ignores the
+			// non-applicable ID for the selected mode.
+			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
+				req.ParseType, req.ParserID, req.PipelineID,
+				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
+			dslJSON, dslErr := service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
-					zap.String("parserID", effectiveParserID), zap.Error(dslErr))
+					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
 				updates["parser_config"] = pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))

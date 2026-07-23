@@ -156,6 +156,90 @@ func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 	}
 }
 
+// TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas verifies that
+// with parse_type=2 and a dirty parser_id, parser_config is still cleaned
+// against the canvas DSL (not the builtin DSL). This locks in the
+// ResolveParseMode contract on the dataset path: mode is authoritative and
+// ignores the conflicting parser_id.
+func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original",
+		"abcdef0123456789abcdef0123456789")
+	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
+		datasetUpdateCanvasDSL("Parser:CustomP", "chunk_token_num"))
+
+	// Dirty parser_id that the builtin branch would otherwise use to load a
+	// builtin DSL. parse_type=2 must ignore it.
+	chunkMethod := "book"
+	pipelineID := "abcdef0123456789abcdef0123456789"
+	parseType := 2
+	override := map[string]interface{}{
+		"Parser:CustomP": map[string]interface{}{"chunk_token_num": float64(256)},
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:     &chunkMethod,
+		PipelineID:   &pipelineID,
+		ParseType:    &parseType,
+		ParserConfig: override,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	// Read back the persisted KB and verify parser_config was cleaned against
+	// the canvas DSL: it must carry the canvas component (Parser:CustomP), not
+	// a builtin-book component structure.
+	var kb entity.Knowledgebase
+	if err := dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("read back kb: %v", err)
+	}
+	cleaned, ok := kb.ParserConfig["Parser:CustomP"]
+	if !ok {
+		t.Fatalf("parser_config = %v, want Parser:CustomP component from canvas DSL", kb.ParserConfig)
+	}
+	cpn, ok := cleaned.(map[string]any)
+	if !ok {
+		t.Fatalf("Parser:CustomP = %T, want map", cleaned)
+	}
+	if v, _ := cpn["chunk_token_num"].(float64); v != 256 {
+		t.Fatalf("chunk_token_num = %v, want 256 (override applied on canvas defaults)", cpn["chunk_token_num"])
+	}
+}
+
+// TestUpdateDatasetRejectsInvalidPages verifies the fail-fast contract for the
+// "pages" range: an invalid range (from>to) aborts the request with
+// CodeDataError instead of being silently dropped or persisted.
+func TestUpdateDatasetRejectsInvalidPages(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	chunkMethod := "manual"
+	parseType := 1
+	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{
+					"pages": []interface{}{[]interface{}{float64(5), float64(3)}}, // from>to invalid
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected error for invalid pages range, got nil")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
 func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)

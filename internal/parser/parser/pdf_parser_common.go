@@ -256,7 +256,16 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 		p.TCADPMarkdownImageResponseType = v
 	}
 	if raw, ok := setup["pages"]; ok {
-		p.Pages = utility.NormalizePDFPages(raw)
+		// Request-layer validation (NormalizeParserConfigPages) already
+		// rejects invalid ranges at the API boundary. At parse time the input
+		// should already be normalized; degrade to "parse all pages" rather
+		// than failing the parse if an unexpected shape slips through.
+		if pages, err := utility.NormalizePDFPages(raw); err != nil {
+			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				"raw", raw, "err", err)
+		} else {
+			p.Pages = pages
+		}
 	}
 }
 

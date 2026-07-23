@@ -545,7 +545,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 			"page_count", pageCount,
 			"pages_to_parse", pages)
 	} else {
-		slog.Info("deepdoc pdf parse: parsing all pages", "page_count", pageCount)
+		slog.Debug("deepdoc pdf parse: parsing all pages", "page_count", pageCount)
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)

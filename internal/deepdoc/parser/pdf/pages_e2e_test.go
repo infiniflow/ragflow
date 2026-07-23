@@ -32,7 +32,10 @@ func TestPagesEndToEnd_NormalizeThenParse(t *testing.T) {
 	t.Run("overlapping and unsorted ranges normalized then filtered", func(t *testing.T) {
 		// Frontend submitted [1,3],[2,5],[8,10] (overlap 1-3 & 2-5, unsorted).
 		raw := jsonPages([2]float64{1, 3}, [2]float64{2, 5}, [2]float64{8, 10})
-		normalized := utility.NormalizePDFPages(raw) // -> [[1,5],[8,10]]
+		normalized, err := utility.NormalizePDFPages(raw) // -> [[1,5],[8,10]]
+		if err != nil {
+			t.Fatalf("NormalizePDFPages: %v", err)
+		}
 
 		wantNorm := [][]int{{1, 5}, {8, 10}}
 		if !reflect.DeepEqual(normalized, wantNorm) {
@@ -64,63 +67,39 @@ func TestPagesEndToEnd_NormalizeThenParse(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid ranges dropped during normalization", func(t *testing.T) {
-		// [1,3],[3,1](from>to),[8,10] -> normalize drops [3,1] -> [[1,3],[8,10]]
+	t.Run("invalid range rejected during normalization (fail-fast)", func(t *testing.T) {
+		// [1,3],[3,1](from>to),[8,10] -> fail-fast rejects the whole input.
 		raw := jsonPages([2]float64{1, 3}, [2]float64{3, 1}, [2]float64{8, 10})
-		normalized := utility.NormalizePDFPages(raw)
-
-		wantNorm := [][]int{{1, 3}, {8, 10}}
-		if !reflect.DeepEqual(normalized, wantNorm) {
-			t.Fatalf("NormalizePDFPages = %v, want %v", normalized, wantNorm)
+		normalized, err := utility.NormalizePDFPages(raw)
+		if err == nil {
+			t.Fatalf("NormalizePDFPages(%v) expected error, got %v", raw, normalized)
 		}
-
-		cfg := pdf.DefaultParserConfig()
-		cfg.Pages = normalized
-		p := NewParser(cfg)
-
-		eng := makePageTaggedEngine(10)
-		result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
-		if err != nil {
-			t.Fatalf("ParseRaw: %v", err)
-		}
-
-		wantPages := map[int]struct{}{0: {}, 1: {}, 2: {}, 7: {}, 8: {}, 9: {}}
-		if got := pageHeightKeys(result.PageHeight); !reflect.DeepEqual(got, wantPages) {
-			t.Errorf("PageHeight keys = %v, want %v", got, wantPages)
+		if normalized != nil {
+			t.Fatalf("NormalizePDFPages(%v) = %v, want nil on error", raw, normalized)
 		}
 	})
 
-	t.Run("all invalid -> nil -> parse all pages (regression guard)", func(t *testing.T) {
-		// [3,1],[0,2] both invalid -> nil -> parse all pages.
+	t.Run("all invalid -> error (fail-fast, no parse-all fallback)", func(t *testing.T) {
+		// [3,1],[0,2] both invalid -> error. The request layer rejects this
+		// before it ever reaches the parser; normalize surfaces the error
+		// rather than silently degrading to "parse all pages".
 		raw := jsonPages([2]float64{3, 1}, [2]float64{0, 2})
-		normalized := utility.NormalizePDFPages(raw)
+		normalized, err := utility.NormalizePDFPages(raw)
+		if err == nil {
+			t.Fatalf("NormalizePDFPages(%v) expected error, got %v", raw, normalized)
+		}
 		if normalized != nil {
-			t.Fatalf("NormalizePDFPages = %v, want nil", normalized)
-		}
-
-		cfg := pdf.DefaultParserConfig()
-		cfg.Pages = normalized // nil
-		p := NewParser(cfg)
-
-		eng := makePageTaggedEngine(10)
-		result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
-		if err != nil {
-			t.Fatalf("ParseRaw: %v", err)
-		}
-
-		wantPages := map[int]struct{}{}
-		for i := 0; i < 10; i++ {
-			wantPages[i] = struct{}{}
-		}
-		if got := pageHeightKeys(result.PageHeight); !reflect.DeepEqual(got, wantPages) {
-			t.Errorf("PageHeight keys = %v, want all 10 pages", got)
+			t.Fatalf("NormalizePDFPages(%v) = %v, want nil on error", raw, normalized)
 		}
 	})
 
 	t.Run("range clamped to document page count", func(t *testing.T) {
 		// [1,1000000] on a 5-page doc -> clamped to all 5 pages.
 		raw := jsonPages([2]float64{1, 1000000})
-		normalized := utility.NormalizePDFPages(raw)
+		normalized, err := utility.NormalizePDFPages(raw)
+		if err != nil {
+			t.Fatalf("NormalizePDFPages: %v", err)
+		}
 
 		cfg := pdf.DefaultParserConfig()
 		cfg.Pages = normalized

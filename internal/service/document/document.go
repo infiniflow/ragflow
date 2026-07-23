@@ -123,7 +123,7 @@ type UpdateDatasetDocumentRequest struct {
 	ParserConfig map[string]any `json:"parser_config"`
 	MetaFields   map[string]any `json:"meta_fields"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
-	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
 }
 

@@ -3,18 +3,21 @@ package pipeline
 import "ragflow/internal/utility"
 
 // NormalizeParserConfigPages walks cfg and normalizes the "pages" field under
-// every component's filetype setup. When normalization yields a non-nil
-// result, the normalized value is written back; when it yields nil (all
-// ranges invalid/empty), the original value is left untouched so the
-// persisted config stays consistent with what the frontend submitted.
+// every component's filetype setup under fail-fast semantics.
+//
+// When normalization succeeds, the normalized value is written back. When any
+// "pages" value is invalid (non-list, or contains an invalid range), an error
+// is returned immediately and the request should be rejected — no partial
+// dropping, no保留 of malformed values.
 //
 // The walk is generic (not hardcoded to "pdf"): any filetype setup carrying a
 // "pages" key is normalized. Setups without "pages" are skipped, so this is
 // safe to run on any parser_config and never creates or deletes keys other
-// than overwriting "pages" in place.
-func NormalizeParserConfigPages(cfg map[string]any) {
+// than overwriting "pages" in place. Structural mismatches (non-map cpnID
+// value, non-map setup) are silently skipped — they are not "pages" errors.
+func NormalizeParserConfigPages(cfg map[string]any) error {
 	if cfg == nil {
-		return
+		return nil
 	}
 	for _, v := range cfg {
 		params, ok := v.(map[string]any)
@@ -30,10 +33,17 @@ func NormalizeParserConfigPages(cfg map[string]any) {
 			if !ok {
 				continue
 			}
-			if normalized := utility.NormalizePDFPages(raw); normalized != nil {
+			normalized, err := utility.NormalizePDFPages(raw)
+			if err != nil {
+				return err
+			}
+			if normalized != nil {
 				setup["pages"] = normalized
 			}
-			// nil (all invalid/empty): leave the original value untouched.
+			// nil (no value): leave the key as-is. Empty/null pages are
+			// equivalent to "parse all pages"; overwriting with nil would
+			// not change behavior but would mutate the map unnecessarily.
 		}
 	}
+	return nil
 }

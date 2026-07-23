@@ -1,12 +1,20 @@
 package utility
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 // NormalizePDFPages normalizes a raw "pages" value (list[list[int]], 1-indexed
 // inclusive ranges, JSON-decoded as []any of []any of float64) into a sorted,
-// merged, de-duplicated [][]int. Invalid ranges are dropped. Returns nil when
-// raw is empty/missing or every range is invalid (callers treat nil as
-// "parse all pages").
+// merged, de-duplicated [][]int.
+//
+// Semantics (fail-fast):
+//   - nil or empty list → (nil, nil): "no value", callers treat as "parse all
+//     pages".
+//   - Any invalid range → (nil, error): the whole input is rejected; callers
+//     should surface the error and abort the request. No partial dropping.
+//   - All ranges valid → (normalized, nil).
 //
 // Validation per range [from, to]:
 //   - both values must be integers (int, int64, or integral float64);
@@ -15,33 +23,42 @@ import "sort"
 //
 // Surviving ranges are sorted by `from` then merged when overlapping or
 // adjacent (next.from <= cur.to + 1).
-func NormalizePDFPages(raw any) [][]int {
+func NormalizePDFPages(raw any) ([][]int, error) {
 	list, ok := raw.([]any)
-	if !ok || len(list) == 0 {
-		return nil
+	if !ok {
+		// nil raw (no key / JSON null) is "no value"; a non-list raw is a type
+		// error. raw==nil falls through the !ok branch because nil does not
+		// satisfy []any.
+		if raw == nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("pages must be a list of [from,to] ranges, got %T", raw)
+	}
+	if len(list) == 0 {
+		return nil, nil
 	}
 
 	ranges := make([][]int, 0, len(list))
 	for _, item := range list {
 		pair, ok := item.([]any)
 		if !ok || len(pair) != 2 {
-			continue
+			return nil, fmt.Errorf("invalid page range %v: must be a [from,to] pair", item)
 		}
 		from, ok := toInt(pair[0])
 		if !ok {
-			continue
+			return nil, fmt.Errorf("invalid page range [%v,%v]: from must be an integer", pair[0], pair[1])
 		}
 		to, ok := toInt(pair[1])
 		if !ok {
-			continue
+			return nil, fmt.Errorf("invalid page range [%v,%v]: to must be an integer", pair[0], pair[1])
 		}
-		if from < 1 || from > to {
-			continue
+		if from < 1 {
+			return nil, fmt.Errorf("invalid page range [%d,%d]: from must be >= 1", from, to)
+		}
+		if from > to {
+			return nil, fmt.Errorf("invalid page range [%d,%d]: from must be <= to", from, to)
 		}
 		ranges = append(ranges, []int{from, to})
-	}
-	if len(ranges) == 0 {
-		return nil
 	}
 
 	sort.Slice(ranges, func(i, j int) bool {
@@ -62,7 +79,7 @@ func NormalizePDFPages(raw any) [][]int {
 			merged = append(merged, r)
 		}
 	}
-	return merged
+	return merged, nil
 }
 
 // toInt coerces a JSON-decoded numeric value to int. Accepts int, int64, and

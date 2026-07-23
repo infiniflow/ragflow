@@ -2298,6 +2298,15 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
+	// Seed a prior canvas-backed document so the builtin transition must
+	// actively clear the persisted pipeline_id. Without this, a regression in
+	// the builtin branch's canvas-clearing behavior would go undetected.
+	priorPipeline := "1234567890abcdef1234567890abcdef"
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Update("pipeline_id", priorPipeline).Error; err != nil {
+		t.Fatalf("seed prior pipeline: %v", err)
+	}
+
 	parseType := 1
 	parserID := "manual"
 	pipelineIDEmpty := ""
@@ -2315,6 +2324,15 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	}
 	if resp.PipelineID != nil && *resp.PipelineID != "" {
 		t.Fatalf("pipeline_id = %v, want empty", resp.PipelineID)
+	}
+
+	// Assert the persisted pipeline_id was cleared, not merely the response.
+	var updated entity.Document
+	if err := db.First(&updated, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("read back doc: %v", err)
+	}
+	if updated.PipelineID != nil && *updated.PipelineID != "" {
+		t.Fatalf("persisted pipeline_id = %q, want cleared", *updated.PipelineID)
 	}
 }
 
@@ -2339,6 +2357,83 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	}
 	if resp.ParserID != "naive" {
 		t.Fatalf("parser_id = %q, want original naive", resp.ParserID)
+	}
+}
+
+// TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID reproduces
+// the comment-3 bug: parse_type=2 (pipeline) with a dirty req.ParserID must
+// still resolve to pipeline mode so parser_config is cleaned against the
+// canvas DSL (fallback when the canvas is absent), not the builtin DSL.
+//
+// With the bug, req.ParserID != nil flipped isCanvas=false inside the
+// parser_config block, so the config was rebuilt against the builtin "manual"
+// DSL and unknown fields were dropped. After the fix, the canvas load fails
+// (no such pipeline in the test DB) and the original config is persisted as-is.
+func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	parseType := 2
+	// Dirty parser_id that the builtin branch would otherwise use to load a
+	// builtin DSL and strip unknown fields.
+	parserID := "manual"
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		ParserID:   &parserID,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"nonexistent_field": "value",
+		},
+	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
+		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+	}
+	if resp.ParserID != "naive" {
+		t.Fatalf("parser_id = %q, want original naive (parser_id must not apply in pipeline mode)", resp.ParserID)
+	}
+	// Pipeline mode with an absent canvas must fall back to persisting the
+	// original config verbatim. If the builtin path ran instead, the unknown
+	// field would have been stripped during DSL cleaning.
+	if v, ok := resp.ParserConfig["nonexistent_field"]; !ok || v != "value" {
+		t.Fatalf("parser_config = %v, want nonexistent_field=value preserved (canvas fallback)", resp.ParserConfig)
+	}
+}
+
+// TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
+// for the "pages" range: an invalid range (from<1) aborts the request with
+// CodeDataError instead of being silently dropped or persisted.
+func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	parseType := 1
+	parserID := "manual"
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType: &parseType,
+		ParserID:  &parserID,
+		ParserConfig: map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"pdf": map[string]any{
+					"pages": []any{[]any{float64(0), float64(5)}}, // from=0 invalid
+				},
+			},
+		},
+	}, map[string]bool{"parser_id": true, "parse_type": true, "parser_config": true})
+	if err == nil {
+		t.Fatalf("expected error for invalid pages range, got nil")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want CodeDataError", code)
 	}
 }
 
