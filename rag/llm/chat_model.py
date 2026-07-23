@@ -1498,6 +1498,102 @@ class GoogleChat(Base):
 
             yield total_tokens
 
+    async def _async_chat(self, history, gen_conf, **kwargs):
+        if "claude" in self.model_name:
+            return await super()._async_chat(history, gen_conf, **kwargs)
+
+        gen_conf = dict(gen_conf or {})
+        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        history = [h for h in history if h["role"] != "system"]
+
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        try:
+            from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+        config = GenerateContentConfig(**config_dict)
+
+        contents = []
+        for item in history:
+            role = "model" if item["role"] == "assistant" else item["role"]
+            contents.append(Content(role=role, parts=[Part(text=item["content"])]))
+
+        response = await self.client.aio.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
+        ans = response.text or ""
+        try:
+            total_tokens = response.usage_metadata.total_token_count
+        except Exception:
+            total_tokens = num_tokens_from_string(ans)
+        return ans, total_tokens
+
+    async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        if "claude" in self.model_name:
+            async for delta_ans, tol in super()._async_chat_streamly(history, gen_conf, **kwargs):
+                yield delta_ans, tol
+            return
+
+        gen_conf = dict(gen_conf or {})
+        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        history = [h for h in history if h["role"] != "system"]
+
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        try:
+            from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+        config = GenerateContentConfig(**config_dict)
+
+        contents = []
+        for item in history:
+            role = "model" if item["role"] == "assistant" else item["role"]
+            contents.append(Content(role=role, parts=[Part(text=item["content"])]))
+
+        stream = await self.client.aio.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
+        async for chunk in stream:
+            text = chunk.text
+            if text:
+                yield text, num_tokens_from_string(text)
+
 
 class TokenPonyChat(Base):
     _FACTORY_NAME = "TokenPony"
