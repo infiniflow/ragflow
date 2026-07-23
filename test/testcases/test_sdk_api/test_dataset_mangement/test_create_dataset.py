@@ -81,7 +81,7 @@ class TestDatasetCreate:
         [
             ("", "String should have at least 1 character"),
             (" ", "String should have at least 1 character"),
-            ("a" * (DATASET_NAME_LIMIT + 1), "string should have at most 128 characters"),
+            ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
             (0, "not instance of"),
             (None, "not instance of"),
         ],
