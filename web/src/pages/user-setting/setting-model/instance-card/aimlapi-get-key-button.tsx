@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useTranslation } from 'react-i18next';
 import {
   AimlapiAuthorizeStatus,
   useAimlapiAuthorize,
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { FC } from 'react';
 
-const STATUS_TEXT_KEY: Partial<Record<AimlapiAuthorizeStatus, string>> = {
+const AimlapiStatusTextKey: Partial<Record<AimlapiAuthorizeStatus, string>> = {
   awaiting_consent: 'aimlapiAwaitingConsent',
   success: 'aimlapiKeyAdded',
   denied: 'aimlapiAuthDenied',
@@ -24,11 +24,11 @@ const STATUS_TEXT_KEY: Partial<Record<AimlapiAuthorizeStatus, string>> = {
 export const AimlapiGetKeyButton: FC<{ onKey: (apiKey: string) => void }> = ({
   onKey,
 }) => {
-  const { t } = useTranslate('setting');
+  const { t } = useTranslation('translation', { keyPrefix: 'setting' });
   const { status, error, start, checkNow } = useAimlapiAuthorize({ onKey });
 
   const busy = status === 'starting' || status === 'awaiting_consent';
-  const statusKey = STATUS_TEXT_KEY[status];
+  const statusKey = AimlapiStatusTextKey[status];
 
   return (
     <div className="flex flex-col gap-1.5 mb-4">

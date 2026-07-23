@@ -12,14 +12,20 @@
                     "llm_name": "openai/gpt-4o",
                     "tags": "LLM,CHAT,128k,IMAGE2TEXT",
                     "max_tokens": 128000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "image2text"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "openai/gpt-4o-mini",
                     "tags": "LLM,CHAT,128k,IMAGE2TEXT",
                     "max_tokens": 128000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "image2text"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -55,13 +61,6 @@
                     "tags": "LLM,CHAT,64k",
                     "max_tokens": 65536,
                     "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "openai/gpt-4o",
-                    "tags": "IMAGE2TEXT,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {

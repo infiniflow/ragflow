@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -80,11 +80,11 @@ async def aimlapi_authorize_start():
     if not partner_id:
         return get_data_error_result(message="AIMLAPI partner id is not configured. Set AIMLAPI_PARTNER_ID.")
 
-    try:
-        body = await get_request_json()
-    except Exception:
-        body = None
-    return_url = (body or {}).get("return_url") or _verification_base_url()
+    # returnUrl only controls where AIMLAPI sends the browser after consent. This
+    # flow never depends on it — the key arrives via authenticated polling and the
+    # popup is closed on success — so we always use the trusted verification host
+    # rather than a client-supplied value, leaving no open-redirect surface.
+    return_url = _verification_base_url()
 
     payload = {
         "partnerId": partner_id,
@@ -128,6 +128,7 @@ async def aimlapi_authorize_start():
         {"device_code": device_code, "user_id": current_user.id},
         expires_in,
     )
+    LOGGER.info("AIMLAPI authorize start ok: request_id=%s", request_id)
 
     # Rebuild the consent URL from AIMLAPI_VERIFICATION_BASE_URL so an env override applies; the create response returns an absolute URL.
     verification_uri = f"{_verification_base_url()}/agent/authorize?request={request_id}"
@@ -185,6 +186,7 @@ async def aimlapi_authorize_poll():
 
     if api_key:
         REDIS_CONN.delete(f"{_REDIS_KEY_PREFIX}{request_id}")
+        LOGGER.info("AIMLAPI authorize poll ready: request_id=%s", request_id)
         return get_json_result(data={"status": "ready", "api_key": api_key})
     if status in ("denied", "expired", "cancelled", "canceled", "rejected"):
         REDIS_CONN.delete(f"{_REDIS_KEY_PREFIX}{request_id}")

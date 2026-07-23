@@ -118,9 +118,7 @@ export function useAimlapiAuthorize({ onKey }: UseAimlapiAuthorizeOptions) {
     popupRef.current = popup;
 
     try {
-      const { data } = await llmService.aimlapiAuthorizeStart({
-        return_url: window.location.origin,
-      });
+      const { data } = await llmService.aimlapiAuthorizeStart();
       if (data?.code !== 0) {
         setStatus('error');
         setError(data?.message ?? null);
@@ -137,6 +135,17 @@ export function useAimlapiAuthorize({ onKey }: UseAimlapiAuthorizeOptions) {
         interval,
         expires_in: expiresIn,
       } = data.data ?? {};
+
+      if (!requestId || !verificationUri) {
+        setStatus('error');
+        setError('AIMLAPI authorization response is missing required fields.');
+        try {
+          popup?.close();
+        } catch {
+          /* noop */
+        }
+        return;
+      }
 
       requestIdRef.current = requestId;
       deadlineRef.current = Date.now() + (expiresIn ?? 900) * 1000;
