@@ -56,7 +56,7 @@ func TestAPITokenDAOGetByBeta(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	got, err := NewAPITokenDAO().GetByBeta(ctx, beta)
+	got, err := NewAPITokenDAO().GetByBeta(ctx, DB, beta)
 	if err != nil {
 		t.Fatalf("GetByBeta failed: %v", err)
 	}
