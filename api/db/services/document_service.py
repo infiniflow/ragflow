@@ -125,6 +125,9 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, name=None, doc_ids=None, return_empty_metadata=False):
+        if doc_ids is not None and len(doc_ids) == 0:
+            return [], 0
+
         fields = cls.get_cls_model_fields()
         if keywords:
             docs = (
