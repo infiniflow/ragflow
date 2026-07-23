@@ -496,6 +496,10 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = v if v else "{}"
                     else:
                         d[k] = v
+                # Infinity thrift client does not accept None values.
+                for k in list(d.keys()):
+                    if d[k] is None:
+                        del d[k]
                 for k in [
                     "docnm_kwd",
                     "title_tks",
