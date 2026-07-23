@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -96,7 +97,7 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 // for the given file dicts.
 //   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
 //   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
-func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -128,7 +129,7 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
 			}
 		} else {
-			texts = append(texts, parseFileContent(file.Name, data))
+			texts = append(texts, parseFileContent(ctx, file.Name, data))
 		}
 	}
 	return texts, images, nil
@@ -136,7 +137,7 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 
 // parseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -169,7 +170,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 			continue
 		}
 
-		content, err := parseAgentUploadContent(name, data, layoutRecognize)
+		content, err := parseAgentUploadContent(ctx, name, data, layoutRecognize)
 		if err != nil {
 			return nil, fmt.Errorf("file %q: parse upload: %w", name, err)
 		}
@@ -178,7 +179,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 	return contents, nil
 }
 
-func parseAgentUploadContent(filename string, data []byte, layoutRecognize string) (string, error) {
+func parseAgentUploadContent(ctx context.Context, filename string, data []byte, layoutRecognize string) (string, error) {
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
@@ -189,7 +190,7 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
 		}
-		res := fp.ParseWithResult(filename, data)
+		res := fp.ParseWithResult(ctx, filename, data)
 		if res.Err != nil {
 			return "", res.Err
 		}
@@ -221,7 +222,7 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
 // Falls back to returning raw text if no parser is available.
-func parseFileContent(filename string, data []byte) string {
+func parseFileContent(ctx context.Context, filename string, data []byte) string {
 	fileType := utility.GetFileType(filename)
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
@@ -230,7 +231,7 @@ func parseFileContent(filename string, data []byte) string {
 	if err != nil {
 		return string(data)
 	}
-	res := fp.ParseWithResult(filename, data)
+	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return string(data)
 	}

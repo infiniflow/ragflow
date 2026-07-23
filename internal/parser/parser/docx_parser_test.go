@@ -20,9 +20,15 @@ package parser
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func rawJSON(v any) json.RawMessage {
+	data, _ := json.Marshal(v)
+	return json.RawMessage(data)
+}
 
 func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
@@ -144,6 +150,65 @@ func TestBuildDOCXJSONSections_MixedContent(t *testing.T) {
 	}
 }
 
+func TestBuildDOCXJSONSections_List(t *testing.T) {
+	ir := `{"sections":[{"title":"","elements":[
+		{"type":"list","ordered":false,"items":[
+			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Item 1"}]}]},
+			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Item 2"}]}]},
+			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Item 3"}]}]}
+		],"level":0}
+	]}]}`
+	sections := buildDOCXJSONSections(ir)
+	if len(sections) != 3 {
+		t.Fatalf("got %d sections, want 3 (each list item should be a section)", len(sections))
+	}
+	for i, want := range []string{"Item 1", "Item 2", "Item 3"} {
+		if got, _ := sections[i]["text"].(string); got != want {
+			t.Errorf("section[%d].text = %q, want %q", i, got, want)
+		}
+		if got, ok := sections[i]["doc_type_kwd"].(string); !ok || got != "text" {
+			t.Errorf("section[%d].doc_type_kwd = %q, want %q", i, got, "text")
+		}
+	}
+}
+
+func TestBuildDOCXJSONSections_TextBox(t *testing.T) {
+	ir := `{"sections":[{"title":"","elements":[
+		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"text","text":"Boxed paragraph"}]}],"width_emu":null}
+	]}]}`
+	sections := buildDOCXJSONSections(ir)
+	if len(sections) != 1 {
+		t.Fatalf("got %d sections, want 1 (text_box content should become a section)", len(sections))
+	}
+	if got, _ := sections[0]["text"].(string); got != "Boxed paragraph" {
+		t.Errorf("text = %q, want %q", got, "Boxed paragraph")
+	}
+	if got, ok := sections[0]["doc_type_kwd"].(string); !ok || got != "text" {
+		t.Errorf("doc_type_kwd = %q, want %q", got, "text")
+	}
+}
+
+func TestBuildDOCXJSONSections_MixedWithList(t *testing.T) {
+	ir := `{"sections":[{"title":"","elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"Preamble"}],"style":"Normal"},
+		{"type":"list","ordered":false,"items":[
+			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Bullet A"}]}]},
+			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Bullet B"}]}]}
+		],"level":0},
+		{"type":"paragraph","content":[{"type":"text","text":"Trailer"}],"style":"Normal"}
+	]}]}`
+	sections := buildDOCXJSONSections(ir)
+	if len(sections) != 4 {
+		t.Fatalf("got %d sections, want 4 (para + 2 list items + para)", len(sections))
+	}
+	wants := []string{"Preamble", "Bullet A", "Bullet B", "Trailer"}
+	for i, want := range wants {
+		if got, _ := sections[i]["text"].(string); got != want {
+			t.Errorf("section[%d].text = %q, want %q", i, got, want)
+		}
+	}
+}
+
 func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"paragraph","content":[{"type":"text","text":""}]},
@@ -174,7 +239,7 @@ func TestDocxIRTableToHTML_Single(t *testing.T) {
 			Cells: []docxIRCell{{
 				Content: []docxIRElement{{
 					Type:    "paragraph",
-					Content: []docxIRRun{{Type: "text", Text: "hello"}},
+					Content: json.RawMessage(`[{"type":"text","text":"hello"}]`),
 				}},
 			}},
 		}},
@@ -191,7 +256,7 @@ func TestDocxIRTableToHTML_MultiRowCol(t *testing.T) {
 		return docxIRCell{
 			Content: []docxIRElement{{
 				Type:    "paragraph",
-				Content: []docxIRRun{{Type: "text", Text: text}},
+				Content: rawJSON([]docxIRRun{{Type: "text", Text: text}}),
 			}},
 		}
 	}

@@ -75,7 +75,6 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -88,7 +87,7 @@ const componentNameExtractor = "Extractor"
 // `@timeout(60)` default at rag/flow/base.py:60. The pipeline
 // orchestrator (Phase 3) overrides this if a stage-level ceiling
 // is configured.
-const extractorTimeout = 60 * time.Second
+const extractorTimeout = 600 * time.Second
 
 const (
 	autoKeywordPrompt = `## Role
@@ -165,9 +164,17 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		}
 		if v, ok := params["system_prompt"].(string); ok {
 			p.SystemPrompt = v
+		} else if v, ok := params["sys_prompt"].(string); ok {
+			p.SystemPrompt = v
 		}
 		if v, ok := params["prompt"].(string); ok {
 			p.Prompt = v
+		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
+			if first, ok := promptsRaw[0].(map[string]any); ok {
+				if content, ok := first["content"].(string); ok {
+					p.Prompt = content
+				}
+			}
 		}
 		if v, ok := params["auto_keywords"]; ok {
 			p.AutoKeywords = mapInt(v)
@@ -330,8 +337,9 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		}
 	}
 	if driver == "" {
-		driver = "dummy"
+		return nil, fmt.Errorf("extractor: chat: no driver resolved for model %q", modelName)
 	}
+	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s baseUrl=%s", driver, modelName, req.BaseURL))
 	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
@@ -347,11 +355,13 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
 	// is observed even when the driver layer doesn't take a ctx.
+	common.Info(fmt.Sprintf("try to chat with message: %v", req.Messages))
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	out, err := wrapper.Generate(ctx, toExtractorEinoMessages(req.Messages))
 	if err != nil {
+		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
 	return &extractorChatResponse{Content: out.Content}, nil
@@ -433,6 +443,8 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 		out.prompt = v
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
+		out.systemPrompt = v
+	} else if v, ok := inputs["sys_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
 	}
 	if v, ok := inputs["lang"].(string); ok && v != "" {
@@ -675,7 +687,10 @@ func splitKeywords(s string) []string {
 // raw string from the model — JSON parsing happens here so
 // callers can rely on a structured value downstream.
 func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunkText string) (any, error) {
-	driver, modelName, apiKey, baseURL := resolveExtractorChatTarget(ctx, in.llmID)
+	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, in.llmID)
+	if err != nil {
+		return nil, err
+	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
 	resp, err := inv.Chat(ctx, extractorChatRequest{
@@ -704,43 +719,34 @@ func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunk
 	return raw, nil
 }
 
-// resolveExtractorChatTarget splits a composite llm_id
-// "model@provider" into driver / model / api_key / base_url
-// using the tenant-scoped provider → instance → model lookup.
-func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, modelName, apiKey, baseURL string) {
+// resolveExtractorChatTarget resolves the llm_id into driver / model /
+// api_key / base_url. The llm_id may be a bare tenant_model UUID or
+// a composite "model@provider" string. Errors from DAO resolution are
+// propagated so the caller sees the real failure reason.
+func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
-			return driver, modelName, apiKey, baseURL
+			return driver, modelName, apiKey, baseURL, nil
 		}
 	}
-	if llmID == "" {
-		return "", "", "", ""
-	}
 
-	// Derive driver and model name from the composite llm_id.
-	modelName = llmID
-	parsedModel, _, parsedProvider := splitExtractorLLID(llmID)
-	if parsedProvider != "" {
-		modelName = parsedModel
-		driver = strings.ToLower(parsedProvider)
+	cfg, cfgErr := resolveExtractorChatConfig(ctx, llmID)
+	if cfgErr != nil {
+		return "", "", "", "", cfgErr
 	}
-
-	// Override with tenant-scoped credentials when available.
-	cfg := resolveExtractorChatConfig(ctx, llmID)
 	if cfg.driver != "" {
-		driver = cfg.driver
-	}
-	if cfg.modelName != "" {
-		modelName = cfg.modelName
-	}
-	if cfg.apiKey != "" {
-		apiKey = cfg.apiKey
-	}
-	if cfg.baseURL != "" {
-		baseURL = cfg.baseURL
+		return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
 	}
 
-	return driver, modelName, apiKey, baseURL
+	// Fallback: when tenant credentials are not available
+	// (no canvas state / no DB), fall back to the basic @ split
+	// so callers can still use model@provider format in tests.
+	if bare, provider, ok := splitExtractorLLIDPair(llmID); ok {
+		return strings.ToLower(provider), bare, "", "", nil
+	}
+	// Nothing left to try — let Chat() surface a clear error when
+	// the driver ends up empty.
+	return "", llmID, "", "", nil
 }
 
 // extractorChatConfig holds the resolved chat model configuration.
@@ -752,145 +758,75 @@ type extractorChatConfig struct {
 }
 
 // resolveExtractorChatConfig resolves tenant-scoped credentials for
-// the given composite llm_id using tenant_model_provider → instance → model.
-func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) extractorChatConfig {
+// the given llm_id via the shared resolveModelConfig helper.
+//
+//   - Bare UUID → DAO lookup via resolveModelConfigByID.
+//   - "model@provider" → parsed via resolveModelConfigFromProviderInstance.
+//
+// Returns nil error when there is no canvas state (unit tests) —
+// the caller's @ split fallback handles that case.
+func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) (extractorChatConfig, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
-		return extractorChatConfig{}
+		return extractorChatConfig{}, nil
 	}
 	tidVal, _ := state.GetGlobal("tenant_id")
 	tid, _ := tidVal.(string)
 	if tid == "" {
-		return extractorChatConfig{}
+		return extractorChatConfig{}, nil
 	}
 
-	// Split the composite id with rsplit from the right
-	// (preserves embedded '@' in model names).
-	pureModelName, instanceName, providerName := splitExtractorLLID(compositeLLMID)
-	if providerName == "" {
-		return extractorChatConfig{}
-	}
-
-	// 1. Lookup provider (case-insensitive).
-	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(tid, providerName)
-	if err != nil || provider == nil {
-		common.Debug("extractor credentials: provider not found",
-			zap.String("provider", providerName),
-			zap.Error(err))
-		return extractorChatConfig{}
-	}
-
-	// 2. Lookup instance (with "default" → sole active fallback).
-	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(provider.ID, instanceName)
-	if err != nil || instance == nil {
-		if instanceName == "default" {
-			if fallback := findExtractorSoleActiveInstance(provider.ID); fallback != nil {
-				common.Debug("extractor credentials: remapped default instance to sole active",
-					zap.String("instance", fallback.InstanceName),
-					zap.String("provider", providerName))
-				instance = fallback
-				err = nil
-			}
+	var driver models.ModelDriver
+	var modelName string
+	var apiConfig *models.APIConfig
+	if isBareTenantModelID(compositeLLMID) {
+		// UUID path: resolveModelConfigByID does a single GetByID and
+		// returns a clear error if the record doesn't exist.  No need
+		// for a separate pre-check — resolveModelConfig's redundant
+		// GetByID dispatch check is also bypassed.
+		driver, modelName, apiConfig, _, err = resolveModelConfigByID(tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
+			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
+		}
+	} else {
+		// Composite "model@provider" path: delegate to the shared dispatcher.
+		driver, modelName, apiConfig, _, err = resolveModelConfig(tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
+			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
 		}
 	}
-	if err != nil || instance == nil {
-		common.Debug("extractor credentials: instance not found",
-			zap.String("instance", instanceName),
-			zap.String("provider", providerName))
-		return extractorChatConfig{}
-	}
 
-	// 3. Lookup tenant_model to validate the model is registered.
-	model, modelErr := dao.NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, int(entity.ModelTypeChat), pureModelName)
-	if modelErr != nil || model == nil {
-		common.Debug("extractor credentials: tenant_model not found",
-			zap.String("model", pureModelName),
-			zap.Error(modelErr))
-		return extractorChatConfig{}
-	}
-	canonicalModelName := pureModelName
-	if model.ModelName != "" {
-		canonicalModelName = model.ModelName
-	}
-	common.Debug("extractor credentials: tenant_model found",
-		zap.String("model", canonicalModelName))
-
-	// 4. Assemble config from instance.
-	if instance.APIKey == "" {
-		common.Debug("extractor credentials: instance has no api_key",
-			zap.String("instance", instance.InstanceName),
-			zap.String("provider", providerName))
-		return extractorChatConfig{}
-	}
+	apiKey := ""
 	baseURL := ""
-	if instance.Extra != "" {
-		var extra map[string]string
-		if err := json.Unmarshal([]byte(instance.Extra), &extra); err == nil {
-			baseURL = extra["base_url"]
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
+		}
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
 		}
 	}
-
-	common.Debug("extractor credentials: resolved",
-		zap.String("llm_factory", provider.ProviderName),
-		zap.String("instance", instance.InstanceName),
-		zap.String("model", canonicalModelName),
-		zap.Bool("api_key_present", true),
-		zap.Bool("base_url_present", baseURL != ""))
 	return extractorChatConfig{
-		driver:    provider.ProviderName,
-		modelName: canonicalModelName,
-		apiKey:    instance.APIKey,
+		driver:    strings.ToLower(driver.Name()),
+		modelName: modelName,
+		apiKey:    apiKey,
 		baseURL:   baseURL,
-	}
+	}, nil
 }
 
-// splitExtractorLLID splits a composite llm_id using rsplit("@", 2)
-// from the right to preserve embedded '@' in model names.
-//
-//	"model@provider"          → ("model",          "default",  "provider")
-//	"model@instance@provider" → ("model",          "instance", "provider")
-//	"a@b@c@d"                 → ("a@b",            "c",        "d")
-//	"plain"                   → ("plain",          "",         "")
-func splitExtractorLLID(s string) (modelName, instanceName, providerName string) {
-	parts := strings.SplitN(strings.TrimSpace(s), "@", -1)
-	// rsplit("@", 2) from the right
-	n := len(parts)
-	if n >= 3 {
-		// Last segment = provider, second-to-last = instance,
-		// everything to the left = model name (rejoined with @).
-		providerName = parts[n-1]
-		instanceName = parts[n-2]
-		modelName = strings.Join(parts[:n-2], "@")
-		return
+// isBareTenantModelID reports whether s is a 32-character hex string
+// (a tenant_model primary key), as opposed to a composite "model@provider".
+func isBareTenantModelID(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 32 {
+		return false
 	}
-	if n == 2 {
-		return parts[0], "default", parts[1]
-	}
-	return s, "", ""
-}
-
-// findExtractorSoleActiveInstance returns the sole active instance
-// for a provider when the "default" instance is not found.
-func findExtractorSoleActiveInstance(providerID string) *entity.TenantModelInstance {
-	instances, err := dao.NewTenantModelInstanceDAO().GetAllInstancesByProviderID(providerID)
-	if err != nil {
-		return nil
-	}
-	var active []*entity.TenantModelInstance
-	for _, inst := range instances {
-		if inst == nil {
-			continue
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
 		}
-		if strings.EqualFold(strings.TrimSpace(inst.Status), "inactive") {
-			continue
-		}
-		active = append(active, inst)
 	}
-	if len(active) != 1 {
-		return nil
-	}
-	return active[0]
+	return true
 }
 
 // buildExtractorMessages assembles system + user messages for

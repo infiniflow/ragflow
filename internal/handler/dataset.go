@@ -708,7 +708,8 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.datasetsService.CheckEmbedding(userID, datasetID, &req)
+	ctx := c.Request.Context()
+	data, code, err := h.datasetsService.CheckEmbedding(ctx, userID, datasetID, &req)
 	if err != nil {
 		if code == common.CodeNotEffective {
 			common.ResponseWithCodeData(c, code, data, err.Error())

@@ -32,7 +32,7 @@ type doneEmittingDriver struct {
 	deltas []string
 }
 
-func (d *doneEmittingDriver) ChatStreamlyWithSender(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *doneEmittingDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	for _, delta := range d.deltas {
 		if err := sender(&delta, nil); err != nil {
 			return err

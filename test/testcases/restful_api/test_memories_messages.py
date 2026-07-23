@@ -48,8 +48,8 @@ def create_memory_resource(rest_client, memory_cleanup):
         payload = {
             "name": f"{name_prefix}_{uuid.uuid4().hex[:8]}",
             "memory_type": ["raw"],
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
+            "embd_id": "BAAI/bge-small-en-v1.5@Local@Builtin",
+            "llm_id": "glm-4-flash@CI@ZHIPU-AI",
         }
         res = rest_client.post("/memories", json=payload)
         assert res.status_code == 200

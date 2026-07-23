@@ -306,6 +306,22 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 	})
 }
 
+// UniqueDocumentName returns a non-colliding document name within the dataset,
+// mirroring Python duplicate_name(DocumentService.query, name=..., kb_id=...).
+// Returns an error when the existing-name lookup fails so callers never write
+// blind and risk duplicated document names.
+func (s *DocumentService) UniqueDocumentName(kbID, name string) (string, error) {
+	names, err := s.documentDAO.ListNamesByKbID(kbID)
+	if err != nil {
+		return "", err
+	}
+	taken := make(map[string]bool, len(names))
+	for _, n := range names {
+		taken[n] = true
+	}
+	return uniqueUploadName(name, taken), nil
+}
+
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
 // an error.
 func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {
@@ -376,7 +392,9 @@ func (s *DocumentService) rollbackAddFileFromKBError(doc *entity.Document, kbID 
 
 // cleanupFileReferences deletes file2document mappings for docID, and for each
 // referenced file, only hard-deletes the file record and its storage blob when
-// no other document still references the same file_id.
+// the file is a knowledgebase-owned upload (source_type == knowledgebase) and
+// no other document still references the same file_id. Files linked from file
+// management are only unlinked — the file record and blob stay intact.
 func (s *DocumentService) cleanupFileReferences(docID string) {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
 	if mapErr != nil {
@@ -402,7 +420,8 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
 	}
 
-	// For each file, only delete the record and blob when no other doc references it
+	// For each file, only delete the record and blob when it is a
+	// knowledgebase-owned upload and no other doc references it
 	for _, fileID := range fileIDs {
 		remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
 		if remErr != nil {
@@ -418,6 +437,9 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 		if fErr != nil || file == nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
 			continue
+		}
+		if entity.FileSource(file.SourceType) != entity.FileSourceKnowledgebase {
+			continue // linked from file management — unlink only, keep the file
 		}
 		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
