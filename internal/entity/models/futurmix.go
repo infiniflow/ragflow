@@ -139,6 +139,9 @@ func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
 	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -203,6 +206,9 @@ func (f *FuturMixModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {

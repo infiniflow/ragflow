@@ -173,7 +173,7 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
-	if modelConfig.Thinking != nil {
+	if modelConfig != nil && modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
 			reqBody["thinking"] = map[string]interface{}{
 				"type": "enabled",

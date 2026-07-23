@@ -191,7 +191,7 @@ func (l *LmStudioModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
-	if modelConfig.Thinking != nil {
+	if modelConfig != nil && modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
 			reqBody["thinking"] = map[string]interface{}{
 				"type": "enabled",

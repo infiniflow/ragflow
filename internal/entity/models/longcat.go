@@ -69,6 +69,7 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	delete(reqBody, "stop")
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -163,6 +164,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	delete(reqBody, "stop")
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
