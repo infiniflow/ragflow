@@ -7537,7 +7537,14 @@
             "tags": "OCR",
             "status": "1",
             "rank": "930",
-            "llm": []
+            "llm": [
+                {
+                    "llm_name": "mistral-ocr-latest",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
         },
         {
             "name": "n1n",
