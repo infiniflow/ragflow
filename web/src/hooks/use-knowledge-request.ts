@@ -918,14 +918,14 @@ export const useFetchAllKnowledgeList = (
 };
 
 export const useSelectKnowledgeOptions = () => {
-  const { list, loading, handleScroll, hasNextPage } = useFetchKnowledgeList();
+  const { list } = useFetchAllKnowledgeList();
 
   const options = list?.map((item) => ({
     label: item.name,
     value: item.id,
   }));
 
-  return { options, loading, handleScroll, hasMore: hasNextPage };
+  return options;
 };
 
 //#region tags
