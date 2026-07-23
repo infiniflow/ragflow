@@ -68,12 +68,12 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 		dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *chatID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
-				return nil, errors.New("Can't find this chat assistant!")
+				return nil, errors.New("can't find this chat assistant")
 			}
 			return nil, err
 		}
 		if dialog.TenantID != tenantID {
-			return nil, errors.New("No authorization.")
+			return nil, errors.New("no authorization")
 		}
 	}
 	row := &entity.ChatChannel{
@@ -129,13 +129,13 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Can't find this chat channel!")
+			return nil, common.CodeDataError, errors.New("can't find this chat channel")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -148,10 +148,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 	if channel == nil {
-		return nil, common.CodeDataError, errors.New("Can't find this chat channel!")
+		return nil, common.CodeDataError, errors.New("can't find this chat channel")
 	}
 
 	updates := map[string]interface{}{}
@@ -209,7 +209,7 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 	updated, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Can't find this chat channel!")
+			return nil, common.CodeDataError, errors.New("can't find this chat channel")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -222,10 +222,10 @@ func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, chan
 		return false, common.CodeServerError, err
 	}
 	if !ok {
-		return false, common.CodeAuthenticationError, errors.New("No authorization.")
+		return false, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 	if channel == nil {
-		return false, common.CodeAuthenticationError, errors.New("No authorization.")
+		return false, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if err = s.chatChannelDAO.DeleteByID(ctx, dao.DB, channelID, channel.TenantID); err != nil {
