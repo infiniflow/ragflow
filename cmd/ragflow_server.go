@@ -49,7 +49,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	_ "ragflow/internal/agent/component"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -704,6 +704,10 @@ func startServer(config *server.Config) {
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+
+	// Wire the real MemorySaver so the Message component can persist
+	// conversation turns to memory stores declared in the canvas DSL.
+	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
