@@ -295,6 +295,9 @@ def by_paddleocr(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via PaddleOCR ({paddleocr_llm_name}): {e}")
+                raise
 
         return None, None, None
 
