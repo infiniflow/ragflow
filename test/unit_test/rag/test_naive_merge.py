@@ -215,3 +215,82 @@ def test_images_distinct_lazyimages_are_concatenated():
     merged = nonempty_imgs[0]
     assert isinstance(merged, LazyImage)
     assert merged._blobs == [b"BLOB_A", b"BLOB_B"]
+
+
+# --------------------------------------------------------------------------- #
+# Regression: chunk_token_num is now a HARD cap, not a soft target (#17202)
+# --------------------------------------------------------------------------- #
+@pytest.mark.p0
+def test_hard_cap_no_chunk_exceeds_budget_under_pure_concat():
+    """The pre-fix behaviour let the last appended segment overshoot the
+    budget. The hard cap must keep every chunk <= chunk_token_num unless a
+    single segment is itself larger than the budget (covered separately
+    below)."""
+    # Five 5-word segments with no internal delimiter -> five "sections"
+    # of 5 tokens each. With budget 8, naive_merge would have appended a
+    # second 5-word segment to a chunk that was already at 5, producing a
+    # 10-token chunk. The hard cap should split at the budget boundary.
+    sections = [" ".join(["w" + str(i)] * 5) for i in range(6)]  # 5 tokens each
+    chunks = _nonempty(naive_merge(sections, chunk_token_num=8, delimiter=DEFAULT_DELIMITER))
+    # Every chunk must be <= 8 tokens (the budget) — no overshoot.
+    assert all(_tok(c) <= 8 for c in chunks), [(_tok(c), c) for c in chunks]
+    # Content is preserved.
+    assert "".join(chunks).replace(" ", "").replace("\n", "") == "".join(s.replace(" ", "") for s in sections)
+
+
+@pytest.mark.p0
+def test_hard_cap_with_overlap_does_not_exceed_full_budget():
+    """With overlapped_percent > 0, the overlap-threshold is
+    ``chunk_token_num * (1 - overlapped_percent)``. The new check is
+    predictive against that threshold; the resulting chunk (after the
+    overlap prefix is added) must not exceed chunk_token_num."""
+    # 10 tokens per section, budget 15, overlap 20% -> overlap threshold 12.
+    section = " ".join(["w" + str(i) for i in range(10)])  # 10 tokens
+    sections = [section] * 4  # 40 tokens total
+    chunks = _nonempty(naive_merge(sections, chunk_token_num=15, overlapped_percent=20, delimiter=DEFAULT_DELIMITER))
+    # No chunk should be wildly over 15. (One trailing slack of one segment
+    # is allowed only if a single segment is itself over budget; here every
+    # segment is 10 tokens, so we expect strict <= 15.)
+    assert all(_tok(c) <= 15 for c in chunks), [(_tok(c), c) for c in chunks]
+
+
+@pytest.mark.p0
+def test_hard_cap_single_oversized_segment_emitted_as_one_chunk_with_warning(caplog):
+    """A single segment with no internal delimiter and no internal split
+    point that exceeds chunk_token_num is emitted as one oversized chunk.
+    The chunker cannot satisfy the budget without splitting the segment,
+    which is out of scope for this fix (see #17202 — Option A fallback)."""
+    import logging
+
+    huge = " ".join(["w" + str(i) for i in range(50)])  # 50 tokens, no delimiter
+    with caplog.at_level(logging.WARNING, logger="rag.nlp"):
+        chunks = _nonempty(naive_merge([huge], chunk_token_num=10, delimiter=DEFAULT_DELIMITER))
+    # The single 50-token segment lands in one chunk.
+    assert len(chunks) == 1
+    assert _tok(chunks[0]) == 50
+    # A warning is logged so the operator knows the budget was violated.
+    assert any("chunk_token_num" in r.message and "10" in r.message for r in caplog.records), [r.message for r in caplog.records]
+
+
+@pytest.mark.p0
+def test_hard_cap_with_images_single_oversized_segment_emitted_as_one_chunk(caplog):
+    """Mirror of the previous test for naive_merge_with_images: a single
+    oversized segment is emitted as one chunk and a warning is logged."""
+    import logging
+
+    huge = " ".join(["w" + str(i) for i in range(50)])  # 50 tokens
+    with caplog.at_level(logging.WARNING, logger="rag.nlp"):
+        chunks, imgs = naive_merge_with_images([huge], [None], chunk_token_num=10, delimiter=DEFAULT_DELIMITER)
+    chunks = _nonempty(chunks)
+    assert len(chunks) == 1
+    assert _tok(chunks[0]) == 50
+    assert any("chunk_token_num" in r.message and "10" in r.message for r in caplog.records), [r.message for r in caplog.records]
+
+
+@pytest.mark.p0
+def test_hard_cap_with_images_no_chunk_exceeds_budget_under_pure_concat():
+    """Same hard-cap guarantee as the non-image path."""
+    sections = [" ".join(["w" + str(i)] * 5) for i in range(6)]  # 5 tokens each
+    chunks, _ = naive_merge_with_images(sections, [None] * len(sections), chunk_token_num=8, delimiter=DEFAULT_DELIMITER)
+    chunks = _nonempty(chunks)
+    assert all(_tok(c) <= 8 for c in chunks), [(_tok(c), c) for c in chunks]
