@@ -19,7 +19,7 @@ import logging
 import re
 
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering
+
 from sklearn.mixture import GaussianMixture
 
 from api.db.services.task_service import has_canceled
@@ -42,7 +42,6 @@ from rag.utils.raptor_utils import (
     SUPPORTED_CLUSTERING_METHODS,
     SUPPORTED_TREE_BUILDERS,
 )
-from ._common import knowledge_compile_gen_conf
 
 # Regularization added to GMM covariance diagonals; keeps components
 # from collapsing on singleton/near-identical reduced points.
@@ -180,12 +179,20 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         clustering_method=GMM_CLUSTERING_METHOD,
         psi_exact_max_leaves=4096,
         psi_bucket_size=1024,
-        ahc_distance_threshold=0.3,
+        cluster_percentile=30,
     ):
-        """Configure RAPTOR summarization, clustering, and Psi limits."""
+        """Configure RAPTOR summarization, clustering, and Psi limits.
+
+        Args:
+            cluster_percentile: AHC distance threshold is set to this
+                percentile of all pairwise cosine distances in each
+                layer.  A lower value produces finer (more) clusters.
+                Default 30 means the threshold excludes the top 70%
+                most dissimilar pairs.
+        """
         self._max_cluster = max_cluster
         self._small_layer_collapse = small_layer_collapse
-        self._ahc_distance_threshold = ahc_distance_threshold
+        self._cluster_percentile = cluster_percentile
         self._llm_model = llm_model
         self._embd_model = embd_model
         self._threshold = threshold
@@ -219,7 +226,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         last_exc = None
         for attempt in range(3):
             try:
-                response = await self._llm_model.async_chat(system, history, knowledge_compile_gen_conf(self._llm_model, gen_conf))
+                response = await self._llm_model.async_chat(system, history, gen_conf)
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
@@ -268,79 +275,54 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return int(optimal_clusters)
 
     def _get_clusters_ahc(self, embeddings: np.ndarray, task_id: str = "") -> np.ndarray:
-        """Cluster embeddings with average-linkage AHC (cosine distance).
+        """Sequential clustering of adjacent embeddings (cosine similarity).
 
-        Sklearn stops merging when the average cosine distance between
-        two cluster candidates exceeds ``_ahc_distance_threshold``,
-        producing a flat labelling with a data-driven number of clusters
-        — no gap heuristic or fixed cluster-count fallback needed.
+        Only compares **adjacent** pairs (chunk i vs chunk i+1), not all
+        pairwise — ``O(N)`` complexity per layer instead of ``O(N²)``.
+
+        The similarity threshold is the ``p``-th percentile of all
+        adjacent-pair similarities in the current layer, so it adapts
+        to each layer's data distribution automatically.
 
         Returns an array of cluster labels (contiguous 0..K-1).
         """
         n = len(embeddings)
         if n <= 1:
             return np.zeros(n, dtype=int)
+        if n == 2:
+            return np.arange(n)
 
         self._check_task_canceled(task_id, "_get_clusters_ahc")
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=self._ahc_distance_threshold,
-            linkage="average",
-            metric="cosine",
+
+        # L2-normalize embeddings so dot product = cosine similarity
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1.0, norms)
+        normalized = embeddings / norms
+
+        # Adjacent cosine similarities (n-1 pairs)
+        adj_sims = np.sum(normalized[:-1] * normalized[1:], axis=1)
+        if len(adj_sims) == 0:
+            return np.zeros(n, dtype=int)
+
+        # Adaptive threshold from adjacent distribution
+        threshold = float(np.percentile(adj_sims, self._cluster_percentile))
+        labels = np.zeros(n, dtype=int)
+        cluster_id = 0
+        for i in range(1, n):
+            if adj_sims[i - 1] >= threshold:
+                labels[i] = cluster_id
+            else:
+                cluster_id += 1
+                labels[i] = cluster_id
+
+        logging.info(
+            "RAPTOR seq-clus: p=%d threshold=%.4f n_clusters=%d for %d embeddings (adj pairs=%d)",
+            self._cluster_percentile,
+            threshold,
+            int(np.unique(labels).size),
+            n,
+            len(adj_sims),
         )
-        return clustering.fit_predict(embeddings)
-
-    def _merge_close_clusters(self, embeddings: np.ndarray, labels: np.ndarray) -> np.ndarray:
-        """Merge clusters whose normalized centroids remain very similar."""
-        labels = np.asarray(labels, dtype=int)
-        unique_labels = np.unique(labels)
-        if len(unique_labels) <= 1:
-            return labels
-
-        normalized = np.asarray(embeddings, dtype=np.float64)
-        norms = np.linalg.norm(normalized, axis=1, keepdims=True)
-        normalized = np.divide(normalized, norms, out=np.zeros_like(normalized), where=norms > 0)
-        centroids = np.stack([normalized[labels == label].mean(axis=0) for label in unique_labels])
-        centroid_norms = np.linalg.norm(centroids, axis=1, keepdims=True)
-        centroids = np.divide(centroids, centroid_norms, out=np.zeros_like(centroids), where=centroid_norms > 0)
-
-        # A centroid represents an already consolidated cluster, so use a
-        # stricter threshold than the initial AHC pass when merging centroids.
-        merge_threshold = min(self._ahc_distance_threshold, 0.15)
-        if len(centroids) == 2:
-            centroid_labels = np.zeros(2, dtype=int) if 1 - float(centroids[0] @ centroids[1]) <= merge_threshold else np.arange(2)
-        else:
-            centroid_labels = AgglomerativeClustering(
-                n_clusters=None,
-                distance_threshold=merge_threshold,
-                linkage="average",
-                metric="cosine",
-            ).fit_predict(centroids)
-
-        label_map = {int(old): int(centroid_labels[idx]) for idx, old in enumerate(unique_labels)}
-        return np.asarray([label_map[int(label)] for label in labels], dtype=int)
-
-    def _adjust_tree_nodes(self, embeddings: np.ndarray, labels: np.ndarray, max_iter: int = 5) -> np.ndarray:
-        """Refine AHC assignments by reassigning nodes to cosine-nearest centroids."""
-        labels = np.asarray(labels, dtype=int).copy()
-        vectors = np.asarray(embeddings, dtype=np.float64)
-        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-        normalized = np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms > 0)
-
-        for _ in range(max_iter):
-            unique_labels = np.unique(labels)
-            if len(unique_labels) <= 1:
-                return labels
-
-            centroids = np.stack([normalized[labels == label].mean(axis=0) for label in unique_labels])
-            centroid_norms = np.linalg.norm(centroids, axis=1, keepdims=True)
-            centroids = np.divide(centroids, centroid_norms, out=np.zeros_like(centroids), where=centroid_norms > 0)
-            new_labels = unique_labels[np.argmax(normalized @ centroids.T, axis=1)]
-            if np.array_equal(new_labels, labels):
-                break
-
-            labels = new_labels
-
         return labels
 
     def clustering(self, embeddings, random_state: int, task_id: str = "") -> tuple[int, list[int]]:
@@ -353,35 +335,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             # UMAP is skipped because it discards semantic information
             # that average-linkage + cosine can leverage directly.
             logging.info("RAPTOR: using clustering_method=%s on raw embeddings (dim=%d)", self._clustering_method, len(embeddings[0]) if hasattr(embeddings[0], "__len__") else "?")
-            raw_labels = self._get_clusters_ahc(embeddings, task_id=task_id)
+            asarray = np.asarray(embeddings, dtype=np.float64)
+            raw_labels = self._get_clusters_ahc(asarray, task_id=task_id)
             raw_cluster_count = np.unique(raw_labels).size
             logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
-            if raw_cluster_count > 1:
-                labels = self._adjust_tree_nodes(np.asarray(embeddings), raw_labels)
-                logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", np.unique(labels).size)
-                merged_labels = self._merge_close_clusters(np.asarray(embeddings), labels)
-                logging.info("RAPTOR AHC: centroid merge reduced n_clusters=%d", np.unique(merged_labels).size)
-                labels = merged_labels
-            else:
-                labels = raw_labels
-
-            cluster_count = np.unique(labels).size
-            if cluster_count > self._max_cluster:
-                logging.info("RAPTOR AHC: reducing n_clusters=%d to max_cluster=%d", cluster_count, self._max_cluster)
-                labels = AgglomerativeClustering(
-                    n_clusters=self._max_cluster,
-                    linkage="average",
-                    metric="cosine",
-                ).fit_predict(np.asarray(embeddings))
-
-            cluster_sizes = np.bincount(np.asarray(labels, dtype=int))
-            logging.info(
-                "RAPTOR AHC: final n_clusters=%d, min_cluster_size=%d, max_cluster_size=%d, singleton_clusters=%d",
-                np.unique(labels).size,
-                int(cluster_sizes.min()) if len(cluster_sizes) else 0,
-                int(cluster_sizes.max()) if len(cluster_sizes) else 0,
-                int(np.count_nonzero(cluster_sizes == 1)),
-            )
+            labels = raw_labels
         else:
             # GMM: reduce dimensionality first (UMAP, 12D) so the
             # Gaussian mixture can find meaningful clusters.
