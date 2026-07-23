@@ -28,6 +28,7 @@ import kbService, {
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
+import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -634,7 +635,18 @@ export const useCreateDocument = () => {
 export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
     (id?: string) => {
-      return `${restAPIv1}/documents/${id || documentId}/preview`;
+      const base = `${restAPIv1}/documents/${id || documentId}/preview`;
+      // Embedded / shared chats are loaded with the beta token in the URL
+      // as ?auth=<token>. Browser-initiated GETs from <iframe>/<embed> can't
+      // attach an Authorization header, so propagate the token as a query
+      // parameter the backend now accepts for AUTH_BETA-enabled routes —
+      // otherwise anonymous viewers see "document not found" on every
+      // chunk-source preview. See #15895.
+      const auth = getSearchValue('auth');
+      if (auth) {
+        return `${base}?auth=${encodeURIComponent(auth)}`;
+      }
+      return base;
     },
     [documentId],
   );
