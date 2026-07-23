@@ -119,6 +119,60 @@ describe('useBeforeDelete', () => {
     expect(startDeletion?.nodes).toEqual([]);
   });
 
+  it('allows deleting a selected edge inside iteration without deleting nodes', async () => {
+    const nodes = [
+      createNode('iteration:0', Operator.Iteration, { type: 'group' }),
+      createNode('iterationStart:0', Operator.IterationStart, {
+        parentId: 'iteration:0',
+        type: 'iterationStartNode',
+      }),
+      createNode('message:0', Operator.Message, { parentId: 'iteration:0' }),
+      createNode('message:1', Operator.Message, { parentId: 'iteration:0' }),
+    ];
+    const selectedEdge = createEdge('e1', 'message:0', 'message:1');
+    const edges = [
+      createEdge('e0', 'iterationStart:0', 'message:0'),
+      selectedEdge,
+    ];
+
+    useGraphStore.setState({ nodes, edges });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion;
+    await act(async () => {
+      deletion = await result.current.handleBeforeDelete({
+        nodes: [],
+        edges: [selectedEdge],
+      });
+    });
+
+    expect(deletion?.nodes).toEqual([]);
+    expect(deletion?.edges.map((edge) => edge.id)).toEqual(['e1']);
+  });
+
+  it('does not delete edges of protected nodes when those nodes are rejected', async () => {
+    const beginNode = createNode('begin', Operator.Begin);
+    const messageNode = createNode('message:0', Operator.Message);
+    const edge = createEdge('e1', 'begin', 'message:0');
+
+    useGraphStore.setState({
+      nodes: [beginNode, messageNode],
+      edges: [edge],
+    });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion;
+    await act(async () => {
+      deletion = await result.current.handleBeforeDelete({
+        nodes: [beginNode as any],
+        edges: [edge],
+      });
+    });
+
+    expect(deletion?.nodes).toEqual([]);
+    expect(deletion?.edges).toEqual([]);
+  });
+
   it('preserves agent downstream cleanup', async () => {
     const nodes = [
       createNode('agent:0', Operator.Agent),
