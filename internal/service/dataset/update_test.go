@@ -214,7 +214,7 @@ func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "Dataset not found" {
+	if err.Error() != "dataset not found" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -258,7 +258,7 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "Only dataset owner can change permission" {
+	if err.Error() != "only dataset owner can change permission" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -320,7 +320,7 @@ func TestDatasetServiceUpdateDatasetRejectsNoPropertiesModified(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "No properties were modified" {
+	if err.Error() != "no properties were modified" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
