@@ -16,13 +16,25 @@
 
 
 import logging
+import os
 import threading
 from enum import Enum
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 from typing import Any
 from common.config_utils import read_config
-from urllib.parse import urlparse
+
+
+STORAGE_IMPL_STORE_TYPES = {
+    "MINIO": "minio",
+    "AWS_S3": "s3",
+    "OSS": "oss",
+    "AZURE_SPN": "azure",
+    "AZURE_SAS": "azure",
+    "GCS": "gcs",
+    "OPENDAL": "opendal",
+}
 
 
 class BaseConfig(BaseModel):
@@ -221,6 +233,57 @@ class MinioConfig(FileStoreConfig):
         return result
 
 
+class S3Config(FileStoreConfig):
+    endpoint_url: str
+    scheme: str
+    region: str | None = None
+    bucket: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result = super().to_dict()
+        extra_dict = result['extra'].copy()
+        extra_dict['endpoint_url'] = self.endpoint_url
+        extra_dict['scheme'] = self.scheme
+        if self.region:
+            extra_dict['region'] = self.region
+        if self.bucket:
+            extra_dict['bucket'] = self.bucket
+        result['extra'] = extra_dict
+        return result
+
+
+def _get_s3_endpoint(config: dict[str, Any]) -> tuple[str, str, int, str]:
+    region = config.get("region_name") or config.get("region")
+    endpoint_url = config.get("endpoint_url")
+    if not endpoint_url:
+        domain = "amazonaws.com.cn" if region and region.startswith("cn-") else "amazonaws.com"
+        endpoint_url = f"https://s3.{region}.{domain}" if region else f"https://s3.{domain}"
+    elif "://" not in endpoint_url:
+        endpoint_url = f"https://{endpoint_url}"
+
+    parsed = urlparse(endpoint_url)
+    scheme = parsed.scheme or "https"
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if scheme == "https" else 80)
+    return endpoint_url, host, port, scheme
+
+
+def is_service_active(service_config: BaseConfig, doc_engine: str | None = None, storage_impl: str | None = None) -> bool:
+    if service_config.service_type == "retrieval":
+        active_doc_engine = doc_engine or os.getenv("DOC_ENGINE", "elasticsearch")
+        return service_config.retrieval_type == active_doc_engine
+
+    if service_config.service_type == "file_store":
+        active_storage_impl = (storage_impl or os.getenv("STORAGE_IMPL", "MINIO")).upper()
+        active_store_type = STORAGE_IMPL_STORE_TYPES.get(active_storage_impl)
+        if active_store_type is None:
+            logging.warning(f"Unknown storage implementation: {active_storage_impl}")
+            return False
+        return service_config.store_type == active_store_type
+
+    return True
+
+
 def load_configurations(config_path: str) -> list[BaseConfig]:
     raw_configs = read_config(config_path)
     configurations = []
@@ -288,6 +351,24 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 config = MinioConfig(id=id_count, name=name, host=host, port=port, user=user, password=password,
                                      service_type="file_store",
                                      store_type="minio", detail_func_name="check_minio_alive")
+                configurations.append(config)
+                id_count += 1
+            case "s3":
+                endpoint_url, host, port, scheme = _get_s3_endpoint(v)
+                region = v.get("region_name") or v.get("region")
+                config = S3Config(
+                    id=id_count,
+                    name="s3",
+                    host=host,
+                    port=port,
+                    service_type="file_store",
+                    detail_func_name="check_storage_alive",
+                    store_type="s3",
+                    endpoint_url=endpoint_url,
+                    scheme=scheme,
+                    region=region,
+                    bucket=v.get("bucket"),
+                )
                 configurations.append(config)
                 id_count += 1
             case "redis":

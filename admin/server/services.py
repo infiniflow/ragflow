@@ -34,7 +34,7 @@ from api.utils.crypt import decrypt
 from api.utils import health_utils
 
 from api.common.exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
-from config import SERVICE_CONFIGS
+from config import SERVICE_CONFIGS, is_service_active
 
 
 class UserMgr:
@@ -270,14 +270,12 @@ class UserServiceMgr:
 class ServiceMgr:
     @staticmethod
     def get_all_services():
-        doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
+            if not is_service_active(config):
+                continue
             config_dict = config.to_dict()
-            if config_dict["service_type"] == "retrieval":
-                if config_dict["extra"]["retrieval_type"] != doc_engine:
-                    continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
                 if "status" in service_detail:
@@ -307,11 +305,8 @@ class ServiceMgr:
 
         service_config = configs[service_idx]
 
-        # exclude retrieval service if retrieval_type is not matched
-        doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
-        if service_config.service_type == "retrieval":
-            if service_config.retrieval_type != doc_engine:
-                raise AdminException(f"invalid service_index: {service_idx}")
+        if not is_service_active(service_config):
+            raise AdminException(f"invalid service_index: {service_idx}")
 
         service_info = {"name": service_config.name, "detail_func_name": service_config.detail_func_name}
 

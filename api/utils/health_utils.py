@@ -63,10 +63,23 @@ def check_doc_engine() -> tuple[bool, dict]:
 def check_storage() -> tuple[bool, dict]:
     st = timer()
     try:
-        settings.STORAGE_IMPL.health()
-        return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
+        health_result = settings.STORAGE_IMPL.health()
+        return health_result is not False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
+
+
+def check_storage_alive() -> dict:
+    st = timer()
+    try:
+        health_result = settings.STORAGE_IMPL.health()
+        status = "alive" if health_result is not False else "timeout"
+        return {"status": status, "message": f"Confirm elapsed: {(timer() - st) * 1000.0:.1f} ms."}
+    except Exception as e:
+        return {
+            "status": "timeout",
+            "message": f"error: {str(e)}",
+        }
 
 
 def get_es_cluster_stats() -> dict:
