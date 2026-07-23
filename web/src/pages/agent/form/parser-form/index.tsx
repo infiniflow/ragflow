@@ -76,7 +76,6 @@ export const FormSchema = z.object({
       // preprocess: z.array(z.string()).optional(),
       output_format: z.string().optional(),
       parse_method: z.string().optional(),
-      task_page_size: z.coerce.number().optional(),
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
       vlm: z.object({ llm_id: z.string().optional() }).optional(),

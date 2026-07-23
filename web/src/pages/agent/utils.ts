@@ -209,9 +209,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
-          suffix: string[];
-        } & {
+        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
@@ -235,7 +233,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             remove_header_footer: cur.remove_header_footer || false,
             ...(isGoBackend()
               ? {
-                  task_page_size: cur.task_page_size,
                   pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
                 }
               : {}),

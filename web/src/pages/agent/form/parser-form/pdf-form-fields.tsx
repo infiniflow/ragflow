@@ -23,7 +23,7 @@ import {
   TwoColumnCheckFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
-import { PagingFormFields } from './paging-form-fields';
+import { DynamicPageRange } from './dynamic-page-range';
 import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -109,7 +109,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
-      {isGoBackend() && <PagingFormFields prefix={prefix} />}
+      {isGoBackend() && <DynamicPageRange prefix={prefix} />}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <ModelTreeSelectFormField

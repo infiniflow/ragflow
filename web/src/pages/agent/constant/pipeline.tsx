@@ -197,7 +197,6 @@ export const initialParserValues = {
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
       remove_header_footer: false,
-      task_page_size: 12,
       pages: [{ from: 1, to: 100000 }],
     },
     {
