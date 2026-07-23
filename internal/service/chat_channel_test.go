@@ -238,7 +238,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatalf("unexpected delete result: deleted=%v code=%v err=%v", deleted, code, err)
 	}
 
-	if _, err = svc.GetByID("cc-1"); err == nil {
+	if _, err = svc.GetByID(ctx, "cc-1"); err == nil {
 		t.Fatal("expected deleted record to be gone")
 	}
 }

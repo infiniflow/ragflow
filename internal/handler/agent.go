@@ -712,8 +712,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	sessionID := c.Query("id")
 	expUserID := c.Query("user_id")
 	includeDSL := c.Query("dsl") == "true"
-
-	resp, code, err := h.agentService.ListAgentSessions(user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
+	ctx := c.Request.Context()
+	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
 		Page:       page,
 		PageSize:   pageSize,
 		Keywords:   keywords,

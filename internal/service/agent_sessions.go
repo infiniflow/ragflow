@@ -312,7 +312,7 @@ func checkDuplicateSessionIDs(ids []string) ([]string, []string) {
 }
 
 // ListAgentSessions returns paginated agent sessions visible to the caller.
-func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgentSessions(ctx context.Context, userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
@@ -336,7 +336,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 	sessionDAO := dao.NewChatSessionDAO()
 
 	if req.ExpUserID != "" {
-		rows, err := sessionDAO.ListAgentSessionNames(agentID, req.ExpUserID)
+		rows, err := sessionDAO.ListAgentSessionNames(ctx, agentID, req.ExpUserID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -352,7 +352,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 		return nil, common.CodeArgumentError, err
 	}
 
-	total, sessions, err := sessionDAO.ListAgentSessions(dao.ListAgentSessionsParams{
+	total, sessions, err := sessionDAO.ListAgentSessions(ctx, dao.ListAgentSessionsParams{
 		AgentID:    agentID,
 		Page:       req.Page,
 		PageSize:   req.PageSize,

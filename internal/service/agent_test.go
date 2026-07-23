@@ -874,7 +874,8 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-new", "canvas-1", "user-1", 3000)
 	createAgentSessionTestConversation(t, "session-other-agent", "canvas-other", "user-1", 9999)
 
-	resp, code, err := NewAgentService().ListAgentSessions("user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
 		Page:       1,
 		PageSize:   10,
 		OrderBy:    "update_time",
@@ -913,7 +914,8 @@ func TestListAgentSessionsServiceDenied(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 
-	resp, code, err := NewAgentService().ListAgentSessions("user-1", "user-1", "canvas-1", ListAgentSessionsRequest{})
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{})
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
