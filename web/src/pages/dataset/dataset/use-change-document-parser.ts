@@ -23,14 +23,6 @@ export const useChangeDocumentParser = () => {
   const onChangeParserOk = useCallback(
     async (parserConfigInfo: IChangeParserRequestBody) => {
       if (record?.id && record?.dataset_id) {
-        console.log(
-          '[onChangeParserOk] parserConfigInfo.parseType:',
-          parserConfigInfo.parseType,
-          'parser_id:',
-          parserConfigInfo.parser_id,
-          'pipeline_id:',
-          parserConfigInfo.pipeline_id,
-        );
         // The Go document endpoint takes `parser_id` and a pipeline-shaped
         // parser_config; the Python one keeps the legacy payload shape.
         const common = {

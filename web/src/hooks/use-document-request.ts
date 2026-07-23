@@ -551,11 +551,6 @@ export const useSetDocumentPipelineParser = () => {
           : extractParserConfigExt(parserConfig);
       }
 
-      console.log(
-        '[useSetDocumentPipelineParser] updateData:',
-        JSON.stringify(updateData),
-      );
-
       const { data } = await changeDocumentParser(
         datasetId,
         documentId,
