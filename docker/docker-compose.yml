@@ -24,6 +24,15 @@ services:
         condition: service_healthy
     profiles:
       - cpu
+    # Business: opt-in local build path. When a user clones this repository
+    # and edits anything under web/, api/ or rag/, `docker compose build`
+    # will produce a fresh image from the repository-root Dockerfile and
+    # tag it with ${RAGFLOW_IMAGE}. Users who only want the prebuilt
+    # upstream image can keep using `docker compose pull` instead, which
+    # pulls ${RAGFLOW_IMAGE} and overrides the build output.
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
@@ -75,6 +84,10 @@ services:
         condition: service_healthy
     profiles:
       - gpu
+    # Same local-build opt-in as ragflow-cpu. See comment above.
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:

@@ -30,6 +30,16 @@ interface IProps {
   showLikeButton: boolean;
   audioBinary?: string;
   showLoudspeaker?: boolean;
+  // Business rule: when a placeholder assistant bubble is rendered before
+  // the first streaming token arrives, the message id is a synthetic
+  // client-side string (e.g. "__optimistic_assistant_placeholder__"). It
+  // must never reach the feedback / copy / read APIs because the backend
+  // has no such row and any feedback request would 404 or, worse, get
+  // associated with a real message under a hash collision. Hide the entire
+  // toolbar in that case instead of relying on fragile heuristics like
+  // `index === 0` (the placeholder is appended with
+  // index = derivedMessages.length, which can be any non-zero number).
+  isPendingPlaceholder?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -39,7 +49,17 @@ export const AssistantGroupButton = ({
   audioBinary,
   showLikeButton,
   showLoudspeaker = true,
+  isPendingPlaceholder = false,
 }: IProps) => {
+  // Business rule: the optimistic assistant placeholder carries a synthetic
+  // client-side id (e.g. "__optimistic_assistant_placeholder__") that the
+  // backend has no record of. Calling the feedback / copy / read APIs with
+  // that id would 404 or, worse, collide with a real message. We therefore
+  // hide the entire toolbar for the placeholder row. All hooks are still
+  // called unconditionally above the early return so we satisfy React's
+  // rules of hooks (a no-op is fine — the placeholder row never re-renders
+  // here because it is replaced by the real streaming message on the first
+  // backend event).
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
   const {
@@ -54,12 +74,13 @@ export const AssistantGroupButton = ({
     onFeedbackOk({ thumbup: true });
   }, [onFeedbackOk]);
 
+  if (isPendingPlaceholder) {
+    return null;
+  }
+
   return (
     <>
-      <div
-        className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-        role="toolbar"
-      >
+      <div className="flex gap-1" role="toolbar">
         <CopyToClipboard
           text={content}
           className="border-0"
