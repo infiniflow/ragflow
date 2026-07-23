@@ -225,6 +225,7 @@ class SyncLogsService(CommonService):
             Connector.prune_freq.alias("prune_freq"),
             Knowledgebase.name.alias("kb_name"),
             cls.model.status,
+            cls.model.update_time,
         ]
         if not connector_id:
             fields.append(Connector.config)
