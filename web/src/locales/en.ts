@@ -631,6 +631,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set metadata',
       pleaseInputJson: 'Please enter JSON',
@@ -1120,6 +1121,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
+      thought: 'Thought',
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
@@ -2291,7 +2293,7 @@ Example: Virtual Hosted Style`,
       modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     knowledgeCompilation: {
-      builtinTemplates: 'Built-in template',
+      builtinTemplates: 'Template',
     },
     datasetSkill: {
       folders: 'Skills',
@@ -3014,6 +3016,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       tocDataSource: 'Data source',
+      tagFile: 'Tag file',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3193,9 +3196,9 @@ This process aggregates variables from multiple branches into a single variable 
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
-      compiler: 'Compilation',
+      compiler: 'Operator',
       compilerDescription:
-        'Compiles document chunks using knowledge compilation templates into structured artifacts.',
+        'Processes document chunks using operator templates into structured artifacts.',
       outputFormat: 'Output format',
       fileFormats: 'File type',
       fileFormatOptions: {

@@ -71,7 +71,6 @@ const DataSourceItem = (props: DataSourceItemProps) => {
             onCheckedChange={(isAutoParse) => {
               handleAutoParse?.({ source_id: id, isAutoParse });
             }}
-            className="w-8 h-4"
           />
         </div>
         <Tooltip>

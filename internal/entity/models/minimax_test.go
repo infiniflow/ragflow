@@ -85,6 +85,7 @@ func TestMinimaxNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMinimaxChatForcesNonStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -113,6 +114,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 	stream := true
 	thinking := true
 	resp, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
 		" MiniMax-M3 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -131,6 +133,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	})
@@ -138,6 +141,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -150,6 +154,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 }
 
 func TestMinimaxStreamForcesStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -177,6 +182,7 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 	stream := false
 	var content, reasoning []string
 	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -204,6 +210,7 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v, want true", body["stream"])
@@ -215,6 +222,7 @@ func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"MiniMax-M3",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -228,6 +236,7 @@ func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 }
 
 func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -245,7 +254,7 @@ func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newMinimaxForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newMinimaxForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -255,6 +264,7 @@ func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
 		"missing data": map[string]interface{}{"object": "list"},
@@ -266,7 +276,7 @@ func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
 			})
 			defer srv.Close()
 
-			if _, err := newMinimaxForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey}); err == nil {
+			if _, err := newMinimaxForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
 				t.Fatal("expected malformed response error")
 			}
 		})
@@ -274,6 +284,7 @@ func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
+	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -288,12 +299,13 @@ func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	if err := newMinimaxForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := newMinimaxForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestMinimaxValidatesInputs(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "
 	send := func(*string, *string) error { return nil }
@@ -306,7 +318,7 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newMinimaxForTest("http://unused").ChatWithMessages("MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages(ctx, "MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -314,7 +326,7 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newMinimaxForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -322,28 +334,28 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newMinimaxForTest("http://unused").ChatStreamlyWithSender("MiniMax-M3", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
+				return newMinimaxForTest("http://unused").ChatStreamlyWithSender(ctx, "MiniMax-M3", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream model",
 			run: func() error {
-				return newMinimaxForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
+				return newMinimaxForTest("http://unused").ChatStreamlyWithSender(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
 			},
 			want: "model name is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newMinimaxForTest("http://unused").ChatStreamlyWithSender("MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
+				return newMinimaxForTest("http://unused").ChatStreamlyWithSender(ctx, "MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},
 		{
 			name: "models api key",
 			run: func() error {
-				_, err := newMinimaxForTest("http://unused").ListModels(&APIConfig{})
+				_, err := newMinimaxForTest("http://unused").ListModels(ctx, &APIConfig{})
 				return err
 			},
 			want: "api key is required",

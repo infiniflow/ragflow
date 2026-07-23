@@ -56,6 +56,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users [post]
 func (h *UserHandler) Register(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
@@ -90,7 +91,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	profile := h.userService.GetUserProfile(user)
+	profile := h.userService.GetUserProfile(ctx, user)
 	common.SuccessWithData(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
 }
 
@@ -104,6 +105,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/login [post]
 func (h *UserHandler) Login(c *gin.Context) {
+	ctx := c.Request.Context()
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -170,7 +172,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	profile := h.userService.GetUserProfile(user)
+	profile := h.userService.GetUserProfile(ctx, user)
 	common.SuccessWithData(c, profile, "Welcome back!")
 }
 
@@ -184,6 +186,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/login [post]
 func (h *UserHandler) LoginByEmail(c *gin.Context) {
+	ctx := c.Request.Context()
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -221,7 +224,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		operationLog.ErrorCode = uint16(code)
@@ -255,7 +258,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	profile := h.userService.GetUserProfile(user)
+	profile := h.userService.GetUserProfile(ctx, user)
 	common.SuccessWithData(c, profile, "Welcome back!")
 }
 
@@ -269,6 +272,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/{id} [get]
 func (h *UserHandler) GetUserByID(c *gin.Context) {
+	ctx := c.Request.Context()
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
@@ -276,7 +280,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.GetUserByID(uint(id))
+	user, code, err := h.userService.GetUserByID(ctx, uint(id))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
@@ -295,6 +299,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/logout [post]
 func (h *UserHandler) Logout(c *gin.Context) {
+	ctx := c.Request.Context()
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -335,7 +340,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(token)
+	user, code, err := h.userService.GetUserByToken(ctx, token)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
@@ -369,6 +374,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/info [get]
 func (h *UserHandler) Info(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -376,7 +382,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 	}
 
 	// Get user profile
-	profile := h.userService.GetUserProfile(user)
+	profile := h.userService.GetUserProfile(ctx, user)
 
 	common.SuccessWithData(c, profile, "success")
 }
@@ -392,6 +398,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/me [patch]
 func (h *UserHandler) Setting(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -406,7 +413,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	}
 
 	// Update user settings
-	code, err := h.userService.UpdateUserSettings(user, &req)
+	code, err := h.userService.UpdateUserSettings(ctx, user, &req)
 	if err != nil {
 		if code == common.CodeExceptionError {
 			common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
@@ -430,6 +437,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/setting/password [post]
 func (h *UserHandler) ChangePassword(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -444,7 +452,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	}
 
 	// Change password
-	code, err := h.userService.ChangePassword(user, &req)
+	code, err := h.userService.ChangePassword(ctx, user, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
@@ -482,6 +490,7 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -531,7 +540,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		req.TTSID = &value
 	}
 
-	code, err := h.userService.SetTenantInfo(user.ID, &req)
+	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -684,6 +693,7 @@ func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/auth/password/reset [post]
 func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req service.ForgotResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
@@ -714,7 +724,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	// already in the Authorization header). Mirror the Python contract
 	// `user.to_safe_dict(for_self=True)` by stripping those fields before
 	// writing. PR #15290 review.
-	profile := h.userService.GetUserProfile(user)
+	profile := h.userService.GetUserProfile(ctx, user)
 	delete(profile, "password")
 	delete(profile, "access_token")
 	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")

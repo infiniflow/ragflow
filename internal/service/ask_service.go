@@ -224,7 +224,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	// Attempt citation insertion if embedder is available.
 	chunkVectors := ExtractChunkVectors(result.Chunks)
 	if len(chunkVectors) > 0 && s.embedder != nil {
-		if decorated, cited := InsertCitations(visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
+		if decorated, cited := InsertCitations(ctx, visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
 			visible = decorated
 		}
 	}

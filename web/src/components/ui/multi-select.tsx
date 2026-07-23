@@ -192,6 +192,7 @@ interface MultiSelectProps
   onSearchChange?: (value: string) => void;
   isSearching?: boolean;
   shouldFilter?: boolean;
+  onListScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -217,6 +218,7 @@ export const MultiSelect = React.forwardRef<
       onSearchChange,
       isSearching = false,
       shouldFilter,
+      onListScroll,
       ...props
     },
     ref,
@@ -452,7 +454,7 @@ export const MultiSelect = React.forwardRef<
                 onValueChange={onSearchChange}
               />
             )}
-            <CommandList className="mt-2">
+            <CommandList className="mt-2" onScroll={onListScroll}>
               <CommandEmpty>
                 {isSearching ? t('common.searching') : t('common.noDataFound')}
               </CommandEmpty>

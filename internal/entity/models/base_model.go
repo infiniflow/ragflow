@@ -193,7 +193,7 @@ func NewDriverHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 60 * time.Second
+	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
 	return &http.Client{Transport: t}
 }
@@ -221,6 +221,55 @@ func ReadErrorBody(r io.Reader) string {
 	return string(b)
 }
 
+func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := map[string]any{
+		"model":       modelName,
+		"messages":    buildChatMessages(messages),
+		"stream":      stream,
+		"temperature": 1,
+	}
+
+	if cfg != nil {
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
+		if cfg.Temperature != nil {
+			reqBody["temperature"] = *cfg.Temperature
+		}
+
+		if cfg.DoSample != nil {
+			reqBody["do_sample"] = *cfg.DoSample
+		}
+
+		if cfg.TopP != nil {
+			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.Stop != nil {
+			reqBody["stop"] = *cfg.Stop
+		}
+
+		if cfg.Tools != nil {
+			reqBody["tools"] = cfg.Tools
+			toolChoice := "auto"
+			if cfg.ToolChoice != nil {
+				toolChoice = *cfg.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
+	}
+
+	return reqBody
+}
+
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
+}
+
 // buildChatMessages converts internal messages to chat API payload items.
 func buildChatMessages(messages []Message) []map[string]any {
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -238,6 +287,32 @@ func buildChatMessages(messages []Message) []map[string]any {
 		apiMessages[i] = apiMsg
 	}
 	return apiMessages
+}
+
+// applyChatToolConfig adds OpenAI-compatible tool configuration to a request.
+func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig) {
+	if chatConfig == nil || chatConfig.Tools == nil {
+		return
+	}
+	reqBody["tools"] = chatConfig.Tools
+	if chatConfig.ToolChoice != nil {
+		reqBody["tool_choice"] = *chatConfig.ToolChoice
+	}
+}
+
+// extractToolCalls converts an OpenAI-compatible message's tool calls.
+func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
+	rawToolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
+	for _, rawToolCall := range rawToolCalls {
+		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
+			toolCalls = append(toolCalls, toolCall)
+		}
+	}
+	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

@@ -87,7 +87,9 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 	svc := NewChatChannelService()
 	chatID := "dialog-1"
 
+	ctx := t.Context()
 	channel, err := svc.CreateChatChannel(
+		ctx,
 		"tenant-1",
 		"bot-a",
 		"dingtalk",
@@ -104,7 +106,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		t.Fatalf("unexpected created channel: %+v", channel)
 	}
 
-	list, err := svc.List("tenant-1")
+	list, err := svc.List(ctx, "tenant-1")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -128,7 +130,8 @@ func TestChatChannelServiceGetChatChannelAllowsJoinedTenant(t *testing.T) {
 	})
 	createServiceTestMembership(t, db, "user-2", "tenant-1")
 
-	channel, code, err := NewChatChannelService().GetChatChannel("user-2", "cc-1")
+	ctx := t.Context()
+	channel, code, err := NewChatChannelService().GetChatChannel(ctx, "user-2", "cc-1")
 	if err != nil {
 		t.Fatalf("GetChatChannel failed: %v", err)
 	}
@@ -155,7 +158,8 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 		Status:   1,
 	})
 
-	updated, code, err := NewChatChannelService().UpdateChatChannel("tenant-1", "cc-1", map[string]interface{}{
+	ctx := t.Context()
+	updated, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
 		"name":    "bot-b",
 		"config":  map[string]interface{}{"token": "new"},
 		"chat_id": "dialog-2",
@@ -189,7 +193,8 @@ func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.
 		Status:   1,
 	})
 
-	_, code, err := NewChatChannelService().UpdateChatChannel("tenant-1", "cc-1", map[string]interface{}{
+	ctx := t.Context()
+	_, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
 	if code != common.CodeAuthenticationError {
@@ -213,7 +218,8 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	svc := NewChatChannelService()
 
-	deleted, code, err := svc.DeleteChatChannel("user-2", "cc-1")
+	ctx := t.Context()
+	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
 	if code != common.CodeAuthenticationError {
 		t.Fatalf("expected authentication error, got %v", code)
 	}
@@ -224,7 +230,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatal("expected delete to be rejected")
 	}
 
-	deleted, code, err = svc.DeleteChatChannel("tenant-1", "cc-1")
+	deleted, code, err = svc.DeleteChatChannel(ctx, "tenant-1", "cc-1")
 	if err != nil {
 		t.Fatalf("DeleteChatChannel failed: %v", err)
 	}
@@ -232,7 +238,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatalf("unexpected delete result: deleted=%v code=%v err=%v", deleted, code, err)
 	}
 
-	if _, err := svc.GetByID("cc-1"); err == nil {
+	if _, err = svc.GetByID(ctx, "cc-1"); err == nil {
 		t.Fatal("expected deleted record to be gone")
 	}
 }
