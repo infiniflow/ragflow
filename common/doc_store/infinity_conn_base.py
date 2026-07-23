@@ -304,7 +304,16 @@ class InfinityConnectionBase(DocStoreConnection):
                 continue
             if not v:
                 continue
-            if k in {"source_chunk_ids", "source_doc_ids", "compilation_template_ids"}:
+            if k in {
+                "source_chunk_ids",
+                "source_doc_ids",
+                "compilation_template_ids",
+                "doc_ids_kwd",
+                "entity_names_kwd",
+                "outlinks_kwd",
+                "related_kb_pages_kwd",
+                "rechunked_from_chunk_ids",
+            }:
                 values = v if isinstance(v, list) else [v]
                 json_conditions = []
                 for item in values:
