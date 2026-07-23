@@ -356,6 +356,15 @@ class FuturMixEmbed(OpenAIEmbed):
         logging.info("[FuturMix] Embedding initialized with model %s", model_name)
 
 
+class AIMLAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=""):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, base_url)
+        logging.info("[aimlapi.com] Embedding initialized with model %s", model_name)
+
+
 class BaiChuanEmbed(OpenAIEmbed):
     _FACTORY_NAME = "BaiChuan"
 
