@@ -122,6 +122,7 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
         tbls=tables,
         sections=sections,
         callback=callback,
+        lang=lang,
         **kwargs,
     )
     return sections, tables, pdf_parser

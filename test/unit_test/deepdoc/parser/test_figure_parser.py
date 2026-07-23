@@ -202,3 +202,66 @@ def test_vision_figure_parser_passes_dataset_language_to_prompt(monkeypatch):
     parser(callback=lambda *_args, **_kwargs: None)
 
     prompt.assert_called_once_with(language="Chinese")
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "wrapper_name",
+    [
+        "vision_figure_parser_docx_wrapper",
+        "vision_figure_parser_figure_xlsx_wrapper",
+        "vision_figure_parser_pdf_wrapper",
+    ],
+)
+def test_figure_wrappers_pass_dataset_language_to_model_and_parser(
+    monkeypatch,
+    wrapper_name,
+):
+    module, FakeImage = _load_figure_parser(monkeypatch)
+    model_config = {"llm_name": "vision-model"}
+    vision_model = object()
+    parser_instance = Mock(return_value=[])
+
+    module.get_tenant_default_model_by_type = Mock(return_value=model_config)
+    module.LLMBundle = Mock(return_value=vision_model)
+    module.VisionFigureParser = Mock(return_value=parser_instance)
+
+    if wrapper_name == "vision_figure_parser_docx_wrapper":
+        arguments = {
+            "sections": [("caption", FakeImage())],
+            "tbls": [],
+        }
+    elif wrapper_name == "vision_figure_parser_figure_xlsx_wrapper":
+        arguments = {
+            "images": [
+                {
+                    "image": FakeImage(),
+                    "image_description": "caption",
+                }
+            ],
+        }
+    else:
+        arguments = {
+            "tbls": [
+                (
+                    (FakeImage(), ["caption"]),
+                    [(0, 0, 0, 0, 0)],
+                )
+            ],
+            "sections": [],
+        }
+
+    getattr(module, wrapper_name)(
+        **arguments,
+        callback=lambda *_args, **_kwargs: None,
+        tenant_id="tenant-id",
+        lang="Chinese",
+    )
+
+    module.LLMBundle.assert_called_once_with(
+        "tenant-id",
+        model_config,
+        lang="Chinese",
+    )
+    assert module.VisionFigureParser.call_args.kwargs["lang"] == "Chinese"
+    parser_instance.assert_called_once()

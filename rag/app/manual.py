@@ -259,6 +259,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             tbls=tbls,
             sections=sections,
             callback=callback,
+            lang=lang,
             **kwargs,
         )
         res = tokenize_table(tbls, doc, eng, language=lang)
@@ -274,7 +275,13 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
-        tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
+        tbls = vision_figure_parser_docx_wrapper(
+            sections=ti_list,
+            tbls=tbls,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
         res = tokenize_table(tbls, doc, eng, language=lang)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
