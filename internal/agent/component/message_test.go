@@ -208,9 +208,14 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 			emitted = append(emitted, contentDelta)
 		}
 	})
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
 
-	// Simulate the Agent having already streamed its answer.
-	runtime.EmitAgentMessage(ctx, "agent streamed this", "")
+	// Simulate the Agent having already streamed its answer in deltas.
+	runtime.EmitAgentMessage(ctx, "agent ", "")
+	runtime.EmitAgentMessage(ctx, "streamed this", "")
 	emitted = nil // clear setup emission so we only capture Message's output
 
 	out, err := c.Invoke(ctx, map[string]any{"content": "agent streamed this"})
@@ -224,6 +229,42 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	// But no additional SSE emission should occur.
 	if len(emitted) != 0 {
 		t.Fatalf("emitted = %#v, want empty (Agent already streamed)", emitted)
+	}
+	if len(direct) != 0 {
+		t.Fatalf("direct = %#v, want empty (Agent already streamed)", direct)
+	}
+}
+
+func TestMessage_EmitsContentDifferentFromAgentStream(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-distinct", "task-distinct")
+	ctx := withStateForTest(context.Background(), state)
+	var emitted []string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+	})
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
+
+	runtime.EmitAgentMessage(ctx, "draft answer", "")
+	emitted = nil
+
+	out, err := c.Invoke(ctx, map[string]any{"content": "final answer"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "final answer" {
+		t.Fatalf("content: got %q, want %q", got, "final answer")
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("agent fallback emitted = %#v, want empty", emitted)
+	}
+	if len(direct) != 1 || direct[0] != "final answer" {
+		t.Fatalf("direct = %#v, want [final answer]", direct)
 	}
 }
 

@@ -222,16 +222,11 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 			Text:   resolved,
 		})
 	}
-	// Skip emission when an upstream Agent component already streamed its
-	// answer via the agent message emitter. Without this guard the user sees
-	// the same content twice: once from the Agent's StreamCallback during the
-	// ReAct loop, and again from the Message node's own emit call here.
-	// The rendered content is still stored in outputs["content"] for state
-	// persistence and the service-layer answer collector.
-	if rendered != "" && !runtime.AgentMessageEventsEmitted(ctx) {
-		if !runtime.EmitCanvasMessage(ctx, rendered) {
-			runtime.EmitAgentMessage(ctx, rendered, "")
-		}
+	// The runtime emitter owns Agent-to-Message de-duplication. It suppresses
+	// only an exact copy of content already streamed by an upstream Agent, so a
+	// Message node that intentionally transforms the answer is still visible.
+	if rendered != "" {
+		runtime.EmitCanvasMessage(ctx, rendered)
 	}
 
 	// Python's Message output schema always contains downloads, including an

@@ -28,6 +28,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -46,10 +47,12 @@ type AgentMessageEmitter func(contentDelta, thinkingDelta string)
 type CanvasMessageEmitter func(content string)
 
 type agentMessageEmitterState struct {
-	emit     AgentMessageEmitter
-	finalize func() bool
-	reset    func()
-	emitted  bool
+	mu           sync.Mutex
+	emit         AgentMessageEmitter
+	finalize     func() bool
+	reset        func()
+	emitted      bool
+	agentContent strings.Builder
 }
 
 // WithState attaches *CanvasState to ctx for retrieval by
@@ -110,27 +113,52 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 	if !ok || state == nil || state.emit == nil {
 		return false
 	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	state.emit(contentDelta, thinkingDelta)
 	if contentDelta != "" || thinkingDelta != "" {
 		state.emitted = true
 	}
+	if contentDelta != "" {
+		state.agentContent.WriteString(contentDelta)
+	}
 	return true
 }
 
-// EmitCanvasMessage emits already-rendered Message-component content directly.
-// It also marks the shared message stream as emitted so the service layer does
-// not re-emit the final state content after workflow completion.
+// EmitCanvasMessage emits already-rendered Message-component content through
+// the direct canvas emitter, falling back to the Agent emitter when necessary.
+// When the content exactly matches the answer already streamed by an upstream
+// Agent, it is not emitted again. Distinct Message output is preserved.
 func EmitCanvasMessage(ctx context.Context, content string) bool {
 	emit, ok := ctx.Value(canvasMessageEmitterCtxKey{}).(CanvasMessageEmitter)
+	state, hasAgentEmitter := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if hasAgentEmitter && state != nil {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		if content != "" && state.agentContent.Len() > 0 && state.agentContent.String() == content {
+			state.emitted = true
+			return true
+		}
+		if ok && emit != nil {
+			emit(content)
+			if content != "" {
+				state.emitted = true
+			}
+			return true
+		}
+		if state.emit != nil {
+			state.emit(content, "")
+			if content != "" {
+				state.emitted = true
+			}
+			return true
+		}
+		return false
+	}
 	if !ok || emit == nil {
 		return false
 	}
 	emit(content)
-	if content != "" {
-		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil {
-			state.emitted = true
-		}
-	}
 	return true
 }
 
@@ -138,7 +166,12 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 // message emitter has emitted any deltas during the current run.
 func AgentMessageEventsEmitted(ctx context.Context) bool {
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
-	return ok && state != nil && state.emitted
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.emitted
 }
 
 // FinalizeAgentMessage flushes the invocation-scoped Agent message emitter.
@@ -147,6 +180,8 @@ func FinalizeAgentMessage(ctx context.Context) {
 	if !ok || state == nil || state.finalize == nil {
 		return
 	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	if state.finalize() {
 		state.emitted = true
 	}
@@ -158,10 +193,13 @@ func ResetAgentMessageEmission(ctx context.Context) {
 	if !ok || state == nil {
 		return
 	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	if state.reset != nil {
 		state.reset()
 	}
 	state.emitted = false
+	state.agentContent.Reset()
 }
 
 // GetStateFromContext extracts a typed state attached via WithState.
