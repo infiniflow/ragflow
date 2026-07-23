@@ -58,6 +58,7 @@ jobs:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          allow-unsafe-pr-checkout: true
 
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
@@ -287,6 +288,7 @@ jobs:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          allow-unsafe-pr-checkout: true
 
       - name: Build ragflow go server
         if: env.API_PROXY_SCHEME == 'go'
@@ -866,6 +868,7 @@ jobs:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          allow-unsafe-pr-checkout: true
 
       - name: Build ragflow go server
         if: env.API_PROXY_SCHEME == 'go'
