@@ -16,10 +16,15 @@
 
 """Regression tests for ``naive_merge`` / ``naive_merge_with_images``.
 
-Guards against the regression introduced by commit db0f6840d (#11434) where the
-default (non-custom-delimiter) path stopped splitting oversized sections at
-sentence boundaries, and the overlap prefix was not counted toward a chunk's
-token budget.
+Guards against:
+
+* the regression introduced by commit db0f6840d (#11434) where the default
+  (non-custom-delimiter) path stopped splitting oversized sections at sentence
+  boundaries, and the overlap prefix was not counted toward a chunk's token
+  budget;
+* the soft-cap bug where chunks systematically overshot ``chunk_token_num`` by
+  up to one unit (sentence / line) because the size check fired *after* the
+  append instead of using a projected-total check.
 """
 
 import re
@@ -72,8 +77,10 @@ def test_oversized_section_is_split_at_sentence_boundaries():
     # Pre-regression behaviour: the section is broken into several chunks
     # instead of a single oversized one.
     assert len(chunks) > 1
-    # No chunk should greatly exceed the budget (allow one trailing sentence of slack).
-    assert all(_tok(c) <= 50 + 10 for c in chunks)
+    # Hard cap: no chunk may exceed the budget. ``<=`` is exact; the slack
+    # previously allowed (one trailing sentence) is no longer permitted because
+    # the projected-total check fires before the append.
+    assert all(_tok(c) <= 50 for c in chunks)
     # Content is preserved.
     assert "".join(chunks).count("word") == 200
 
@@ -107,17 +114,19 @@ def test_empty_delimiter_falls_back_to_token_size_merge():
 
 @pytest.mark.p2
 def test_overlap_prefix_is_counted_in_token_budget():
-    # With overlap, each chunk = overlap-prefix + new content. The fix recomputes
-    # the chunk's token count after prepending the prefix, so chunks stay bounded.
-    # Pre-fix, the prefix tokens were not counted, so the per-chunk budget check
-    # fired late and chunks systematically overshot chunk_token_num.
+    # With overlap, each chunk = overlap-prefix + new content. The proactive
+    # projected-total check rejects a section that, even after prepending the
+    # overlap prefix, would exceed chunk_token_num; the overlap is dropped at
+    # that boundary instead of letting the chunk overshoot. Pre-fix, the prefix
+    # tokens were not counted, so the per-chunk budget check fired late and
+    # chunks systematically overshot chunk_token_num (observed up to 63).
     sentences = [" ".join(["w"] * 10) for _ in range(30)]
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20))
     assert len(chunks) > 1
-    # Each 10-token sentence divides chunk_token_num evenly, so a correct
-    # accounting yields chunks of exactly the budget. The buggy version
-    # overshot (observed up to 63). A small tolerance guards tokenizer rounding.
-    assert all(_tok(c) <= 50 + 2 for c in chunks)
+    # Each chunk stays within the budget. Sentences are 10 tokens, the budget
+    # is 50, so even a 10-token overlap prefix (20% of 50) fits a 40-token
+    # remainder and the projected-total guarantee holds exactly.
+    assert all(_tok(c) <= 50 for c in chunks)
 
 
 # --------------------------------------------------------------------------- #
@@ -159,7 +168,7 @@ def test_images_oversized_section_is_split():
     assert len(nonempty) > 1
     # Returned lists stay aligned.
     assert len(chunks) == len(imgs)
-    assert all(_tok(c) <= 50 + 10 for c in nonempty)
+    assert all(_tok(c) <= 50 for c in nonempty)
 
 
 @pytest.mark.p2
@@ -215,3 +224,103 @@ def test_images_distinct_lazyimages_are_concatenated():
     merged = nonempty_imgs[0]
     assert isinstance(merged, LazyImage)
     assert merged._blobs == [b"BLOB_A", b"BLOB_B"]
+
+
+# --------------------------------------------------------------------------- #
+# Hard cap on chunk size (overshoot bug fix)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.p2
+def test_strict_cap_no_overlap_packs_to_budget():
+    sections = [" ".join(["w"] * 25) for _ in range(8)]
+    chunks = _nonempty(naive_merge(sections, chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
+    assert len(chunks) >= 3
+    assert all(_tok(c) <= 50 for c in chunks)
+
+
+@pytest.mark.p2
+def test_strict_cap_with_overlap_drops_overlap_at_overflow_boundary():
+    sentences = [" ".join(["w"] * 10) for _ in range(20)]
+    chunks = _nonempty(naive_merge(sentences, chunk_token_num=25, delimiter=DEFAULT_DELIMITER, overlapped_percent=20))
+    assert all(_tok(c) <= 25 for c in chunks)
+
+
+@pytest.mark.p2
+def test_strict_cap_single_overlong_section_is_sub_split_on_whitespace(monkeypatch):
+    # Override tokenizer in nlp to treat characters as tokens for testing character fallback
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(nlp, "num_tokens_from_string", char_count_tokens)
+
+    big_section = "a" * 80  # unbroken, token-dense string
+    chunks = _nonempty(naive_merge([big_section], chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
+    assert len(chunks) >= 2
+    assert all(char_count_tokens(c) <= 50 for c in chunks)
+    assert "".join(chunks) == big_section
+
+
+@pytest.mark.p2
+def test_strict_cap_overlap_chosen_when_it_fits():
+    sentences = [" ".join(["w"] * 5) for _ in range(20)]
+    chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20))
+    assert all(_tok(c) <= 20 for c in chunks)
+    overlap_seen = False
+    for a, b in zip(chunks, chunks[1:]):
+        a_tokens = a.split()
+        b_tokens = b.split()
+        if a_tokens and b_tokens and any(t in b_tokens for t in a_tokens):
+            overlap_seen = True
+            break
+    assert overlap_seen
+
+
+@pytest.mark.p2
+def test_images_strict_cap_packs_to_budget():
+    sections = [" ".join(["w"] * 25) for _ in range(6)]
+    images = [None] * len(sections)
+    chunks, imgs = naive_merge_with_images(sections, images, chunk_token_num=50, delimiter=DEFAULT_DELIMITER)
+    nonempty = _nonempty(chunks)
+    assert all(_tok(c) <= 50 for c in nonempty)
+    assert len(chunks) == len(imgs)
+
+
+@pytest.mark.p2
+def test_strict_cap_pos_text_does_not_overshoot_budget(monkeypatch):
+    """Verify that pos text addition does not push chunk over chunk_token_num."""
+
+    def char_count_tokens(s):
+        return len(s or "")
+
+    monkeypatch.setattr(nlp, "num_tokens_from_string", char_count_tokens)
+
+    # section is 15 chars, pos is 10 chars. chunk_token_num is 20.
+    # section + pos = 25 > 20, so pos should be omitted or chunk kept <= 20.
+    pos_tag = "@@12345678"
+    sections = [("\na" * 15, pos_tag)]
+    chunks = _nonempty(naive_merge(sections, chunk_token_num=20, delimiter=DEFAULT_DELIMITER))
+    assert all(char_count_tokens(c) <= 20 for c in chunks)
+
+
+@pytest.mark.p2
+def test_empty_delimiter_oversized_section_strictly_capped():
+    # When delimiter="" and a section exceeds chunk_token_num, it must be sub-split
+    # so no chunk exceeds chunk_token_num.
+    long_section = "word " * 100  # ~100 tokens
+    chunks = _nonempty(naive_merge([long_section], chunk_token_num=30, delimiter=""))
+    assert len(chunks) > 1
+    assert all(_tok(c) <= 30 for c in chunks)
+
+
+@pytest.mark.p2
+def test_images_empty_delimiter_oversized_section_strictly_capped():
+    long_section = "word " * 100
+    images = [None]
+    chunks, imgs = naive_merge_with_images([long_section], images, chunk_token_num=30, delimiter="")
+    nonempty = _nonempty(chunks)
+    assert len(nonempty) > 1
+    assert all(_tok(c) <= 30 for c in nonempty)
+    assert len(chunks) == len(imgs)
+
+
