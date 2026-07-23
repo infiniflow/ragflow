@@ -432,7 +432,8 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 		return
 	}
 
-	apiKeys, err := h.service.ListUserAPITokens(username)
+	ctx := c.Request.Context()
+	apiKeys, err := h.service.ListUserAPITokens(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -448,7 +449,8 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.GenerateUserAPIToken(username)
+	ctx := c.Request.Context()
+	apiKey, err := h.service.GenerateUserAPIToken(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -471,7 +473,8 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.DeleteUserAPIToken(username, key); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.DeleteUserAPIToken(ctx, username, key); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
