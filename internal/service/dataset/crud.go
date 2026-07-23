@@ -34,18 +34,17 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
 
-	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
-	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
-
-	if isBuiltinMode && req.PipelineID != nil {
-		req.PipelineID = nil
-	}
-	if isPipelineMode && req.ParserID != nil {
-		req.ParserID = nil
-	}
-
-	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
+	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if isBuiltin && req.PipelineID != nil {
+			req.PipelineID = nil
+		}
+		if isPipeline && req.ParserID != nil {
+			req.ParserID = nil
+		}
 	}
 
 	parserID := ""

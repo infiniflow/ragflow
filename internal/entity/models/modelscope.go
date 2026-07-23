@@ -107,39 +107,6 @@ func modelscopeReasoningFromMap(value map[string]interface{}) string {
 	return ""
 }
 
-func buildModelScopeChatBody(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
-
-	return reqBody
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -157,7 +124,7 @@ func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string
 	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
-	reqBody := buildModelScopeChatBody(modelName, messages, false, chatModelConfig)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -233,7 +200,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
-	reqBody := buildModelScopeChatBody(modelName, messages, true, chatModelConfig)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)

@@ -67,66 +67,6 @@ func (r *RAGconModel) chatURL(apiConfig *APIConfig) (string, error) {
 	return fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Chat), nil
 }
 
-func ragconChatMessages(messages []Message) []map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-	return apiMessages
-}
-
-func ragconChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": ragconChatMessages(messages),
-		"stream":   stream,
-	}
-	if stream {
-		reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			tc := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				tc = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = tc
-		}
-	}
-
-	// Qwen3 family: disable thinking by default (mirrors the same policy
-	// applied by the other OpenAI-compatible Go drivers).
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
-	}
-
-	return reqBody
-}
-
 func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -143,7 +83,11 @@ func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
+	}
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -245,7 +189,12 @@ func (r *RAGconModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
+	}
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}

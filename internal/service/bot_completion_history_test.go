@@ -187,6 +187,78 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 	}
 }
 
+func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-owner",
+		UserID:   "owner-1",
+		TenantID: "tenant-1",
+		Role:     "owner",
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	title := "Agent"
+	avatar := "avatar.png"
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "agent-1",
+		UserID:         "owner-1",
+		Title:          &title,
+		Avatar:         &avatar,
+		CanvasCategory: "agent_canvas",
+		DSL: entity.JSONMap{
+			"components": map[string]any{
+				"begin": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Begin",
+						"params": map[string]any{
+							"mode":     "conversational",
+							"prologue": "Welcome from the agent",
+							"inputs": map[string]any{
+								"topic": map[string]any{"type": "line", "name": "Topic"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
+		context.Background(), "owner-1", "agent-1")
+	if err != nil {
+		t.Fatalf("AgentbotInputs: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %d, want %d", code, common.CodeSuccess)
+	}
+	if gotTitle != title || gotAvatar != avatar {
+		t.Fatalf("title/avatar = %q/%q, want %q/%q", gotTitle, gotAvatar, title, avatar)
+	}
+	if prologue != "Welcome from the agent" {
+		t.Errorf("prologue = %q, want Welcome from the agent", prologue)
+	}
+	if mode != "conversational" {
+		t.Errorf("mode = %q, want conversational", mode)
+	}
+	if _, ok := inputs["topic"].(map[string]any); !ok {
+		t.Errorf("inputs = %#v, want topic input", inputs)
+	}
+}
+
 // TestWriteChatbotRunEvent_UserInputsEvent guards PR #14589: the
 // SSE envelope must carry the canvas event type so the front-end
 // can distinguish interactive "user_inputs" / "workflow_finished"

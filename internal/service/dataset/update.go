@@ -98,14 +98,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["permission"] = permission
 	}
 
-	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
-	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
-
-	if isBuiltinMode && req.PipelineID != nil {
-		req.PipelineID = nil
-	}
-	if isPipelineMode && req.ParserID != nil {
-		req.ParserID = nil
+	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		if modeErr != nil {
+			return nil, common.CodeDataError, modeErr
+		}
+		if isBuiltin && req.PipelineID != nil {
+			req.PipelineID = nil
+		}
+		if isPipeline && req.ParserID != nil {
+			req.ParserID = nil
+		}
 	}
 
 	var pipelineID *string
@@ -122,10 +125,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		return nil, common.CodeDataError, err
 	}
 
-	if req.ParseType == nil && parserIDProvided && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
-	}
-
 	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
 	if err != nil {
 		return nil, common.CodeDataError, err
@@ -135,6 +134,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
+		if err := pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig)); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	var requestedPagerank int64
@@ -142,7 +144,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
-			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
+			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
 			return nil, common.CodeServerError, errors.New("document engine is not initialized")
@@ -222,21 +224,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			effectiveParserID := lockedKB.ParserID
-			if parserIDProvided {
-				effectiveParserID = parserID
-			}
-			effectivePipelineID := lockedKB.PipelineID
-			if pipelineID != nil {
-				effectivePipelineID = pipelineID
-			} else if parserIDProvided && lockedKB.PipelineID != nil {
-				effectivePipelineID = nil
-			}
-			isCanvas := effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != ""
-			dslJSON, dslErr := service.LoadPipelineDSL(isCanvas, effectiveParserID, effectivePipelineID)
+			// Resolve effective mode/IDs once via the shared helper. parse_type
+			// is authoritative; the per-mode req IDs were already cleaned above,
+			// but ResolveParseMode does not rely on that — it ignores the
+			// non-applicable ID for the selected mode.
+			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
+				req.ParseType, req.ParserID, req.PipelineID,
+				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
+			dslJSON, dslErr := service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
-					zap.String("parserID", effectiveParserID), zap.Error(dslErr))
+					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
 				updates["parser_config"] = pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))

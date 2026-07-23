@@ -1237,6 +1237,59 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     return merged
 
 
+async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
+    """Distinct ``doc_id`` across every ``artifact_map_extract`` row in this KB.
+
+    These are the documents that fed the current compilation. Stamped onto
+    the KB-wide aggregate rows (REDUCE / PLAN) as ``source_doc_ids`` so a
+    document delete can reference-count them — the aggregate is dropped only
+    once its last contributing document is gone.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
+    select_fields = ["id", "doc_id"]
+
+    PAGE_SIZE = 1000
+    offset = 0
+    doc_ids: list[str] = []
+    seen: set[str] = set()
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields)
+        except Exception:
+            logging.exception("wiki: failed to scan MAP doc ids for kb=%s (offset=%d)", kb_id, offset)
+            break
+        if not field_map:
+            break
+        for row in field_map.values():
+            raw = row.get("doc_id")
+            candidates = raw if isinstance(raw, list) else [raw]
+            for d in candidates:
+                if isinstance(d, str) and d and d not in seen:
+                    seen.add(d)
+                    doc_ids.append(d)
+        if len(field_map) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    return doc_ids
+
+
 async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
     """xxh64 fingerprint of the **current** ``artifact_map_extract`` rows for
     this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
@@ -1365,11 +1418,14 @@ async def _wiki_persist_reduce(
     tenant_id: str,
     kb_id: str,
     input_hash: str = "",
+    source_doc_ids: Optional[list[str]] = None,
 ) -> None:
     """Upsert the single non-searchable artifact_reduce_result row for this KB.
 
     ``input_hash`` records the MAP-state fingerprint this reduction was
     computed from; the next call compares it before re-running.
+    ``source_doc_ids`` is the set of documents that fed this reduction, used
+    for delete-time reference counting.
     """
     from common import settings
     from rag.nlp import search as _rag_search
@@ -1384,6 +1440,7 @@ async def _wiki_persist_reduce(
         "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_REDUCE_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "source_doc_ids": list(source_doc_ids or []),
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
@@ -1466,6 +1523,7 @@ async def wiki_reduce_from_extracts(
     # correct. ``force_rerun=True`` bypasses both checks for the
     # legacy / admin "rebuild from scratch" path.
     current_input_hash = await _wiki_compute_map_input_hash(tenant_id, kb_id)
+    reduce_source_doc_ids = await _wiki_all_map_doc_ids(tenant_id, kb_id)
     if not force_rerun:
         cached_pair = await _wiki_load_reduce_resume(tenant_id, kb_id)
         if cached_pair is not None:
@@ -1501,7 +1559,7 @@ async def wiki_reduce_from_extracts(
     if not raw_entities and not raw_concepts:
         # Nothing to reduce; persist an empty result so resume can short-circuit.
         empty = _wiki_empty_extract()
-        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash)
+        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
         return empty
 
     if callback:
@@ -1560,7 +1618,7 @@ async def wiki_reduce_from_extracts(
             callback(0.9, "wiki REDUCE: persisting result")
         except Exception:
             pass
-    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash)
+    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
 
     logging.info(
         "wiki_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
@@ -2167,11 +2225,14 @@ async def _wiki_persist_plan(
     tenant_id: str,
     kb_id: str,
     input_hash: str = "",
+    source_doc_ids: Optional[list[str]] = None,
 ) -> None:
     """Upsert the single non-searchable artifact_compilation_plan row for this KB.
 
     ``input_hash`` records the REDUCE-state fingerprint this plan was
     derived from; the next call compares it before re-planning.
+    ``source_doc_ids`` is the set of documents that fed this plan, used for
+    delete-time reference counting.
     """
     from common import settings
     from rag.nlp import search as _rag_search
@@ -2185,6 +2246,7 @@ async def _wiki_persist_plan(
         "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
         "compile_kwd": WIKI_PLAN_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "source_doc_ids": list(source_doc_ids or []),
         "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
@@ -2262,6 +2324,7 @@ async def wiki_plan_from_reduction(
     # plan was stamped with the same hash REDUCE is currently exposing,
     # nothing upstream has changed and the plan is still valid.
     current_reduce_hash = await _wiki_load_reduce_input_hash(tenant_id, kb_id)
+    plan_source_doc_ids = await _wiki_all_map_doc_ids(tenant_id, kb_id)
     if not force_rerun:
         cached_pair = await _wiki_load_plan_resume(tenant_id, kb_id)
         if cached_pair is not None:
@@ -2295,7 +2358,7 @@ async def wiki_plan_from_reduction(
             "_topics": [],
             "_reconciliation": {},
         }
-        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
         return empty
 
     canonical_entities = reduced.get("entities") or []
@@ -2326,7 +2389,7 @@ async def wiki_plan_from_reduction(
             "_topics": raw_topics,
             "_reconciliation": {},
         }
-        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
+        await _wiki_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
         return empty
 
     if callback:
@@ -2391,7 +2454,7 @@ async def wiki_plan_from_reduction(
             callback(0.9, "wiki PLAN: persisting plan")
         except Exception:
             pass
-    await _wiki_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash)
+    await _wiki_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash, source_doc_ids=plan_source_doc_ids)
 
     logging.info(
         "wiki_plan: kb=%s done — pages=%d (target=%d) updates=%d creates=%d",
@@ -3227,12 +3290,14 @@ async def _wiki_persist_draft(
         return
     index = _rag_search.index_name(tenant_id)
     content_with_weight = json.dumps(page, ensure_ascii=False)
+    draft_doc_ids = [d for d in (page.get("source_doc_ids") or []) if isinstance(d, str) and d]
     row = {
         "id": _wiki_draft_row_id(kb_id, slug),
         "doc_id": str(kb_id),
         "compile_kwd": WIKI_DRAFT_COMPILE_KWD,
         "artifact_slug_kwd": slug,
         "source_id": [str(kb_id)],
+        "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,  # non-searchable
@@ -3570,8 +3635,8 @@ async def wiki_refine_from_plan(
                 return None
 
             # Searchable artifact_page persistence has moved to the task
-            # handler (TaskHandler._persist_wiki_pages_to_es) so the ES
-            # schema can be controlled in one place at the ingest layer.
+            # handler so the doc-storage schema can be controlled in one
+            # place at the ingest layer.
             # REFINE now just builds the page dict and resume cache.
             try:
                 await _wiki_persist_draft(

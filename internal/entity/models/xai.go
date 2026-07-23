@@ -78,41 +78,7 @@ func (x *XAIModel) ChatWithMessages(ctx context.Context, modelName string, messa
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
-
-	// Convert messages to the format expected by the API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -205,44 +171,7 @@ func (x *XAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
-
-	// Convert messages to API format (supports multimodal content)
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body with streaming on by default
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

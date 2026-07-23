@@ -35,7 +35,22 @@ from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_
 from common.misc_utils import thread_pool_exec
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
-_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
+# KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
+# rows for one structure kind via ``rebuild_dataset_structure_graph_json``; the
+# task_type equals the index_type and the KB task-id column is ``<type>_task_id``.
+# The value is the friendly kind resolvable through ``_resolve_dataset_structure_kind``
+# (defined below), except ``structure`` which is the merge-all variant.
+_STRUCTURE_INDEX_TYPE_TO_KIND = {
+    "structure_graph": "graph",
+    "structure_mindmap": "mindmap",
+    "timeline": "timeline",
+    "session_graph": "session_graph",
+    "session_essence": "session_essence",
+    "structure": None,  # merge-all: rebuild every dataset-merge kind
+}
+_STRUCTURE_INDEX_TYPES = frozenset(_STRUCTURE_INDEX_TYPE_TO_KIND)
+
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"} | set(_STRUCTURE_INDEX_TYPES)
 
 _INDEX_TYPE_TO_TASK_TYPE = {
     "graph": "graphrag",
@@ -43,6 +58,9 @@ _INDEX_TYPE_TO_TASK_TYPE = {
     "mindmap": "mindmap",
     "artifact": "artifact",
     "skill": "skill",
+    # Structure merge types carry their own task_type (== index_type) so the
+    # executor can resolve which kind to merge from the task body.
+    **{t: t for t in _STRUCTURE_INDEX_TYPES},
 }
 
 _INDEX_TYPE_TO_TASK_ID_FIELD = {
@@ -51,6 +69,7 @@ _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "mindmap": "mindmap_task_id",
     "artifact": "artifact_task_id",
     "skill": "skill_task_id",
+    **{t: f"{t}_task_id" for t in _STRUCTURE_INDEX_TYPES},
 }
 
 _INDEX_TYPE_TO_DISPLAY_NAME = {
@@ -59,6 +78,12 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
     "mindmap": "Mindmap",
     "artifact": "Artifact",
     "skill": "Skill",
+    "structure_graph": "Structure Graph",
+    "structure_mindmap": "Structure Mindmap",
+    "timeline": "Timeline",
+    "session_graph": "Session Graph",
+    "session_essence": "Session Essence",
+    "structure": "Structure",
 }
 
 
@@ -884,6 +909,18 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
         from rag.nlp import search
 
         settings.docStoreConn.delete({"compile_kwd": ["skill", "skill_all"]}, search.index_name(kb.tenant_id), dataset_id)
+    elif wipe and index_type in _STRUCTURE_INDEX_TYPES:
+        from rag.nlp import search
+
+        # Wipe the merged KB-wide dataset_graph rows for the requested kind
+        # (all kinds for the merge-all "structure" type). The per-document
+        # entity/relation rows the merge reads from are left intact.
+        friendly = _STRUCTURE_INDEX_TYPE_TO_KIND.get(index_type)
+        resolved_kind = _resolve_dataset_structure_kind(friendly) if friendly else None
+        condition: dict = {"knowledge_graph_kwd": ["dataset_graph"]}
+        if resolved_kind:
+            condition["compilation_template_kind_kwd"] = [resolved_kind]
+        settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -1502,6 +1539,124 @@ def _wiki_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
 
+def _compilation_template_kind(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+        return "timeline"
+    return normalized
+
+
+def _normalize_compilation_template_group_ids(raw) -> list[str]:
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    ids: list[str] = []
+    seen: set[str] = set()
+    for group_id in raw:
+        if not isinstance(group_id, str):
+            continue
+        group_id = group_id.strip()
+        if group_id and group_id not in seen:
+            seen.add(group_id)
+            ids.append(group_id)
+    return ids
+
+
+def _extract_pipeline_compiler_group_ids(dsl) -> list[str]:
+    if isinstance(dsl, str):
+        try:
+            dsl = json.loads(dsl)
+        except Exception:
+            return []
+    if not isinstance(dsl, dict):
+        return []
+    components = dsl.get("components")
+    if not isinstance(components, dict):
+        return []
+
+    group_ids: list[str] = []
+    seen: set[str] = set()
+    for component in components.values():
+        if not isinstance(component, dict):
+            continue
+        obj = component.get("obj") if isinstance(component.get("obj"), dict) else {}
+        component_name = obj.get("component_name") or component.get("component_name") or component.get("name")
+        if not isinstance(component_name, str) or component_name.lower() != "compiler":
+            continue
+        candidates = [
+            obj.get("params") if isinstance(obj.get("params"), dict) else {},
+            obj,
+            component.get("params") if isinstance(component.get("params"), dict) else {},
+            component,
+        ]
+        for candidate in candidates:
+            for key in ("compilation_template_group_ids", "compilation_template_group_id"):
+                for group_id in _normalize_compilation_template_group_ids(candidate.get(key)):
+                    if group_id not in seen:
+                        seen.add(group_id)
+                        group_ids.append(group_id)
+    return group_ids
+
+
+def _template_is_wiki(template: dict | None) -> bool:
+    if not isinstance(template, dict):
+        return False
+    config = template.get("config") if isinstance(template.get("config"), dict) else {}
+    raw_kind = config.get("kind") or template.get("kind") or ""
+    return _compilation_template_kind(raw_kind) == "artifacts"
+
+
+def _group_has_wiki_template(group_id: str, tenant_id: str, group_cache: dict[str, bool]) -> bool:
+    if group_id in group_cache:
+        return group_cache[group_id]
+    from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+
+    group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
+    has_wiki = any(_template_is_wiki(template) for template in (group or {}).get("templates") or [])
+    group_cache[group_id] = has_wiki
+    return has_wiki
+
+
+def _parser_config_has_wiki_template(parser_config, tenant_id: str, template_cache: dict[str, bool]) -> bool:
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from rag.svr.task_executor_refactor.chunk_post_processor import _parser_config_compilation_template_ids
+
+    for template_id in _parser_config_compilation_template_ids(parser_config, tenant_id):
+        if template_id not in template_cache:
+            template_cache[template_id] = _template_is_wiki(CompilationTemplateService.get_saved(template_id, tenant_id))
+        if template_cache[template_id]:
+            return True
+    return False
+
+
+def _pipeline_has_wiki_compiler(
+    pipeline_id: str,
+    tenant_id: str,
+    pipeline_cache: dict[str, bool],
+    group_cache: dict[str, bool],
+) -> bool:
+    pipeline_id = (pipeline_id or "").strip()
+    if not pipeline_id:
+        return False
+    if pipeline_id in pipeline_cache:
+        return pipeline_cache[pipeline_id]
+
+    from api.db.services.canvas_service import UserCanvasService
+
+    ok, canvas = UserCanvasService.get_by_id(pipeline_id)
+    if not ok or not canvas:
+        pipeline_cache[pipeline_id] = False
+        return False
+
+    group_ids = _extract_pipeline_compiler_group_ids(getattr(canvas, "dsl", None))
+    has_wiki = any(_group_has_wiki_template(group_id, tenant_id, group_cache) for group_id in group_ids)
+    pipeline_cache[pipeline_id] = has_wiki
+    return has_wiki
+
+
 def _skill_index_or_none(tenant_id: str, kb_id: str):
     return _compiled_index_or_none(tenant_id, kb_id)
 
@@ -1541,6 +1696,253 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
 
     total = settings.docStoreConn.get_total(res)
     return True, {"has": bool(total)}
+
+
+# Dataset-scope structure kinds the artifacts_structure API serves. Keys are the
+# friendly names the frontend passes; values are the template's *top-level* kind
+# as stamped on ``dataset_graph`` rows. The canonical names map to themselves so
+# a caller can pass either form. Note this deliberately does NOT reuse
+# ``_compilation_template_kind`` — that helper folds ``knowledge_graph`` into
+# ``timeline`` and would merge distinct kinds here.
+_DATASET_STRUCTURE_ROW_KWD = "dataset_graph"
+_DATASET_STRUCTURE_KIND_ALIASES = {
+    "graph": "knowledge_graph",
+    "knowledge_graph": "knowledge_graph",
+    "mindmap": "mind_map",
+    "mind_map": "mind_map",
+    "timeline": "timeline",
+    "session_essence": "session_essence",
+    "session_graph": "session_graph",
+}
+
+
+def _resolve_dataset_structure_kind(kind) -> str | None:
+    """Map a friendly/canonical kind string to the stored top-level kind."""
+    if not isinstance(kind, str):
+        return None
+    return _DATASET_STRUCTURE_KIND_ALIASES.get(kind.strip().lower().replace("-", "_"))
+
+
+async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str):
+    """Load the dataset-scope (KB-wide) structure graph for one ``kind``.
+
+    ``kind`` is one of ``graph`` / ``mindmap`` / ``timeline`` /
+    ``session_essence`` / ``session_graph``. Reads the
+    ``knowledge_graph_kwd="dataset_graph"`` rows written by
+    ``rebuild_dataset_structure_graph_json`` (one per template), filters to the
+    requested kind, and returns them grouped by template — mirroring the
+    per-document ``structure/graph`` response so the frontend graph view is
+    reused unchanged.
+
+    Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
+    ``(False, message)`` on auth/validation failure.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    resolved_kind = _resolve_dataset_structure_kind(kind)
+    if not resolved_kind:
+        return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
+
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    empty = {"kind": kind, "templates": []}
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, empty
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+    from api.db.services.compilation_template_service import CompilationTemplateService
+
+    select_fields = [
+        "content_with_weight",
+        "compile_kwd",
+        "compilation_template_ids",
+        "compilation_template_kind_kwd",
+    ]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index_nm,
+            [dataset_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, select_fields) or {}
+    except Exception:
+        logging.exception("get_dataset_structure: docStore search failed for kb=%s", dataset_id)
+        return True, empty
+
+    def _row_template_id(row: dict) -> str | None:
+        raw = row.get("compilation_template_ids")
+        if isinstance(raw, list):
+            for v in raw:
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return None
+
+    # Resolve a template's top-level kind + display name, memoized. Used both to
+    # label buckets and as a fallback for rows written before the kind stamp
+    # (they carry ``compilation_template_ids`` but no ``compilation_template_kind_kwd``).
+    template_kind_cache: dict[str, str | None] = {}
+    template_name_cache: dict[str, str] = {}
+
+    def _template_meta(tid: str | None) -> str | None:
+        if not tid:
+            return None
+        if tid in template_kind_cache:
+            return template_kind_cache[tid]
+        top_kind = None
+        try:
+            saved = CompilationTemplateService.get_saved(tid, tenant_id)
+            if saved:
+                top_kind = (saved.get("kind") or "").strip() or None
+                template_name_cache[tid] = saved.get("name") or tid
+        except Exception:
+            logging.exception("get_dataset_structure: template lookup failed for %s", tid)
+        template_kind_cache[tid] = top_kind
+        return top_kind
+
+    grouped: dict[str, dict] = {}
+    for row in rows.values():
+        tid = _row_template_id(row)
+        stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
+        row_kind = stamped_kind or _template_meta(tid) or ""
+        if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
+            continue
+
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        entities = graph.get("entities") or []
+        relations = graph.get("relations") or []
+        if not entities and not relations:
+            continue
+
+        bucket_id = tid or f"kind:{resolved_kind}"
+        if bucket_id not in grouped:
+            if tid and tid not in template_name_cache:
+                _template_meta(tid)
+            grouped[bucket_id] = {
+                "template_id": bucket_id,
+                "template_name": template_name_cache.get(tid or "", bucket_id),
+                "kind": row_kind or resolved_kind,
+                "entities": [],
+                "relations": [],
+            }
+        grouped[bucket_id]["entities"].extend(entities)
+        grouped[bucket_id]["relations"].extend(relations)
+
+    templates_out = [g for g in grouped.values() if g["entities"] or g["relations"]]
+    return True, {"kind": kind, "templates": templates_out}
+
+
+async def get_wiki_alteration(dataset_id: str, tenant_id: str):
+    """Return doc-level drift between current dataset docs and compiled wiki provenance."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    docs, _ = await thread_pool_exec(
+        DocumentService.get_by_kb_id,
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    current_doc_ids = {str(doc.get("id")) for doc in docs or [] if doc.get("id")}
+
+    wiki_involved_doc_ids: set[str] = set()
+    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
+    if pack is not None:
+        index_nm, _ = pack
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        select_fields = ["id", "source_doc_ids"]
+        offset = 0
+        page_size = 1000
+        while True:
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields=select_fields,
+                    highlight_fields=[],
+                    condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
+                    match_expressions=[],
+                    order_by=OrderByExpr(),
+                    offset=offset,
+                    limit=page_size,
+                    index_names=index_nm,
+                    knowledgebase_ids=[dataset_id],
+                )
+                rows = settings.docStoreConn.get_fields(res, select_fields) or {}
+            except Exception:
+                logging.exception("get_wiki_alteration: docStore search failed for kb=%s", dataset_id)
+                rows = {}
+
+            if not rows:
+                break
+            for row in rows.values():
+                source_doc_ids = row.get("source_doc_ids")
+                if isinstance(source_doc_ids, str):
+                    source_doc_ids = [source_doc_ids]
+                if not isinstance(source_doc_ids, list):
+                    continue
+                wiki_involved_doc_ids.update(str(doc_id) for doc_id in source_doc_ids if doc_id)
+
+            offset += page_size
+            total = settings.docStoreConn.get_total(res)
+            if not total or offset >= int(total):
+                break
+
+    template_cache: dict[str, bool] = {}
+    group_cache: dict[str, bool] = {}
+    pipeline_cache: dict[str, bool] = {}
+    eligible_wiki_doc_ids: set[str] = set()
+    for doc in docs or []:
+        doc_id = str(doc.get("id") or "")
+        if not doc_id:
+            continue
+        parser_config = doc.get("parser_config") or {}
+        if _parser_config_has_wiki_template(parser_config, kb.tenant_id, template_cache):
+            eligible_wiki_doc_ids.add(doc_id)
+            continue
+        if _pipeline_has_wiki_compiler(
+            doc.get("pipeline_id") or "",
+            kb.tenant_id,
+            pipeline_cache,
+            group_cache,
+        ):
+            eligible_wiki_doc_ids.add(doc_id)
+
+    removed_doc_ids = sorted(wiki_involved_doc_ids - current_doc_ids)
+    newly_uploaded_doc_ids = sorted(eligible_wiki_doc_ids - wiki_involved_doc_ids)
+    return True, {
+        "removed": len(removed_doc_ids),
+        "newly_uploaded": len(newly_uploaded_doc_ids),
+        "removed_doc_ids": removed_doc_ids,
+        "newly_uploaded_doc_ids": newly_uploaded_doc_ids,
+        "involved_doc_ids": sorted(wiki_involved_doc_ids),
+        "eligible_doc_ids": sorted(eligible_wiki_doc_ids),
+    }
 
 
 async def list_wiki_pages(
@@ -1892,6 +2294,70 @@ async def get_skill_tree(dataset_id: str, tenant_id: str):
     }
 
 
+async def delete_skills(dataset_id: str, tenant_id: str):
+    """Delete every compiled skill row (``skill`` + ``skill_all``) for a dataset.
+
+    Returns ``(True, {"deleted": <n>})`` on success. When the tenant index does
+    not exist yet there is nothing to delete, so it succeeds with ``0``.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_SKILL_COMPILE_KWD, _SKILL_ALL_COMPILE_KWD]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_skills: docStore delete failed for kb=%s", dataset_id)
+        return False, "Failed to delete skills."
+
+    # Clear the skill compilation markers so the dataset reflects "no skill"
+    # (and a later re-compile isn't short-circuited by a stale task id).
+    try:
+        KnowledgebaseService.update_by_id(kb.id, {"skill_task_id": "", "skill_task_finish_at": None})
+    except Exception:
+        logging.exception("delete_skills: failed clearing skill task markers for kb=%s", dataset_id)
+
+    return True, {"deleted": int(deleted or 0)}
+
+
+async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Delete a single compiled skill node identified by ``skill_kwd``.
+
+    Removes the per-node ``skill`` row(s) matching ``skill_kwd`` (the same
+    identity ``get_skill_page`` reads). The aggregate ``skill_all`` tree row is
+    left untouched. Returns ``(True, {"deleted": <n>})``.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_skill: docStore delete failed for kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to delete skill."
+
+    return True, {"deleted": int(deleted or 0)}
+
+
 async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
     """Fetch the full markdown body for a single skill node."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -1955,6 +2421,211 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
         "source_doc_ids": row.get("source_doc_ids") or [],
         "md_with_weight": row.get("md_with_weight") or "",
     }
+
+
+# ---------------------------------------------------------------------------
+# Dataset navigation tree (written by rag/advanced_rag/knowlege_compile/
+# dataset_nav.py as nav_cluster / nav_doc rows). Loaded hierarchically: the
+# first call returns the top clusters (parent = "root"); clicking a cluster
+# returns its direct children (sub-clusters + document leaves). These rows are
+# ``available_int=0`` so they're read via docStoreConn.search directly.
+# ---------------------------------------------------------------------------
+
+_NAV_COMPILE_KWD = "dataset_nav"
+_NAV_ROOT_PARENT = "root"
+_NAV_FIELDS = [
+    "id",
+    "name",
+    "type_kwd",
+    "content_with_weight",
+    "doc_count_int",
+    "doc_ids_kwd",
+    "doc_id",
+    "depth_int",
+    "parent_kwd",
+]
+
+
+def _nav_item(row: dict) -> dict:
+    """Shape one nav row into a UI node: name, description, doc count, type."""
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        payload = {}
+    is_cluster = (row.get("type_kwd") or payload.get("type")) == "nav_cluster"
+    return {
+        "name": row.get("name") or "",
+        "description": payload.get("description") or "",
+        # doc_id count under this node: the cluster's tally, or 1 for a leaf.
+        "doc_count": int(row.get("doc_count_int") or 0) if is_cluster else 1,
+        "type": "cluster" if is_cluster else "doc",
+        "doc_id": None if is_cluster else (row.get("doc_id") or row.get("name")),
+        "has_children": is_cluster,
+    }
+
+
+async def _nav_search(dataset_id: str, tenant_id: str, condition: dict, page: int, page_size: int):
+    """Run one nav-tree search and shape the hits into UI nodes."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"total": 0, "items": []}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 1000), 2000))
+    offset = (page - 1) * page_size
+
+    order_by = OrderByExpr()
+    try:
+        # Biggest clusters first; leaves (no doc_count_int) fall to the end.
+        order_by.desc("doc_count_int")
+    except Exception:
+        order_by = OrderByExpr()
+
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=_NAV_FIELDS,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=[],
+            order_by=order_by,
+            offset=offset,
+            limit=page_size,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+    except Exception:
+        logging.exception("dataset_nav: docStore search failed for kb=%s", dataset_id)
+        return True, {"total": 0, "items": []}
+
+    total = settings.docStoreConn.get_total(res)
+    items = [_nav_item(row) for row in (field_map or {}).values()]
+    return True, {"total": int(total or 0), "items": items}
+
+
+async def list_nav_clusters(dataset_id: str, tenant_id: str, page: int = 1, page_size: int = 1000):
+    """First level of the nav tree: the clusters with no parent."""
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "type_kwd": ["nav_cluster"],
+        "parent_kwd": [_NAV_ROOT_PARENT],
+    }
+    return await _nav_search(dataset_id, tenant_id, condition, page, page_size)
+
+
+async def list_nav_children(dataset_id: str, tenant_id: str, name: str, page: int = 1, page_size: int = 1000):
+    """Direct children of the node ``name`` — sub-clusters and document leaves.
+
+    One level at a time (lazy) so the tree loads hierarchically as the user
+    expands each node.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return True, {"total": 0, "items": []}
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "parent_kwd": [name.strip()],
+    }
+    return await _nav_search(dataset_id, tenant_id, condition, page, page_size)
+
+
+async def delete_nav(dataset_id: str, tenant_id: str):
+    """Delete the entire dataset navigation tree for a dataset.
+
+    Returns ``(True, {"deleted": <n>})``; succeeds with ``0`` when there is no
+    index yet.
+    """
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_NAV_COMPILE_KWD]},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_nav: docStore delete failed for kb=%s", dataset_id)
+        return False, "Failed to delete the navigation tree."
+
+    return True, {"deleted": int(deleted or 0)}
+
+
+async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
+    """Delete one navigation node (identified by ``name``) and its whole subtree.
+
+    Children reference their parent by ``name`` (``parent_kwd``), so removing a
+    cluster without its descendants would leave them orphaned in the tree view.
+    We therefore walk the subtree top-down and delete every node in it.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return True, {"deleted": 0}
+    name = name.strip()
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"deleted": 0}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    # Collect the node plus every descendant, level by level via parent_kwd.
+    names: set[str] = {name}
+    frontier: list[str] = [name]
+    for _ in range(64):  # depth guard against a malformed (cyclic) tree
+        if not frontier:
+            break
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=["name"],
+                highlight_fields=[],
+                condition={"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=10000,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["name"]) or {}
+        except Exception:
+            logging.exception("delete_nav_node: subtree scan failed for kb=%s name=%s", dataset_id, name)
+            break
+        nxt: list[str] = []
+        for row in rows.values():
+            child = row.get("name")
+            if isinstance(child, str) and child and child not in names:
+                names.add(child)
+                nxt.append(child)
+        frontier = nxt
+
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"compile_kwd": [_NAV_COMPILE_KWD], "name": list(names)},
+            index_nm,
+            dataset_id,
+        )
+    except Exception:
+        logging.exception("delete_nav_node: docStore delete failed for kb=%s name=%s", dataset_id, name)
+        return False, "Failed to delete the navigation node."
+
+    return True, {"deleted": int(deleted or 0)}
 
 
 async def update_wiki_page(
