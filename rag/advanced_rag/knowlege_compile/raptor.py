@@ -180,10 +180,12 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         clustering_method=GMM_CLUSTERING_METHOD,
         psi_exact_max_leaves=4096,
         psi_bucket_size=1024,
+        ahc_distance_threshold=0.3,
     ):
         """Configure RAPTOR summarization, clustering, and Psi limits."""
         self._max_cluster = max_cluster
         self._small_layer_collapse = small_layer_collapse
+        self._ahc_distance_threshold = ahc_distance_threshold
         self._llm_model = llm_model
         self._embd_model = embd_model
         self._threshold = threshold
@@ -266,92 +268,141 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return int(optimal_clusters)
 
     def _get_clusters_ahc(self, embeddings: np.ndarray, task_id: str = "") -> np.ndarray:
-        """Cluster embeddings with Ward-linkage AHC and a dendrogram gap heuristic."""
+        """Cluster embeddings with average-linkage AHC (cosine distance).
+
+        Sklearn stops merging when the average cosine distance between
+        two cluster candidates exceeds ``_ahc_distance_threshold``,
+        producing a flat labelling with a data-driven number of clusters
+        — no gap heuristic or fixed cluster-count fallback needed.
+
+        Returns an array of cluster labels (contiguous 0..K-1).
+        """
         n = len(embeddings)
         if n <= 1:
             return np.zeros(n, dtype=int)
-        if n == 2:
-            return np.arange(n)
 
-        self._check_task_canceled(task_id, "_get_clusters_ahc dendrogram")
-        full_clust = AgglomerativeClustering(
+        self._check_task_canceled(task_id, "_get_clusters_ahc")
+        clustering = AgglomerativeClustering(
             n_clusters=None,
-            distance_threshold=0,
-            compute_distances=True,
-            linkage="ward",
+            distance_threshold=self._ahc_distance_threshold,
+            linkage="average",
+            metric="cosine",
         )
-        full_clust.fit(embeddings)
-
-        distances = full_clust.distances_
-        if len(distances) > 1:
-            gaps = np.diff(distances)
-            max_gap_idx = int(np.argmax(gaps))
-            n_clusters = max(1, min(n - max_gap_idx - 1, self._max_cluster))
-        else:
-            n_clusters = max(1, min(n, self._max_cluster))
-        if n_clusters <= 1:
-            logging.info("RAPTOR AHC: _get_clusters_ahc selected one cluster for %d embeddings", n)
-            return np.zeros(n, dtype=int)
-
-        logging.info("RAPTOR AHC: _get_clusters_ahc selected n_clusters=%d for %d embeddings", n_clusters, n)
-        self._check_task_canceled(task_id, "_get_clusters_ahc fit")
-        clustering = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward")
         return clustering.fit_predict(embeddings)
 
+    def _merge_close_clusters(self, embeddings: np.ndarray, labels: np.ndarray) -> np.ndarray:
+        """Merge clusters whose normalized centroids remain very similar."""
+        labels = np.asarray(labels, dtype=int)
+        unique_labels = np.unique(labels)
+        if len(unique_labels) <= 1:
+            return labels
+
+        normalized = np.asarray(embeddings, dtype=np.float64)
+        norms = np.linalg.norm(normalized, axis=1, keepdims=True)
+        normalized = np.divide(normalized, norms, out=np.zeros_like(normalized), where=norms > 0)
+        centroids = np.stack([normalized[labels == label].mean(axis=0) for label in unique_labels])
+        centroid_norms = np.linalg.norm(centroids, axis=1, keepdims=True)
+        centroids = np.divide(centroids, centroid_norms, out=np.zeros_like(centroids), where=centroid_norms > 0)
+
+        # A centroid represents an already consolidated cluster, so use a
+        # stricter threshold than the initial AHC pass when merging centroids.
+        merge_threshold = min(self._ahc_distance_threshold, 0.15)
+        if len(centroids) == 2:
+            centroid_labels = np.zeros(2, dtype=int) if 1 - float(centroids[0] @ centroids[1]) <= merge_threshold else np.arange(2)
+        else:
+            centroid_labels = AgglomerativeClustering(
+                n_clusters=None,
+                distance_threshold=merge_threshold,
+                linkage="average",
+                metric="cosine",
+            ).fit_predict(centroids)
+
+        label_map = {int(old): int(centroid_labels[idx]) for idx, old in enumerate(unique_labels)}
+        return np.asarray([label_map[int(label)] for label in labels], dtype=int)
+
     def _adjust_tree_nodes(self, embeddings: np.ndarray, labels: np.ndarray, max_iter: int = 5) -> np.ndarray:
-        """Refine AHC assignments by reassigning nodes to nearest centroids."""
-        labels = labels.copy()
+        """Refine AHC assignments by reassigning nodes to cosine-nearest centroids."""
+        labels = np.asarray(labels, dtype=int).copy()
+        vectors = np.asarray(embeddings, dtype=np.float64)
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        normalized = np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms > 0)
+
         for _ in range(max_iter):
             unique_labels = np.unique(labels)
             if len(unique_labels) <= 1:
                 return labels
-            centroids = np.stack([embeddings[labels == lbl].mean(axis=0) for lbl in unique_labels])
-            diffs = embeddings[:, np.newaxis, :] - centroids[np.newaxis, :, :]
-            sq_dists = (diffs**2).sum(axis=2)
-            new_label_indices = np.argmin(sq_dists, axis=1)
-            new_labels = unique_labels[new_label_indices]
+
+            centroids = np.stack([normalized[labels == label].mean(axis=0) for label in unique_labels])
+            centroid_norms = np.linalg.norm(centroids, axis=1, keepdims=True)
+            centroids = np.divide(centroids, centroid_norms, out=np.zeros_like(centroids), where=centroid_norms > 0)
+            new_labels = unique_labels[np.argmax(normalized @ centroids.T, axis=1)]
             if np.array_equal(new_labels, labels):
                 break
-            unique_new = np.unique(new_labels)
-            remap = {old: new for new, old in enumerate(unique_new)}
-            labels = np.array([remap[int(lbl)] for lbl in new_labels])
+
+            labels = new_labels
+
         return labels
 
     def clustering(self, embeddings, random_state: int, task_id: str = "") -> tuple[int, list[int]]:
         """Cluster one RAPTOR layer and return contiguous labels."""
-        reduced_embeddings = np.asarray(embeddings, dtype=np.float64)
-        if len(reduced_embeddings) == 0:
+        if len(embeddings) == 0:
             return 0, []
 
-        # Degrade too much ??
-        n_neighbors = min(int((len(embeddings) - 1) ** 0.8), 100)
-        import umap
-
-        reduced_embeddings = umap.UMAP(
-            n_neighbors=max(2, n_neighbors),
-            n_components=min(12, len(embeddings) - 2),
-            metric="cosine",
-        ).fit_transform(embeddings)
         if self._clustering_method == AHC_CLUSTERING_METHOD:
-            logging.info("RAPTOR: using clustering_method=%s before _get_clusters_ahc", self._clustering_method)
-            raw_labels = self._get_clusters_ahc(reduced_embeddings, task_id=task_id)
+            # AHC: cluster on raw embeddings with cosine distance.
+            # UMAP is skipped because it discards semantic information
+            # that average-linkage + cosine can leverage directly.
+            logging.info("RAPTOR: using clustering_method=%s on raw embeddings (dim=%d)", self._clustering_method, len(embeddings[0]) if hasattr(embeddings[0], "__len__") else "?")
+            raw_labels = self._get_clusters_ahc(embeddings, task_id=task_id)
             raw_cluster_count = np.unique(raw_labels).size
             logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
             if raw_cluster_count > 1:
-                labels = self._adjust_tree_nodes(reduced_embeddings, raw_labels)
-                adjusted_cluster_count = np.unique(labels).size
-                logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", adjusted_cluster_count)
+                labels = self._adjust_tree_nodes(np.asarray(embeddings), raw_labels)
+                logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", np.unique(labels).size)
+                merged_labels = self._merge_close_clusters(np.asarray(embeddings), labels)
+                logging.info("RAPTOR AHC: centroid merge reduced n_clusters=%d", np.unique(merged_labels).size)
+                labels = merged_labels
             else:
                 labels = raw_labels
-                logging.warning("RAPTOR AHC: _adjust_tree_nodes skipped because _get_clusters_ahc returned one cluster")
+
+            cluster_count = np.unique(labels).size
+            if cluster_count > self._max_cluster:
+                logging.info("RAPTOR AHC: reducing n_clusters=%d to max_cluster=%d", cluster_count, self._max_cluster)
+                labels = AgglomerativeClustering(
+                    n_clusters=self._max_cluster,
+                    linkage="average",
+                    metric="cosine",
+                ).fit_predict(np.asarray(embeddings))
+
+            cluster_sizes = np.bincount(np.asarray(labels, dtype=int))
+            logging.info(
+                "RAPTOR AHC: final n_clusters=%d, min_cluster_size=%d, max_cluster_size=%d, singleton_clusters=%d",
+                np.unique(labels).size,
+                int(cluster_sizes.min()) if len(cluster_sizes) else 0,
+                int(cluster_sizes.max()) if len(cluster_sizes) else 0,
+                int(np.count_nonzero(cluster_sizes == 1)),
+            )
         else:
-            n_clusters = int(self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id))
+            # GMM: reduce dimensionality first (UMAP, 12D) so the
+            # Gaussian mixture can find meaningful clusters.
+            if len(embeddings) == 0:
+                return 0, []
+            reduced = np.asarray(embeddings, dtype=np.float64)
+            n_neighbors = min(int((len(embeddings) - 1) ** 0.8), 100)
+            import umap
+
+            reduced = umap.UMAP(
+                n_neighbors=max(2, n_neighbors),
+                n_components=min(12, len(embeddings) - 2),
+                metric="cosine",
+            ).fit_transform(embeddings)
+            n_clusters = int(self._get_optimal_clusters(reduced, random_state, task_id=task_id))
             if n_clusters <= 1:
-                labels = [0 for _ in range(len(reduced_embeddings))]
+                labels = [0 for _ in range(len(reduced))]
             else:
                 gm = GaussianMixture(n_components=n_clusters, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
-                gm.fit(reduced_embeddings)
-                probs = gm.predict_proba(reduced_embeddings)
+                gm.fit(reduced)
+                probs = gm.predict_proba(reduced)
                 labels = []
                 for prob in probs:
                     candidates = np.where(prob > self._threshold)[0]
