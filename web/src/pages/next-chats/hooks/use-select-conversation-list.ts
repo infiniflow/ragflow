@@ -15,7 +15,12 @@ export const useFindPrologueFromDialogList = () => {
   const { data } = useFetchChatList();
 
   const prologue = useMemo(() => {
-    return data.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
+    // Guard against a malformed response where chats is missing or not an
+    // array — see #15741. The query has initialData={chats: [], total: 0}
+    // but queryFn returns whatever the backend gives, so chats can become
+    // undefined / false if the server rejects the request mid-flight.
+    const chats = Array.isArray(data?.chats) ? data.chats : [];
+    return chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
   }, [dialogId, data]);
 
   return prologue;

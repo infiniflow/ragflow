@@ -40,8 +40,12 @@ export default function Chat() {
   const { data: dialogList } = useFetchSessionList();
 
   const currentConversationName = useMemo(() => {
+    // Guard against a non-array response (e.g. `data?.data` returning false /
+    // null when the backend rejects the request). Without this the page
+    // crashes with "x.find is not a function" — see #15741.
+    const list = Array.isArray(dialogList) ? dialogList : [];
     return (
-      dialogList.find((x) => x.id === conversationId)?.name ||
+      list.find((x) => x.id === conversationId)?.name ||
       t('chat.newConversation')
     );
   }, [conversationId, dialogList, t]);
