@@ -95,6 +95,23 @@ To configure AI Badgr:
 
 AI Badgr implements OpenAI-compatible endpoints for `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`, so no additional code changes in RAGFlow are required.
 
+## Example: DaoXE (OpenAI-compatible)
+
+You can use **DaoXE** with RAGFlow via the existing OpenAI-API-Compatible provider.
+
+DaoXE is a multi-model multi-protocol AI API gateway (OpenAI Chat Completions / Responses, Anthropic Messages, and image-compatible endpoints where available). RAGFlow connects through the OpenAI-compatible chat and embedding path.
+
+To configure DaoXE:
+
+- **Provider**: `OpenAI-API-Compatible`
+- **Base URL**: `https://daoxe.com/v1`
+- **API Key**: your DaoXE API key (from the DaoXE dashboard)
+- **Model**: any chat or embedding model ID available to your DaoXE account (confirm on the [pricing/catalog page](https://daoxe.com/pricing); model availability can vary by account)
+
+DaoXE implements OpenAI-compatible endpoints for `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`, so no additional code changes in RAGFlow are required.
+
+> DaoXE is **not available in mainland China**.
+
 :::note
 The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.
 :::
