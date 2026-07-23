@@ -26,7 +26,7 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
 	if _, err := d.kbDAO.GetByID(datasetID); err != nil {
@@ -297,7 +297,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 		}
 
 		if connectorsProvided {
-			if err = d.connectorDAO.LinkDatasetConnectorsTx(tx, lockedKB.ID, lockedKB.TenantID, connectorLinks); err != nil {
+			if err = d.connectorDAO.LinkDatasetConnectorsTx(ctx, tx, lockedKB.ID, lockedKB.TenantID, connectorLinks); err != nil {
 				if dao.IsConnectorNotAccessibleErr(err) {
 					txCode = common.CodeDataError
 					return err
@@ -313,7 +313,7 @@ func (d *DatasetService) UpdateDataset(datasetID, tenantID string, req service.U
 			return errors.New("dataset updated failed")
 		}
 
-		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(tx, lockedKB.ID)
+		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(ctx, tx, lockedKB.ID)
 		if err != nil {
 			txCode = common.CodeServerError
 			return errors.New("database operation failed")
