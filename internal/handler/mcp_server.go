@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,8 +124,8 @@ func MCPListDatasets(ds *dataset.DatasetService, userID string, page, pageSize i
 
 // MCPListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
-func MCPListChats(cs *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := cs.ListChats(userID, "1", "", page, pageSize, orderby, desc)
+func MCPListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, orderby, desc, nil)
 	if err != nil {
 		return nil, 0, err
 	}

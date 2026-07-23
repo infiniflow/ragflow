@@ -227,6 +227,270 @@ func TestHierarchyTitleChunker_InvokeDeterministic(t *testing.T) {
 // preceding text run on the first non-text and is a no-op for the next
 // non-text, yielding [..., N1, N2, run, ...]; the old loop flushed the
 // trailing run early, yielding [..., N1, run, N2].
+// TestHierarchyTitleChunker_ColonTitlePromotion verifies that a line
+// ending with colon, having sentence-ending punctuation before it, and
+// at least 32 chars between them, is promoted to heading level (mirroring
+// Python make_colon_as_title intent). Two colon headings produce 2 chunks
+// while without the fix all text would merge into 1 chunk.
+func TestHierarchyTitleChunker_ColonTitlePromotion(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}}, // won't match our plain text
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Introductory section providing background. The scope and purpose of this document are defined as follows:", "doc_type_kwd": "text"},
+		{"text": "Body one.", "doc_type_kwd": "text"},
+		{"text": "Another section continuing the discussion. The key provisions are outlined below:", "doc_type_kwd": "text"},
+		{"text": "Body two.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without fix: 1 chunk (all body). With fix: 2 chunks (colon heading + body each).
+	if len(chunks) != 2 {
+		t.Fatalf("len(chunks) = %d, want 2 (colon titles should each produce a chunk)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_ColonTitleShortLine_Negative verifies that
+// short colon-ended lines (e.g. "Note:") are NOT promoted, avoiding
+// false positives.
+func TestHierarchyTitleChunker_ColonTitleShortLine_Negative(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Note:", "doc_type_kwd": "text"},
+		{"text": "Body text.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Short colon line must NOT be promoted: all body → 1 chunk.
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (short colon line must not be promoted)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_ShortNumericLineFilter verifies that
+// purely numeric short lines are filtered to body level even when
+// they match a heading regex (mirroring Python tree_merge's
+// line filter: len(t.split("@")[0].strip()) > 1 + not purely numeric).
+func TestHierarchyTitleChunker_ShortNumericLineFilter(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^[0-9]+$`}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "1", "doc_type_kwd": "text"},
+		{"text": "Introduction paragraph.", "doc_type_kwd": "text"},
+		{"text": "2", "doc_type_kwd": "text"},
+		{"text": "Methodology paragraph.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without fix: "1" and "2" match ^[0-9]+$ → 2 chunks
+	// With fix: "1" and "2" are purely numeric → filtered to body → 1 chunk
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (purely numeric lines filtered to body)", len(chunks))
+	}
+}
+
+// TestIsColonTitle_CJKEdgeCase verifies the isColonTitle function with
+// CJK sentence-ending punctuation (。). When there are exactly 31 ASCII
+// characters between the 。 and the ：, the function must return false
+// (31 < 32 rune threshold). The Go byte-offset bug (body[lastPunct+1:])
+// would corrupt the CJK punctuation bytes and artifactually inflate the
+// rune count past 32, causing a false positive.
+func TestIsColonTitle_CJKEdgeCase(t *testing.T) {
+	// 31 ASCII chars between 。 and ： → < 32 runes → must not promote
+	line := "abc。1234567890123456789012345678901："
+	if isColonTitle(line) {
+		t.Error("isColonTitle should be false: 31 ASCII chars between CJK punct and colon is < 32")
+	}
+
+	// 32 ASCII chars → exactly 32 → must promote
+	line32 := "abc。12345678901234567890123456789012："
+	if !isColonTitle(line32) {
+		t.Error("isColonTitle should be true: 32 ASCII chars between CJK punct and colon is >= 32")
+	}
+}
+
+// TestIsColonTitle_ASCII_NoRegression verifies the existing ASCII-only
+// isColonTitle path still works correctly (regression guard).
+func TestIsColonTitle_ASCII_NoRegression(t *testing.T) {
+	// 32 ASCII chars between . and : → must promote
+	line := "abc.12345678901234567890123456789012:"
+	if !isColonTitle(line) {
+		t.Error("isColonTitle should be true: 32 ASCII chars between . and :")
+	}
+	// 31 ASCII chars → must NOT promote
+	line31 := "abc.1234567890123456789012345678901:"
+	if isColonTitle(line31) {
+		t.Error("isColonTitle should be false: 31 ASCII chars between . and :")
+	}
+	// Short colon line → must NOT promote
+	if isColonTitle("Note:") {
+		t.Error("isColonTitle should be false for short colon line")
+	}
+}
+
+// TestHierarchyTitleChunker_ColonTitlePromotion_CJK_EdgeCase verifies
+// the CJK colon-title edge case through the full hierarchy chunker
+// pipeline. With 31 ASCII chars between 。 and ： the line must NOT be
+// promoted (1 chunk), but the byte-offset bug causes a false promotion
+// (2 chunks).
+func TestHierarchyTitleChunker_ColonTitlePromotion_CJK_EdgeCase(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "abc。1234567890123456789012345678901：", "doc_type_kwd": "text"},
+		{"text": "Body one.", "doc_type_kwd": "text"},
+		{"text": "def。1234567890123456789012345678901：", "doc_type_kwd": "text"},
+		{"text": "Body two.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// With fix: both have 31 < 32 → NOT promoted → 1 chunk (all body).
+	// Without fix: byte-offset corruption inflates rune count past 32 → both promoted → 2 chunks.
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (31 ASCII chars between CJK punct and colon is < 32, must NOT promote)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_ShortSingleCJKLineFilter verifies that a
+// single CJK character (3 bytes UTF-8) is filtered to body level.
+// The Go byte-count bug (len(text) <= 1) would let it through because
+// len("案") = 3 > 1, but Python's Unicode-aware len returns 1, so the
+// line should be filtered to body. Without the fix the single CJK char
+// would be promoted when it matches a heading regex.
+func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^..?$`}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "案", "doc_type_kwd": "text"},
+		{"text": "Body one.", "doc_type_kwd": "text"},
+		{"text": "例", "doc_type_kwd": "text"},
+		{"text": "Body two.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.txt",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// With fix: "案" is 1 rune → len <= 1 → filtered to body → 1 chunk.
+	// Without fix: len("案") = 3 bytes > 1 → passes filter → ^..?$ matches → 2 chunks.
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1 (single CJK char must be filtered to body)", len(chunks))
+	}
+}
+
+// TestHierarchyTitleChunker_CKTypeHeadingFallback verifies that
+// records with ck_type "heading" (from office_oxide DOCX parsing)
+// are treated as heading nodes in the tree, even when their text
+// doesn't match any regex pattern. Without the fix, such records
+// are treated as body text — all content merges into one chunk.
+func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 2,
+		"levels":    [][]string{{`^# `}, {`^## `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "Introduction", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Intro body.", "doc_type_kwd": "text"},
+		{"text": "Background", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Background body.", "doc_type_kwd": "text"},
+		{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Final words.", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":   "test.docx",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	// Without the fix: 1 chunk (all text merged as body under root).
+	// With the fix: 3 chunks (one per heading + its body).
+	if len(chunks) != 3 {
+		t.Fatalf("len(chunks) = %d, want 3 (3 ck_type=headings should produce 3 chunks)", len(chunks))
+	}
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if text == "" {
+			t.Error("chunk text is empty")
+		}
+	}
+}
+
+// TestHierarchyTitleChunker_ConsecutiveNonTextOrder pins Gap G: two
 func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	c, err := NewHierarchyTitleChunker(map[string]any{
 		"hierarchy": 1,

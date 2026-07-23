@@ -18,6 +18,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -3558,7 +3559,8 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
 
-	parseResult := fileParser.ParseWithResult(filename, fileContent)
+	ctx := context.Background()
+	parseResult := fileParser.ParseWithResult(ctx, filename, fileContent)
 	if parseResult.Err != nil {
 		return nil, formatRequestError("parse local file", parseResult.Err)
 	}

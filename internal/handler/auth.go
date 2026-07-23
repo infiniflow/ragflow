@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -37,10 +38,10 @@ type AuthHandler struct {
 // so the test suite can swap in a stub without spinning up the
 // full UserService (which requires a live Redis + JWT secret).
 type userTokenResolver interface {
-	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
-	GetAPITokenByBeta(authorization string) (*entity.APIToken, error)
+	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
+	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error)
 }
 
 // NewAuthHandler create auth handler
@@ -69,6 +70,7 @@ func NewAuthHandler() *AuthHandler {
 // regular user token must keep working here too.
 func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
 			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
@@ -82,13 +84,13 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		// AUTH_JWT
-		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
+		if u, code, err := h.userService.GetUserByToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Next()
 			return
 		}
 		// Then try a regular API token (non-beta public bot flow).
-		if u, code, err := h.userService.GetUserByAPIToken(auth); err == nil && code == common.CodeSuccess {
+		if u, code, err := h.userService.GetUserByAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
 			c.Set("auth_via_api_token", true)
 			c.Next()
@@ -101,9 +103,9 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		// Mirrors the python
 		// `APIToken.query(beta=token).dialog_id` lookup in
 		// bot_api.py:agent_bot_logs.
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
+		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
-			if tok, terr := h.userService.GetAPITokenByBeta(auth); terr == nil && tok != nil && tok.DialogID != nil {
+			if tok, terr := h.userService.GetAPITokenByBeta(ctx, auth); terr == nil && tok != nil && tok.DialogID != nil {
 				// tok.DialogID is *string (nullable in the schema), but
 				// downstream handlers (GetAgentbotLogs, GetAgentLogs)
 				// read "agent_id" with agentID.(string) — they cannot
@@ -126,6 +128,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 // Validates that the user is authenticated and is a superuser (admin)
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Missing Authorization header")
@@ -136,9 +139,9 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		authViaAPIToken := false
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(token)
+		user, code, err := h.userService.GetUserByToken(ctx, token)
 		if err != nil {
-			user, code, err = h.userService.GetUserByAPIToken(token)
+			user, code, err = h.userService.GetUserByAPIToken(ctx, token)
 			if err != nil {
 				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 				c.Abort()
