@@ -145,11 +145,11 @@ wheels = [
 
 [[package]]
 name = "aiosmtplib"
-version = "5.0.0"
+version = "5.1.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a2/15/c2dc93a58d716bce64b53918d3cf667d86c96a56a9f3a239a9f104643637/aiosmtplib-5.0.0.tar.gz", hash = "sha256:514ac11c31cb767c764077eb3c2eb2ae48df6f63f1e847aeb36119c4fc42b52d" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/b9/25/d36d056e62a1dc3dd51ce76e7647c62966702193dc91eafa7fd4e1006a91/aiosmtplib-5.1.2.tar.gz", hash = "sha256:04a0ea3c678f5b719f998f290dce010ca512e1385836d3944206299df03b060f" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/99/42/b997c306dc54e6ac62a251787f6b5ec730797eea08e0336d8f0d7b899d5f/aiosmtplib-5.0.0-py3-none-any.whl", hash = "sha256:95eb0f81189780845363ab0627e7f130bca2d0060d46cd3eeb459f066eb7df32" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/d5/ec/c5a415cd1309eaac28ad3c599458194d25ba07189bb07a1bac2c6713c17e/aiosmtplib-5.1.2-py3-none-any.whl", hash = "sha256:070d467cc329dafd0af59108ba5d217d973cba10309910fed359a2a7bfb52d7a" },
 ]
 
 [[package]]
@@ -4039,12 +4039,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "coloredlogs" },
+    { name = "flatbuffers" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy" },
 ]
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/03/05/40d561636e4114b54aa06d2371bfbca2d03e12cfdf5d4b85814802f18a75/onnxruntime_gpu-1.23.2-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1e8f75af5da07329d0c3a5006087f4051d8abd133b4be7c9bae8cdab7bea4c26" },
@@ -8162,7 +8162,7 @@ test = [
 requires-dist = [
     { name = "agentrun-sdk", specifier = ">=0.0.51,<1.0.0" },
     { name = "aiohttp", specifier = ">=3.14.1" },
-    { name = "aiosmtplib", specifier = ">=5.0.0" },
+    { name = "aiosmtplib", specifier = ">=5.1.1,<6.0.0" },
     { name = "akshare", specifier = ">=1.15.78,<2.0.0" },
     { name = "alibabacloud-dingtalk", specifier = ">=2.0.0" },
     { name = "anthropic", specifier = "==0.76.0" },
