@@ -65,7 +65,7 @@ func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*enti
 
 func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	if chatID != nil && *chatID != "" {
-		dialog, err := s.chatDAO.GetByID(ctx, *chatID)
+		dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *chatID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, errors.New("Can't find this chat assistant!")
@@ -185,15 +185,15 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
 			}
 			if chatID != "" {
-				dialog, err := s.chatDAO.GetByID(ctx, chatID)
+				dialog, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 				if err != nil {
 					if dao.IsNotFoundErr(err) {
-						return nil, common.CodeDataError, errors.New("Can't find this chat assistant!")
+						return nil, common.CodeDataError, errors.New("can't find this chat assistant")
 					}
 					return nil, common.CodeServerError, err
 				}
 				if dialog.TenantID != channel.TenantID {
-					return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+					return nil, common.CodeAuthenticationError, errors.New("no authorization")
 				}
 			}
 			updates["chat_id"] = chatID
