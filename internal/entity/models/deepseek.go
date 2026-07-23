@@ -68,79 +68,42 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+			break
+		case "low":
+			thinkingFlag = "disabled"
+			break
+		case "medium":
+			thinkingFlag = "disabled"
+			break
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+			break
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "low":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "medium":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-				default:
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = effort
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 
@@ -250,84 +213,38 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+		case "low":
+			thinkingFlag = "disabled"
+		case "medium":
+			thinkingFlag = "disabled"
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+		default:
+			return fmt.Errorf("invalid effort level")
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					break
-				case "low":
-					thinkingFlag = "disabled"
-					break
-				case "medium":
-					thinkingFlag = "disabled"
-					break
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-					break
-				default:
-					return fmt.Errorf("invalid effort level")
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 

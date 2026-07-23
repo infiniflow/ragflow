@@ -221,6 +221,55 @@ func ReadErrorBody(r io.Reader) string {
 	return string(b)
 }
 
+func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := map[string]any{
+		"model":       modelName,
+		"messages":    buildChatMessages(messages),
+		"stream":      stream,
+		"temperature": 1,
+	}
+
+	if cfg != nil {
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
+		if cfg.Temperature != nil {
+			reqBody["temperature"] = *cfg.Temperature
+		}
+
+		if cfg.DoSample != nil {
+			reqBody["do_sample"] = *cfg.DoSample
+		}
+
+		if cfg.TopP != nil {
+			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.Stop != nil {
+			reqBody["stop"] = *cfg.Stop
+		}
+
+		if cfg.Tools != nil {
+			reqBody["tools"] = cfg.Tools
+			toolChoice := "auto"
+			if cfg.ToolChoice != nil {
+				toolChoice = *cfg.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
+	}
+
+	return reqBody
+}
+
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
+}
+
 // buildChatMessages converts internal messages to chat API payload items.
 func buildChatMessages(messages []Message) []map[string]any {
 	apiMessages := make([]map[string]interface{}, len(messages))
