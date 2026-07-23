@@ -958,7 +958,7 @@ def remove_contents_table(sections, eng=False):
         if i >= len(sections) or not prefix:
             break
         for j in range(i, min(i + 128, len(sections))):
-            if not re.match(prefix, get(j)):
+            if not re.match(re.escape(prefix), get(j)):
                 continue
             for _ in range(i, j):
                 sections.pop(i)
