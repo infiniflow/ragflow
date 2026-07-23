@@ -35,7 +35,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	}
 
 	var callCount atomic.Int32
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		if modelName != "fixture-vlm" {
 			t.Fatalf("modelName = %q, want fixture-vlm", modelName)
 		}

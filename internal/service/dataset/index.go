@@ -419,7 +419,7 @@ type embeddingCheckSample struct {
 	QuestionKeywords  []string
 }
 
-func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
+func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
@@ -493,14 +493,14 @@ func (d *DatasetService) CheckEmbedding(userID, datasetID string, req *service.C
 
 		var titleVector [][]float64
 		if title != "" {
-			titleVector, err = datasetEncodeEmbedding(embeddingModel, []string{title})
+			titleVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{title})
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
 		}
 		var contentVector [][]float64
 		if content != "" {
-			contentVector, err = datasetEncodeEmbedding(embeddingModel, []string{content})
+			contentVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{content})
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
