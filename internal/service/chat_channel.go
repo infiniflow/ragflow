@@ -39,7 +39,7 @@ func NewChatChannelService() *ChatChannelService {
 	}
 }
 
-func (s *ChatChannelService) Insert(channel *entity.ChatChannel) error {
+func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatChannel) error {
 	if channel == nil {
 		return errors.New("channel is nil")
 	}
@@ -49,18 +49,18 @@ func (s *ChatChannelService) Insert(channel *entity.ChatChannel) error {
 	if channel.Status == 0 {
 		channel.Status = 1
 	}
-	return s.chatChannelDAO.Create(channel)
+	return s.chatChannelDAO.Create(ctx, channel)
 }
 
-func (s *ChatChannelService) GetByID(id string) (*entity.ChatChannel, error) {
+func (s *ChatChannelService) GetByID(ctx context.Context, id string) (*entity.ChatChannel, error) {
 	if id == "" {
 		return nil, errors.New("id is empty")
 	}
-	return s.chatChannelDAO.GetByIDOnly(id)
+	return s.chatChannelDAO.GetByIDOnly(ctx, id)
 }
 
 func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
-	return s.chatChannelDAO.ListByTenantID(tenantID)
+	return s.chatChannelDAO.ListByTenantID(ctx, tenantID)
 }
 
 func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
@@ -86,19 +86,19 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 		Status:   1,
 	}
 
-	if err := s.Insert(row); err != nil {
+	if err := s.Insert(ctx, row); err != nil {
 		return nil, err
 	}
 
-	created, err := s.GetByID(row.ID)
+	created, err := s.GetByID(ctx, row.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load created chat channel: %w", err)
 	}
 	return created, nil
 }
 
-func (s *ChatChannelService) accessible(userID, channelID string) (*entity.ChatChannel, bool, error) {
-	channel, err := s.chatChannelDAO.GetByIDOnly(channelID)
+func (s *ChatChannelService) accessible(ctx context.Context, userID, channelID string) (*entity.ChatChannel, bool, error) {
+	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, false, nil
@@ -124,7 +124,7 @@ func (s *ChatChannelService) accessible(userID, channelID string) (*entity.ChatC
 }
 
 func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-	_, ok, err := s.accessible(userID, channelID)
+	_, ok, err := s.accessible(ctx, userID, channelID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -132,7 +132,7 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(channelID)
+	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Can't find this chat channel!")
@@ -143,7 +143,7 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 }
 
 func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(userID, channelID)
+	channel, ok, err := s.accessible(ctx, userID, channelID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -201,12 +201,12 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 	}
 
 	if len(updates) > 0 {
-		if err := s.chatChannelDAO.UpdateByID(channelID, channel.TenantID, updates); err != nil {
+		if err := s.chatChannelDAO.UpdateByID(ctx, channelID, channel.TenantID, updates); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
-	updated, err := s.chatChannelDAO.GetByIDOnly(channelID)
+	updated, err := s.chatChannelDAO.GetByIDOnly(ctx, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Can't find this chat channel!")
@@ -217,7 +217,7 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(userID, channelID)
+	channel, ok, err := s.accessible(ctx, userID, channelID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
@@ -228,7 +228,7 @@ func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, chan
 		return false, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
-	if err := s.chatChannelDAO.DeleteByID(channelID, channel.TenantID); err != nil {
+	if err = s.chatChannelDAO.DeleteByID(ctx, channelID, channel.TenantID); err != nil {
 		return false, common.CodeDataError, err
 	}
 	return true, common.CodeSuccess, nil
