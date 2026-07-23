@@ -1,5 +1,6 @@
 import base64
 import posixpath
+import stat
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +28,12 @@ class _FakeErrors:
         pass
 
     class PrimitiveTimeoutError(Exception):
+        pass
+
+    class SessionTerminatedError(Exception):
+        pass
+
+    class SessionNotFoundError(Exception):
         pass
 
     class FileNotFoundError(Exception):
@@ -289,3 +296,70 @@ def test_tenki_provider_instances_are_independent(monkeypatch):
 
     provider.destroy_instance(b.instance_id)
     assert sandboxes[1].terminated is True
+
+
+def test_tenki_provider_executes_javascript(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        payload = base64.b64encode(b'{"present":true,"value":42,"type":"json"}').decode("ascii")
+        return _FakeCommandResult(0, stdout=f"{RESULT_MARKER_PREFIX}{payload}\n")
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+
+    inst = provider.create_instance("javascript")
+    assert inst.metadata["language"] == "nodejs"
+
+    result = provider.execute_code(inst.instance_id, "function main(args){return 42;}", "javascript", timeout=5)
+
+    # The script is written as main.js and run with node.
+    assert any(k.endswith("main.js") for k in sandbox.fs.files)
+    run_argv = [c[0] for c in sandbox.exec_calls if c[0] and c[0][0] == "node"]
+    assert run_argv, "expected a node invocation"
+    assert result.metadata["result_value"] == 42
+
+
+def test_tenki_provider_rejects_symlink_artifacts(monkeypatch):
+    provider, _ = _build_provider(_FakeSandbox(), monkeypatch)
+
+    class _SymlinkFS:
+        def list(self, path, *, include_hidden=False):
+            # is_symlink False but mode marks a symlink -> must still be rejected.
+            return [SimpleNamespace(path="evil.json", size=10, mode=stat.S_IFLNK | 0o777, is_dir=False, is_symlink=False, symlink_target="/etc/passwd")]
+
+    fake_sb = SimpleNamespace(fs=_SymlinkFS())
+    with pytest.raises(RuntimeError, match="symlinks are not allowed"):
+        provider._collect_artifacts(fake_sb, "/home/tenki/wk/artifacts")
+
+
+def test_tenki_provider_enforces_output_size_limit(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        return _FakeCommandResult(0, stdout="x" * 5000)
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+    provider.max_output_bytes = 100
+
+    inst = provider.create_instance("python")
+    with pytest.raises(RuntimeError, match="output exceeded"):
+        provider.execute_code(inst.instance_id, "def main():\n    return 1\n", "python", timeout=5)
+
+
+def test_tenki_provider_rejects_disallowed_artifact_extension(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        sandbox.fs.files[posixpath.join(cwd, "artifacts", "malware.exe")] = b"MZ"
+        return _FakeCommandResult(0, stdout="")
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+
+    inst = provider.create_instance("python")
+    with pytest.raises(RuntimeError, match="Unsupported artifact type"):
+        provider.execute_code(inst.instance_id, "def main():\n    return 1\n", "python", timeout=5)
+
+
+def test_tenki_provider_allow_outbound_configurable(monkeypatch):
+    sandbox = _FakeSandbox()
+    provider, client = _build_provider(sandbox, monkeypatch)
+    provider.allow_outbound = False
+    provider.create_instance("python")
+    assert client.create_kwargs["allow_outbound"] is False

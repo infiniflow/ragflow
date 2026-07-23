@@ -21,6 +21,7 @@ import json
 import mimetypes
 import os
 import posixpath
+import stat
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -52,6 +53,10 @@ ALLOWED_ARTIFACT_EXTENSIONS = {
 # unprivileged "tenki" user whose home is writable.
 SANDBOX_HOME = "/home/tenki"
 
+# Maximum directory depth walked when collecting artifacts, guarding against
+# deeply nested or symlink-looped trees produced by untrusted code.
+MAX_ARTIFACT_DEPTH = 16
+
 
 class TenkiProvider(SandboxProvider):
     """Execute code in a disposable Tenki microVM.
@@ -66,6 +71,7 @@ class TenkiProvider(SandboxProvider):
         self.project_id = ""
         self.base_url = ""
         self.image = ""
+        self.allow_outbound = True
         self.timeout = 30
         self.max_lifetime = 3600
         self.cpu_cores = 0
@@ -83,6 +89,7 @@ class TenkiProvider(SandboxProvider):
         self.project_id = str(config.get("project_id", "") or "").strip()
         self.base_url = str(config.get("base_url", "") or "").strip()
         self.image = str(config.get("image", "") or "").strip()
+        self.allow_outbound = bool(config.get("allow_outbound", True))
         self.timeout = int(config.get("timeout", 30) or 30)
         self.max_lifetime = int(config.get("max_lifetime", 3600) or 3600)
         self.cpu_cores = int(config.get("cpu_cores", 0) or 0)
@@ -121,7 +128,7 @@ class TenkiProvider(SandboxProvider):
 
         create_kwargs: dict[str, Any] = {
             "project_id": self.project_id,
-            "allow_outbound": True,
+            "allow_outbound": self.allow_outbound,
             "max_duration": self.max_lifetime,
             "metadata": {"source": "ragflow"},
         }
@@ -201,6 +208,10 @@ class TenkiProvider(SandboxProvider):
             result = sandbox.exec(*argv, cwd=remote_work_dir, timeout=exec_timeout)
         except (errors.CommandTimeoutError, errors.PrimitiveTimeoutError) as exc:
             raise TimeoutError(f"Execution timed out after {exec_timeout} seconds") from exc
+        except (errors.SessionTerminatedError, errors.SessionNotFoundError) as exc:
+            # The sandbox was reclaimed (e.g. max_lifetime) or lost mid-run;
+            # surface it as RuntimeError per the base contract, not an SDK type.
+            raise RuntimeError(f"Tenki sandbox is no longer available: {exc}") from exc
         execution_time = time.time() - start_time
 
         stdout = result.stdout_text
@@ -279,6 +290,13 @@ class TenkiProvider(SandboxProvider):
                 "required": False,
                 "label": "Sandbox Image",
                 "description": "Base image for sandboxes. Empty uses the Tenki default image (includes python3 and node).",
+            },
+            "allow_outbound": {
+                "type": "boolean",
+                "required": False,
+                "label": "Allow Outbound Network",
+                "default": True,
+                "description": "Security-relevant. Allow the sandbox to make outbound network connections (needed to install packages). Disable to run code without network access.",
             },
             "timeout": {
                 "type": "integer",
@@ -418,10 +436,13 @@ class TenkiProvider(SandboxProvider):
 
     def _collect_artifacts(self, sandbox, artifacts_dir: str) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []
-        self._collect_artifacts_recursive(sandbox, artifacts_dir, "", artifacts)
+        self._collect_artifacts_recursive(sandbox, artifacts_dir, "", artifacts, depth=0)
         return artifacts
 
-    def _collect_artifacts_recursive(self, sandbox, current_dir: str, relative_dir: str, artifacts: list[dict[str, Any]]) -> None:
+    def _collect_artifacts_recursive(self, sandbox, current_dir: str, relative_dir: str, artifacts: list[dict[str, Any]], depth: int) -> None:
+        if depth > MAX_ARTIFACT_DEPTH:
+            raise RuntimeError(f"Artifact directory nesting exceeds {MAX_ARTIFACT_DEPTH} levels: {relative_dir}")
+
         errors = self._tenki_errors()
         try:
             entries = sandbox.fs.list(current_dir)
@@ -437,10 +458,12 @@ class TenkiProvider(SandboxProvider):
             remote_path = posixpath.join(current_dir, name)
             relative_path = posixpath.join(relative_dir, name) if relative_dir else name
 
-            if entry.is_symlink:
+            # Reject symlinks. `is_symlink` is not populated by every SDK
+            # release, so also inspect the stat mode bits as the reliable check.
+            if getattr(entry, "is_symlink", False) or stat.S_ISLNK(entry.mode or 0):
                 raise RuntimeError(f"Artifact symlinks are not allowed: {relative_path}")
             if entry.is_dir:
-                self._collect_artifacts_recursive(sandbox, remote_path, relative_path, artifacts)
+                self._collect_artifacts_recursive(sandbox, remote_path, relative_path, artifacts, depth + 1)
                 continue
 
             if len(artifacts) >= self.max_artifacts:
@@ -488,5 +511,8 @@ def _get_tenki_module():
     try:
         import tenki_sandbox
     except ImportError as exc:
-        raise SandboxProviderConfigError("tenki-sandbox is required for the Tenki sandbox provider. Install the project dependencies to enable it.") from exc
+        # tenki-sandbox is an optional dependency: it requires protobuf>=6.31,
+        # which conflicts with RAGFlow's pinned gRPC stack, so it is not a core
+        # dependency. Install it into the runtime to enable this provider.
+        raise SandboxProviderConfigError("tenki-sandbox is required for the Tenki sandbox provider. Install it with `pip install tenki-sandbox` (or `uv pip install tenki-sandbox`).") from exc
     return tenki_sandbox

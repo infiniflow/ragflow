@@ -44,12 +44,19 @@ Admin > Sandbox Settings after the services are up.
 
 `tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
 
+The `tenki-sandbox` SDK is an optional dependency (it requires `protobuf>=6.31`, which differs from RAGFlow's default gRPC stack), so it is not installed by default. Install it into the RAGFlow runtime before selecting this provider:
+
+```bash
+pip install tenki-sandbox
+```
+
 Configure it in **Admin > Sandbox Settings**:
 
 - `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
 - `project_id` (required): the Tenki project that sandboxes are created under.
 - `base_url` (optional): override the Tenki API endpoint.
 - `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
+- `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `true` because installing packages needs network access; set it to `false` to run code without network.
 - `timeout`, `max_lifetime`, `cpu_cores`, `memory_mb`, `disk_size_gb`, and the output/artifact limits have sensible defaults and can be tuned in the same page.
 
 Notes:
