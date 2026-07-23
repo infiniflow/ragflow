@@ -749,7 +749,8 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	row, code, err := h.agentService.CreateAgentSession(&service.CreateAgentSessionRequest{
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
 		UserID:  user.ID,
 		AgentID: canvasID,
 		Name:    body.Name,
@@ -772,7 +773,8 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
-	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -791,10 +793,11 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
+	ctx := c.Request.Context()
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	if sessionID != "" {
-		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
+		ok, code, err := h.agentService.DeleteAgentSessionItem(ctx, user.ID, canvasID, sessionID)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -812,7 +815,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			}
 		}
 	}
-	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
+	result, code, err := h.agentService.DeleteAgentSessions(ctx, user.ID, canvasID, ids, deleteAll)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

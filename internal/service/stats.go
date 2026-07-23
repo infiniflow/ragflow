@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"ragflow/internal/dao"
@@ -50,13 +51,13 @@ type StatsResponse struct {
 }
 
 // GetStats returns daily API conversation statistics for the first tenant of a user.
-func (s *StatsService) GetStats(userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
+func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil || len(tenants) == 0 {
 		return nil, ErrTenantNotFound
 	}
 
-	rows, err := dao.NewAPI4ConversationDAO().Stats(tenants[0].TenantID, fromDate, toDate, source)
+	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, tenants[0].TenantID, fromDate, toDate, source)
 	if err != nil {
 		return nil, err
 	}
