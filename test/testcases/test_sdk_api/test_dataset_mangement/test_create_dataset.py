@@ -282,7 +282,7 @@ class TestDatasetCreate:
         payload = {"name": name, "permission": permission}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "input should be 'me' or 'team'" in str(exception_info.value)
+        assert "Input should be 'me' or 'team'" in str(exception_info.value)
 
     @pytest.mark.p2
     def test_permission_unset(self, client):
