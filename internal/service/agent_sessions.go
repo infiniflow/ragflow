@@ -393,7 +393,7 @@ func (s *AgentService) GetAgentSession(ctx context.Context, userID, agentID, ses
 		return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
 	}
 
-	data, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
+	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}
@@ -419,7 +419,7 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 		return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
 	}
 
-	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, sessionID, agentID)
+	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
@@ -451,7 +451,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 		}
 
-		ids, err = s.api4ConversationDAO.ListIDsByAgentID(ctx, agentID)
+		ids, err = s.api4ConversationDAO.ListIDsByAgentID(ctx, dao.DB, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -471,7 +471,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			continue
 		}
 
-		conv, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
+		conv, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -480,7 +480,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			continue
 		}
 
-		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, sessionID, agentID); err != nil {
+		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -752,7 +752,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		Source:    sourcePtr,
 		DSL:       dsl,
 	}
-	if err := s.api4ConversationDAO.Create(ctx, row); err != nil {
+	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("create agent session: %w", err)
 	}
 	return row, common.CodeSuccess, nil

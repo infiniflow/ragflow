@@ -21,6 +21,8 @@ import (
 	"errors"
 
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // APITokenDAO API token data access object
@@ -32,27 +34,27 @@ func NewAPITokenDAO() *APITokenDAO {
 }
 
 // Create creates a new API token
-func (dao *APITokenDAO) Create(ctx context.Context, apiToken *entity.APIToken) error {
-	return DB.WithContext(ctx).Create(apiToken).Error
+func (dao *APITokenDAO) Create(ctx context.Context, db *gorm.DB, apiToken *entity.APIToken) error {
+	return db.WithContext(ctx).Create(apiToken).Error
 }
 
 // GetByTenantID gets API tokens by tenant ID
-func (dao *APITokenDAO) GetByTenantID(ctx context.Context, tenantID string) ([]*entity.APIToken, error) {
+func (dao *APITokenDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.APIToken, error) {
 	var tokens []*entity.APIToken
-	err := DB.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tokens).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tokens).Error
 	return tokens, err
 }
 
 // DeleteByTenantID deletes all API tokens by tenant ID (hard delete)
-func (dao *APITokenDAO) DeleteByTenantID(ctx context.Context, tenantID string) (int64, error) {
-	result := DB.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.APIToken{})
+func (dao *APITokenDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.APIToken{})
 	return result.RowsAffected, result.Error
 }
 
 // GetByToken gets API token by access key
-func (dao *APITokenDAO) GetUserByAPIToken(ctx context.Context, token string) (*entity.APIToken, error) {
+func (dao *APITokenDAO) GetUserByAPIToken(ctx context.Context, db *gorm.DB, token string) (*entity.APIToken, error) {
 	var apiToken entity.APIToken
-	err := DB.WithContext(ctx).Where("token = ?", token).First(&apiToken).Error
+	err := db.WithContext(ctx).Where("token = ?", token).First(&apiToken).Error
 	if err != nil {
 		return nil, err
 	}
@@ -61,24 +63,24 @@ func (dao *APITokenDAO) GetUserByAPIToken(ctx context.Context, token string) (*e
 
 // GetByBeta gets API tokens by beta key (SDK/bot authorization token).
 // Mirrors Python's APIToken.query(beta=token), which returns a list.
-func (dao *APITokenDAO) GetByBeta(ctx context.Context, beta string) ([]*entity.APIToken, error) {
+func (dao *APITokenDAO) GetByBeta(ctx context.Context, db *gorm.DB, beta string) ([]*entity.APIToken, error) {
 	var tokens []*entity.APIToken
-	err := DB.WithContext(ctx).Where("beta = ?", beta).Find(&tokens).Error
+	err := db.WithContext(ctx).Where("beta = ?", beta).Find(&tokens).Error
 	return tokens, err
 }
 
 // DeleteByDialogIDs deletes API tokens by dialog IDs (hard delete)
-func (dao *APITokenDAO) DeleteByDialogIDs(ctx context.Context, dialogIDs []string) (int64, error) {
+func (dao *APITokenDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.APIToken{})
+	result := db.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.APIToken{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByTenantIDAndToken deletes a specific API token by tenant ID and token value
-func (dao *APITokenDAO) DeleteByTenantIDAndToken(ctx context.Context, tenantID, token string) (int64, error) {
-	result := DB.WithContext(ctx).Unscoped().Where("tenant_id = ? AND token = ?", tenantID, token).Delete(&entity.APIToken{})
+func (dao *APITokenDAO) DeleteByTenantIDAndToken(ctx context.Context, db *gorm.DB, tenantID, token string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND token = ?", tenantID, token).Delete(&entity.APIToken{})
 	return result.RowsAffected, result.Error
 }
 
@@ -106,11 +108,11 @@ type ConversationStatsRow struct {
 // DAO does not assign defaults because session creation paths in the
 // Python agent API generate a uuid + tenant timestamp and rely on the
 // round-trip shape being byte-identical.
-func (dao *API4ConversationDAO) Create(ctx context.Context, conv *entity.API4Conversation) error {
+func (dao *API4ConversationDAO) Create(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
 	if conv == nil {
 		return errors.New("api4 conversation: nil row")
 	}
-	return DB.WithContext(ctx).Create(conv).Error
+	return db.WithContext(ctx).Create(conv).Error
 }
 
 // Update writes back an existing api_4_conversation row. The bot
@@ -118,21 +120,21 @@ func (dao *API4ConversationDAO) Create(ctx context.Context, conv *entity.API4Con
 // turn so multi-turn chatbot sessions carry prior history into the next
 // LLM call. Matches the Python conversation_service.update pattern at
 // api/db/services/conversation_service.py:236 (async_iframe_completion).
-func (dao *API4ConversationDAO) Update(ctx context.Context, conv *entity.API4Conversation) error {
+func (dao *API4ConversationDAO) Update(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
 	if conv == nil {
 		return errors.New("api4 conversation: nil row")
 	}
 	if conv.ID == "" {
 		return errors.New("api4 conversation: empty id")
 	}
-	return DB.WithContext(ctx).Save(conv).Error
+	return db.WithContext(ctx).Save(conv).Error
 }
 
 // Stats returns daily conversation aggregates for a tenant.
-func (dao *API4ConversationDAO) Stats(ctx context.Context, tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
+func (dao *API4ConversationDAO) Stats(ctx context.Context, db *gorm.DB, tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
 	var rows []ConversationStatsRow
 	dateExpr := "DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00')"
-	db := DB.WithContext(ctx).Table("api_4_conversation AS a").
+	query := db.WithContext(ctx).Table("api_4_conversation AS a").
 		Select(`
 			DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00') AS dt,
 			COUNT(a.id) AS pv,
@@ -146,20 +148,20 @@ func (dao *API4ConversationDAO) Stats(ctx context.Context, tenantID, fromDate, t
 		Where("a.create_date >= ? AND a.create_date <= ?", fromDate, toDate)
 
 	if source == nil {
-		db = db.Where("a.source IS NULL")
+		query = query.Where("a.source IS NULL")
 	} else {
-		db = db.Where("a.source = ?", *source)
+		query = query.Where("a.source = ?", *source)
 	}
 
-	err := db.Group(dateExpr).
+	err := query.Group(dateExpr).
 		Order(dateExpr).
 		Scan(&rows).Error
 	return rows, err
 }
 
-func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, sessionID, agentID string) (*entity.API4Conversation, error) {
+func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (*entity.API4Conversation, error) {
 	var result entity.API4Conversation
-	tx := DB.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, agentID).Find(&result)
+	tx := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, agentID).Find(&result)
 	if tx.Error != nil {
 		return nil, tx.Error
 	}
@@ -170,23 +172,23 @@ func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, sessionID, a
 }
 
 // ListIDsByAgentID lists conversation IDs for one agent.
-func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, agentID string) ([]string, error) {
+func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, db *gorm.DB, agentID string) ([]string, error) {
 	var ids []string
-	err := DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	err := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
 	return ids, err
 }
 
 // DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
-func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context, sessionID, agentID string) (int64, error) {
-	result := DB.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (int64, error) {
+	result := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)
-func (dao *API4ConversationDAO) DeleteByDialogIDs(ctx context.Context, dialogIDs []string) (int64, error) {
+func (dao *API4ConversationDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{})
+	result := db.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{})
 	return result.RowsAffected, result.Error
 }

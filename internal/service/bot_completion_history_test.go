@@ -336,7 +336,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// The persisted session must hold exactly the prologue turn —
 	// no empty user message may be written.
 	ctx := t.Context()
-	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, got[0].SessionID, "dlg-1")
+	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1")
 	if derr != nil || row == nil {
 		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
 	}
@@ -401,7 +401,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		Message:  seed,
 	}
 	ctx := t.Context()
-	if err := dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p1", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -453,7 +453,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 
 	ctx := t.Context()
 	sess := &entity.API4Conversation{ID: "sess-p2", DialogID: "dlg-p1", UserID: "tenant-1"}
-	if err := dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -462,7 +462,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p2", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -499,7 +499,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 
 	ctx := t.Context()
 	sess := &entity.API4Conversation{ID: "sess-p3", DialogID: "dlg-p1", UserID: "tenant-1"}
-	if err = dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err = dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -518,7 +518,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 	}
 	wg.Wait()
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p3", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}

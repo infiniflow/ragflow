@@ -1020,7 +1020,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = normalisedDSLForRun(versionRow)
 	}
 	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, canvasID)
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, canvasID)
 		if sessionErr != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
 		}
@@ -1545,7 +1545,7 @@ func (s *AgentService) createAgentRunSession(
 	if versionRow != nil {
 		session.VersionTitle = versionRow.Title
 	}
-	return s.api4ConversationDAO.Create(ctx, session)
+	return s.api4ConversationDAO.Create(ctx, dao.DB, session)
 }
 
 // runIDFor builds the per-run CanvasState identifier: canvasID
@@ -1595,7 +1595,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 		return nil
@@ -1622,7 +1622,7 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
-	return s.api4ConversationDAO.Update(ctx, session)
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {
