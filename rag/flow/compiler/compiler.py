@@ -135,7 +135,7 @@ class Compiler(ProcessBase, LLM):
                     chat_mdl=chat_mdl_by_tid[template_id],
                     embd_mdl=embedding_model,
                     tree_builder="raptor",
-                    clustering_method="gmm",
+                    clustering_method="ahc",
                     max_errors=3,
                 )
             except Exception:
