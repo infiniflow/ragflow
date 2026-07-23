@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -73,7 +74,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-func (p *XLSParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":

@@ -22,6 +22,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -70,7 +71,7 @@ func (p *AudioParser) ConfigureFromSetup(setup map[string]any) {
 // file extension against the audio extension whitelist. The actual
 // speech-to-text transcription happens via maybeDispatchAudio at the
 // component layer (mirrors Python's LLMBundle.transcription call).
-func (p *AudioParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *AudioParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if len(ext) > 1 && ext[0] == '.' {
 		ext = ext[1:]

@@ -8,19 +8,21 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_CGOInvalidPDF(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("DEEPDOC_URL", "")
 	t.Setenv("OSSDEEPDOC_URL", "")
 
 	pdf := NewPDFParser()
-	res := pdf.ParseWithResult("bad.pdf", []byte("not a valid pdf"))
+	res := pdf.ParseWithResult(ctx, "bad.pdf", []byte("not a valid pdf"))
 	if res.Err == nil {
 		t.Fatal("want parse error for invalid PDF bytes, got nil")
 	}
 }
 
 func TestPDFParser_ParseWithResult_CGOEmpty(t *testing.T) {
+	ctx := t.Context()
 	pdf := NewPDFParser()
-	res := pdf.ParseWithResult("empty.pdf", nil)
+	res := pdf.ParseWithResult(ctx, "empty.pdf", nil)
 	if res.Err != nil {
 		t.Fatalf("empty input: want nil err, got %v", res.Err)
 	}
