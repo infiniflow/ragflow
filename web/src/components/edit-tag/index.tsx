@@ -103,7 +103,10 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             disabled={disabled}
             data-testid={inputTestId}
             onKeyDown={(e) => {
-              if (e?.key === 'Enter') {
+              // Ignore the Enter that confirms an IME (e.g. Chinese/Japanese)
+              // composition, otherwise the half-composed text is committed as a
+              // tag and the input closes before the user finishes typing.
+              if (e?.key === 'Enter' && !e.nativeEvent.isComposing) {
                 handleInputConfirm();
               }
             }}
