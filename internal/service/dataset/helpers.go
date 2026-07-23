@@ -69,9 +69,9 @@ func parserIDError() error {
 	case 0:
 		return errors.New("invalid parser_id")
 	case 1:
-		return fmt.Errorf("Input should be '%s'", refs[0])
+		return fmt.Errorf("input should be '%s'", refs[0])
 	default:
-		return fmt.Errorf("Input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
+		return fmt.Errorf("input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
 	}
 }
 
