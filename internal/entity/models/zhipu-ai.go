@@ -340,9 +340,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 			return usageErr
 		}
 		if found {
-			if usageErr := applyStreamUsage(chatModelConfig, modelUsage, tokenUsage); usageErr != nil {
-				return usageErr
-			}
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
 		}
 
 		choices, ok := event["choices"].([]interface{})

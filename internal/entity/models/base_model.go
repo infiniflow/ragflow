@@ -69,7 +69,7 @@ func parseChatCompletionResponse[T any](body []byte, chatConfig *ChatConfig, mod
 	}
 
 	if err := collectChatModelUsage(modelUsage, parts.RequestID, parts.Usage); err != nil {
-		return nil, fmt.Errorf("failed to collect model usage: %w", err)
+		common.Error("Failed to collect model usage", err)
 	}
 
 	return &ChatResponse{
@@ -121,15 +121,18 @@ func decodeOpenAICompatibleStreamUsage(event map[string]any) (*TokenUsage, bool,
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
-// for model-usage analytics when a usage event is received.
-func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) error {
+// for model-usage analytics when a usage event is received. Analytics failures
+// are logged but do not interrupt the stream.
+func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
 	if usage == nil {
-		return nil
+		return
 	}
 	if chatConfig != nil {
 		chatConfig.UsageResult = usage
 	}
-	return collectModelUsage(modelUsage, usage)
+	if err := collectModelUsage(modelUsage, usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
