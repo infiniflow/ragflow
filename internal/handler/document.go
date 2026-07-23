@@ -1149,6 +1149,63 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
 }
 
+// parseDocIDsQuery parses a comma-separated doc_ids query string into a slice.
+// Empty / whitespace-only entries are dropped. An empty or absent value
+// returns nil (meaning "no filter — summarize over every document").
+func parseDocIDsQuery(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// MetadataSummaryByDataset handles GET /api/v1/datasets/:dataset_id/metadata/summary,
+// the public dataset-scoped contract from api/apps/restful_apis/document_api.py::metadata_summary.
+//
+// The optional doc_ids query parameter is a comma-separated list of document
+// IDs to filter the summary by; when absent or empty the summary covers every
+// document in the dataset. The legacy POST /v1/document/metadata/summary
+// endpoint (kb_id in body) is left untouched.
+func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(datasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	docIDs := parseDocIDsQuery(c.Query("doc_ids"))
+
+	summary, err := h.documentService.GetMetadataSummary(datasetID, docIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    1,
+			"message": "Failed to get metadata summary: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"summary": summary,
+		},
+	})
+}
+
 // SetMetaRequest represents the request for setting document metadata
 type SetMetaRequest struct {
 	DocID string `json:"doc_id" binding:"required"`
