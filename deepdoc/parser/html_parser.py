@@ -159,7 +159,10 @@ class RAGFlowHtmlParser:
                 if title_flag:
                     content = f"{TITLE_TAGS[tag_name]} {content}"
                 if last_block_id != block_id:
-                    if last_block_id is not None:
+                    # Flush whatever is buffered, including loose text that
+                    # precedes the first block (last_block_id is None there),
+                    # which was otherwise overwritten and lost.
+                    if current_content:
                         block_content.append(current_content)
                     current_content = content
                     last_block_id = block_id
