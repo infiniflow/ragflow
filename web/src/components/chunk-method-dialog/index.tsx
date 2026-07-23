@@ -24,7 +24,6 @@ import {
   ChunkMethodItem,
   EnableTocToggle,
   ImageContextWindow,
-  ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import omit from 'lodash/omit';
@@ -44,6 +43,7 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
+import { ParseTypeItem } from '../parse-type-form-field';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';

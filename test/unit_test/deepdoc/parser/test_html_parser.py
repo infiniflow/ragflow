@@ -148,3 +148,25 @@ def test_parser_txt_extracts_bodyless_html_fragment():
     joined = "\n".join(chunks)
     assert "# Title" in joined
     assert "Fragment text" in joined
+
+
+def test_parser_txt_keeps_text_before_first_block():
+    # Loose text (or an inline element) that precedes the first block element
+    # must not be dropped. The block-change flush was guarded on there being a
+    # previous block, so the buffered preamble was overwritten and lost.
+    joined = "\n".join(RAGFlowHtmlParser.parser_txt("<body>Preamble text.<h1>Title</h1><p>Body.</p></body>", chunk_token_num=512))
+    assert "Preamble text." in joined
+    assert "# Title" in joined
+    assert "Body." in joined
+
+    inline = "\n".join(RAGFlowHtmlParser.parser_txt("<body><span>Notice.</span><h2>Section</h2><p>Body.</p></body>", chunk_token_num=512))
+    assert "Notice." in inline
+
+
+def test_parser_txt_keeps_loose_text_between_and_after_blocks():
+    # Control: loose text surrounded by / following blocks was already kept and
+    # must stay that way.
+    between = "\n".join(RAGFlowHtmlParser.parser_txt("<p>One.</p>loose<p>Two.</p>", chunk_token_num=512))
+    assert "loose" in between
+    trailing = "\n".join(RAGFlowHtmlParser.parser_txt("<p>Only.</p>tail", chunk_token_num=512))
+    assert "tail" in trailing

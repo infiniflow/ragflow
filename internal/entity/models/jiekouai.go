@@ -18,6 +18,7 @@ package models
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -61,7 +62,7 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 	return strings.TrimSpace(*modelName), nil
 }
 
-func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -196,7 +197,7 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 	return chatResponse, nil
 }
 
-func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -332,7 +333,7 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	return nil
 }
 
-func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -411,7 +412,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	return embeddings, nil
 }
 
-func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -494,31 +495,31 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	return &rerankResponse, nil
 }
 
-func (j *JieKouAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (j *JieKouAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JieKouAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (j *JieKouAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (j *JieKouAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (j *JieKouAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (j *JieKouAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -574,19 +575,19 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
-func (j *JieKouAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (j *JieKouAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := j.ListModels(apiConfig)
+func (j *JieKouAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := j.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (j *JieKouAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (j *JieKouAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", j.Name())
 }
 
-func (j *JieKouAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (j *JieKouAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", j.Name())
 }

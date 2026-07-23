@@ -1045,7 +1045,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	matchExprs := make([]interface{}, 0, 3)
 	if question != "" {
 		matchText := memoryMessageTextExpr(question, similarityThreshold)
-		matchDense, err := s.memoryMessageDenseExpr(question, memories[0], topN, similarityThreshold)
+		matchDense, err := s.memoryMessageDenseExpr(ctx, question, memories[0], topN, similarityThreshold)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1289,13 +1289,13 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	return matchText
 }
 
-func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
+func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1460,6 +1460,7 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 	}
 
 	memoryList := make([]map[string]interface{}, 0, len(memories))
+	modelNameCache := make(map[string]string)
 	for _, m := range memories {
 		resp := formatRetDataFromMemoryListItem(m)
 		var createDateStr *string
@@ -1468,6 +1469,8 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
+			"llm_id":       resolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      resolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1486,6 +1489,42 @@ func (s *MemoryService) ListMemories(userID string, tenantIDs []string, memoryTy
 		MemoryList: memoryList,
 		TotalCount: total,
 	}, nil
+}
+
+// resolveTenantModelDisplayName turns a tenant_model ID into
+// modelName@instance@provider. rawModelID is the API-facing fallback
+// stored on memory.llm_id / memory.embd_id.
+func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+	tenantModelID = strings.TrimSpace(tenantModelID)
+	rawModelID = strings.TrimSpace(rawModelID)
+	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {
+		return rawModelID
+	}
+
+	if displayName, ok := cache[tenantModelID]; ok {
+		return displayName
+	}
+
+	displayName := rawModelID
+	defer func() {
+		cache[tenantModelID] = displayName
+	}()
+
+	model, err := dao.NewTenantModelDAO().GetByID(tenantModelID)
+	if err != nil {
+		return displayName
+	}
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	if err != nil {
+		return displayName
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	if err != nil {
+		return displayName
+	}
+
+	displayName = fmt.Sprintf("%s@%s@%s", model.ModelName, instance.InstanceName, provider.ProviderName)
+	return displayName
 }
 
 // GetMemoryConfig retrieves the full configuration of a memory by ID

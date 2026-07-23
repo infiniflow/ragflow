@@ -159,7 +159,7 @@ type n1nChatResponse struct {
 
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
-func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 
 	reqBody := buildN1NChatRequest(modelName, messages, false, chatModelConfig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -224,7 +224,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion.
-func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 
 	reqBody := buildN1NChatRequest(modelName, messages, true, chatModelConfig)
 
-	req, err := newN1NJSONRequest(context.Background(), "POST", endpoint, reqBody, apiKey)
+	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ type n1nEmbeddingRequest struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		reqBody.Dimensions = embeddingConfig.Dimension
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -416,7 +416,7 @@ type n1nRerankRequest struct {
 
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
-func (n *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *N1NModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -443,7 +443,7 @@ func (n *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		reqBody.TopN = rerankConfig.TopN
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
@@ -497,7 +497,7 @@ type n1nModelCatalogResponse struct {
 }
 
 // ListModels returns the live n1n.ai model catalog
-func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (n *N1NModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -508,7 +508,7 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := newN1NJSONRequest(ctx, "GET", endpoint, nil, apiKey)
@@ -539,48 +539,48 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 }
 
 // CheckConnection verifies the API key
-func (n *N1NModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := n.ListModels(apiConfig)
+func (n *N1NModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := n.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (n *N1NModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
-func (n *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // AudioSpeech: n1n.ai exposes /v1/audio/speech
-func (n *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *N1NModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (n *N1NModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // OCRFile is not exposed by the n1n.ai API.
-func (n *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (n *N1NModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ParseFile is not exposed by the n1n.ai API.
-func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ListTasks: n1n.ai has /v1/contents/generations/tasks
-func (n *N1NModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *N1NModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (n *N1NModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

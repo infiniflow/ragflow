@@ -377,7 +377,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 	}
 
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -386,7 +386,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -395,7 +395,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -404,25 +404,25 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Setups)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
 		// DOCX vision figure enhancement: enrich the markdown
 		// with LLM-generated descriptions of embedded images.
 		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
-		dispatched, _, _ = maybeDispatchDOCXVision(fileTypeExt, dispatched, inputs, c.Setups)
+		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed
 		// markdown JSON items with LLM-generated descriptions of
 		// referenced images (![alt](url)). Mirrors Python's
 		// enhance_media_sections_with_vision in _markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(fileTypeExt, dispatched, inputs)
+		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.

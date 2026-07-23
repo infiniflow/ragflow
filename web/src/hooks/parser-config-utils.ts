@@ -5,6 +5,20 @@
  */
 
 /**
+ * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
+ * top-level key containing ":" marks the pipeline structure, which must be
+ * sent as-is instead of being reshaped by extractParserConfigExt.
+ */
+export const isPipelineParserConfig = (
+  parserConfig: Record<string, any> | undefined,
+): boolean => {
+  if (!parserConfig || typeof parserConfig !== 'object') {
+    return false;
+  }
+  return Object.keys(parserConfig).some((key) => key.includes(':'));
+};
+
+/**
  * Extracts Raptor configuration with extra fields merged into ext.
  * @param raptorConfig - The raptor configuration object
  * @returns Processed raptor config with extra fields in ext

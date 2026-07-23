@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,7 @@ import (
 // provider. The buffer regression below exercises it through a table so a new
 // provider only needs one row.
 type chatStreamer interface {
-	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
+	ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 }
 
 // largeSSEStreamServer streams a single SSE "data:" line whose content delta is
@@ -63,6 +64,7 @@ func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
 		{"Jiekou.AI", build(func(b map[string]string, s URLSuffix) chatStreamer { return NewJieKouAIModel(b, s) })},
 	}
 
+	ctx := t.Context()
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +74,7 @@ func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
 			apiKey := "test-key"
 			var got strings.Builder
 			err := tc.build(srv.URL).ChatStreamlyWithSender(
+				ctx,
 				"test-model",
 				[]Message{{Role: "user", Content: "hi"}},
 				&APIConfig{ApiKey: &apiKey},

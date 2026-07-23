@@ -59,6 +59,7 @@ func newTimeoutTestGroq(baseURL string) *GroqModel {
 // nonStreamCallTimeout (the old 120s-wall footgun, just relocated), the
 // context would cancel mid-stream and this test would fail.
 func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
+	ctx := t.Context()
 	// Stream emits for ~240ms, far past the 60ms non-stream deadline but well
 	// inside the 10s stream deadline.
 	withTestTimeouts(t, 60*time.Millisecond, 10*time.Second)
@@ -86,6 +87,7 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 	apiKey := "test-key"
 	var got strings.Builder
 	err := newTimeoutTestGroq(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -116,6 +118,7 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 // watchdog so a broken timeout surfaces as a direct test failure
 // rather than relying on the package's global test timeout.
 func TestNonStreamHonorsShortDeadline(t *testing.T) {
+	ctx := t.Context()
 	withTestTimeouts(t, 100*time.Millisecond, 10*time.Second)
 
 	var hits atomic.Int32
@@ -130,6 +133,7 @@ func TestNonStreamHonorsShortDeadline(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := newTimeoutTestGroq(srv.URL).ChatWithMessages(
+			ctx,
 			"llama-3.3-70b-versatile",
 			[]Message{{Role: "user", Content: "hi"}},
 			&APIConfig{ApiKey: &apiKey},

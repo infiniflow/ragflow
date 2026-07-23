@@ -53,7 +53,7 @@ func (c *CoHereModel) Name() string {
 	return "Cohere"
 }
 
-func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -186,7 +186,7 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 	return chatResponse, nil
 }
 
-func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -263,7 +263,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -337,7 +337,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return sender(&endOfStream, nil)
 }
 
-func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -370,7 +370,7 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -421,7 +421,7 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return embeddings, nil
 }
 
-func (c *CoHereModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -506,7 +506,7 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 }
 
 // TranscribeAudio transcribe audio
-func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (c *CoHereModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	}
 
 	// build request
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
@@ -621,30 +621,30 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (c *CoHereModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (c *CoHereModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // AudioSpeech convert text to audio
-func (c *CoHereModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (c *CoHereModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (c *CoHereModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // OCRFile OCR file
-func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (c *CoHereModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
 // ParseFile parse file
-func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (c *CoHereModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -655,7 +655,7 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -704,19 +704,19 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	return ParseListModel(ModelList{Models: models}), nil
 }
 
-func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (c *CoHereModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := c.ListModels(apiConfig)
+func (c *CoHereModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := c.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (c *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (c *CoHereModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (c *CoHereModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }

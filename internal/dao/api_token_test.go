@@ -63,7 +63,8 @@ func TestAPI4ConversationDAOGetBySessionID(t *testing.T) {
 
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
-	session, err := NewAPI4ConversationDAO().GetBySessionID("session-1", "agent-1")
+	ctx := t.Context()
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "session-1", "agent-1")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -84,7 +85,8 @@ func TestAPI4ConversationDAOGetBySessionIDWrongAgent(t *testing.T) {
 
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
-	session, err := NewAPI4ConversationDAO().GetBySessionID("session-1", "agent-2")
+	ctx := t.Context()
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "session-1", "agent-2")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -99,7 +101,8 @@ func TestAPI4ConversationDAOGetBySessionIDNoRows(t *testing.T) {
 
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
-	session, err := NewAPI4ConversationDAO().GetBySessionID("missing-session", "agent-1")
+	ctx := t.Context()
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "missing-session", "agent-1")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -116,7 +119,8 @@ func TestAPI4ConversationDAOListIDsByAgentID(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-2", "agent-1")
 	createAPI4ConversationForDAOTest(t, "session-other", "agent-2")
 
-	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID("agent-1")
+	ctx := t.Context()
+	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, "agent-1")
 	if err != nil {
 		t.Fatalf("ListIDsByAgentID failed: %v", err)
 	}
@@ -139,7 +143,8 @@ func TestAPI4ConversationDAOListIDsByAgentIDNoRows(t *testing.T) {
 
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
-	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID("agent-2")
+	ctx := t.Context()
+	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, "agent-2")
 	if err != nil {
 		t.Fatalf("ListIDsByAgentID failed: %v", err)
 	}
