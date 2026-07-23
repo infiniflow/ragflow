@@ -260,6 +260,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Agent stop button compatibility with Python's task API.
+			v1.POST("/tasks/:task_id/cancel", r.agentHandler.CancelTask)
+
 			// Auth routes
 			auth := v1.Group("/auth")
 			{

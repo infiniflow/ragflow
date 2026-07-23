@@ -163,6 +163,8 @@ type Runner struct {
 	mu           sync.Mutex
 	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = eino interrupt id
 	runCancels   map[string]chan struct{}
+	taskCancels  map[string]chan struct{}
+	taskCanvases map[string]string
 }
 
 // NewRunner returns a fresh Runner with the in-memory interrupt-id
@@ -172,6 +174,8 @@ func NewRunner() *Runner {
 	return &Runner{
 		interruptIDs: make(map[string]string),
 		runCancels:   make(map[string]chan struct{}),
+		taskCancels:  make(map[string]chan struct{}),
+		taskCanvases: make(map[string]string),
 	}
 }
 
@@ -259,6 +263,10 @@ func (r *Runner) Run(
 	if taskID == "" {
 		taskID = utility.GenerateToken()
 	}
+	r.mu.Lock()
+	r.taskCancels[taskID] = cancel
+	r.taskCanvases[taskID] = canvasID
+	r.mu.Unlock()
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,
@@ -274,6 +282,10 @@ func (r *Runner) Run(
 			r.mu.Lock()
 			if r.runCancels[canvasID] == cancel {
 				delete(r.runCancels, canvasID)
+			}
+			if r.taskCancels[taskID] == cancel {
+				delete(r.taskCancels, taskID)
+				delete(r.taskCanvases, taskID)
 			}
 			r.mu.Unlock()
 		}()
@@ -370,6 +382,32 @@ func (r *Runner) Cancel(canvasID string) {
 	default:
 		close(cancel)
 	}
+}
+
+// CancelTask signals an active run identified by the task_id emitted in its
+// events. It returns the owning canvas id when the task is still active.
+func (r *Runner) CancelTask(taskID string) (string, bool) {
+	r.mu.Lock()
+	cancel, ok := r.taskCancels[taskID]
+	canvasID := r.taskCanvases[taskID]
+	r.mu.Unlock()
+	if !ok {
+		return "", false
+	}
+	select {
+	case <-cancel:
+	default:
+		close(cancel)
+	}
+	return canvasID, true
+}
+
+// TaskCanvas returns the canvas owning an active task without cancelling it.
+func (r *Runner) TaskCanvas(taskID string) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	canvasID, ok := r.taskCanvases[taskID]
+	return canvasID, ok
 }
 
 // Peek reports whether a paused interrupt id is held for the given
