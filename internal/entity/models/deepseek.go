@@ -52,6 +52,39 @@ func (d *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
+// DeepSeekChatResponse mirrors the response returned by DeepSeek's
+// POST /chat/completions endpoint. The shape follows the official OpenAI-
+// compatible response schema, including reasoning content, tool calls, and
+// the cache/reasoning token usage details.
+type DeepSeekChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created           int    `json:"created"`
+	Model             string `json:"model"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Object            string `json:"object"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		PromptCacheHitTokens    int `json:"prompt_cache_hit_tokens"`
+		PromptCacheMissTokens   int `json:"prompt_cache_miss_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
+}
+
 func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -175,62 +208,31 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse[DeepSeekChatResponse](body, chatModelConfig, modelUsage, func(result *DeepSeekChatResponse, _ *ChatConfig) (chatResponseParts, error) {
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	var content string
-	if c, ok := messageMap["content"].(string); ok {
-		content = c
-	}
-
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-		// if first char of reasonContent is \n remove the '\n'
+		choice := &result.Choices[0]
+		reasonContent := choice.Message.ReasoningContent
+		// DeepSeek may prefix reasoning content with a newline in non-streaming
+		// responses; keep the existing provider behavior of removing that prefix.
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
-	}
 
-	var toolCalls []map[string]interface{}
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]interface{}); ok {
-				toolCalls = append(toolCalls, tcMap)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
-		}
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -363,6 +365,16 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			if usageErr := applyStreamUsage(chatModelConfig, modelUsage, tokenUsage); usageErr != nil {
+				return usageErr
+			}
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -378,9 +390,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 			return nil
 		}
 
-		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
-			return nil
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {

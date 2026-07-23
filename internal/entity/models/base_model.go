@@ -24,9 +24,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/clickhouse"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type BaseModel struct {
@@ -34,6 +38,98 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+}
+
+// chatResponseParts is the provider-normalized result of a non-streaming chat
+// completion. Provider response structs remain provider-specific; only the
+// common ChatResponse and model-usage handling is shared.
+type chatResponseParts struct {
+	RequestID     string
+	Content       *string
+	ReasonContent *string
+	ToolCalls     []map[string]interface{}
+	Usage         *TokenUsage
+}
+
+// chatResponseExtractor maps one provider-specific response type into the
+// common result used by RAGFlow's chat model abstraction.
+type chatResponseExtractor[T any] func(*T, *ChatConfig) (chatResponseParts, error)
+
+// parseChatCompletionResponse decodes a provider-specific non-streaming chat
+// response, then applies the shared ChatResponse and usage-accounting flow.
+func parseChatCompletionResponse[T any](body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor[T]) (*ChatResponse, error) {
+	var result T
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	parts, err := extract(&result, chatConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := collectChatModelUsage(modelUsage, parts.RequestID, parts.Usage); err != nil {
+		return nil, fmt.Errorf("failed to collect model usage: %w", err)
+	}
+
+	return &ChatResponse{
+		Answer:        parts.Content,
+		ReasonContent: parts.ReasonContent,
+		ToolCalls:     parts.ToolCalls,
+		Usage:         parts.Usage,
+	}, nil
+}
+
+// collectChatModelUsage records one completed chat response when the caller
+// supplied a usage sink.
+func collectChatModelUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage) error {
+	if modelUsage == nil {
+		return nil
+	}
+	modelUsage.RequestID = requestID
+	return collectModelUsage(modelUsage, usage)
+}
+
+// collectModelUsage records token usage and response time for one model call.
+// The caller owns setting RequestID because streaming providers can receive it
+// in a different event from usage.
+func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
+	if modelUsage == nil {
+		return nil
+	}
+	if usage != nil {
+		modelUsage.InputTokens = usage.PromptTokens
+		modelUsage.OutputTokens = usage.CompletionTokens
+		modelUsage.TotalTokens = usage.TotalTokens
+	}
+	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+}
+
+// decodeOpenAICompatibleStreamUsage extracts aggregate token usage from one
+// OpenAI-compatible streaming event. A missing usage field is not an error.
+func decodeOpenAICompatibleStreamUsage(event map[string]any) (*TokenUsage, bool, error) {
+	rawUsage, ok := event["usage"].(map[string]any)
+	if !ok {
+		return nil, false, nil
+	}
+	usage := &TokenUsage{}
+	if err := mapstructure.Decode(rawUsage, usage); err != nil {
+		return nil, false, err
+	}
+	return usage, true, nil
+}
+
+// applyStreamUsage exposes streamed token usage to the caller and records it
+// for model-usage analytics when a usage event is received.
+func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) error {
+	if usage == nil {
+		return nil
+	}
+	if chatConfig != nil {
+		chatConfig.UsageResult = usage
+	}
+	return collectModelUsage(modelUsage, usage)
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
