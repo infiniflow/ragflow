@@ -337,6 +337,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 			docType:    dt,
 			imgID:      imgID,
 			layout:     it.Layout,
+			ckType:     it.CKType,
 			parentMeta: meta,
 		})
 	}

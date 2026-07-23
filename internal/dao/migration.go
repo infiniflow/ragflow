@@ -62,6 +62,11 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name): %w", err)
 	}
 
+	// Add unique constraint on user_canvas (user_id, canvas_category, title)
+	if err := migrateUserCanvasTitleUnique(db); err != nil {
+		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
@@ -326,6 +331,49 @@ func migrateKnowledgebaseNameUnique(db *gorm.DB) error {
 			return nil
 		}
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name_ci): %w", err)
+	}
+
+	return nil
+}
+
+func migrateUserCanvasTitleUnique(db *gorm.DB) error {
+	if !db.Migrator().HasTable("user_canvas") {
+		return nil
+	}
+
+	const indexName = "idx_user_canvas_user_category_title"
+
+	var idxExists int64
+	if err := db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_canvas' AND INDEX_NAME = ?`, indexName).Scan(&idxExists).Error; err != nil {
+		return err
+	}
+	if idxExists > 0 {
+		return nil
+	}
+
+	var duplicateCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT user_id, canvas_category, title FROM user_canvas
+			WHERE title IS NOT NULL
+			GROUP BY user_id, canvas_category, title HAVING COUNT(*) > 1
+		) AS duplicates
+	`).Scan(&duplicateCount).Error; err != nil {
+		return err
+	}
+	if duplicateCount > 0 {
+		return fmt.Errorf("found %d duplicate (user_id, canvas_category, title) groups in user_canvas; resolve these before the unique index can be created", duplicateCount)
+	}
+
+	common.Info("Adding unique index on user_canvas (user_id, canvas_category, title)...")
+	if err := db.Exec("ALTER TABLE user_canvas ADD UNIQUE INDEX " + indexName + " (user_id, canvas_category, title)").Error; err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+			common.Info("Index already exists, skipping", zap.String("error", errStr))
+			return nil
+		}
+		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
 	}
 
 	return nil

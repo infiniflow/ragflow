@@ -4216,8 +4216,8 @@ curl --request POST \
   Optional model override when a specific chat model should be used for this request.
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
-- `"legacy"`: (*Body Parameter*), `boolean`  
-  Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:  
+- `"legacy"`: (*Body Parameter*), `boolean`
+  Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
   - No reasoning markers: The `start_to_think` and `end_to_think` signals are stripped from the stream.
 
@@ -4801,7 +4801,7 @@ curl --request POST \
   Variables specified in the **Begin** component.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+- `"chat_template_kwargs"`: (*Body parameter*), `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
@@ -4926,19 +4926,19 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"agent_id"`: (*Body parameter*), `string`, *Required*  
+- `"agent_id"`: (*Body parameter*), `string`, *Required*
   The ID of the associated agent.
-- `"messages"`: (*Body parameter*), `list[object]`, *Required*  
+- `"messages"`: (*Body parameter*), `list[object]`, *Required*
   OpenAI-style chat messages.
-- `"openai-compatible"`: (*Body parameter*), `boolean`, *Required*  
+- `"openai-compatible"`: (*Body parameter*), `boolean`, *Required*
   Must be `true` to enable OpenAI-compatible responses.
-- `"stream"`: (*Body parameter*), `boolean`  
+- `"stream"`: (*Body parameter*), `boolean`
   Whether to return streaming chunks.
-- `"session_id"`: (*Body parameter*), `string`  
+- `"session_id"`: (*Body parameter*), `string`
   Optional existing session ID.
-- `"model"`: (*Body parameter*), `string`  
+- `"model"`: (*Body parameter*), `string`
   Optional compatibility field. The server still routes by `agent_id`.
-- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+- `"chat_template_kwargs"`: (*Body parameter*), `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 ##### Response
@@ -7709,7 +7709,7 @@ or
 
 **POST** `/api/v1/folders/{folder_id}/commits`
 
-Creates a new snapshot commit for the specified folder.  
+Creates a new snapshot commit for the specified folder.
 This endpoint also supports:
 - `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
 - `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
@@ -7721,9 +7721,9 @@ This endpoint also supports:
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `'message'`: `string` (required)  
+  - `'message'`: `string` (required)
     The commit message.
-  - `'files'`: `list[object]` (required)  
+  - `'files'`: `list[object]` (required)
     The list of file changes. Each file change is an object with the following fields:
 
 ##### Request example
@@ -7744,9 +7744,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"message"`: (*Body parameter*), `string`, *Required*  
+- `"message"`: (*Body parameter*), `string`, *Required*
   The commit message describing the changes.
-- `"files"`: (*Body parameter*), `list[object]`, *Required*  
+- `"files"`: (*Body parameter*), `list[object]`, *Required*
   Each file change object supports the following fields:
 
   | Field | Type | Required | Description |
@@ -7797,7 +7797,7 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/commits`
 
-Lists all commits for the specified folder with pagination.  
+Lists all commits for the specified folder with pagination.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits`
 - `/api/v1/datasets/{dataset_id}/commits`
@@ -7824,13 +7824,13 @@ curl --request GET \
 
 ##### Request parameters
 
-- `"page"`: (*Query parameter*), `int`, *Optional*  
+- `"page"`: (*Query parameter*), `int`, *Optional*
   Page number. Defaults to 1.
-- `"page_size"`: (*Query parameter*), `int`, *Optional*  
+- `"page_size"`: (*Query parameter*), `int`, *Optional*
   Number of items per page. Defaults to 15.
-- `"order_by"`: (*Query parameter*), `string`, *Optional*  
+- `"order_by"`: (*Query parameter*), `string`, *Optional*
   Sort field. Defaults to `"create_time"`.
-- `"desc"`: (*Query parameter*), `bool`, *Optional*  
+- `"desc"`: (*Query parameter*), `bool`, *Optional*
   Sort descending. Defaults to `true`.
 
 #### Response
@@ -7865,7 +7865,7 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes.  
+Retrieves the details of a specific commit, including its file changes.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
@@ -7887,9 +7887,9 @@ curl --request GET \
 
 ##### Request parameters
 
-- `"folder_id"`: (*Path parameter*), `string`, *Required*  
+- `"folder_id"`: (*Path parameter*), `string`, *Required*
   The folder ID.
-- `"commit_id"`: (*Path parameter*), `string`, *Required*  
+- `"commit_id"`: (*Path parameter*), `string`, *Required*
   The commit ID.
 
 #### Response
@@ -7936,7 +7936,7 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit.  
+Lists the file changes associated with a specific commit.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
@@ -7985,7 +7985,7 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences.  
+Compares two commits and returns the differences.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
@@ -7997,9 +7997,9 @@ Also available at:
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
-  - `'from'`: `string` (required)  
+  - `'from'`: `string` (required)
     The source commit ID.
-  - `'to'`: `string` (required)  
+  - `'to'`: `string` (required)
     The target commit ID.
 
 ##### Request example
@@ -8012,9 +8012,9 @@ curl --request GET \
 
 ##### Request parameters
 
-- `"from"`: (*Query parameter*), `string`, *Required*  
+- `"from"`: (*Query parameter*), `string`, *Required*
   The source commit ID.
-- `"to"`: (*Query parameter*), `string`, *Required*  
+- `"to"`: (*Query parameter*), `string`, *Required*
   The target commit ID.
 
 #### Response
@@ -8053,7 +8053,7 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`).  
+Returns the uncommitted changes for the specified folder (similar to `git status`).
 Also available at:
 - `/api/v1/workspace/{workspace_id}/changes`
 - `/api/v1/datasets/{dataset_id}/changes`
@@ -8106,7 +8106,7 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit.  
+Retrieves the full folder tree snapshot as it existed at a specific commit.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
@@ -8174,7 +8174,7 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit.  
+Retrieves the file content as it existed at a specific commit.
 Also available at:
 - `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`

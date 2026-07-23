@@ -43,6 +43,7 @@ var (
 )
 
 func maybeDispatchPDFVision(
+	ctx context.Context,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -86,7 +87,7 @@ func maybeDispatchPDFVision(
 		return parserDispatchResult{}, true, fmt.Errorf(
 			`Parser: pdf parse_method %q requires tenant_id to resolve IMAGE2TEXT model`, modelID)
 	}
-	res, err := dispatchPDFVision(filename, binary, tenantID, modelID, setup)
+	res, err := dispatchPDFVision(ctx, filename, binary, tenantID, modelID, setup)
 	if err != nil {
 		return parserDispatchResult{}, true, err
 	}
@@ -373,6 +374,7 @@ func isNamedPDFParseMethod(raw string) bool {
 }
 
 func dispatchPDFVision(
+	ctx context.Context,
 	filename string,
 	binary []byte,
 	tenantID string,
@@ -396,7 +398,7 @@ func dispatchPDFVision(
 	markdownParts := make([]string, 0, len(renderedPages))
 	for _, page := range renderedPages {
 		prompt := renderPDFVisionPrompt(promptTemplate, page.PageNumber)
-		resp, err := pdfVisionChatInvoker(driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
+		resp, err := pdfVisionChatInvoker(ctx, driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
 		if err != nil {
 			return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
@@ -472,13 +474,14 @@ func defaultPDFVisionModelResolver(
 }
 
 func defaultPDFVisionChatInvoker(
+	ctx context.Context,
 	driver modelModule.ModelDriver,
 	modelName string,
 	messages []modelModule.Message,
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
 	vision := true
-	return driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	return driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 }
 
 func loadPDFVisionPrompt(name string) (string, error) {

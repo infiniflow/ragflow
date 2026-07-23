@@ -153,7 +153,7 @@ type EmbeddingResult struct {
 // Embedder is the testability seam for the embedding branch.
 type Embedder interface {
 	MaxTokens() int
-	Encode(texts []string) ([]EmbeddingResult, error)
+	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
 // EmbedderResolver resolves the embedder for one tokenizer invocation.
@@ -487,7 +487,7 @@ func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) (
 		encErr  error
 	)
 	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
-		results, encErr = embedder.Encode(texts)
+		results, encErr = embedder.Encode(ctx, texts)
 		return encErr
 	})
 	if timeoutErr != nil {

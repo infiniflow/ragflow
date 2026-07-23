@@ -238,6 +238,7 @@ jobs:
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
+          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -351,6 +352,7 @@ jobs:
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
         run: |
+          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -924,6 +926,7 @@ jobs:
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
         run: |
+          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
