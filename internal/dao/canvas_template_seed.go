@@ -18,6 +18,7 @@ package dao
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,8 +36,8 @@ import (
 
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
 // agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
-func SeedCanvasTemplates() error {
-	if err := addColumnIfNotExists(DB, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
+func SeedCanvasTemplates(ctx context.Context) error {
+	if err := addColumnIfNotExists(ctx, DB, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
 		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
 	}
 

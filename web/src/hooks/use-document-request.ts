@@ -538,7 +538,6 @@ export const useSetDocumentPipelineParser = () => {
         parser_id: parserId,
         pipeline_id: pipelineId,
       };
-     
 
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)

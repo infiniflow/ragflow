@@ -126,16 +126,18 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return regexp.MustCompile(strings.Join(custom, "|"))
 }
 
-// splitKeepingDelim is the Go equivalent of python's
-// `re.split((pattern), text, flags=re.DOTALL)` with the matched
-// delimiter preserved (alternation keeps the original delimiter text
-// in the output stream so the rebuilding at token_chunker.py:88-93
-// stays lossy-free).
+// splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern
+// (token_chunker.py:79-94): re.split with a captured delimiter group yields
+// [text, delim, text, delim, ...]; each delimiter is glued to the END of the
+// preceding text segment, so it never surfaces as a standalone chunk. A
+// delimiter with no preceding text (a leading delimiter or one adjacent to
+// another) is dropped together with the empty segment, matching Python's
+// `if not chunk: continue`.
 func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
 	}
-	idxs := pattern.FindAllStringSubmatchIndex(text, -1)
+	idxs := pattern.FindAllStringIndex(text, -1)
 	if len(idxs) == 0 {
 		return []string{text}
 	}
@@ -143,10 +145,11 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		if start > cursor {
-			out = append(out, text[cursor:start])
+		if start == cursor {
+			cursor = end
+			continue
 		}
-		out = append(out, text[start:end])
+		out = append(out, text[cursor:end])
 		cursor = end
 	}
 	if cursor < len(text) {
