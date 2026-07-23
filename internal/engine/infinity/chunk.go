@@ -51,6 +51,16 @@ var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 // The full table name is built as "{baseName}_{datasetID}"
 // For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
 func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
+	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID)
+}
+
+func (e *infinityEngine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
 	// Determine table name and mapping file based on index type
@@ -82,18 +92,11 @@ func (e *infinityEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 		return fmt.Errorf("failed to parse mapping file: %w", err)
 	}
 
-	// Get database
-	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
-	if err != nil {
-		return fmt.Errorf("failed to get database: %w", err)
-	}
-	defer release()
-
 	// Determine vector column name
 	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
 
 	// Check if table already exists
-	exists, err := e.tableExists(ctx, tableName)
+	exists, err := e.tableExistsWithDB(db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
@@ -309,7 +312,7 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 		}
 
 		// Create table
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, parserID); err != nil {
+		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID); err != nil {
 			return nil, fmt.Errorf("Failed to create table: %w", err)
 		}
 

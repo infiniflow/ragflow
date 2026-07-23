@@ -54,25 +54,34 @@ type infinityClient struct {
 	mappingFileName string
 }
 
-// defaultPoolMaxSize is the hard upper bound for the Go Infinity connection
-// pool. Unlike the Python pool (where INFINITY_POOL_MAX_SIZE is a non-binding
-// pre-warm value), this is a true cap enforced by the SDK's GetContext.
-const defaultPoolMaxSize = 32
-const defaultWarmConnections = 4
+// defaultPoolMaxSize is the hard upper bound (MaxOpen) for the Go Infinity
+// connection pool. Invalid or missing INFINITY_POOL_MAX_SIZE values fall back
+// to this rather than becoming unbounded.
+const defaultPoolMaxSize = 4
+
+// defaultMaxIdleConnections caps how many established connections the pool
+// keeps idle for reuse, independent of the pool's hard open cap (MaxOpen).
+// It bounds idle socket retention on the Infinity server when MaxOpen is large.
+const defaultMaxIdleConnections = 2
+
+// defaultOperationTimeout bounds the total duration of a single pool operation
+// (applied via ensureDeadline when the caller context has no deadline).
 const defaultOperationTimeout = 30 * time.Second
+
+// defaultSocketTimeout bounds individual thrift read/write waits on a checked-out
+// connection.
 const defaultSocketTimeout = 30 * time.Second
 
-// resolvePoolMaxSize reads INFINITY_POOL_MAX_SIZE_GO (a Go-only knob, separate
-// from the Python env var) and falls back to defaultPoolMaxSize. A value < 1 is
+// resolvePoolMaxSize reads INFINITY_POOL_MAX_SIZE and falls back to defaultPoolMaxSize. A value < 1 is
 // rejected so the pool never becomes unbounded.
 func resolvePoolMaxSize() int {
-	raw := os.Getenv("INFINITY_POOL_MAX_SIZE_GO")
+	raw := os.Getenv("INFINITY_POOL_MAX_SIZE")
 	if raw == "" {
 		return defaultPoolMaxSize
 	}
 	v, err := strconv.Atoi(raw)
 	if err != nil || v < 1 {
-		common.Warn("INFINITY_POOL_MAX_SIZE_GO must be a positive integer; using default",
+		common.Warn("INFINITY_POOL_MAX_SIZE must be a positive integer; using default",
 			zap.String("value", raw), zap.Int("default", defaultPoolMaxSize))
 		return defaultPoolMaxSize
 	}
@@ -121,21 +130,30 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 		}
 	}
 
-	// Retry connecting for up to 120 seconds (24 attempts * 5 seconds)
+	// Build the connection pool object. Connections are created lazily on
+	// first use (InitialSize=0), so this does not verify reachability; the
+	// actual connectivity check happens later in WaitForHealthy. The retry
+	// loop only re-attempts pool construction against transient config errors.
 	common.Info("Connecting to Infinity")
 	uri := infinity.NetworkAddress{IP: host, Port: port}
 	maxOpen := resolvePoolMaxSize()
 	var pool *infinity.ConnectionPool
 	var err error
 	for i := 0; i < 24; i++ {
-		warmSize := maxOpen
-		if warmSize > defaultWarmConnections {
-			warmSize = defaultWarmConnections
+		// Cap idle connections retained for reuse; never exceed the pool's
+		// hard open cap (MaxOpen).
+		maxIdle := maxOpen
+		if maxIdle > defaultMaxIdleConnections {
+			maxIdle = defaultMaxIdleConnections
 		}
 		poolCfg := infinity.DefaultConnectionPoolConfig(uri)
-		poolCfg.InitialSize = warmSize
+		// Don't pre-open connections at process startup (InitialSize=0);
+		// connections are created lazily on first use. Keep MaxIdle so that
+		// established connections are retained for reuse instead of being
+		// reopened on every request.
+		poolCfg.InitialSize = 0
 		poolCfg.MaxOpen = maxOpen
-		poolCfg.MaxIdle = warmSize
+		poolCfg.MaxIdle = maxIdle
 		pool, err = infinity.NewConnectionPool(poolCfg, func(u infinity.URI) (*infinity.InfinityConnection, error) {
 			networkAddress, ok := u.(infinity.NetworkAddress)
 			if !ok {
