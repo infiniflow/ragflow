@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 
 from deepdoc.parser.utils import get_text
@@ -36,7 +37,21 @@ class RAGFlowTxtParser:
         def add_chunk(t):
             nonlocal cks, tk_nums, delimiter
             tnum = num_tokens_from_string(t)
-            if tk_nums[-1] > chunk_token_num:
+            # Enforce chunk_token_num as a HARD cap. The previous implementation
+            # checked ``tk_nums[-1] > chunk_token_num`` *after* appending, so
+            # every chunk could overshoot by the size of one segment; some
+            # pathological inputs (a single very long line with no internal
+            # delimiter) produced chunks 100x larger than the configured
+            # budget (see issue #17202).
+            #
+            # The check is now *predictive*: if the current non-empty chunk
+            # plus the incoming segment would exceed the budget, start a new
+            # chunk. An empty current chunk is just the first-write slot
+            # and is always filled before opening a new one. When a single
+            # segment is itself larger than the budget, it is emitted as
+            # one oversized chunk and a warning is logged so the operator
+            # knows the chunker cannot satisfy the budget on this input.
+            if cks[-1] != "" and tk_nums[-1] + tnum > chunk_token_num:
                 cks.append(t)
                 tk_nums.append(tnum)
             else:
@@ -45,6 +60,16 @@ class RAGFlowTxtParser:
                 else:
                     cks[-1] += t
                 tk_nums[-1] += tnum
+            # If the segment t was itself larger than the budget, no
+            # internal split can satisfy chunk_token_num on this input. The
+            # emitted chunk is the best the chunker can do without a
+            # splitting heuristic (out of scope for this fix).
+            if tnum > chunk_token_num:
+                logging.warning(
+                    "RAGFlowTxtParser.parser_txt: emitted a single chunk of %d tokens exceeding chunk_token_num=%d; the segment had no internal delimiter.",
+                    tnum,
+                    chunk_token_num,
+                )
 
         dels = []
         s = 0
