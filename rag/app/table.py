@@ -354,7 +354,11 @@ def column_data_type(arr):
             if int(str(a)) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+        elif (
+            re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", ""))
+            and not re.match(r"0[0-9]", str(a).replace("%%", ""))
+            and str(a).replace("%%", "").count(".") <= 1
+        ):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1
