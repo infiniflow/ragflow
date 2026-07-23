@@ -251,6 +251,18 @@ class Message(ComponentBase):
         patt = [r"\{%.*%\}", "{{", "}}"]
         return any([re.search(p, content) for p in patt])
 
+    @staticmethod
+    def _apply_kwargs(content: str, kwargs: dict) -> str:
+        # Substitute the sanitized variable tokens with their concrete values.
+        # Both the token and the value are literals, so use str.replace rather
+        # than re.sub: a value containing regex escape sequences (e.g. a Windows
+        # path like "C:\10" or LaTeX like "\begin") would otherwise be read as a
+        # replacement backreference and raise re.error.
+        for n, v in kwargs.items():
+            if v is not None:
+                content = content.replace(n, str(v))
+        return content
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Message processing"):
@@ -273,9 +285,7 @@ class Message(ComponentBase):
         if self.check_if_canceled("Message processing"):
             return
 
-        for n, v in kwargs.items():
-            if v is not None:
-                content = re.sub(n, str(v), content)
+        content = self._apply_kwargs(content, kwargs)
 
         self.set_output("downloads", downloads)
         self.set_output("content", content)
