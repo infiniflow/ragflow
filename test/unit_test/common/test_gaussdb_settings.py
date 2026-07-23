@@ -20,6 +20,8 @@ from unittest.mock import Mock
 
 import pytest
 
+FAKE_GAUSSDB_POOL = object()
+
 
 class FakeDocEngineConnection:
     def db_type(self):
@@ -27,6 +29,17 @@ class FakeDocEngineConnection:
 
 
 class FakeGaussDBConnection:
+    def __init__(self, pool=None):
+        self.pool = pool or FAKE_GAUSSDB_POOL
+
+    def db_type(self):
+        return "gaussdb"
+
+
+class FakeGaussDBMemoryConnection:
+    def __init__(self, pool=None):
+        self.pool = pool or FAKE_GAUSSDB_POOL
+
     def db_type(self):
         return "gaussdb"
 
@@ -41,12 +54,16 @@ def _install_module(monkeypatch, name, **attrs):
     for key, value in attrs.items():
         setattr(mod, key, value)
     monkeypatch.setitem(sys.modules, name, mod)
+    parent_name, _, child_name = name.rpartition(".")
+    parent = sys.modules.get(parent_name)
+    if parent is not None:
+        monkeypatch.setattr(parent, child_name, mod, raising=False)
     return mod
 
 
 def _install_settings_import_stubs(monkeypatch):
-    import rag.utils
-    import memory.utils
+    importlib.import_module("rag.utils")
+    importlib.import_module("memory.utils")
 
     rag_modules = {
         "es_conn": {"ESConnection": FakeDocEngineConnection},
@@ -64,12 +81,16 @@ def _install_settings_import_stubs(monkeypatch):
         "redis_conn": {"REDIS_CONN": types.SimpleNamespace(health=lambda: True)},
     }
     for short_name, attrs in rag_modules.items():
-        mod = _install_module(monkeypatch, f"rag.utils.{short_name}", **attrs)
-        monkeypatch.setattr(rag.utils, short_name, mod, raising=False)
+        _install_module(monkeypatch, f"rag.utils.{short_name}", **attrs)
 
-    for short_name in ("es_conn", "infinity_conn", "ob_conn"):
-        mod = _install_module(monkeypatch, f"memory.utils.{short_name}", **{"ESConnection": FakeDocEngineConnection, "InfinityConnection": FakeDocEngineConnection, "OBConnection": FakeDocEngineConnection})
-        monkeypatch.setattr(memory.utils, short_name, mod, raising=False)
+    memory_modules = {
+        "es_conn": {"ESConnection": FakeDocEngineConnection},
+        "infinity_conn": {"InfinityConnection": FakeDocEngineConnection},
+        "ob_conn": {"OBConnection": FakeDocEngineConnection},
+        "gaussdb_conn": {"GaussDBMemoryConnection": FakeGaussDBMemoryConnection},
+    }
+    for short_name, attrs in memory_modules.items():
+        _install_module(monkeypatch, f"memory.utils.{short_name}", **attrs)
 
     fake_search = types.SimpleNamespace(Dealer=lambda conn: ("dealer", conn))
     fake_kg_search = types.SimpleNamespace(KGSearch=lambda conn: ("kg", conn))
@@ -80,31 +101,39 @@ def _install_settings_import_stubs(monkeypatch):
 
 def _import_settings(monkeypatch):
     _install_settings_import_stubs(monkeypatch)
+    import common
+
+    # Import machinery assigns a freshly imported submodule to
+    # ``common.settings`` on the parent package. Restoring only
+    # ``sys.modules["common.settings"]`` leaves that parent attribute pointing
+    # at this test's stub-backed module and contaminates later tests.
+    monkeypatch.setattr(
+        common,
+        "settings",
+        getattr(common, "settings", None),
+        raising=False,
+    )
     monkeypatch.delitem(sys.modules, "common.settings", raising=False)
     return importlib.import_module("common.settings")
 
 
-def _fake_gaussdb_config(schema="ragflow_gaussdb_docengine_it"):
-    return {
-        "host": "db.example",
-        "port": 19995,
-        "database": "postgres",
-        "user": "sqlbuilder",
-        "password": "fake-unit-password",
-        "schema": schema,
-    }
-
-
-def test_tc_cfg_501_doc_engine_gaussdb_initializes_gaussdb_connection(monkeypatch):
-    monkeypatch.setenv("DOC_ENGINE", "gaussdb")
-    monkeypatch.setenv("DB_TYPE", "mysql")
+def test_doc_engine_gaussdb_initializes_gaussdb_connection(monkeypatch):
     settings = _import_settings(monkeypatch)
-    gaussdb_config = _fake_gaussdb_config()
 
+    monkeypatch.setenv("DOC_ENGINE", "gaussdb")
     monkeypatch.setattr(
         settings,
         "get_base_config",
-        lambda name, default=None: gaussdb_config if name == "gaussdb" else (default or {}),
+        lambda name, default=None: {
+            "host": "db.example",
+            "port": 19995,
+            "database": "postgres",
+            "user": "sqlbuilder",
+            "password": "fake-unit-password",
+            "schema": "ragflow_gaussdb_docengine_it",
+        }
+        if name == "gaussdb"
+        else (default or {}),
     )
 
     settings.init_settings()
@@ -112,32 +141,65 @@ def test_tc_cfg_501_doc_engine_gaussdb_initializes_gaussdb_connection(monkeypatc
     assert settings.DOC_ENGINE == "gaussdb"
     assert settings.DOC_ENGINE_GAUSSDB is True
     assert settings.DOC_ENGINE_OCEANBASE is False
-    assert settings.GAUSSDB == gaussdb_config
-    assert type(settings.docStoreConn) is FakeGaussDBConnection
     assert settings.docStoreConn.db_type() == "gaussdb"
-    assert settings.DATABASE_TYPE == "mysql"
-    assert settings.DATABASE_TYPE != "gaussdb"
+    assert settings.msgStoreConn.db_type() == "gaussdb"
+    assert settings.docStoreConn is not settings.msgStoreConn
+    assert settings.docStoreConn.pool is settings.msgStoreConn.pool
+    assert settings.GAUSSDB["schema"] == "ragflow_gaussdb_docengine_it"
 
 
-def test_tc_cfg_502_doc_engine_gaussdb_is_case_insensitive(monkeypatch):
-    monkeypatch.setenv("DOC_ENGINE", "GAUSSDB")
-    monkeypatch.setenv("DB_TYPE", "mysql")
+def test_doc_engine_gaussdb_does_not_change_database_type(monkeypatch):
     settings = _import_settings(monkeypatch)
 
+    monkeypatch.setenv("DOC_ENGINE", "gaussdb")
+    monkeypatch.setenv("DB_TYPE", "mysql")
     monkeypatch.setattr(
         settings,
         "get_base_config",
-        lambda name, default=None: _fake_gaussdb_config() if name == "gaussdb" else (default or {}),
+        lambda name, default=None: {
+            "host": "h",
+            "port": 1,
+            "database": "d",
+            "user": "u",
+            "password": "fake-unit-password",
+        }
+        if name == "gaussdb"
+        else (default or {}),
     )
-    settings.msgStoreConn = None
 
     settings.init_settings()
 
-    assert settings.DOC_ENGINE == "GAUSSDB"
+    assert settings.DATABASE_TYPE != "gaussdb"
+    assert settings.docStoreConn.db_type() == "gaussdb"
+    assert settings.msgStoreConn.db_type() == "gaussdb"
+    assert settings.docStoreConn.pool is settings.msgStoreConn.pool
+
+
+def test_doc_engine_gaussdb_initializes_message_store_case_insensitive(monkeypatch):
+    settings = _import_settings(monkeypatch)
+
+    monkeypatch.setenv("DOC_ENGINE", "GaussDB")
+    monkeypatch.setattr(
+        settings,
+        "get_base_config",
+        lambda name, default=None: {
+            "host": "h",
+            "port": 19995,
+            "database": "d",
+            "user": "u",
+            "password": "fake-unit-password",
+        }
+        if name == "gaussdb"
+        else (default or {}),
+    )
+
+    settings.init_settings()
+
+    assert settings.DOC_ENGINE == "GaussDB"
     assert settings.DOC_ENGINE_GAUSSDB is True
     assert settings.docStoreConn.db_type() == "gaussdb"
-    assert settings.DATABASE_TYPE == "mysql"
-    assert settings.msgStoreConn is None
+    assert settings.msgStoreConn.db_type() == "gaussdb"
+    assert settings.docStoreConn.pool is settings.msgStoreConn.pool
 
 
 def test_tc_cfg_503_default_doc_engine_is_not_gaussdb(monkeypatch):
@@ -173,39 +235,38 @@ def test_tc_cfg_504_unknown_doc_engine_is_rejected(monkeypatch):
     assert settings.docStoreConn is None
 
 
-def test_tc_cfg_505_gaussdb_does_not_initialize_message_store(monkeypatch):
+def test_db_type_and_doc_engine_gaussdb_use_separate_configs(monkeypatch):
     settings = _import_settings(monkeypatch)
 
+    monkeypatch.setenv("DB_TYPE", "gaussdb")
     monkeypatch.setenv("DOC_ENGINE", "gaussdb")
+    monkeypatch.setenv("GAUSSDB_METADATA_HOST", "metadata.example")
+    monkeypatch.setenv("GAUSSDB_METADATA_PORT", "8000")
+    monkeypatch.setenv("GAUSSDB_METADATA_DBNAME", "metadata_db")
+    monkeypatch.setenv("GAUSSDB_METADATA_USER", "metadata_user")
+    monkeypatch.setenv("GAUSSDB_METADATA_PASSWORD", "metadata-secret")
+    monkeypatch.setenv("GAUSSDB_METADATA_SCHEMA", "metadata_schema")
     monkeypatch.setattr(
         settings,
         "get_base_config",
-        lambda name, default=None: _fake_gaussdb_config() if name == "gaussdb" else (default or {}),
+        lambda name, default=None: {
+            "host": "doc.example",
+            "port": 19995,
+            "database": "doc_db",
+            "user": "doc_user",
+            "password": "doc-secret",
+            "schema": "doc_schema",
+        }
+        if name == "gaussdb"
+        else (default or {}),
     )
-    settings.msgStoreConn = None
 
     settings.init_settings()
 
-    assert settings.docStoreConn.db_type() == "gaussdb"
-    assert settings.msgStoreConn is None
-
-
-def test_tc_cfg_506_doc_engine_gaussdb_does_not_change_database_type(monkeypatch):
-    monkeypatch.setenv("DOC_ENGINE", "gaussdb")
-    monkeypatch.setenv("DB_TYPE", "mysql")
-    settings = _import_settings(monkeypatch)
-    existing_message_store = object()
-
-    monkeypatch.setattr(
-        settings,
-        "get_base_config",
-        lambda name, default=None: _fake_gaussdb_config(schema="public") if name == "gaussdb" else (default or {}),
-    )
-    settings.msgStoreConn = existing_message_store
-
-    settings.init_settings()
-
-    assert settings.DOC_ENGINE == "gaussdb"
-    assert settings.DATABASE_TYPE == "mysql"
-    assert settings.docStoreConn.db_type() == "gaussdb"
-    assert settings.msgStoreConn is existing_message_store
+    assert settings.DATABASE_TYPE == "gaussdb"
+    assert settings.DATABASE["host"] == "metadata.example"
+    assert settings.DATABASE["name"] == "metadata_db"
+    assert settings.DATABASE["options"].startswith("-c search_path=metadata_schema ")
+    assert settings.GAUSSDB["host"] == "doc.example"
+    assert settings.GAUSSDB["database"] == "doc_db"
+    assert settings.docStoreConn.pool is settings.msgStoreConn.pool
