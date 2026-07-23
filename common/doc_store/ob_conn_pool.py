@@ -25,7 +25,9 @@ from pyobvector.util import ObVersion
 from common import settings
 from common.decorator import singleton
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 6
+ATTEMPT_TIME = MAX_RETRIES
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
 OB_QUERY_TIMEOUT = int(os.environ.get("OB_QUERY_TIMEOUT", "100_000_000"))
 
 logger = logging.getLogger("ragflow.ob_conn_pool")
@@ -69,7 +71,7 @@ class OceanBaseConnectionPool:
         max_overflow = int(os.environ.get("OB_MAX_OVERFLOW", max(max_connections // 2, 10)))
         pool_timeout = int(os.environ.get("OB_POOL_TIMEOUT", "30"))
 
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 self.client = ObVecClient(
                     uri=self.uri,
@@ -84,11 +86,25 @@ class OceanBaseConnectionPool:
                 )
                 break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting OceanBase {self.uri} to be healthy.")
-                time.sleep(5)
+                logger.warning(
+                    "OceanBase %s connection attempt %d/%d failed: %s",
+                    self.uri,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                if self.client is not None:
+                    try:
+                        self.client.engine.dispose()
+                    except Exception:
+                        pass
+                time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
+                continue
 
         if self.client is None:
-            msg = f"OceanBase {self.uri} connection failed after {ATTEMPT_TIME} attempts."
+            msg = f"OceanBase {self.uri} connection failed after {MAX_RETRIES} attempts."
             logger.error(msg)
             raise Exception(msg)
 

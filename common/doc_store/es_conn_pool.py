@@ -20,7 +20,9 @@ from elasticsearch import Elasticsearch
 from common import settings
 from common.decorator import singleton
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 6
+ATTEMPT_TIME = MAX_RETRIES
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
 
 
 @singleton
@@ -31,16 +33,30 @@ class ElasticSearchConnectionPool:
         else:
             self.ES_CONFIG = settings.get_base_config("es", {})
 
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 if self._connect():
                     break
             except Exception as e:
-                logging.warning(f"{str(e)}. Waiting Elasticsearch {self.ES_CONFIG['hosts']} to be healthy.")
-                time.sleep(5)
+                logging.warning(
+                    "Elasticsearch %s connection attempt %d/%d failed: %s",
+                    self.ES_CONFIG["hosts"],
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                if hasattr(self, "es_conn") and self.es_conn:
+                    try:
+                        self.es_conn.close()
+                    except Exception:
+                        pass
+                time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
+                continue
 
         if not hasattr(self, "es_conn") or not self.es_conn or not self.es_conn.ping():
-            msg = f"Elasticsearch {self.ES_CONFIG['hosts']} is unhealthy in 10s."
+            msg = f"Elasticsearch {self.ES_CONFIG['hosts']} is unhealthy after {MAX_RETRIES} attempts."
             logging.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
