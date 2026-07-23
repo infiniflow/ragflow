@@ -161,6 +161,9 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err := validateTokenHubChatRequest(modelName, messages); err != nil {
 		return err
 	}
+	if err := validateStreamConfig(modelConfig); err != nil {
+		return err
+	}
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

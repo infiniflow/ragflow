@@ -309,6 +309,9 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
 
 	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

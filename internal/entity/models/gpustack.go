@@ -150,6 +150,9 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
 
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

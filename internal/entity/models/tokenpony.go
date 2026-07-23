@@ -145,6 +145,9 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
 
 	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

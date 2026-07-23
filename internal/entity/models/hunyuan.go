@@ -144,6 +144,9 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
 
 	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

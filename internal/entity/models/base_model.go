@@ -263,6 +263,13 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	return reqBody
 }
 
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
+}
+
 // buildChatMessages converts internal messages to chat API payload items.
 func buildChatMessages(messages []Message) []map[string]any {
 	apiMessages := make([]map[string]interface{}, len(messages))
