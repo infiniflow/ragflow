@@ -177,6 +177,7 @@ async def _store_knn(
 ) -> list[dict]:
     """KNN search with dense vector and filter, returning top_k hits."""
     from common import settings
+    from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 
     index = _index_name(tenant_id)
     vf = _vec_field(vec_dim)
@@ -191,39 +192,26 @@ async def _store_knn(
         "doc_ids_kwd",
         vf,
     ]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            filter_condition,
-            [],
-            None,
-            0,
-            top_k,
-            index,
-            [kb_id],
-            knn_vector=vec,
-            knn_vector_field=vf,
-        )
-    except TypeError:
-        # Fallback: some doc store connectors don't accept knn_* kwargs.
-        # Perform a plain search and lambda-rank in Python (slow-path).
-        rows = await _store_search(
-            tenant_id,
-            kb_id,
-            filter_condition,
-            fields,
-            limit=top_k * 10,
-        )
-        scoring = []
-        for r in rows:
-            stored = r.get(vf)
-            if stored and len(stored) == len(vec):
-                sim = sum(a * b for a, b in zip(stored, vec))
-                scoring.append((sim, r))
-        scoring.sort(key=lambda x: -x[0])
-        return [r for _, r in scoring[:top_k]]
+    match_expr = MatchDenseExpr(
+        vector_column_name=vf,
+        embedding_data=list(vec),
+        embedding_data_type="float",
+        distance_type="cosine",
+        topn=top_k,
+        extra_options={},
+    )
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        filter_condition,
+        [match_expr],
+        OrderByExpr(),
+        0,
+        top_k,
+        index,
+        [kb_id],
+    )
     results = settings.docStoreConn.get_fields(res, fields) if res else {}
     return list(results.values())
 
@@ -543,7 +531,7 @@ async def upsert_dataset_nav_doc(
 
     # 3. Embed doc summary
     doc_embedding = await _embed(embd_mdl, summary) if embd_mdl else []
-    vec_dim = _EMBED_DIM or 0
+    vec_dim = len(doc_embedding)
 
     lock = RedisDistributedLock(
         _nav_lock_key(kb_id),
@@ -558,12 +546,16 @@ async def upsert_dataset_nav_doc(
 
     try:
         # 4. Layered KNN search for nearest cluster
-        best_name, best_parent, sim = await _find_best_cluster(
-            tenant_id,
-            kb_id,
-            doc_embedding,
-            vec_dim,
-        )
+        if doc_embedding:
+            best_name, best_parent, sim = await _find_best_cluster(
+                tenant_id,
+                kb_id,
+                doc_embedding,
+                vec_dim,
+            )
+        else:
+            logging.warning("dataset_nav: embedding unavailable for doc=%s, skipping KNN placement", doc_id)
+            best_name, best_parent, sim = None, None, 0.0
 
         if best_name and sim >= _MERGE_THRESHOLD:
             # ── Merge into best cluster ──
