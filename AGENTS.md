@@ -2,7 +2,7 @@
 
 Use this file as the local operating guide for the current codebase. Prefer the code and the current CLAUDE.md over any older convention or remembered project shape.
 
-## Core stance
+## Core Stance
 - Treat legacy code as liability, not as a compatibility target.
 - Prefer deletion over shims, deprecated branches, wrapper APIs, and dual-track migration notes.
 - If old and new implementations coexist, converge to one path unless an external contract forces compatibility.
@@ -16,7 +16,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
-## Code layout to expect
+## Code Layout to Expect
 - `api/`: Python API server entrypoints, blueprints, services, and database code.
 - `rag/`: ingestion, retrieval, LLM integration, and graph RAG logic.
 - `deepdoc/`: parsing and OCR.
@@ -45,13 +45,13 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `docker/`: local and production compose files.
 - `sdk/` and `test/`: SDK and automated tests.
 
-## Go-specific rules
+## Go-Specific Rules
 - Treat `internal/ingestion`, `internal/parser`, and `internal/deepdoc` as actively refactored code. Prefer collapsing duplicate paths over preserving transitional wrappers.
 - Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
-## Working rules
+## Working Rules
 - Before editing, inspect the nearest code path that actually owns the behavior.
 - Keep changes small and local unless the task is explicitly a broader refactor.
 - Prefer one implementation path instead of preserving old and new versions side by side.
@@ -94,7 +94,7 @@ bash build.sh --go
 bash build.sh --all
 ```
 
-## Validation preference
+## Validation Preference
 - Run the narrowest relevant test, lint, or build command after a change.
 - For backend changes, prefer targeted pytest or ruff checks over full-suite runs.
 - For frontend changes, prefer the touched-package lint, type-check, or test command.
