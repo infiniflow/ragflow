@@ -198,31 +198,39 @@ func (a *AvianModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	}
 
 	sawTerminal := false
-	done, err := ParseSSEStream[avianChatResponse](resp.Body, func(event avianChatResponse) error {
-		if event.Error != nil {
-			return fmt.Errorf("avian: upstream stream error: %v", event.Error)
-		}
-		if len(event.Choices) == 0 {
+	accumulatedToolCalls := make(map[int]map[string]any)
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		choices, ok := event["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
 			return nil
 		}
-		choice := event.Choices[0]
-		if reasoning := choice.Delta.ReasoningContent; reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		} else if reasoning := choice.Delta.Reasoning; reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
+
+		firstChoice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
-		if choice.Delta.Content != "" {
-			if err := sender(&choice.Delta.Content, nil); err != nil {
+
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
-		if choice.FinishReason != "" || event.FinishReason != "" {
-			sawTerminal = true
-		}
+
 		return nil
 	})
 	if err != nil {
@@ -231,6 +239,8 @@ func (a *AvianModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	if !done && !sawTerminal {
 		return fmt.Errorf("avian: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)

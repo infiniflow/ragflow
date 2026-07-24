@@ -23,6 +23,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -35,6 +38,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -47,6 +53,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -55,7 +64,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-sonnet-4-6",
@@ -63,7 +75,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gemini-3-pro-preview",
@@ -71,21 +86,30 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek-v3.2",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen3-235b-a22b",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "text-embedding-3-small",
