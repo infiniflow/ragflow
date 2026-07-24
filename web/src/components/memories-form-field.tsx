@@ -90,6 +90,7 @@ export function MemoriesFormField({
           maxCount={100}
           onValueChange={field.onChange}
           defaultValue={field.value}
+          showSelectAll={false}
           modalPopover
         />
       )}
