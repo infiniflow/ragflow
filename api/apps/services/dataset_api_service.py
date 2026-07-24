@@ -3235,7 +3235,7 @@ async def get_wiki_graph(
                 to_map = {}
             for row in (to_map or {}).values():
                 payload = _wiki_entity_payload(row)
-                if payload and len(entities) < cap:
+                if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
         return True, {
