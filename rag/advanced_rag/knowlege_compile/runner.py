@@ -197,13 +197,27 @@ async def _upsert_dataset_nav_from_page_index(
         if cancel_check():
             raise TaskCanceledException("Task was cancelled before dataset navigation update")
         try:
+            # PageIndex rows use their preserved template kind as the
+            # compile keyword. Older rows were written as ``timeline``
+            # before compilation kinds were kept distinct, so fall back to
+            # the legacy keyword when rebuilding an existing graph.
             graph = await rebuild_structure_graph_json(
                 tenant_id,
                 kb_id,
                 doc_id,
-                "timeline",
+                "page_index",
                 compilation_template_id=template_id,
             )
+            summary = _page_index_graph_summary(graph)
+            if not summary:
+                graph = await rebuild_structure_graph_json(
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    "timeline",
+                    compilation_template_id=template_id,
+                )
+                summary = _page_index_graph_summary(graph)
         except Exception:
             logging.exception(
                 "page_index: failed to rebuild graph summary for dataset_nav doc %s template %s",
@@ -212,7 +226,6 @@ async def _upsert_dataset_nav_from_page_index(
             )
             continue
 
-        summary = _page_index_graph_summary(graph)
         if summary:
             summaries.append(summary)
             chat_mdl = chat_mdl or chat_mdl_by_tid.get(template_id)

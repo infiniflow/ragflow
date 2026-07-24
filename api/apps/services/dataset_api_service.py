@@ -2452,7 +2452,10 @@ def _nav_item(row: dict) -> dict:
         payload = json.loads(row.get("content_with_weight") or "{}")
     except Exception:
         payload = {}
-    is_cluster = (row.get("type_kwd") or payload.get("type")) == "nav_cluster"
+    row_type = row.get("type_kwd")
+    if isinstance(row_type, (list, tuple, set)):
+        row_type = next(iter(row_type), None)
+    is_cluster = (row_type or payload.get("type")) == "nav_cluster"
     return {
         "name": row.get("name") or "",
         "description": payload.get("description") or "",
@@ -2551,7 +2554,8 @@ async def delete_nav(dataset_id: str, tenant_id: str):
     index_nm, _ = pack
 
     try:
-        deleted = settings.docStoreConn.delete(
+        deleted = await thread_pool_exec(
+            settings.docStoreConn.delete,
             {"compile_kwd": [_NAV_COMPILE_KWD]},
             index_nm,
             dataset_id,
@@ -2592,16 +2596,17 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
         if not frontier:
             break
         try:
-            res = settings.docStoreConn.search(
-                select_fields=["name"],
-                highlight_fields=[],
-                condition={"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
-                match_expressions=[],
-                order_by=OrderByExpr(),
-                offset=0,
-                limit=10000,
-                index_names=index_nm,
-                knowledgebase_ids=[dataset_id],
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["name"],
+                [],
+                {"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
+                [],
+                OrderByExpr(),
+                0,
+                10000,
+                index_nm,
+                [dataset_id],
             )
             rows = settings.docStoreConn.get_fields(res, ["name"]) or {}
         except Exception:
@@ -2616,7 +2621,8 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
         frontier = nxt
 
     try:
-        deleted = settings.docStoreConn.delete(
+        deleted = await thread_pool_exec(
+            settings.docStoreConn.delete,
             {"compile_kwd": [_NAV_COMPILE_KWD], "name": list(names)},
             index_nm,
             dataset_id,
