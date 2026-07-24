@@ -341,6 +341,23 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
+	// Ordinary Message templates are rendered and emitted once by Invoke.
+	// Only templates that actually reference a DeferredStream belong to the
+	// incremental presentation path below.  Emitting literals/normal variable
+	// values here and then emitting the fully rendered string in Invoke would
+	// produce duplicate SSE message events for every non-deferred template.
+	hasDeferred := false
+	for _, match := range matches {
+		ref := text[match[2]:match[3]]
+		value, _ := state.GetVar(ref)
+		if runtime.IsDeferredStream(value) {
+			hasDeferred = true
+			break
+		}
+	}
+	if !hasDeferred {
+		return runtime.ResolveTemplateForDisplay(text, state), false, nil
+	}
 	var out strings.Builder
 	last := 0
 	streamed := false

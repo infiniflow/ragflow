@@ -194,6 +194,28 @@ func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 	}
 }
 
+func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-normal-template", "task-normal-template")
+	state.Sys["query"] = "world"
+	ctx := withStateForTest(context.Background(), state)
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
+
+	out, err := c.Invoke(ctx, map[string]any{"text": "hello {{sys.query}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "hello world" {
+		t.Fatalf("content: got %q, want %q", got, "hello world")
+	}
+	if len(direct) != 1 || direct[0] != "hello world" {
+		t.Fatalf("direct = %#v, want one rendered message", direct)
+	}
+}
+
 // TestMessage_SkipsEmissionWhenAgentAlreadyStreamed verifies that the
 // Message component does not re-emit content when an upstream Agent
 // component already streamed its answer. This prevents the double-reply
