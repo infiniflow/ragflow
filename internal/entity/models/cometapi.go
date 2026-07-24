@@ -320,6 +320,10 @@ func (c *CometAPIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 			}
 		}
 
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+
 		return nil
 	})
 	if err != nil {
