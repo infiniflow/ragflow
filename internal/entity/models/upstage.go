@@ -220,8 +220,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
 		if r, ok := delta["reasoning"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
 				return err
@@ -244,7 +242,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("upstage: stream ended before [DONE] or finish_reason")
 	}
