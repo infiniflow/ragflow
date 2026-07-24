@@ -31,4 +31,33 @@ def _normalize_replicate_key(key):
     return key
 
 
-__all__ = ["_normalize_replicate_key"]
+_BEDROCK_KEY_HINT = (
+    "Bedrock credentials must be a JSON object carrying at least 'auth_mode' and "
+    "'bedrock_region', for example "
+    '{"auth_mode": "access_key_secret", "bedrock_region": "us-east-1", '
+    '"bedrock_ak": "...", "bedrock_sk": "..."}. '
+    "See conf/models/bedrock.json for the full schema."
+)
+
+
+def _resolve_bedrock_credentials(key):
+    """Return the credential dict encoded in a Bedrock ``key``.
+
+    Every Bedrock connector reads its credentials from a JSON object. A bare
+    string in that field - a plain AWS access key, say - used to reach
+    ``json.loads`` unguarded and surface a ``JSONDecodeError`` raised from
+    inside the connector, which tells the operator nothing about what to fix.
+    """
+    if isinstance(key, dict):
+        payload = key
+    else:
+        try:
+            payload = json.loads(key)
+        except (TypeError, ValueError) as e:
+            raise ValueError(_BEDROCK_KEY_HINT) from e
+    if not isinstance(payload, dict):
+        raise ValueError(_BEDROCK_KEY_HINT)
+    return payload
+
+
+__all__ = ["_normalize_replicate_key", "_resolve_bedrock_credentials"]

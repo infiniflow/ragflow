@@ -31,7 +31,7 @@ from zai import ZhipuAiClient
 from common import settings
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.utils.url_utils import ensure_v1
 import logging
 import base64
@@ -670,7 +670,7 @@ class BedrockEmbed(Base):
         #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
         #   - else: treated as "assume_role" (default AWS credential chain).
-        key = json.loads(key)
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
