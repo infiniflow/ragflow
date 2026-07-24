@@ -25,7 +25,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-type HTMLParser struct{}
+type HTMLParser struct {
+	RemoveHeaderFooter bool
+	RemoveTOC          bool
+}
 
 func NewHTMLParser() *HTMLParser {
 	return &HTMLParser{}
@@ -33,6 +36,21 @@ func NewHTMLParser() *HTMLParser {
 
 func (p *HTMLParser) String() string {
 	return "HTMLParser"
+}
+
+// ConfigureFromSetup reads the HTML family setup map. Mirrors the
+// Python parser.py HTML setup keys: remove_header_footer (pre-parse
+// tag strip) and remove_toc (post-parse text heuristic).
+func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
 }
 
 // ParseWithResult emits one item per block-level HTML element
@@ -49,12 +67,27 @@ func (p *HTMLParser) String() string {
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	// remove_header_footer: pre-parse strip of <header>/<footer> tags
+	// and ARIA role=banner/contentinfo elements (mirrors Python
+	// parser.py:1083-1084 remove_header_footer_html_blob).
+	if p.RemoveHeaderFooter {
+		cleaned, err := stripHTMLHeaderFooter(data)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("html remove_header_footer: %w", err)}
+		}
+		data = cleaned
+	}
 	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
 	walkHTMLBlocks(doc, &items)
+	// remove_toc: post-parse text heuristic (mirrors Python
+	// parser.py:1087-1088 remove_toc → remove_contents_table).
+	if p.RemoveTOC {
+		items = removeContentsTable(items, false)
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}

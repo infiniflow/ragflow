@@ -226,16 +226,16 @@ func (s *ConnectorService) canAccessConnector(connector *entity.Connector, userI
 }
 
 // cancelConnectorTasks Stop connector tasks
-func (s *ConnectorService) cancelConnectorTasks(connectorID string) error {
-	if err := s.connectorDAO.CancelRunningOrScheduledLogs(connectorID); err != nil {
+func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID string) error {
+	if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, dao.DB, connectorID); err != nil {
 		return err
 	}
-	return s.connectorDAO.UpdateByID(connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)})
+	return s.connectorDAO.UpdateByID(ctx, dao.DB, connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)})
 }
 
 // CreateConnector creates a connector owned by the current user.
 // Equivalent to Python's create_connector endpoint.
-func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
@@ -264,23 +264,23 @@ func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRe
 		Status:      connectorStatusUnstarted,
 	}
 
-	if err := s.connectorDAO.Create(connector); err != nil {
+	if err := s.connectorDAO.Create(ctx, dao.DB, connector); err != nil {
 		return nil, err
 	}
 
-	return s.connectorDAO.GetByID(connector.ID)
+	return s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
 }
 
 // GetConnector returns one connector when the user can access its tenant.
-func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
+func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
 	if connectorID == "" {
 		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -299,18 +299,18 @@ func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Con
 		}
 	}
 
-	return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 }
 
 // ListConnectors list connectors for a user
-func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsResponse, error) {
+func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*ListConnectorsResponse, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
 
 	// Query connectors by tenant ID
-	connectors, err := s.connectorDAO.ListByTenantID(userID)
+	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +322,8 @@ func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsRespons
 
 // accessible reports whether the user can access the connector's tenant.
 // Mirrors Python's ConnectorService.accessible: owner access plus joined tenants.
-func (s *ConnectorService) accessible(connectorID, userID string) (bool, error) {
-	conn, err := s.connectorDAO.GetByID(connectorID)
+func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID string) (bool, error) {
+	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		return false, ErrConnectorNotFound
 	}
@@ -351,8 +351,8 @@ func (s *ConnectorService) accessible(connectorID, userID string) (bool, error) 
 // is REST_API (the only source Python currently tests), and that credentials
 // are present in the stored config. It returns ErrConnectorTestUnsupported for
 // other sources.
-func (s *ConnectorService) TestConnector(connectorID, userID string) error {
-	ok, err := s.accessible(connectorID, userID)
+func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
+	ok, err := s.accessible(ctx, connectorID, userID)
 	if err != nil && errors.Is(err, ErrConnectorNotFound) {
 		return ErrConnectorNotFound
 	}
@@ -363,7 +363,7 @@ func (s *ConnectorService) TestConnector(connectorID, userID string) error {
 		return ErrConnectorNoAuth
 	}
 
-	conn, err := s.connectorDAO.GetByID(connectorID)
+	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		return ErrConnectorNotFound
 	}
@@ -383,13 +383,13 @@ func (s *ConnectorService) TestConnector(connectorID, userID string) error {
 	return nil
 }
 
-func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		source = "google-drive"
 	}
 	if source != "google-drive" && source != "gmail" {
-		return nil, common.CodeArgumentError, fmt.Errorf("Invalid Google OAuth type.")
+		return nil, common.CodeArgumentError, fmt.Errorf("invalid Google OAuth type")
 	}
 
 	if req == nil || len(req.Credentials) == 0 {
@@ -401,7 +401,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		redirectURI = defaultGoogleWebOAuthRedirectURI(source)
 	}
 	if redirectURI == "" {
-		return nil, common.CodeServerError, fmt.Errorf("Google OAuth redirect URI is not configured on the server.")
+		return nil, common.CodeServerError, fmt.Errorf("not configure Google OAuth redirect URI on the server")
 	}
 
 	credentials, err := loadGoogleCredentials(req.Credentials)
@@ -409,7 +409,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		return nil, common.CodeArgumentError, err
 	}
 	if hasRefreshToken(credentials) {
-		return nil, common.CodeArgumentError, fmt.Errorf("Uploaded credentials already include a refresh token.")
+		return nil, common.CodeArgumentError, fmt.Errorf("uploaded credentials already include a refresh token")
 	}
 
 	clientConfig, err := getGoogleWebClientConfig(credentials)
@@ -424,7 +424,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		authURI = googleOAuthAuthorizeURL
 	}
 	if clientID == "" || authURI == "" {
-		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
 	}
 
 	codeVerifier, codeChallenge, err := newPKCEChallenge()
@@ -435,12 +435,12 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 	flowID := utility.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
 	}
 
 	redisClient := redis.Get()
 	if redisClient == nil {
-		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
+		return nil, common.CodeServerError, fmt.Errorf("no configure Redis on the server")
 	}
 
 	state := googleWebOAuthState{
@@ -451,7 +451,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		CreatedAt:    time.Now().Unix(),
 	}
 	if ok := redisClient.SetObj(webStateCacheKey(flowID, source), state, webFlowTTL); !ok {
-		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
 	}
 
 	return &StartGoogleWebOAuthResponse{
@@ -461,7 +461,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 	}, common.CodeSuccess, nil
 }
 
-func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string {
+func (s *ConnectorService) GoogleWebOAuthCallback(ctx context.Context, source, stateID, oauthError, errorDescription, code string) string {
 	source = strings.TrimSpace(source)
 	if source != "google-drive" && source != "gmail" {
 		return renderWebOAuthPopup("", false, "Invalid Google OAuth type.", source)
@@ -524,10 +524,10 @@ func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, e
 	return renderWebOAuthPopup(stateID, true, "Authorization completed successfully.", source)
 }
 
-func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
 	source = strings.TrimSpace(source)
 	if source != "google-drive" && source != "gmail" {
-		return nil, common.CodeArgumentError, fmt.Errorf("Invalid Google OAuth type.")
+		return nil, common.CodeArgumentError, fmt.Errorf("invalid Google OAuth type")
 	}
 	if req == nil || strings.TrimSpace(req.FlowID) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
@@ -535,17 +535,17 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *
 
 	redisClient := redis.Get()
 	if redisClient == nil {
-		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}
 
 	resultKey := webResultCacheKey(strings.TrimSpace(req.FlowID), source)
 	var result googleWebOAuthResult
 	if ok := redisClient.GetObj(resultKey, &result); !ok {
-		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}
 
 	if result.UserID != userID {
-		return nil, common.CodePermissionError, fmt.Errorf("You are not allowed to access this authorization result.")
+		return nil, common.CodePermissionError, fmt.Errorf("you are not allowed to access this authorization result")
 	}
 
 	redisClient.Delete(resultKey)
@@ -582,10 +582,10 @@ func loadGoogleCredentials(raw json.RawMessage) (map[string]interface{}, error) 
 
 	var rawString string
 	if err := json.Unmarshal(raw, &rawString); err != nil {
-		return nil, fmt.Errorf("Invalid Google credentials JSON.")
+		return nil, fmt.Errorf("invalid Google credentials JSON")
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(rawString)), &credentials); err != nil || credentials == nil {
-		return nil, fmt.Errorf("Invalid Google credentials JSON.")
+		return nil, fmt.Errorf("invalid Google credentials JSON")
 	}
 	return credentials, nil
 }
@@ -604,7 +604,7 @@ func hasRefreshToken(credentials map[string]interface{}) bool {
 func getGoogleWebClientConfig(credentials map[string]interface{}) (map[string]interface{}, error) {
 	webSection, ok := credentials["web"].(map[string]interface{})
 	if !ok || webSection == nil {
-		return nil, fmt.Errorf("Google OAuth JSON must include a 'web' client configuration to use browser-based authorization.")
+		return nil, fmt.Errorf("google OAuth JSON must include a 'web' client configuration to use browser-based authorization")
 	}
 	return map[string]interface{}{"web": webSection}, nil
 }
@@ -828,28 +828,28 @@ func webOAuthSourceDisplayName(source string) string {
 	return "OAuth"
 }
 
-func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error) {
+func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error) {
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return false, common.CodeServerError, err
 	}
 
 	if !s.canAccessConnector(connector, userID) {
-		return false, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
-	if err = s.cancelConnectorTasks(connector.ID); err != nil {
+	if err = s.cancelConnectorTasks(ctx, connector.ID); err != nil {
 		return false, common.CodeServerError, err
 	}
 
-	if err = s.connectorDAO.DeleteByID(connector.ID); err != nil {
+	if err = s.connectorDAO.DeleteByID(ctx, dao.DB, connector.ID); err != nil {
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
@@ -864,21 +864,21 @@ type UpdateConnectorRequest struct {
 	Status      string         `json:"status,omitempty"`
 }
 
-func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
 	if connectorID == "" {
 		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return nil, common.CodeServerError, err
 	}
 
 	if !s.canAccessConnector(connector, userID) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	updates := map[string]interface{}{}
@@ -898,34 +898,34 @@ func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *Upda
 	}
 
 	if len(updates) > 0 {
-		if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+		if err = s.connectorDAO.UpdateByID(ctx, dao.DB, connectorID, updates); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}
 
 	if req != nil {
 		if req.Reschedule {
-			if err := s.cancelConnectorTasks(connectorID); err != nil {
+			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
-			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		} else if isConnectorCancelStatus(req.Status) {
-			if err := s.cancelConnectorTasks(connectorID); err != nil {
+			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		} else if isConnectorScheduleStatus(req.Status) {
-			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		}
 	}
 
-	connector, err = s.connectorDAO.GetByID(connectorID)
+	connector, err = s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -944,7 +944,7 @@ func isConnectorScheduleStatus(status string) bool {
 }
 
 // RebuildConnector schedules a rebuild for an accessible connector and knowledge base.
-func (s *ConnectorService) RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error) {
+func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, userID, kbID string) (bool, common.ErrorCode, error) {
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
@@ -952,33 +952,33 @@ func (s *ConnectorService) RebuildConnector(connectorID, userID, kbID string) (b
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
 	}
 
-	connector, err := s.connectorDAO.GetByID(connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return false, common.CodeServerError, err
 	}
 
 	if !s.canAccessConnector(connector, userID) {
-		return false, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	sourceType := fmt.Sprintf("%s/%s", connector.Source, connector.ID)
-	documents, err := s.connectorDAO.ListDocumentsByKBAndSourceType(kbID, sourceType)
+	documents, err := s.connectorDAO.ListDocumentsByKBAndSourceType(ctx, dao.DB, kbID, sourceType)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
 
-	s.deleteConnectorDocumentChunks(connector.TenantID, kbID, documents)
+	s.deleteConnectorDocumentChunks(ctx, connector.TenantID, kbID, documents)
 
-	if err := s.connectorDAO.RebuildConnector(connector, kbID, documents); err != nil {
+	if err = s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents); err != nil {
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s *ConnectorService) deleteConnectorDocumentChunks(tenantID, kbID string, documents []*entity.Document) {
+func (s *ConnectorService) deleteConnectorDocumentChunks(ctx context.Context, tenantID, kbID string, documents []*entity.Document) {
 	docEngine := engine.Get()
 	if docEngine == nil {
 		return
@@ -986,25 +986,25 @@ func (s *ConnectorService) deleteConnectorDocumentChunks(tenantID, kbID string, 
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	for _, document := range documents {
-		_, _ = docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": document.ID}, indexName, kbID)
+		_, _ = docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": document.ID}, indexName, kbID)
 	}
 }
 
-func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if connectorID == "" {
 		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, 0, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+			return nil, 0, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return nil, 0, common.CodeServerError, err
 	}
 
 	if !s.canAccessConnector(connector, userID) {
-		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	if page < 1 {
@@ -1015,7 +1015,7 @@ func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize in
 	}
 	offset := (page - 1) * pageSize
 
-	logs, total, err := s.connectorDAO.ListLogsByConnectorID(connectorID, offset, pageSize)
+	logs, total, err := s.connectorDAO.ListLogsByConnectorID(ctx, dao.DB, connectorID, offset, pageSize)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
 	}
@@ -1025,7 +1025,7 @@ func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize in
 	return logs, total, common.CodeSuccess, nil
 }
 
-func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
+func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
 	var clientID, clientSecret, redirectURI string
 	if req != nil {
 		clientID = strings.TrimSpace(req.ClientID)
@@ -1033,7 +1033,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		redirectURI = strings.TrimSpace(req.RedirectURI)
 	}
 	if clientID == "" || clientSecret == "" {
-		return nil, common.CodeArgumentError, fmt.Errorf("Box client_id and client_secret are required.")
+		return nil, common.CodeArgumentError, fmt.Errorf("box client_id and client_secret are required")
 	}
 	if redirectURI == "" {
 		redirectURI = defaultBoxWebOAuthRedirectURI()
@@ -1047,7 +1047,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 
 	redisClient := connectorRedisGet()
 	if redisClient == nil {
-		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
+		return nil, common.CodeServerError, fmt.Errorf("not connected Redis client on the server")
 	}
 
 	state := boxWebOAuthState{
@@ -1059,7 +1059,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		CreatedAt:    time.Now().Unix(),
 	}
 	if ok := redisClient.SetObj(webStateCacheKey(flowID, "box"), state, webFlowTTL); !ok {
-		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Box OAuth flow. Please verify the client configuration.")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Box OAuth flow. Please verify the client configuration")
 	}
 
 	return &StartBoxWebOAuthResponse{
@@ -1069,7 +1069,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 	}, common.CodeSuccess, nil
 }
 
-func (s *ConnectorService) BoxWebOAuthCallback(flowID string, oauthError string, errorDescription string, code string) string {
+func (s *ConnectorService) BoxWebOAuthCallback(ctx context.Context, flowID string, oauthError string, errorDescription string, code string) string {
 	flowID = strings.TrimSpace(flowID)
 	if flowID == "" {
 		return renderWebOAuthPopup("", false, "Missing OAuth parameters.", "box")
@@ -1125,24 +1125,24 @@ func (s *ConnectorService) BoxWebOAuthCallback(flowID string, oauthError string,
 	return renderWebOAuthPopup(flowID, true, "Authorization completed successfully.", "box")
 }
 
-func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+func (s *ConnectorService) PollBoxWebOAuthResult(ctx context.Context, userID string, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
 	if req == nil || strings.TrimSpace(req.FlowID) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
 	redisClient := connectorRedisGet()
 	if redisClient == nil {
-		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}
 
 	resultKey := webResultCacheKey(strings.TrimSpace(req.FlowID), "box")
 	var result boxWebOAuthCredentials
 	if ok := redisClient.GetObj(resultKey, &result); !ok {
-		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}
 
 	if result.UserID != userID {
-		return nil, common.CodePermissionError, fmt.Errorf("You are not allowed to access this authorization result.")
+		return nil, common.CodePermissionError, fmt.Errorf("you are not allowed to access this authorization result")
 	}
 
 	redisClient.Delete(resultKey)
@@ -1203,7 +1203,7 @@ func exchangeBoxAuthorizationCode(clientID string, clientSecret string, redirect
 	}
 
 	var token boxOAuthTokenResponse
-	if err := json.Unmarshal(body, &token); err != nil {
+	if err = json.Unmarshal(body, &token); err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= http.StatusBadRequest || token.Error != "" {

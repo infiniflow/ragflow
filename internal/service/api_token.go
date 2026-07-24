@@ -40,7 +40,7 @@ type APIKeyResponse struct {
 // ListAPIKeys list all API keys for a tenant
 func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
-	keys, err := APITokenDAO.GetByTenantID(ctx, tenantID)
+	keys, err := APITokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 		Beta:     &betaAPIKey,
 	}
 
-	if err := APITokenDAO.Create(ctx, APIKeyData); err != nil {
+	if err := APITokenDAO.Create(ctx, dao.DB, APIKeyData); err != nil {
 		return nil, err
 	}
 
@@ -117,6 +117,6 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 
 func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {
 	APITokenDAO := dao.NewAPITokenDAO()
-	_, err := APITokenDAO.DeleteByTenantIDAndToken(ctx, tenantID, key)
+	_, err := APITokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	return err
 }

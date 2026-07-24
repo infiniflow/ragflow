@@ -314,6 +314,17 @@ func (c *LLMComponent) Name() string { return "LLM" }
 // Invoke runs the LLM and returns the output map.
 func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
