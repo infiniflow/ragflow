@@ -1622,6 +1622,7 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
+	session.Round++
 	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
