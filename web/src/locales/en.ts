@@ -1586,6 +1586,14 @@ Example: Virtual Hosted Style`,
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       dingtalkAITableDescription:
         'Connect to Dingtalk AI Table and synchronize records from a specified table.',
+      feishu_driveDescription:
+        'Connect to Feishu/Lark Drive and sync uploaded files from a shared folder.',
+      feishuAppIdTip:
+        'The App ID of your Feishu/Lark custom app, found under Credentials & Basic Info in the developer console.',
+      feishuDomainTip:
+        'Choose Feishu (open.feishu.cn) for China apps or Lark (open.larksuite.com) for international apps.',
+      feishuFolderTokenTip:
+        'The token at the end of the folder URL (.../drive/folder/<token>). Leave empty to use the app root. The folder must be shared with the app.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:

@@ -38,6 +38,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   DINGTALK_AI_TABLE = 'dingtalk_ai_table',
+  FEISHU_DRIVE = 'feishu_drive',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
@@ -114,6 +115,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.DINGTALK_AI_TABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.FEISHU_DRIVE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.WEBDAV]: {
@@ -285,6 +289,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Dingtalk AI Table',
       description: t(`setting.dingtalkAITableDescription`),
       icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
+    },
+    [DataSourceKey.FEISHU_DRIVE]: {
+      name: 'Feishu/Lark Drive',
+      description: t(`setting.feishu_driveDescription`),
+      icon: <SvgIcon name={'data-source/feishu'} width={38} />,
     },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
@@ -1177,6 +1186,49 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.operator_id',
       type: FormFieldType.Text,
       required: true,
+    },
+  ],
+  [DataSourceKey.FEISHU_DRIVE]: [
+    {
+      label: 'App ID',
+      name: 'config.credentials.feishu_app_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'cli_xxxxxxxxxxxx',
+      tooltip: t('setting.feishuAppIdTip'),
+    },
+    {
+      label: 'App Secret',
+      name: 'config.credentials.feishu_app_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Domain',
+      name: 'config.credentials.feishu_domain',
+      type: FormFieldType.Select,
+      required: true,
+      defaultValue: 'feishu',
+      options: [
+        { label: 'Feishu (open.feishu.cn)', value: 'feishu' },
+        { label: 'Lark (open.larksuite.com)', value: 'lark' },
+      ],
+      tooltip: t('setting.feishuDomainTip'),
+    },
+    {
+      label: 'Folder Token',
+      name: 'config.folder_token',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Defaults to app root',
+      tooltip: t('setting.feishuFolderTokenTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: 'Defaults to 2',
     },
   ],
   [DataSourceKey.GITLAB]: [
@@ -2206,6 +2258,19 @@ export const DataSourceFormDefaultValues = {
       operator_id: '',
       credentials: {
         access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.FEISHU_DRIVE]: {
+    name: '',
+    source: DataSourceKey.FEISHU_DRIVE,
+    config: {
+      folder_token: '',
+      batch_size: 2,
+      credentials: {
+        feishu_app_id: '',
+        feishu_app_secret: '',
+        feishu_domain: 'feishu',
       },
     },
   },
