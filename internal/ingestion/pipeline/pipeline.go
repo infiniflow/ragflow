@@ -38,7 +38,7 @@ import (
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
-	taskID     string
+	taskID string
 	// rawDSL holds the canonical (key-sorted) JSON of the canvas DSL this
 	// pipeline was compiled from. It is the basis for the resume-time DSL
 	// fingerprint (guardDSLChange): any edit to the template DSL changes
