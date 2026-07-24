@@ -595,10 +595,16 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	content []byte,
 ) {
 	t.Helper()
+	ocrID := "ocr-default"
 	if err := db.Create(&entity.Tenant{
-		ID:     tenantID,
-		LLMID:  "gpt-4",
-		Status: taskStrPtr("1"),
+		ID:        tenantID,
+		LLMID:     "gpt-4",
+		ASRID:     "asr-default",
+		Img2TxtID: "img2txt-default",
+		RerankID:  "rerank-default",
+		ParserIDs: "parser-default",
+		OCRID:     &ocrID,
+		Status:    taskStrPtr("1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}

@@ -169,7 +169,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
 	replaceExisting := mode != "add"
 	for _, fileID := range fileIDs {
-		mappings, err := s.file2DocumentDAO.GetByFileID(fileID)
+		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if err != nil {
 			common.Warn("convertFiles: GetByFileID failed", zap.String("fileID", fileID), zap.Error(err))
 		}
@@ -191,7 +191,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 			// Drop the file2document mappings for this file (mirrors Python
 			// File2DocumentService.delete_by_file_id, done once per file).
-			if err := s.file2DocumentDAO.DeleteByFileID(fileID); err != nil {
+			if err = s.file2DocumentDAO.DeleteByFileID(ctx, dao.DB, fileID); err != nil {
 				common.Warn("convertFiles: DeleteByFileID failed", zap.String("fileID", fileID), zap.Error(err))
 			}
 		} else {
@@ -271,7 +271,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}
-			if err := s.file2DocumentDAO.Create(mapping); err != nil {
+			if err = s.file2DocumentDAO.Create(ctx, dao.DB, mapping); err != nil {
 				common.Warn("convertFiles: Create file2document mapping failed",
 					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
 			}

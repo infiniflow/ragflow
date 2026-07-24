@@ -195,7 +195,7 @@ func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, pa
 // dataset folder plus a file2document mapping. Mirrors Python
 // FileService.add_file_from_kb (idempotent on the document mapping).
 func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Document, kbFolderID, tenantID string) error {
-	if existing, err := s.file2DocumentDAO.GetByDocumentID(doc.ID); err == nil && len(existing) > 0 {
+	if existing, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && len(existing) > 0 {
 		return nil
 	}
 	name := ""
@@ -222,7 +222,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 		return err
 	}
 	docID := doc.ID
-	if err := s.file2DocumentDAO.Create(&entity.File2Document{
+	if err := s.file2DocumentDAO.Create(ctx, dao.DB, &entity.File2Document{
 		ID:         utility.GenerateToken(),
 		FileID:     &fileID,
 		DocumentID: &docID,

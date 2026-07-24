@@ -658,7 +658,7 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 
 	// Verify f2d mapping deleted
 	f2dDAO := dao.NewFile2DocumentDAO()
-	mappings, _ := f2dDAO.GetByDocumentID("doc-1")
+	mappings, _ := f2dDAO.GetByDocumentID(ctx, db, "doc-1")
 	if len(mappings) != 0 {
 		t.Fatalf("expected 0 f2d mappings, got %d", len(mappings))
 	}
@@ -696,7 +696,7 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 
 	// f2d mapping for doc-1 should be gone
 	f2dDAO := dao.NewFile2DocumentDAO()
-	mappings, _ := f2dDAO.GetByDocumentID("doc-1")
+	mappings, _ := f2dDAO.GetByDocumentID(ctx, db, "doc-1")
 	if len(mappings) != 0 {
 		t.Fatalf("expected 0 f2d mappings for doc-1, got %d", len(mappings))
 	}
@@ -708,7 +708,7 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	}
 
 	// f2d mapping for doc-2 should still exist
-	mappings, _ = f2dDAO.GetByDocumentID("doc-2")
+	mappings, _ = f2dDAO.GetByDocumentID(ctx, db, "doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d mapping for doc-2, got %d", len(mappings))
 	}
@@ -1495,7 +1495,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 	svc.cleanupFileReferences(ctx, "doc-1")
 
 	// f2d gone
-	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
 	if len(mappings) != 0 {
 		t.Fatalf("expected 0 f2d after cleanup, got %d", len(mappings))
 	}
@@ -1520,7 +1520,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 	svc.cleanupFileReferences(ctx, "doc-1")
 
 	// f2d for doc-1 gone
-	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
 	if len(mappings) != 0 {
 		t.Fatalf("expected 0 f2d for doc-1, got %d", len(mappings))
 	}
@@ -1530,7 +1530,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 		t.Fatalf("expected 1 file record, got %d", len(files))
 	}
 	// f2d for doc-2 survives
-	mappings, _ = dao.NewFile2DocumentDAO().GetByDocumentID("doc-2")
+	mappings, _ = dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d for doc-2, got %d", len(mappings))
 	}

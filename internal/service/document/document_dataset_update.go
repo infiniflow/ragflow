@@ -347,7 +347,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		return errors.New("database error (Document rename)")
 	}
 
-	mappings, err := s.file2DocumentDAO.GetByDocumentID(doc.ID)
+	mappings, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err == nil && len(mappings) > 0 && mappings[0].FileID != nil && s.fileDAO != nil {
 		err = s.fileDAO.UpdateByID(ctx, dao.DB, *mappings[0].FileID, map[string]interface{}{"name": newName})
 		if err != nil {
