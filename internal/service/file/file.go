@@ -38,7 +38,7 @@ type DocRemover interface {
 // CheckFilePermFunc is the function signature for file-team permission checks,
 // injected by the parent adapter so the file subpackage does not need to import
 // the parent service package.
-type CheckFilePermFunc func(fileDAO *dao.FileDAO, file *entity.File, userID string) bool
+type CheckFilePermFunc func(ctx context.Context, fileDAO *dao.FileDAO, file *entity.File, userID string) bool
 
 // FileService file service
 type FileService struct {

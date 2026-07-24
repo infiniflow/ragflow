@@ -664,7 +664,7 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	}
 
 	// Verify file record deleted (hard delete)
-	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-1"})
+	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
 	}
@@ -702,7 +702,7 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	}
 
 	// file record should still exist (doc-2 still references it)
-	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-shared"})
+	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-shared"})
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file record to survive, got %d", len(files))
 	}
@@ -1478,7 +1478,8 @@ func TestCleanupFileReferences_NoMappings(t *testing.T) {
 
 	svc := testDocumentService(t)
 	// Should not panic with no f2d mappings
-	svc.cleanupFileReferences("no-mappings")
+	ctx := t.Context()
+	svc.cleanupFileReferences(ctx, "no-mappings")
 }
 
 func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
@@ -1490,7 +1491,8 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
 
 	svc := testDocumentService(t)
-	svc.cleanupFileReferences("doc-1")
+	ctx := t.Context()
+	svc.cleanupFileReferences(ctx, "doc-1")
 
 	// f2d gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
@@ -1498,7 +1500,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 		t.Fatalf("expected 0 f2d after cleanup, got %d", len(mappings))
 	}
 	// file record gone
-	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-1"})
+	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files after cleanup, got %d", len(files))
 	}
@@ -1514,7 +1516,8 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 	insertTestFile2Document(t, "f2d-2", "file-shared", "doc-2")
 
 	svc := testDocumentService(t)
-	svc.cleanupFileReferences("doc-1")
+	ctx := t.Context()
+	svc.cleanupFileReferences(ctx, "doc-1")
 
 	// f2d for doc-1 gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
@@ -1522,7 +1525,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 		t.Fatalf("expected 0 f2d for doc-1, got %d", len(mappings))
 	}
 	// file record survives
-	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-shared"})
+	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-shared"})
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file record, got %d", len(files))
 	}
@@ -1715,7 +1718,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	if doc.Name == nil || *doc.Name != newName {
 		t.Fatalf("document name = %v, want %q", doc.Name, newName)
 	}
-	file, _ := dao.NewFileDAO().GetByID("file-1")
+	file, _ := dao.NewFileDAO().GetByID(ctx, db, "file-1")
 	if file.Name != newName {
 		t.Fatalf("file name = %q, want %q", file.Name, newName)
 	}
@@ -2887,7 +2890,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 
 	docSvc := testDocumentService(t)
 	fileSvc := file.NewFileService(
-		func(_ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
+		func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
 		docSvc,
 	)
 

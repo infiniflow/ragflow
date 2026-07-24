@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -17,14 +18,14 @@ import (
 // UploadFile uploads files to a folder
 func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	if parentID == "" {
-		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get root folder: %w", err)
 		}
 		parentID = rootFolder.ID
 	}
 
-	_, err := s.fileDAO.GetByID(parentID)
+	_, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("Can't find this folder!")
 	}
@@ -54,7 +55,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 	for _, fileHeader := range files {
 		filename := fileHeader.Filename
 		if filename == "" {
-			return nil, fmt.Errorf("No file selected!")
+			return nil, fmt.Errorf("no file selected")
 		}
 
 		fileType := utility.FilenameType(filename)
@@ -62,7 +63,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		fileObjNames := s.parseFilePath(filename)
 
 		var idList []string
-		idList, err = s.fileDAO.GetIDListByID(parentID, fileObjNames, 1, []string{parentID})
+		idList, err = s.fileDAO.GetIDListByID(ctx, dao.DB, parentID, fileObjNames, 1, []string{parentID})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get file ID list: %w", err)
 		}
@@ -70,21 +71,21 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		var lastFolder *entity.File
 		if len(fileObjNames) != len(idList)-1 {
 			lastID := idList[len(idList)-1]
-			lastFolder, err = s.fileDAO.GetByID(lastID)
+			lastFolder, err = s.fileDAO.GetByID(ctx, dao.DB, lastID)
 			if err != nil {
-				return nil, fmt.Errorf("Folder not found!")
+				return nil, fmt.Errorf("folder not found")
 			}
 			var createdFolder *entity.File
-			createdFolder, err = s.createFolderRecursive(lastFolder, fileObjNames, len(idList), tenantID)
+			createdFolder, err = s.createFolderRecursive(ctx, lastFolder, fileObjNames, len(idList), tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create folder: %w", err)
 			}
 			lastFolder = createdFolder
 		} else {
 			lastID := idList[len(idList)-2]
-			lastFolder, err = s.fileDAO.GetByID(lastID)
+			lastFolder, err = s.fileDAO.GetByID(ctx, dao.DB, lastID)
 			if err != nil {
-				return nil, fmt.Errorf("Folder not found!")
+				return nil, fmt.Errorf("folder not found")
 			}
 		}
 
@@ -93,13 +94,15 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			location += "_"
 		}
 
-		src, err := fileHeader.Open()
+		var src multipart.File
+		src, err = fileHeader.Open()
 		if err != nil {
 			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
 		}
 		defer src.Close()
 
-		data, err := io.ReadAll(src)
+		var data []byte
+		data, err = io.ReadAll(src)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
@@ -108,7 +111,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
-		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
+		uniqueName := s.getUniqueFilename(ctx, fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
 
 		fileRecord := &entity.File{
 			ID:         utility.GenerateToken(),
@@ -122,7 +125,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			SourceType: "",
 		}
 
-		if err = s.fileDAO.Insert(fileRecord); err != nil {
+		if err = s.fileDAO.Insert(ctx, dao.DB, fileRecord); err != nil {
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}
 

@@ -84,7 +84,7 @@ type LinkToDatasetsRequest struct {
 // handler can map it to a Python-compatible response without leaking internals.
 func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
-	files, err := s.fileDAO.GetByIDs(req.FileIDs)
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
 	if err != nil {
 		common.Warn("LinkToDatasets: GetByIDs failed", zap.Error(err))
 		return ErrLinkInternal
@@ -117,7 +117,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	for _, id := range req.FileIDs {
 		file := filesSet[id]
 		if file.Type == "folder" {
-			inner, err := s.getAllInnermostFileIDs(id)
+			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
 				return ErrLinkInternal
@@ -131,11 +131,11 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 	// ── 4. Validate expanded file permissions ─────────────────────────────────
 	for _, id := range allFileIDs {
-		file, err := s.fileDAO.GetByID(id)
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, id)
 		if err != nil || file == nil {
 			return ErrLinkFileNotFound
 		}
-		if !service.CheckFileTeamPermission(s.fileDAO, file, userID) {
+		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
 			return ErrLinkNoAuthorization
 		}
 	}
@@ -211,7 +211,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 		}
 
 		// Reload the source file.
-		file, err := s.fileDAO.GetByID(fileID)
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 		if err != nil || file == nil {
 			continue
 		}
@@ -281,15 +281,15 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 // getAllInnermostFileIDs recursively collects all non-folder file IDs under a folder.
 // Mirrors Python FileService.get_all_innermost_file_ids.
-func (s *File2DocumentService) getAllInnermostFileIDs(folderID string) ([]string, error) {
-	children, err := s.fileDAO.ListByParentID(folderID)
+func (s *File2DocumentService) getAllInnermostFileIDs(ctx context.Context, folderID string) ([]string, error) {
+	children, err := s.fileDAO.ListByParentID(ctx, dao.DB, folderID)
 	if err != nil {
 		return nil, err
 	}
 	var ids []string
 	for _, child := range children {
 		if child.Type == "folder" {
-			sub, err := s.getAllInnermostFileIDs(child.ID)
+			sub, err := s.getAllInnermostFileIDs(ctx, child.ID)
 			if err != nil {
 				return nil, err
 			}

@@ -349,7 +349,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 
 	mappings, err := s.file2DocumentDAO.GetByDocumentID(doc.ID)
 	if err == nil && len(mappings) > 0 && mappings[0].FileID != nil && s.fileDAO != nil {
-		_ = s.fileDAO.UpdateByID(*mappings[0].FileID, map[string]interface{}{"name": newName})
+		_ = s.fileDAO.UpdateByID(ctx, dao.DB, *mappings[0].FileID, map[string]interface{}{"name": newName})
 	}
 
 	if s.docEngine == nil {
