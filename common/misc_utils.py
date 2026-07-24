@@ -224,8 +224,8 @@ def once(func):
         nonlocal executed, result
         with lock:
             if not executed:
-                executed = True
                 result = func(*args, **kwargs)
+                executed = True
         return result
 
     return wrapper
