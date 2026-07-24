@@ -176,6 +176,14 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create the per-tenant document metadata index. Called by the
+        document metadata service on every metadata write path.
+        """
+        raise NotImplementedError("Not implemented")
+
+    @abstractmethod
     def delete_idx(self, index_name: str, dataset_id: str):
         """
         Delete an index with given name
@@ -263,6 +271,15 @@ class DocStoreConnection(ABC):
 
     @abstractmethod
     def get_aggregation(self, res, field_name: str):
+        raise NotImplementedError("Not implemented")
+
+    @abstractmethod
+    def get_scores(self, res) -> dict[str, float]:
+        """
+        Map each hit id to its relevance score. Used to recover the
+        similarity of a KNN-only search without pulling chunk vectors
+        out of the index (see rag/nlp/search.py).
+        """
         raise NotImplementedError("Not implemented")
 
     """

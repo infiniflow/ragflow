@@ -698,6 +698,17 @@ class OBConnectionBase(DocStoreConnection):
     def get_aggregation(self, res, field_name: str):
         raise NotImplementedError("Not implemented")
 
+    def get_scores(self, res) -> dict[str, float]:
+        # A scored search selects the similarity as `_score` on each row.
+        out = {}
+        for row in res.chunks:
+            doc_id = row.get("id")
+            if doc_id is None:
+                continue
+            score = row.get("_score")
+            out[doc_id] = float(score) if score is not None else 0.0
+        return out
+
     """
     SQL - can be overridden by subclasses
     """

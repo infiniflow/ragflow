@@ -696,6 +696,19 @@ class InfinityConnectionBase(DocStoreConnection):
             df = res
         return list(df["id"])
 
+    def get_scores(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> dict[str, float]:
+        # search() already folds pagerank into the `_score` column of the
+        # result frame, so map each id to it directly.
+        if isinstance(res, tuple):
+            df, count = res
+            if count == 0:
+                return {}
+        else:
+            df = res
+        if df.empty or "id" not in df.columns or "_score" not in df.columns:
+            return {}
+        return {str(rid): float(s) for rid, s in zip(df["id"], df["_score"])}
+
     @abstractmethod
     def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
