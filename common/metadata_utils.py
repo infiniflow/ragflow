@@ -299,6 +299,14 @@ def dedupe_list(values: list) -> list:
 
 
 def update_metadata_to(metadata, meta):
+    """Merge ``meta`` into ``metadata``.
+
+    String / list[str] values keep the previous multi-value merge + dedupe
+    behavior (used by LLM-extracted metadata). Scalars (bool / int / float /
+    None) and structured values (list[dict], dict, ...) are preserved so that
+    document system fields such as ``_isCurrent`` / ``_version`` and PDF
+    ``outline`` survive merges that later fully replace ``meta_fields``.
+    """
     if not meta:
         return metadata
     if isinstance(meta, str):
@@ -312,21 +320,33 @@ def update_metadata_to(metadata, meta):
 
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
-            if not v:
+            if all(isinstance(vv, str) for vv in v):
+                if not v:
+                    continue
+                v = dedupe_list(v)
+            else:
+                # Structured list (e.g. outline [{title, depth}, ...]).
+                if k not in metadata:
+                    metadata[k] = v
                 continue
-            v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        elif isinstance(v, (str, bool, int, float)) or v is None:
+            pass
+        else:
+            # dict / other structured values: keep if absent.
+            if k not in metadata:
+                metadata[k] = v
             continue
+
         if k not in metadata:
             metadata[k] = v
             continue
-        if isinstance(metadata[k], list):
+        if isinstance(metadata[k], list) and isinstance(v, (list, str)):
             if isinstance(v, list):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
-            metadata[k] = dedupe_list(metadata[k])
+            if all(isinstance(x, str) for x in metadata[k]):
+                metadata[k] = dedupe_list(metadata[k])
         else:
             metadata[k] = v
 
