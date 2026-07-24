@@ -44,6 +44,7 @@ import kbService, {
   updateKb,
 } from '@/services/knowledge-service';
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useIsMutating,
   useMutation,
@@ -707,7 +708,13 @@ export function useFetchKnowledgeGraph() {
 
 export const artifactGraphKeys = {
   graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
-    [KnowledgeApiAction.FetchArtifactGraph, datasetId, params?.node] as const,
+    [
+      KnowledgeApiAction.FetchArtifactGraph,
+      datasetId,
+      params?.node,
+      params?.keywords,
+      params?.top_n,
+    ] as const,
 };
 
 export function useFetchArtifactGraph(
@@ -719,6 +726,7 @@ export function useFetchArtifactGraph(
   const { data, isFetching: loading } = useQuery<IArtifactGraph>({
     queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
     initialData: { entities: [], relations: [] } as IArtifactGraph,
+    placeholderData: keepPreviousData,
     enabled: !!knowledgeBaseId && (options?.enabled ?? true),
     gcTime: 0,
     queryFn: async () => {
@@ -741,16 +749,17 @@ export function useFetchDatasetStructureGraph(kind: string) {
   const knowledgeBaseId = useKnowledgeBaseId();
   const enabled = !!knowledgeBaseId && !!kind;
 
-  const { data, isFetching: loading } = useQuery<IStructureGraphResponse | null>({
-    queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
-    initialData: null,
-    enabled,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await getArtifactsStructure(knowledgeBaseId, kind);
-      return (data?.data as IStructureGraphResponse | null) ?? null;
-    },
-  });
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
+      initialData: null,
+      enabled,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } = await getArtifactsStructure(knowledgeBaseId, kind);
+        return (data?.data as IStructureGraphResponse | null) ?? null;
+      },
+    });
 
   return { data, loading };
 }

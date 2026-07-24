@@ -1,26 +1,14 @@
-import ArtifactForceGraph from '@/components/artifact-force-graph';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFetchArtifactGraph } from '@/hooks/use-knowledge-request';
-import { IArtifact, IArtifactGraphEntity } from '@/interfaces/database/dataset';
+import { IArtifact } from '@/interfaces/database/dataset';
 import { Trash2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LeftPanelTab } from '../constants';
 import { useWikiClear } from './hooks/use-wiki-clear';
+import { WikiGraphPanel } from './wiki-graph-panel';
 import { WikiNavBar } from './wiki-nav-bar';
-
-const mapNodeToValue = (node: IArtifactGraphEntity) => ({
-  slug: node.slug,
-  title: node.name,
-  page_type: node.type,
-});
 
 type WikiLeftPanelProps = {
   tab: LeftPanelTab;
@@ -40,43 +28,10 @@ export function WikiLeftPanel({
   onClearWiki,
 }: WikiLeftPanelProps) {
   const { t } = useTranslation();
-  const { data } = useFetchArtifactGraph(undefined, {
-    enabled: tab === LeftPanelTab.Graph,
-  });
+
   const { open, setOpen, handleConfirm, loading } = useWikiClear({
     onClearWiki,
   });
-
-  const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
-    () =>
-      data.entities.map((entity) => ({
-        label: entity.name,
-        value: entity.slug,
-        keywords: [entity.name, ...entity.aliases],
-      })),
-    [data.entities],
-  );
-
-  // Only refill the select when selectedArtifact is a graph entity, to avoid showing the raw slug
-  const selectedEntitySlug = data.entities.some(
-    (entity) => entity.slug === selectedArtifact?.slug,
-  )
-    ? (selectedArtifact?.slug ?? '')
-    : '';
-
-  const handleSelectEntity = useCallback(
-    (slug: string) => {
-      if (!slug) {
-        onClearArtifact();
-        return;
-      }
-      const entity = data.entities.find((item) => item.slug === slug);
-      if (entity) {
-        onSelectArtifact(mapNodeToValue(entity));
-      }
-    },
-    [data.entities, onSelectArtifact, onClearArtifact],
-  );
 
   return (
     <aside className="size-full flex flex-col p-5">
@@ -117,23 +72,11 @@ export function WikiLeftPanel({
           />
         )}
         {tab === LeftPanelTab.Graph && (
-          <div className="flex h-full flex-col gap-3">
-            <SelectWithSearch
-              options={entityOptions}
-              value={selectedEntitySlug}
-              onChange={handleSelectEntity}
-              placeholder={t('knowledgeDetails.searchEntity')}
-              allowClear
-              triggerClassName="w-96 max-w-full"
-            />
-            <ArtifactForceGraph
-              data={data}
-              show
-              mapNodeToValue={mapNodeToValue}
-              onNodeClick={onSelectArtifact}
-              highlightNodeId={selectedArtifact?.slug}
-            />
-          </div>
+          <WikiGraphPanel
+            selectedArtifact={selectedArtifact}
+            onSelectArtifact={onSelectArtifact}
+            onClearArtifact={onClearArtifact}
+          />
         )}
       </div>
     </aside>

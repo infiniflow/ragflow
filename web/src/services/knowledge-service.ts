@@ -1,5 +1,6 @@
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
   IFetchArtifactTopicListRequestParams,
   IFetchDocumentListRequestBody,
@@ -413,7 +414,7 @@ export const getArtifactPage = (
 
 export const getArtifactGraph = (
   datasetId: string,
-  params?: { node?: string },
+  params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
 
 export const getArtifactsStructure = (datasetId: string, kind: string) =>

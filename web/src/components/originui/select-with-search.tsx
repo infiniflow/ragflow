@@ -2,6 +2,7 @@
 
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import {
+  KeyboardEvent,
   MouseEventHandler,
   ReactNode,
   forwardRef,
@@ -54,6 +55,8 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   allowCustomValue?: boolean;
+  onNoMatchEnter?(searchValue: string): void;
+  disableAutoSelectOnEnter?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
 };
@@ -81,6 +84,36 @@ function findLabelWithOptions(
     .filter(Boolean)[0]?.label;
 }
 
+function hasMatchingOptions(
+  options: SelectWithSearchFlagOptionType[],
+  searchValue: string,
+) {
+  const search = searchValue.trim();
+  if (!search) {
+    return true;
+  }
+  return options.some((group) => {
+    if (group.options) {
+      return group.options.some(
+        (option) =>
+          filterFn(
+            option.value ?? '',
+            search,
+            typeof option.label === 'string' ? [option.label] : [],
+          ) === 1,
+      );
+    }
+    return (
+      filterFn(
+        group.value ?? '',
+        search,
+        group.keywords ??
+          (typeof group.label === 'string' ? [group.label] : []),
+      ) === 1
+    );
+  });
+}
+
 export const SelectWithSearch = forwardRef<
   React.ElementRef<typeof Button>,
   SelectWithSearchFlagProps
@@ -96,6 +129,8 @@ export const SelectWithSearch = forwardRef<
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
       allowCustomValue = false,
+      onNoMatchEnter,
+      disableAutoSelectOnEnter = false,
       testId,
       optionTestIdPrefix,
     },
@@ -176,6 +211,23 @@ export const SelectWithSearch = forwardRef<
       [onChange],
     );
 
+    const handleInputKeyDown = useCallback(
+      (e: KeyboardEvent<HTMLInputElement>) => {
+        const keywords = searchValue.trim();
+        if (e.key === 'Enter' && keywords) {
+          if (disableAutoSelectOnEnter) {
+            e.preventDefault();
+            onNoMatchEnter?.(keywords);
+            setSearchValue('');
+            setOpen(false);
+          } else if (!hasMatchingOptions(options, keywords)) {
+            onNoMatchEnter?.(keywords);
+          }
+        }
+      },
+      [searchValue, options, onNoMatchEnter, disableAutoSelectOnEnter],
+    );
+
     useEffect(() => {
       setValue(val);
     }, [val]);
@@ -235,6 +287,7 @@ export const SelectWithSearch = forwardRef<
                 className=" placeholder:text-text-disabled"
                 value={searchValue}
                 onValueChange={setSearchValue}
+                onKeyDown={handleInputKeyDown}
               />
             )}
             <CommandList className="mt-2 outline-none">
