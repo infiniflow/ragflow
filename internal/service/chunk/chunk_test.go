@@ -279,6 +279,54 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	}
 }
 
+func TestListSortsChunksByDocumentPosition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+
+	page := 1
+	size := 30
+	if _, err := svc.List(&service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if engine.searchReq.OrderBy == nil {
+		t.Fatal("expected OrderBy to be set")
+	}
+	want := []types.OrderByField{
+		{Field: "chunk_order_int", Type: types.SortAsc},
+		{Field: "page_num_int", Type: types.SortAsc},
+		{Field: "top_int", Type: types.SortAsc},
+		{Field: "create_timestamp_flt", Type: types.SortDesc},
+	}
+	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
+		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
+	}
+}
+
 func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -1120,6 +1168,30 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 				"content":             "plain invoice terms body",
 				"content_with_weight": "weighted invoice terms body",
 				"doc_id":              "doc-1",
+			},
+		},
+		Total: 1,
+	}, nil
+}
+
+type listChunksSearchEngine struct {
+	parseTestDocEngine
+	searchReq *types.SearchRequest
+}
+
+func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return &types.SearchResult{
+		Chunks: []map[string]interface{}{
+			{
+				"id":                   "chunk-1",
+				"content":              "chunk body",
+				"doc_id":               "doc-1",
+				"available_int":        1,
+				"chunk_order_int":      0,
+				"page_num_int":         []interface{}{1},
+				"top_int":              []interface{}{10},
+				"create_timestamp_flt": 1.0,
 			},
 		},
 		Total: 1,
