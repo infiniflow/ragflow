@@ -379,7 +379,16 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
 
     if not KnowledgebaseService.update_by_id(kb.id, req):
         return False, "Update dataset error.(Database error)"
-
+    # Sync parser_id and parser_config to all existing documents when they change
+    if chunk_method and chunk_method != kb.parser_id:
+        DocumentService.model.update(parser_id=chunk_method).where(
+            DocumentService.model.kb_id == kb.id
+        ).execute()
+    if req.get("parser_config"):
+        DocumentService.model.update(parser_config=req["parser_config"]).where(
+            DocumentService.model.kb_id == kb.id
+        ).execute()
+        
     ok, k = KnowledgebaseService.get_by_id(kb.id)
     if not ok:
         return False, "Dataset updated failed"
