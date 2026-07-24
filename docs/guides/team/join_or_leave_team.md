@@ -1,39 +1,75 @@
 ---
-sidebar_position: 3
-slug: /join_or_leave_team
+sidebar_position: 2
+slug: /team_management
 sidebar_custom_props: {
   categoryIcon: LucideLogOut
 }
 ---
-# Join or leave a team
+# Team management
 
-Accept an invitation to join a team, decline an invitation, or leave a team.
+Manage team members, team invitations, joined teams, departments, and groups.
 
 ---
 
-Once you join a team, you can do the following:
+By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite RAGFlow users to your team. Your team members can help you:
 
-- Upload documents to the team owner's shared datasets.
-- Parse documents in the team owner's shared datasets.
-- Use the team owner's shared Agents.
+- Upload documents to your shared datasets.
+- Parse documents in your shared datasets.
+- Use your shared Agents.
 
 :::tip NOTE
-You cannot invite users to a team unless you are its owner.
+- Team members cannot invite users to your team. Only the team owner can invite users or remove members.
+- Sharing added models with team members is only available in RAGFlow Enterprise.
 :::
 
-## Prerequisites
+## Enter the Team page
 
-1. Ensure that your Email address that received the team invitation is associated with a RAGFlow user account.
-2. The team owner should share his datasets by setting their **Permission** to **Team**.
+Click your avatar in the upper-right corner of the page, then select **Team** in the left-side panel to access the **Team** page.
 
-## Accept or decline team invite
+On the **Team** page, you can view members of your team and the teams you have joined.
 
-1. You will be notified on the top right corner of your system page when you receive an invitation to join a team.
+## View current workspace members
 
-2. Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
+The **Team** page shows the members in the current workspace.
 
-_On the **Team** page, you can view the information about members of your team and the teams you have joined._
+## Invite members
 
-_After accepting the team invite, you should be able to view and update the team owner's datasets whose **Permissions** is set to **Team**._
+The team owner can invite RAGFlow users to join their team.
+
+Before inviting a member, ensure that the invited email address is associated with a RAGFlow user account.
+
+## Remove members
+
+The team owner can remove members from their team.
+
+## View joined teams
+
+The **Team** page lists the teams you have joined.
+
+## Accept or decline an invitation
+
+You will be notified in the upper-right corner of the system page when you receive an invitation to join a team.
+
+Go to the **Team** page to accept or decline the invitation.
+
+After accepting the invitation, you can view and update the team owner's datasets whose **Permissions** are set to **Team**.
 
 ## Leave a joined team
+
+You can leave a team that you have joined from the **Team** page.
+
+## Manage departments
+
+In RAGFlow Enterprise, administrators can manage departments and department members.
+
+### Add or remove department members
+
+Administrators can add members to a department or remove members from a department.
+
+### Move departments
+
+Administrators can move departments to adjust the organization hierarchy.
+
+### Manage groups
+
+Groups can be used to organize users for permission configuration and resource collaboration.

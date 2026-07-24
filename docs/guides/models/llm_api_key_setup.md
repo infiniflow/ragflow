@@ -22,7 +22,8 @@ If you find your online LLM is not on the list, don't feel disheartened. The lis
 ### Select a model provider
 
 Go to **User settings** **>** **Model providers**. In **Available models**, select a provider and complete its configuration. After the configuration succeeds, the provider is marked as **Configured**.
-![select model provider](image-1.png)
+
+![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.png)
 
 ### Create a model provider instance and configure connection information
 
@@ -40,7 +41,7 @@ To configure a model provider:
 3. Enter **API Key** and **Base URL**.
 4. Save the instance.
 
-![create instance](image-2.png)
+![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.png)
 
 :::caution
 Do not expose your API Key. An incorrect Base URL causes connection verification or model calls to fail. When using a compatible API, confirm whether the path must include `/v1`.
@@ -50,7 +51,7 @@ Do not expose your API Key. An incorrect Base URL causes connection verification
 
 After filling in **API Key** and **Base URL**, verify the connection first. If verification fails, check the API Key, Base URL, network connection, account quota, and model availability.
 
-![verify connection](<image (1).png>)
+![Verify connection](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/verify_connection.png)
 
 ## Add models to an instance
 
@@ -62,7 +63,7 @@ After adding models, you can set them as the default models for the correspondin
 
 After the model instance connection succeeds, RAGFlow automatically displays some models supported by the model provider. You can search for the models you need and add them one by one, or add the models in the current list in batch.
 
-![add models from list](<image (2).png>)
+![Add models from list](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_models_from_list.png)
 
 ### Add a custom model
 
@@ -79,9 +80,10 @@ To add a custom model:
 5. If the model supports tool calling, enable **Tool call**. After it is enabled, the model can call external tools or functions during chats or agent runs, such as knowledge retrieval or API requests. Do not enable it for models that do not support this capability.
 6. Click **Confirm** to save the model, and verify whether the model is available through an actual call.
 
-![add custom model 1](<image (3).png>)
-![add custom model 2](<image (4).png>)
 
+![Add custom model1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_1.png)
+
+![Add custom model2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_2.png)
 ## Set default models
 
 Default models are used when RAGFlow needs to select a model automatically and no model has been specified separately. Set default models after adding and verifying models to avoid selecting unavailable models on business pages.
@@ -93,7 +95,7 @@ At minimum, set the following defaults:
 
 If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, TTS, and OCR defaults as required by your business.
 
-![set default models](<image (5).png>)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
 ## Model types and usage
 
