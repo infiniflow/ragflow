@@ -55,17 +55,11 @@ class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
 
     @classmethod
-    def _final_operation_statuses(cls, operation_status):
-        final_statuses = [TaskStatus.CANCEL.value, TaskStatus.DONE.value, TaskStatus.FAIL.value]
-        if not operation_status:
-            return final_statuses
-        requested = {status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status}
-        return [status for status in final_statuses if status in requested]
-
-    @classmethod
     def _is_final_state(cls, progress, operation_status):
+        if progress == 1 or progress == -1:
+            return True
         status = operation_status.value if isinstance(operation_status, TaskStatus) else str(operation_status)
-        return status in cls._final_operation_statuses(None) or progress == 1 or progress == -1
+        return status in [TaskStatus.CANCEL.value, TaskStatus.DONE.value, TaskStatus.FAIL.value]
 
     @classmethod
     def get_file_logs_fields(cls):
@@ -252,7 +246,8 @@ class PipelineOperationLogService(CommonService):
 
         logs = logs.where(cls.model.document_id != GRAPH_RAPTOR_FAKE_DOC_ID)
 
-        logs = logs.where(cls.model.operation_status.in_(cls._final_operation_statuses(operation_status)))
+        if operation_status:
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if types:
             logs = logs.where(cls.model.document_type.in_(types))
         if suffix:
@@ -288,7 +283,8 @@ class PipelineOperationLogService(CommonService):
         else:
             logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
-        logs = logs.where(cls.model.operation_status.in_(cls._final_operation_statuses(operation_status)))
+        if operation_status:
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if create_date_from:
             logs = logs.where(cls.model.create_date >= create_date_from)
         if create_date_to:
