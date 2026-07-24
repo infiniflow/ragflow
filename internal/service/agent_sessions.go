@@ -747,6 +747,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		Name:      namePtr,
 		DialogID:  req.AgentID,
 		UserID:    req.UserID,
+		ExpUserID: &req.UserID,
 		Message:   messages,
 		Reference: reference,
 		Source:    sourcePtr,

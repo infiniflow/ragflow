@@ -153,6 +153,96 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 	}
 }
 
+func TestMinimaxChatSurfacesBaseRespError(t *testing.T) {
+	ctx := t.Context()
+	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		// MiniMax rate-limit: HTTP 200 with base_resp, no choices.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"base_resp": map[string]interface{}{
+				"status_code": 1027,
+				"status_msg":  "frequency limit reached",
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "frequency limit reached") {
+		t.Fatalf("expected rate-limit message, got %v", err)
+	}
+}
+
+func TestMinimaxChatSurfacesOpenAIError(t *testing.T) {
+	ctx := t.Context()
+	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]interface{}{
+				"message": "rate limit exceeded",
+				"type":    "rate_limit_error",
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "rate limit exceeded") {
+		t.Fatalf("expected rate-limit message, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "429") {
+		t.Fatalf("expected status code 429 in error, got %v", err)
+	}
+}
+
+func TestMinimaxStreamSurfacesBaseRespError(t *testing.T) {
+	ctx := t.Context()
+	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Error event before any choices — rate limit.
+		_, _ = io.WriteString(w, `data: {"base_resp":{"status_code":1027,"status_msg":"frequency limit reached"}}`+"\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "frequency limit reached") {
+		t.Fatalf("expected rate-limit message, got %v", err)
+	}
+}
+
 func TestMinimaxStreamForcesStreaming(t *testing.T) {
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {

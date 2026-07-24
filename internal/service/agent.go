@@ -1032,7 +1032,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 	if newSession && len(dsl) > 0 {
-		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow); err != nil {
+		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 	}
@@ -1528,15 +1528,19 @@ func (s *AgentService) createAgentRunSession(
 	sessionID, userID, agentID string,
 	runDSL map[string]any,
 	versionRow *entity.UserCanvasVersion,
+	userInput any,
 ) error {
 	if s == nil || s.api4ConversationDAO == nil {
 		return errors.New("agent session storage is not configured")
 	}
 	source := "agent"
+	name := deriveAgentSessionName(userInput)
 	session := &entity.API4Conversation{
 		ID:        sessionID,
+		Name:      &name,
 		DialogID:  agentID,
 		UserID:    userID,
+		ExpUserID: &userID,
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
 		Source:    &source,
@@ -1548,7 +1552,19 @@ func (s *AgentService) createAgentRunSession(
 	return s.api4ConversationDAO.Create(ctx, dao.DB, session)
 }
 
-// runIDFor builds the per-run CanvasState identifier: canvasID
+// deriveAgentSessionName mirrors Python's
+// `req.get("name") or (query[:250] if query else "") or ""` — the
+// session name defaults to the first 250 runes of the user's input
+// so the exploration sidebar shows a meaningful title.
+func deriveAgentSessionName(userInput any) string {
+	text := stringifyAgentUserInput(userInput)
+	runes := []rune(text)
+	if len(runes) > 250 {
+		runes = runes[:250]
+	}
+	return string(runes)
+}
+
 // alone for first-touch runs, canvasID + sessionID for resumed runs
 // (so two concurrent sessions on the same canvas don't collide in
 // the snapshot map).
@@ -1622,6 +1638,7 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
+	session.Round++
 	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
