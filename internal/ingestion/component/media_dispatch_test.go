@@ -17,6 +17,7 @@ package component
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -104,8 +105,18 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true for VISUAL file")
 	}
-	if res.Text == "" {
-		t.Fatalf("expected non-empty combined text")
+	// After the output-shape fix the image branch returns JSON items
+	// (OutputFormat=="json"), not a bare Text field. The combined text
+	// now lives in JSON[0]["text"]; the legacy res.Text is no longer
+	// populated for the image family.
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json (image family is always structured)", res.OutputFormat)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1 (image result must be a single JSON item)", len(res.JSON))
+	}
+	if txt, _ := res.JSON[0]["text"].(string); txt == "" {
+		t.Fatalf("expected non-empty combined text in JSON[0][\"text\"]")
 	}
 
 	got, ok := firstUserText(drv.captured)
@@ -114,6 +125,90 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	}
 	if got != "自定义视觉提示" {
 		t.Fatalf("VLM user text = %q, want %q (image branch must read system_prompt)", got, "自定义视觉提示")
+	}
+}
+
+// TestMaybeDispatchImage_ReturnsJSONWithImage pins the output-shape fix:
+// the image branch must return a JSON item carrying the `image` attachment
+// (data URI) and `doc_type_kwd:"image"`, mirroring Python
+// rag/app/picture.py:71-72. Before the fix the branch returned a bare Text
+// string with JSON=nil, dropping the image attachment and (on the default
+// json path) causing OneChunker/TokenChunker to reject the payload.
+func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	drv := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	res, dispatched, err := maybeDispatchImage(
+		context.Background(),
+		utility.FileTypeVISUAL,
+		"test.png",
+		[]byte("not-a-real-image"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !dispatched {
+		t.Fatalf("expected dispatched=true")
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+	item := res.JSON[0]
+	if got, _ := item["doc_type_kwd"].(string); got != "image" {
+		t.Errorf("doc_type_kwd = %q, want \"image\"", got)
+	}
+	img, _ := item["image"].(string)
+	if !strings.HasPrefix(img, "data:") || !strings.Contains(img, ";base64,") {
+		t.Errorf("image = %q, want a data URI (data:<mime>;base64,<b64>)", img)
+	}
+	if txt, _ := item["text"].(string); txt == "" {
+		t.Errorf("text field empty; want non-empty combined OCR+VLM text")
+	}
+}
+
+// TestMaybeDispatchImage_HardcodesJSONOutput verifies the image family
+// always emits json regardless of setup["output_format"]. Python
+// rag/app/picture.py:chunk() has no output_format concept — it always
+// returns a structured doc. Honoring a "text" override produced a bare
+// Text payload that lost the image attachment and set doc_type to "text".
+func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	drv := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["output_format"] = "text" // legacy/override; must be ignored
+	res, _, err := maybeDispatchImage(
+		context.Background(),
+		utility.FileTypeVISUAL,
+		"test.png",
+		[]byte("not-a-real-image"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json (image family must ignore output_format override)", res.OutputFormat)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1 even when setup says text", len(res.JSON))
 	}
 }
 
