@@ -36,6 +36,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/net/html"
+
 	"ragflow/internal/utility"
 )
 
@@ -158,9 +160,87 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	}
 }
 
+func TestHTMLParser_ParseWithResult_PreservesLooseText(t *testing.T) {
+	ctx := t.Context()
+	p := NewHTMLParser()
+	src := []byte(`<!DOCTYPE html><html><head>
+<title>Head metadata</title>
+</head><body>
+Intro text
+<h1>Title</h1>
+Between blocks
+<p>Body <span>inline</span>.<noscript>Inline fallback</noscript></p>
+<script>alert("x")</script>
+<style>body { color: red; }</style>
+<noscript>Fallback text</noscript>
+Tail text
+</body></html>`)
+	res := p.ParseWithResult(ctx, "doc.html", src)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	want := []struct {
+		text   string
+		ckType string
+	}{
+		{"Intro text", "text"},
+		{"Title", "heading"},
+		{"Between blocks", "text"},
+		{"Body inline.", "paragraph"},
+		{"Tail text", "text"},
+	}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
+	}
+	for i, w := range want {
+		if got := res.JSON[i]["text"]; got != w.text {
+			t.Errorf("JSON[%d].text = %v, want %v", i, got, w.text)
+		}
+		if got := res.JSON[i]["doc_type_kwd"]; got != "text" {
+			t.Errorf("JSON[%d].doc_type_kwd = %v, want text", i, got)
+		}
+		if got := res.JSON[i]["ck_type"]; got != w.ckType {
+			t.Errorf("JSON[%d].ck_type = %v, want %v", i, got, w.ckType)
+		}
+	}
+}
+
+func TestHTMLParser_ParseWithResult_PreservesLooseTextWithoutExplicitBody(t *testing.T) {
+	ctx := t.Context()
+	p := NewHTMLParser()
+	src := []byte(`<!DOCTYPE html>
+Intro text
+<h1>Title</h1>
+Tail text`)
+	res := p.ParseWithResult(ctx, "doc.html", src)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	want := []string{"Intro text", "Title", "Tail text"}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
+	}
+	for i, text := range want {
+		if got := res.JSON[i]["text"]; got != text {
+			t.Errorf("JSON[%d].text = %v, want %v", i, got, text)
+		}
+	}
+}
+
+func TestWalkHTMLBlocks_SkipsHeadLooseText(t *testing.T) {
+	head := &html.Node{Type: html.ElementNode, Data: "head"}
+	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
+
+	var items []map[string]any
+	walkHTMLBlocks(head, &items)
+	if len(items) != 0 {
+		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)
+	}
+}
+
 // TestHTMLParser_ParseWithResult_SkipsScriptAndStyle pins the
-// rule that <script> / <style> subtrees are skipped entirely so
-// they don't pollute the downstream chunker input.
+// rule that <script> / <style> / <noscript> subtrees are skipped
+// entirely so they don't pollute the downstream chunker input.
 func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 	ctx := t.Context()
 	p := NewHTMLParser()
@@ -168,17 +248,22 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 <p>Visible.</p>
 <script>alert("x")</script>
 <style>body { color: red; }</style>
+<p>Also <script>inline alert</script><style>.inline { color: blue; }</style><noscript>fallback</noscript> visible.</p>
 <p>Also visible.</p>
 </body></html>`)
 	res := p.ParseWithResult(ctx, "doc.html", src)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) != 2 {
-		t.Errorf("JSON len = %d, want 2 (script+style skipped)", len(res.JSON))
+	if len(res.JSON) != 3 {
+		t.Errorf("JSON len = %d, want 3 (script+style+noscript skipped)", len(res.JSON))
 	}
 	for _, it := range res.JSON {
-		if txt, _ := it["text"].(string); strings.Contains(txt, "alert") || strings.Contains(txt, "color") {
+		if txt, _ := it["text"].(string); strings.Contains(txt, "alert") ||
+			strings.Contains(txt, "color") ||
+			strings.Contains(txt, "inline alert") ||
+			strings.Contains(txt, "blue") ||
+			strings.Contains(txt, "fallback") {
 			t.Errorf("item text leaks script/style content: %q", txt)
 		}
 	}
