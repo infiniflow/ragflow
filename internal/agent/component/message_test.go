@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -193,11 +194,33 @@ func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 	}
 }
 
+func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-normal-template", "task-normal-template")
+	state.Sys["query"] = "world"
+	ctx := withStateForTest(context.Background(), state)
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
+
+	out, err := c.Invoke(ctx, map[string]any{"text": "hello {{sys.query}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "hello world" {
+		t.Fatalf("content: got %q, want %q", got, "hello world")
+	}
+	if len(direct) != 1 || direct[0] != "hello world" {
+		t.Fatalf("direct = %#v, want one rendered message", direct)
+	}
+}
+
 // TestMessage_SkipsEmissionWhenAgentAlreadyStreamed verifies that the
 // Message component does not re-emit content when an upstream Agent
 // component already streamed its answer. This prevents the double-reply
-// bug (Agent → Message): the Agent streams via StreamCallback during the
-// ReAct loop, and the Message node must not send the same content again.
+// bug (Agent → Message): the Agent's model stream reaches the runtime before
+// the Message node, and the Message node must not send the same content again.
 func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-skip", "task-skip")
@@ -208,9 +231,14 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 			emitted = append(emitted, contentDelta)
 		}
 	})
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
 
-	// Simulate the Agent having already streamed its answer.
-	runtime.EmitAgentMessage(ctx, "agent streamed this", "")
+	// Simulate the Agent having already streamed its answer in deltas.
+	runtime.EmitAgentMessage(ctx, "agent ", "")
+	runtime.EmitAgentMessage(ctx, "streamed this", "")
 	emitted = nil // clear setup emission so we only capture Message's output
 
 	out, err := c.Invoke(ctx, map[string]any{"content": "agent streamed this"})
@@ -224,6 +252,133 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	// But no additional SSE emission should occur.
 	if len(emitted) != 0 {
 		t.Fatalf("emitted = %#v, want empty (Agent already streamed)", emitted)
+	}
+	if len(direct) != 0 {
+		t.Fatalf("direct = %#v, want empty (Agent already streamed)", direct)
+	}
+}
+
+func TestMessage_EmitsContentDifferentFromAgentStream(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-distinct", "task-distinct")
+	ctx := withStateForTest(context.Background(), state)
+	var emitted []string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+	})
+	var direct []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		direct = append(direct, content)
+	})
+
+	runtime.EmitAgentMessage(ctx, "draft answer", "")
+	emitted = nil
+
+	out, err := c.Invoke(ctx, map[string]any{"content": "final answer"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "final answer" {
+		t.Fatalf("content: got %q, want %q", got, "final answer")
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("agent fallback emitted = %#v, want empty", emitted)
+	}
+	if len(direct) != 1 || direct[0] != "final answer" {
+		t.Fatalf("direct = %#v, want [final answer]", direct)
+	}
+}
+
+func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred", "task-deferred")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("hello ", "")
+			sink("world", "")
+			return map[string]any{"content": "hello world"}, nil
+		},
+	})
+	ctx := withStateForTest(context.Background(), state)
+	var emitted []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		if content != "" {
+			emitted = append(emitted, content)
+		}
+	})
+
+	out, err := c.Invoke(ctx, map[string]any{"text": "answer: {{agent_0@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "answer: hello world" {
+		t.Fatalf("content: got %q, want %q", got, "answer: hello world")
+	}
+	if got := strings.Join(emitted, ""); got != "answer: hello world" {
+		t.Fatalf("emitted: got %q, want %q (%#v)", got, "answer: hello world", emitted)
+	}
+}
+
+func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-thinking", "task-deferred-thinking")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("", "plan")
+			sink("answer", "")
+			return map[string]any{"content": "answer"}, nil
+		},
+	})
+	ctx := withStateForTest(context.Background(), state)
+	var events []string
+	ctx = runtime.WithCanvasMessageEventEmitter(ctx, func(content string, startToThink, endToThink bool) {
+		switch {
+		case startToThink:
+			events = append(events, "start")
+		case endToThink:
+			events = append(events, "end")
+		default:
+			events = append(events, content)
+		}
+	})
+
+	if _, err := c.Invoke(ctx, map[string]any{"text": "{{agent_0@content}}"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := strings.Join(events, "|"), "start|plan|end|answer"; got != want {
+		t.Fatalf("events=%q, want %q", got, want)
+	}
+}
+
+func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-final", "task-deferred-final")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("raw answer", "")
+			return map[string]any{"content": "grounded answer [ID:1]"}, nil
+		},
+	})
+	ctx := withStateForTest(context.Background(), state)
+	var streamed []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		streamed = append(streamed, content)
+	})
+
+	out, err := c.Invoke(ctx, map[string]any{"text": "{{agent_0@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "grounded answer [ID:1]" {
+		t.Fatalf("content: got %q, want completed Agent content", got)
+	}
+	if got, _ := state.GetVar("agent_0@content"); got != "grounded answer [ID:1]" {
+		t.Fatalf("state content: got %v, want completed Agent content", got)
+	}
+	if got := strings.Join(streamed, ""); got != "raw answer" {
+		t.Fatalf("streamed events: got %q, want live delta", got)
 	}
 }
 
