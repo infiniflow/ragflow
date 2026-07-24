@@ -839,15 +839,44 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 
 	page := common.CoalesceInt(req.Page, 1)
 	size := common.CoalesceInt(req.Size, 30)
-	keywords := req.Keywords
+	keywords := strings.TrimSpace(req.Keywords)
+	matchExprs := make([]interface{}, 0, 1)
+	if keywords != "" {
+		matchExprs = append(matchExprs, &types.MatchTextExpr{
+			MatchingText: keywords,
+			TopN:         size,
+		})
+	}
 
 	// Build search request - same as retrieval test but filtered by doc_id
 	searchReq := &types.SearchRequest{
 		IndexNames: []string{indexName},
-		MatchExprs: []interface{}{keywords},
+		MatchExprs: matchExprs,
 		KbIDs:      kbIDs,
 		Offset:     (page - 1) * size,
 		Limit:      size,
+		SelectFields: []string{
+			"id",
+			"content_with_weight",
+			"img_id",
+			"position_int",
+			"docnm",
+			"important_keywords",
+			"questions",
+			"entities_kwd",
+			"entity_kwd",
+			"entity_type_kwd",
+			"from_entity_kwd",
+			"name_kwd",
+			"raptor_kwd",
+			"removed_kwd",
+			"source_id",
+			"tag_kwd",
+			"to_entity_kwd",
+			"toc_kwd",
+			"doc_type_kwd",
+			"available_int",
+		},
 		Filter: map[string]interface{}{
 			"doc_id": req.DocID,
 		},
@@ -887,8 +916,12 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
-			case "content":
+			case "content_with_weight":
 				result["content_with_weight"] = v
+			case "content":
+				if _, ok := result["content_with_weight"]; !ok {
+					result["content_with_weight"] = v
+				}
 			case "docnm":
 				result["docnm_kwd"] = v
 			case "important_keywords":

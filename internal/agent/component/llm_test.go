@@ -18,6 +18,8 @@ import (
 	"slices"
 	"testing"
 
+	"ragflow/internal/entity"
+
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -254,5 +256,65 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 	})
 	if arbitrary.Thinking != "auto" {
 		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
+	}
+}
+
+// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
+// in the agent canvas are resolved to their real provider/model name, driver,
+// and credentials before the LLM call is dispatched.
+func TestLLM_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "DeepSeek",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "prod-east",
+		APIKey:       "instance-key",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "3d2d824e7e5d11f1a845455b140cef90",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "deepseek-chat",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewLLMComponent(LLMParam{ModelID: "3d2d824e7e5d11f1a845455b140cef90"})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{"user_prompt": "hi"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if got, want := stub.captured.Driver, "DeepSeek"; got != want {
+		t.Errorf("Driver=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.ModelName, "deepseek-chat"; got != want {
+		t.Errorf("ModelName=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.APIKey, "instance-key"; got != want {
+		t.Errorf("APIKey=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.BaseURL, "https://instance.example"; got != want {
+		t.Errorf("BaseURL=%q, want %q", got, want)
 	}
 }
