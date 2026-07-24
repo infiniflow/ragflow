@@ -58,45 +58,18 @@ type togetherAIReasoningOptions struct {
 	Enabled bool `json:"enabled"`
 }
 
-func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
+func applyTogetherAIReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
+	if chatModelConfig == nil {
+		return
+	}
+	if chatModelConfig.Thinking != nil {
+		reqBody["reasoning"] = togetherAIReasoningOptions{
+			Enabled: *chatModelConfig.Thinking,
 		}
 	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
+	if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "gpt-oss") {
+		reqBody["reasoning_effort"] = *chatModelConfig.Effort
 	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Thinking != nil {
-			reqBody["reasoning"] = togetherAIReasoningOptions{
-				Enabled: *chatModelConfig.Thinking,
-			}
-		}
-		if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "gpt-oss") {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
-		}
-	}
-
-	return reqBody
 }
 
 func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
@@ -143,7 +116,9 @@ func (t *TogetherAIModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(t.chatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyTogetherAIReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -217,7 +192,9 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return err
 	}
 
-	jsonData, err := json.Marshal(t.chatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyTogetherAIReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}

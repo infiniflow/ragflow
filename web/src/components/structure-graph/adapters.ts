@@ -48,6 +48,11 @@ function buildTreeDataItems(
 
   for (const relation of relations) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
+    // Self-referencing relation (same entity as its own child) creates
+    // an infinite recursion in the tree renderer.  This is a backend
+    // data integrity issue (duplicate entity names) but we defend
+    // against it in the frontend so the UI never hangs.
+    if (relation.from === relation.to) continue;
 
     const parent = map.get(relation.from);
     const child = map.get(relation.to);

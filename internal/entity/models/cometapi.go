@@ -94,44 +94,6 @@ func (c *CometAPIModel) balanceURL(apiKey string) string {
 	return parsed.String()
 }
 
-type cometapiChatRequest struct {
-	Model       string               `json:"model"`
-	Messages    []cometapiAPIMessage `json:"messages"`
-	Stream      bool                 `json:"stream"`
-	MaxTokens   *int                 `json:"max_tokens,omitempty"`
-	Temperature *float64             `json:"temperature,omitempty"`
-	TopP        *float64             `json:"top_p,omitempty"`
-	Stop        *[]string            `json:"stop,omitempty"`
-}
-
-type cometapiAPIMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
-}
-
-func buildCometAPIChatRequest(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) cometapiChatRequest {
-	apiMessages := make([]cometapiAPIMessage, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = cometapiAPIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-	}
-
-	reqBody := cometapiChatRequest{
-		Model:    modelName,
-		Messages: apiMessages,
-		Stream:   stream,
-	}
-	if chatModelConfig != nil {
-		reqBody.MaxTokens = chatModelConfig.MaxTokens
-		reqBody.Temperature = chatModelConfig.Temperature
-		reqBody.TopP = chatModelConfig.TopP
-		reqBody.Stop = chatModelConfig.Stop
-	}
-	return reqBody
-}
-
 func newCometAPIJSONRequest(ctx context.Context, method string, endpoint string, payload interface{}, apiKey string) (*http.Request, error) {
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -253,7 +215,7 @@ func (c *CometAPIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	reqBody := buildCometAPIChatRequest(modelName, messages, false, chatModelConfig)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -307,7 +269,7 @@ func (c *CometAPIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
 	}
-	reqBody := buildCometAPIChatRequest(modelName, messages, true, chatModelConfig)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
 	if err != nil {

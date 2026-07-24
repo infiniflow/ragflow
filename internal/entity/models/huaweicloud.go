@@ -187,11 +187,7 @@ func (h *HuaweiCloudModel) ChatWithMessages(ctx context.Context, modelName strin
 
 	url := h.chatURL(baseURL, modelName)
 
-	reqb := map[string]interface{}{
-		"model":    huaweiCloudChatModelName(modelName),
-		"messages": buildChatMessages(messages),
-		"stream":   false,
-	}
+	reqb := buildRequestBody(chatModelConfig, huaweiCloudChatModelName(modelName), messages, false)
 	huaweiCloudApplyChatConfig(reqb, modelName, chatModelConfig)
 	applyChatToolConfig(reqb, chatModelConfig)
 
@@ -291,11 +287,7 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := h.chatURL(baseURL, modelName)
 
-	reqBody := map[string]interface{}{
-		"model":    huaweiCloudChatModelName(modelName),
-		"messages": buildChatMessages(messages),
-		"stream":   true,
-	}
+	reqBody := buildRequestBody(chatModelConfig, huaweiCloudChatModelName(modelName), messages, true)
 	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
@@ -303,7 +295,6 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
 	}
-	applyChatToolConfig(reqBody, chatModelConfig)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

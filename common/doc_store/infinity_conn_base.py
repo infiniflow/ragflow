@@ -304,7 +304,24 @@ class InfinityConnectionBase(DocStoreConnection):
                 continue
             if not v:
                 continue
-            if self.field_keyword(k):
+            if k in {
+                "source_chunk_ids",
+                "source_doc_ids",
+                "compilation_template_ids",
+                "doc_ids_kwd",
+                "entity_names_kwd",
+                "outlinks_kwd",
+                "related_kb_pages_kwd",
+                "rechunked_from_chunk_ids",
+            }:
+                values = v if isinstance(v, list) else [v]
+                json_conditions = []
+                for item in values:
+                    literal = json.dumps(item, ensure_ascii=False).replace("'", "''")
+                    json_conditions.append(f"json_contains({k}, '{literal}')")
+                if json_conditions:
+                    cond.append("(" + " or ".join(json_conditions) + ")")
+            elif self.field_keyword(k):
                 if isinstance(v, list):
                     inCond = list()
                     for item in v:

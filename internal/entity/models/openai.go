@@ -74,58 +74,9 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format (supports multimodal content)
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			tc := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				tc = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = tc
-		}
-	}
-
-	// Qwen3 family: disable thinking unless explicitly enabled (matches
-	// Python's _apply_model_family_policies in rag/llm/chat_model.py:119-121).
 	if strings.Contains(strings.ToLower(modelName), "qwen3") {
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
@@ -246,33 +197,9 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format (supports multimodal content and tool messages)
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-
-	// Build request body with streaming on by default.
-	// stream_options.include_usage asks the provider to attach a
-	// usage block to the final streaming chunk (mirrors Python's
-	// chat_model.py _stream_options / stream_options.include_usage).
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-		"stream_options": map[string]interface{}{
-			"include_usage": true,
-		},
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
 	}
 
 	if chatModelConfig != nil {
@@ -280,30 +207,6 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
 
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			tc := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				tc = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = tc
-		}
 	}
 
 	// Qwen3 family: disable thinking unless explicitly enabled.

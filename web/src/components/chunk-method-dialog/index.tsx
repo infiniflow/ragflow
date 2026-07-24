@@ -141,6 +141,20 @@ export function ChunkMethodDialog({
         entity_types: z.array(z.string()).optional(),
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+          .refine(
+            (ranges) =>
+              ranges.every(
+                (r) =>
+                  Number.isInteger(r.from) &&
+                  Number.isInteger(r.to) &&
+                  r.from >= 1 &&
+                  r.from <= r.to,
+              ),
+            {
+              message:
+                'page range invalid: from/to must be integers, from >= 1, from <= to',
+            },
+          )
           .optional(),
         metadata: z.any().optional(),
         built_in_metadata: z

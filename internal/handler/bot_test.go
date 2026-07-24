@@ -815,6 +815,46 @@ func TestBotMiddleware_NonBearerRegularToken(t *testing.T) {
 	}
 }
 
+func TestBotMiddleware_BetaTokenBindsAgentID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	agentID := "agent-bound"
+	stub := &stubUserTokenResolver{
+		getUserByBetaAPITokenFn: func(ctx context.Context, auth string) (*entity.User, common.ErrorCode, error) {
+			if auth != "beta-token" {
+				t.Errorf("GetUserByBetaAPIToken called with %q, want beta-token", auth)
+			}
+			return &entity.User{ID: "u-beta"}, common.CodeSuccess, nil
+		},
+		getAPITokenByBetaFn: func(ctx context.Context, auth string) (*entity.APIToken, error) {
+			if auth != "beta-token" {
+				t.Errorf("GetAPITokenByBeta called with %q, want beta-token", auth)
+			}
+			return &entity.APIToken{DialogID: &agentID}, nil
+		},
+	}
+	r := gin.New()
+	ah := &AuthHandler{userService: stub}
+	g := r.Group("/api/v1")
+	g.Use(ah.BetaAuthMiddleware())
+	var seenAgentID string
+	g.GET("/x", func(c *gin.Context) {
+		rawAgentID, _ := c.Get("agent_id")
+		seenAgentID, _ = rawAgentID.(string)
+		c.String(http.StatusOK, "ok")
+	})
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/x", nil)
+	req.Header.Set("Authorization", "beta-token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if seenAgentID != agentID {
+		t.Fatalf("agent_id = %q, want %q", seenAgentID, agentID)
+	}
+}
+
 // stubUserTokenResolver implements userTokenResolver for tests.
 // Each call site sets only the methods it needs; unset methods
 // return safe defaults (CodeUnauthorized so the middleware
@@ -968,14 +1008,13 @@ func TestDownloadAttachment_Unauth(t *testing.T) {
 	// resolve via GetUserByToken. Both branches must reject
 	// with 401.
 	g.Use(func(c *gin.Context) {
-		ctx := c.Request.Context()
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
 			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Authorization required")
 			c.Abort()
 			return
 		}
-		if u, code, err := stub.GetUserByToken(ctx, auth); err != nil || code != common.CodeSuccess {
+		if u, code, err := stub.GetUserByToken(c.Request.Context(), auth); err != nil || code != common.CodeSuccess {
 			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
 			c.Abort()
 			return
@@ -1112,13 +1151,7 @@ func inlineRegisterAgentRoutes(g *gin.RouterGroup, h *AgentHandler) {
 	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
 }
 
-// TestGetAgentbotLogs_RequiresAgentIDInContext guards PR #15238:
-// the shared/embedded "Thinking" endpoint requires the beta
-// middleware to have stashed the APIToken.DialogID as "agent_id"
-// in the gin context. Without it, the handler cannot build the
-// Redis key and must return the "API token is not bound to an
-// agent." error — never read the URL's <shared_id> for the lookup.
-func TestGetAgentbotLogs_RequiresAgentIDInContext(t *testing.T) {
+func TestGetAgentbotLogs_MissingRouteAgentID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1137,11 +1170,68 @@ func TestGetAgentbotLogs_RequiresAgentIDInContext(t *testing.T) {
 		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeArgumentError) {
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeArgumentError)
+	}
+	if !strings.Contains(resp.Message, "agent_id") {
+		t.Errorf("message = %q, want it to mention 'agent_id'", resp.Message)
+	}
+}
+
+func TestGetAgentbotLogs_RequiresBoundAgentID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET",
+		"/api/v1/agentbots/agent-a/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Params = gin.Params{
+		{Key: "agent_id", Value: "agent-a"},
+		{Key: "message_id", Value: "msg-1"},
+	}
+
+	h := NewBotHandler(nil)
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.Code != int(common.CodeDataError) {
-		t.Errorf("code = %d, want %d (CodeDataError)", resp.Code, common.CodeDataError)
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeDataError)
 	}
 	if !strings.Contains(resp.Message, "not bound") {
 		t.Errorf("message = %q, want it to mention 'not bound'", resp.Message)
+	}
+}
+
+func TestGetAgentbotLogs_CrossAgentDenied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET",
+		"/api/v1/agentbots/agent-b/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("agent_id", "agent-a")
+	c.Params = gin.Params{
+		{Key: "agent_id", Value: "agent-b"},
+		{Key: "message_id", Value: "msg-1"},
+	}
+
+	h := NewBotHandler(nil)
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeUnauthorized) {
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeUnauthorized)
+	}
+	if !strings.Contains(resp.Message, "not authorized") {
+		t.Errorf("message = %q, want it to mention 'not authorized'", resp.Message)
 	}
 }
 
@@ -1155,6 +1245,7 @@ func TestGetAgentbotLogs_MissingMessageID(t *testing.T) {
 		"/api/v1/agentbots/shared-x/logs/", nil)
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("agent_id", "agent-real")
+	c.Params = gin.Params{{Key: "agent_id", Value: "agent-real"}}
 	// Gin's path param extraction returns "" for a missing
 	// segment so the handler must reject with CodeArgumentError.
 

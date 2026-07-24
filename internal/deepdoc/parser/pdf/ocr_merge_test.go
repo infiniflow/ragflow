@@ -6,6 +6,7 @@ import (
 	"context"
 	"image/png"
 	"os"
+	"ragflow/internal/common"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"

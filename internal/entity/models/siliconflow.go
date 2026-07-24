@@ -55,17 +55,6 @@ func (s *SiliconflowModel) Name() string {
 	return "SILICONFLOW"
 }
 
-// SiliconflowRerankRequest represents SILICONFLOW rerank request
-type SiliconflowRerankRequest struct {
-	Model           string   `json:"model"`
-	Query           string   `json:"query"`
-	Documents       []string `json:"documents"`
-	TopN            int      `json:"top_n"`
-	ReturnDocuments bool     `json:"return_documents"`
-	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
-	OverlapTokens   int      `json:"overlap_tokens"`
-}
-
 // ChatWithMessages sends multiple messages with roles and returns response
 func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -83,46 +72,13 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": buildChatMessages(messages),
-		"stream":   false,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
-			// SiliconFlow's chat completions API expects a boolean
-			// `enable_thinking` field, not a `thinking: {type: ...}` map
-			// (the latter is the DeepSeek format and is silently ignored
-			// by SiliconFlow, breaking the thinking feature).
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
-
-		applyChatToolConfig(reqBody, chatModelConfig)
 	}
-
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
 	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
 		reqBody["enable_thinking"] = false
 	}
@@ -229,43 +185,10 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": buildChatMessages(messages),
-		"stream":   true,
-	}
-
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		chatModelConfig.ToolCallsResult = nil
-		applyChatToolConfig(reqBody, chatModelConfig)
 	}
-
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
 	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
 		reqBody["enable_thinking"] = false
 	}
@@ -627,6 +550,17 @@ type SiliconflowRerankResponse struct {
 			Classifications int `json:"classifications"`
 		} `json:"billed_units"`
 	} `json:"meta"`
+}
+
+// SiliconflowRerankRequest represents SILICONFLOW rerank request
+type SiliconflowRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
+	OverlapTokens   int      `json:"overlap_tokens"`
 }
 
 // Rerank calculates similarity scores between query and documents

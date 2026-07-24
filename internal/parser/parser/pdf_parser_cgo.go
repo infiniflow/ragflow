@@ -35,6 +35,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	cfg := deepdoctype.DefaultParserConfig()
 	cfg.SkipOCR = false
+	cfg.Pages = p.Pages
 	parser := deepdocpdf.NewParser(cfg)
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
 		outputFormat:       p.OutputFormat,

@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"sort"
 	"strings"
 	"time"
 
@@ -147,12 +148,73 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
-	providerModels, err := dao.GetModelProviderManager().ListModels(providerName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeNotFound, err.Error())
+
+	// 1. Get static models from config (may be nil when models list is empty)
+	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
+	if staticModels == nil {
+		staticModels = []map[string]interface{}{}
+	}
+
+	// 2. Attempt live API fetch when api_key and base_url are provided
+	apiKey := c.Query("api_key")
+	baseURL := c.Query("base_url")
+	var remoteModels []map[string]interface{}
+
+	if apiKey != "" && baseURL != "" {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo != nil && providerInfo.ModelDriver != nil {
+			region := "default"
+			baseURLByRegion := map[string]string{region: baseURL}
+			driver := providerInfo.ModelDriver.NewInstance(baseURLByRegion)
+			if driver != nil {
+				apiConfig := &models.APIConfig{
+					ApiKey: &apiKey,
+					Region: &region,
+				}
+				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
+					for _, m := range liveModels {
+						remoteModels = append(remoteModels, map[string]interface{}{
+							"name":        m.Name,
+							"model_types": m.ModelTypes,
+							"max_tokens":  m.MaxTokens,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Both empty — return empty success
+	if len(staticModels) == 0 && len(remoteModels) == 0 {
+		common.SuccessWithData(c, []map[string]interface{}{}, "success")
 		return
 	}
-	common.SuccessWithData(c, providerModels, "success")
+
+	// 4. Merge: static as base, remote overrides on name conflicts
+	merged := make(map[string]map[string]interface{})
+	for _, m := range staticModels {
+		if name, ok := m["name"].(string); ok {
+			merged[name] = m
+		}
+	}
+	for _, m := range remoteModels {
+		if name, ok := m["name"].(string); ok {
+			merged[name] = m
+		}
+	}
+
+	// 5. Sort by name
+	result := make([]map[string]interface{}, 0, len(merged))
+	for _, m := range merged {
+		result = append(result, m)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		ni, _ := result[i]["name"].(string)
+		nj, _ := result[j]["name"].(string)
+		return ni < nj
+	})
+
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *ProviderHandler) ShowModel(c *gin.Context) {
@@ -304,7 +366,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req.APIKey, req.Region, req.BaseURL, req.InstanceID, userID, service.ListModelNames(req.ModelInfo))
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req.APIKey, req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return

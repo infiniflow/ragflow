@@ -83,7 +83,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
 	title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error,
 ) {
-	dialog, err := s.chatDAO.GetDialogByID(dialogID)
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		return "", "", "", "", false, common.CodeDataError, err
 	}

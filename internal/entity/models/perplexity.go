@@ -49,41 +49,10 @@ func (p *PerplexityModel) Name() string {
 	return "perplexity"
 }
 
-func (p *PerplexityModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
+func applyPerplexityReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
+	if chatModelConfig != nil && chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "reasoning") {
+		reqBody["reasoning_effort"] = *chatModelConfig.Effort
 	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		// Perplexity sonar-reasoning* models accept reasoning_effort.
-		if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "reasoning") {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
-		}
-	}
-
-	return reqBody
 }
 
 func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
@@ -130,7 +99,9 @@ func (p *PerplexityModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(p.chatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyPerplexityReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -204,7 +175,9 @@ func (p *PerplexityModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return err
 	}
 
-	jsonData, err := json.Marshal(p.chatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyPerplexityReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}

@@ -154,32 +154,10 @@ func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, mes
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, q.baseModel.URLSuffix.Chat)
 
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
-		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -275,33 +253,11 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
 		chatModelConfig.ToolCallsResult = nil
-		applyChatToolConfig(reqBody, chatModelConfig)
 	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

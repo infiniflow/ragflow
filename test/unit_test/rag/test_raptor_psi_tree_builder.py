@@ -18,8 +18,6 @@ import importlib
 import os
 import sys
 import types
-from unittest.mock import MagicMock
-
 import pytest
 
 np = pytest.importorskip("numpy")
@@ -54,11 +52,12 @@ def raptor_module(monkeypatch):
             return np.ones((len(embeddings), 1))
 
     class DummyAgglomerativeClustering:
-        def __init__(self, n_clusters=None, distance_threshold=None, compute_distances=False, linkage="ward"):
+        def __init__(self, n_clusters=None, distance_threshold=None, compute_distances=False, linkage="ward", metric="euclidean"):
             self.n_clusters = n_clusters
             self.distance_threshold = distance_threshold
             self.compute_distances = compute_distances
             self.linkage = linkage
+            self.metric = metric
             self.distances_ = np.array([0.1, 0.2, 1.0])
 
         def fit(self, embeddings):

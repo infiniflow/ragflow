@@ -305,17 +305,17 @@ func pythonFamilyName(raw string) string {
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
 	case "mp4", "avi", "mkv", "mov", "webm", "flv",
-		"mpeg", "mpg", "wmv", "3gp", "3gpp":
+		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
 		return "video"
-	case "eml", "msg":
+	case "eml", "msg", "email":
 		return "email"
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus", "aural":
 		return "audio"
 	case "visual", "picture", "image",
 		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
 		"webp", "svg", "ico", "avif", "heic", "apng":
-		return "picture"
+		return "image"
 	}
 	return ""
 }

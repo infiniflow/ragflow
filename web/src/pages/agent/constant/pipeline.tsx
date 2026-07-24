@@ -197,6 +197,7 @@ export const initialParserValues = {
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
       remove_header_footer: false,
+      pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
@@ -353,6 +354,8 @@ export const initialExtractorValues = {
   field_name: ContextGeneratorFieldName.Summary,
   auto_keywords: 0,
   auto_questions: 0,
+  auto_tags: 1,
+  tag_file_id: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

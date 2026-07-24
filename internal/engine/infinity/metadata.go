@@ -36,16 +36,20 @@ import (
 // CreateMetadataStore creates a metadata table in Infinity
 // tenantID is the tenant identifier used to build the table name
 func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID string) error {
-	tableName := buildMetadataTableName(tenantID)
-
-	// Get database
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
+
+	return e.createMetadataStoreWithDB(db, tenantID)
+}
+
+func (e *infinityEngine) createMetadataStoreWithDB(db *infinity.Database, tenantID string) error {
+	tableName := buildMetadataTableName(tenantID)
 
 	// Check if table already exists
-	exists, err := e.tableExists(ctx, tableName)
+	exists, err := e.tableExistsWithDB(db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
@@ -136,10 +140,11 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.InsertMetadata called", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -150,7 +155,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 		}
 
 		// Create metadata table
-		if createErr := e.CreateMetadataStore(ctx, tenantID); createErr != nil {
+		if createErr := e.createMetadataStoreWithDB(db, tenantID); createErr != nil {
 			return nil, fmt.Errorf("failed to create metadata table: %w", createErr)
 		}
 
@@ -233,10 +238,11 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -338,15 +344,24 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
 		common.Warn(fmt.Sprintf("Metadata table %s does not exist, skipping delete", tableName))
 		return 0, nil
+	}
+
+	return e.deleteMetadataWithTable(table, condition)
+}
+
+func (e *infinityEngine) deleteMetadataWithTable(table *infinity.Table, condition map[string]interface{}) (int64, error) {
+	if table == nil {
+		return 0, fmt.Errorf("metadata table is nil")
 	}
 
 	// Get table columns for building filter
@@ -397,10 +412,11 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -500,7 +516,7 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 			"id":    docID,
 			"kb_id": datasetID,
 		}
-		_, err := e.DeleteMetadata(ctx, condition, tenantID)
+		_, err := e.deleteMetadataWithTable(table, condition)
 		if err != nil {
 			return fmt.Errorf("failed to delete document: %w", err)
 		}
@@ -554,23 +570,6 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	// Build table name from tenantID
 	tableName := buildMetadataTableName(tenantID)
 
-	exists, err := e.tableExists(ctx, tableName)
-	if err != nil {
-		common.Warn("Infinity SearchMetadata table existence check failed", zap.String("table", tableName), zap.Error(err))
-		return nil, fmt.Errorf("failed to check metadata table existence: %w", err)
-	}
-	if !exists {
-		common.Debug("Infinity SearchMetadata table absent, returning empty result", zap.String("table", tableName))
-		// Return an empty (non-nil) slice — Python returns `[]`, and a
-		// nil slice is read by callers as "fall back to in-memory". A
-		// zero-match against an absent table is a definitive answer,
-		// not a missing-data condition.
-		return &types.SearchMetadataResult{
-			MetadataRecords: []map[string]interface{}{},
-			Total:           0,
-		}, nil
-	}
-
 	// Build output columns: use caller-specified fields, or "*" for all columns
 	var outputColumns []string
 	if len(req.SelectFields) > 0 {
@@ -596,9 +595,27 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	}
 
 	// Get database and table
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
+	exists, err := e.tableExistsWithDB(db, tableName)
+	if err != nil {
+		common.Warn("Infinity SearchMetadata table existence check failed", zap.String("table", tableName), zap.Error(err))
+		return nil, fmt.Errorf("failed to check metadata table existence: %w", err)
+	}
+	if !exists {
+		common.Debug("Infinity SearchMetadata table absent, returning empty result", zap.String("table", tableName))
+		// Return an empty (non-nil) slice — Python returns `[]`, and a
+		// nil slice is read by callers as "fall back to in-memory". A
+		// zero-match against an absent table is a definitive answer,
+		// not a missing-data condition.
+		return &types.SearchMetadataResult{
+			MetadataRecords: []map[string]interface{}{},
+			Total:           0,
+		}, nil
 	}
 
 	tbl, err := db.GetTable(tableName)
@@ -822,10 +839,11 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 	whereClause = kbFilter + " AND (" + whereClause + ")"
 
 	// Use Infinity connection to execute query
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil || db == nil {
 		return nil
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil || table == nil {
