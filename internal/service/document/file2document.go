@@ -150,7 +150,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
 	kbIDs := req.KbIDs
 	go func() {
-		if err = s.convertFiles(ctx, allFileIDs, kbIDs, userID, mode); err != nil {
+		newCtx := context.Background()
+		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
 			common.Warn("file2document.convertFiles failed",
 				zap.Strings("file_ids", allFileIDs),
 				zap.Strings("kb_ids", kbIDs),
@@ -259,7 +260,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err := s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue

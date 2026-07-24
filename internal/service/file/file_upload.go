@@ -99,10 +99,10 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		if err != nil {
 			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
 		}
-		defer src.Close()
 
 		var data []byte
 		data, err = io.ReadAll(src)
+		src.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}

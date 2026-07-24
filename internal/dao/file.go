@@ -318,7 +318,7 @@ func (dao *FileDAO) IsParentFolderExist(ctx context.Context, db *gorm.DB, parent
 }
 
 // Query retrieves files by conditions
-func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentID string, tenantID string) []*entity.File {
+func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentID string, tenantID string) ([]*entity.File, error) {
 	var files []*entity.File
 	query := db.WithContext(ctx).Model(&entity.File{})
 	if name != "" {
@@ -330,8 +330,10 @@ func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentI
 	if tenantID != "" {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
-	query.Find(&files)
-	return files
+	if err := query.Find(&files).Error; err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // Delete deletes a file by ID (hard delete)
