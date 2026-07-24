@@ -315,6 +315,12 @@ def _resolve_azure_credentials(key):
     return key, "2024-02-01"
 
 
+def _normalize_azure_endpoint(base_url):
+    if not base_url:
+        return base_url
+    return base_url.strip().rstrip("/")
+
+
 class AzureEmbed(OpenAIEmbed):
     _FACTORY_NAME = "Azure-OpenAI"
 
@@ -322,7 +328,7 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = _normalize_azure_endpoint(kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
 
         self.model_name = model_name
