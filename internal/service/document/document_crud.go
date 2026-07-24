@@ -37,7 +37,7 @@ func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *en
 	file2DocumentDAO := dao.NewFile2DocumentDAO()
 	fileDAO := dao.NewFileDAO()
 
-	mappings, err := file2DocumentDAO.GetByDocumentID(doc.ID)
+	mappings, err := file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return "", "", err
 	}
@@ -400,7 +400,7 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 // no other document still references the same file_id. Files linked from file
 // management are only unlinked — the file record and blob stay intact.
 func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
-	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
+	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if mapErr != nil {
 		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
 		return mapErr
@@ -421,7 +421,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 	}
 
 	// Delete all file2document rows for this document
-	if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
+	if delErr := s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, docID); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
 		return delErr
 	}
@@ -429,7 +429,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 	// For each file, only delete the record and blob when it is a
 	// knowledgebase-owned upload and no other doc references it
 	for _, fileID := range fileIDs {
-		remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
+		remaining, remErr := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if remErr != nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
 			continue

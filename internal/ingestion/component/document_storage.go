@@ -92,7 +92,7 @@ func ResolveDocumentStorage(ctx context.Context, docID string) (*DocumentStorage
 	}
 	ref := &DocumentStorageRef{Name: documentNameOrID(doc)}
 
-	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(doc.ID)
+	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return nil, err
 	}

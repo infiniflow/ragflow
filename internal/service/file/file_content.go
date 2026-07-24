@@ -30,7 +30,7 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 // Matches Python's File2DocumentService.get_storage_address function
 func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
-	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	f2d, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 	if err != nil || len(f2d) == 0 {
 		return nil, fmt.Errorf("file2document mapping not found")
 	}
