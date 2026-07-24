@@ -163,8 +163,8 @@ async def run_structure_merge(ctx: TaskContext) -> None:
             saved = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             if saved:
                 structure_kind = (saved.get("kind") or "").strip() or None
-                config = saved.get("config") or {}
-                dataset_merge = bool(config.get("dataset_merge")) if isinstance(config, dict) else False
+                # config = saved.get("config") or {}
+                dataset_merge = True  # bool(config.get("dataset_merge")) if isinstance(config, dict) else False
                 kind_ok = merge_all or (structure_kind == target_kind)
                 keep = dataset_merge and kind_ok
         except Exception:

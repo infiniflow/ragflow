@@ -340,7 +340,7 @@ def _wiki_type_rules(fields: list) -> str:
         rule = rule.strip() if isinstance(rule, str) else ""
         lines.append(f"type: {typ}")
         if description:
-            lines.append(f"  - discription: {description}")
+            lines.append(f"  - description: {description}")
         if rule:
             lines.append(f"  - rule: {rule}")
     return "\n".join(lines)

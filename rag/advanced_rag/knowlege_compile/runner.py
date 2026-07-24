@@ -167,7 +167,7 @@ def _page_index_graph_summary(graph: dict, limit: int = 80) -> str:
         if not isinstance(entity, dict):
             continue
         name = str(entity.get("name") or "").strip()
-        description = str(entity.get("discription") or entity.get("description") or "").strip()
+        description = str(entity.get("description") or entity.get("description") or "").strip()
         text = f"{name}: {description}".strip(": ").strip()
         if text:
             lines.append(text)

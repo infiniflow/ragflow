@@ -51,7 +51,6 @@ class CompilerParam(ProcessParamBase, LLMParam):
         self.compilation_template_group_ids = []
 
     def check(self):
-        super().check()
         self.check_empty(self.compilation_template_group_ids, "Compilation Template Groups")
         if isinstance(self.compilation_template_group_ids, str):
             self.compilation_template_group_ids = [self.compilation_template_group_ids]
