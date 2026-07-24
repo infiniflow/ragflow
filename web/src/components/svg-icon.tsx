@@ -108,6 +108,7 @@ const svgIcons = [
   LLMFactory.Qiniu,
   LLMFactory.TokenHub,
   LLMFactory.FunASR,
+  LLMFactory.AIMLAPI,
 ];
 
 export const LlmIcon = ({

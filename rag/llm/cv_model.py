@@ -1398,6 +1398,15 @@ class FuturMixCV(GptV4):
         logging.info("[FuturMix] CV initialized with model %s", model_name)
 
 
+class AIMLAPICV(GptV4):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[aimlapi.com] CV initialized with model %s", model_name)
+
+
 class RAGconCV(GptV4):
     """
     RAGcon CV Provider - routes through LiteLLM proxy
