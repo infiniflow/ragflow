@@ -116,3 +116,154 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		t.Fatalf("VLM user text = %q, want %q (image branch must read system_prompt)", got, "自定义视觉提示")
 	}
 }
+
+// audioTranscribeDriver is a mock ModelDriver whose TranscribeAudio returns a
+// fixed transcription, so maybeDispatchAudio can be exercised without a real
+// ASR provider.
+type audioTranscribeDriver struct {
+	modelModule.ModelDriver
+	transcription string
+}
+
+func (d *audioTranscribeDriver) TranscribeAudio(ctx context.Context, _ *string, _ *string, _ *modelModule.APIConfig, _ *modelModule.ASRConfig, _ *common.ModelUsage) (*modelModule.ASRResponse, error) {
+	return &modelModule.ASRResponse{Text: d.transcription}, nil
+}
+
+// TestMaybeDispatchAudio_JSONCarriesTranscription pins diff 2.11: when the
+// audio family's output_format is "json", the ASR transcription must be
+// carried in the JSON items (not only in the Text field). Before the fix the
+// branch returned Text only with an empty JSON slice, and the Invoke switch
+// silently dropped the transcription because it has no "json" branch.
+func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	const want = "hello world"
+	drv := &audioTranscribeDriver{transcription: want}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["audio"]["output_format"] = "json"
+
+	res, dispatched, err := maybeDispatchAudio(
+		context.Background(),
+		utility.FileTypeAURAL,
+		"test.mp3",
+		[]byte("fake-audio"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchAudio: %v", err)
+	}
+	if !dispatched {
+		t.Fatalf("expected dispatched=true for AURAL file")
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1 (transcription must be carried as a JSON item)", len(res.JSON))
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != want {
+		t.Fatalf("JSON[0].text = %q, want %q", got, want)
+	}
+	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "audio" {
+		t.Fatalf("JSON[0].doc_type_kwd = %q, want audio", got)
+	}
+}
+
+// TestMaybeDispatchAudio_TextCarriesTranscription guards the text path: with
+// output_format "text" the transcription stays in the Text field and JSON is
+// empty (current default after aligning with Python parser.py:232).
+func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	const want = "hello world"
+	drv := &audioTranscribeDriver{transcription: want}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["audio"]["output_format"] = "text"
+
+	res, dispatched, err := maybeDispatchAudio(
+		context.Background(),
+		utility.FileTypeAURAL,
+		"test.mp3",
+		[]byte("fake-audio"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchAudio: %v", err)
+	}
+	if !dispatched {
+		t.Fatalf("expected dispatched=true for AURAL file")
+	}
+	if res.OutputFormat != "text" {
+		t.Fatalf("OutputFormat = %q, want text", res.OutputFormat)
+	}
+	if res.Text != want {
+		t.Fatalf("Text = %q, want %q", res.Text, want)
+	}
+	if len(res.JSON) != 0 {
+		t.Fatalf("JSON len = %d, want 0 for text output", len(res.JSON))
+	}
+}
+
+// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: markdown
+// vision enhancement must also process items whose doc_type_kwd is "table"
+// (Python checks {"image","table"} in parser/utils.py:181), not only "image".
+// Before the fix the table item was skipped and never sent to the VLM.
+func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	drv := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"doc_type_kwd": "table", "image": "base64table", "text": ""},
+		},
+	}
+
+	res, handled, err := maybeDispatchMarkdownVision(
+		context.Background(),
+		utility.FileTypeMarkdown,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchMarkdownVision: %v", err)
+	}
+	if !handled {
+		t.Fatalf("expected handled=true for markdown with a table image")
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+	// The table item must have been sent to the VLM and its description appended.
+	if got, _ := res.JSON[0]["text"].(string); got != "captured" {
+		t.Fatalf("table item text = %q, want %q (table items must be vision-enhanced)", got, "captured")
+	}
+}
+
+// TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family default
+// output_format must be "json" (matching Python parser.py:212), not "text".
+// With "text" the structured email fields (from/to/subject/attachments/...) are
+// flattened into a blob and lost downstream.
+func TestDefaultEmailOutputFormatIsJSON(t *testing.T) {
+	got, _ := defaultSetups()["email"]["output_format"].(string)
+	if got != "json" {
+		t.Fatalf("email default output_format = %q, want json", got)
+	}
+}

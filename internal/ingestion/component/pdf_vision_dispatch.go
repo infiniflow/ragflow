@@ -358,16 +358,32 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 	return "", false
 }
 
+// isNamedPDFParseMethod reports whether raw is a recognized named PDF
+// parse method (as opposed to a CustomVLM model name). Its membership set
+// MUST stay aligned with the PDF whitelist enforced by
+// (*ParserComponent).Check() (parser.go:200-203):
+//
+//	deepdoc, plain_text, mineru, docling,
+//	opendataloader, tcadp parser, paddleocr, somark
+//
+// A parse_method that Check() rejects must not be treated as a named method
+// here, otherwise it silently falls through to the CustomVLM vision path
+// instead of failing fast at construction.
+//
+// The "@"-suffixed spellings cover the layout_recognizer convention used to
+// select a specific backend (e.g. "foo@mineru"); "@mineru" mirrors the
+// MinerU branch in maybeDispatchPDFVision (pdf_vision_dispatch.go:64-68).
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch {
-	case strings.HasSuffix(method, "@paddleocr"),
+	case strings.HasSuffix(method, "@mineru"),
+		strings.HasSuffix(method, "@paddleocr"),
 		strings.HasSuffix(method, "@somark"),
 		strings.HasSuffix(method, "@opendataloader"):
 		return true
 	}
 	switch method {
-	case "deepdoc", "mineru", "plain_text", "plain text", "plaintext", "paddleocr", "docling", "opendataloader", "somark", "tcadp", "tcadp parser":
+	case "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
 		return true
 	}
 	return false

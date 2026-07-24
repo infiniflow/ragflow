@@ -315,6 +315,21 @@ func maybeDispatchAudio(
 	if outputFormat == "" {
 		outputFormat = "text"
 	}
+	// Diff 2.11: when output_format is "json" the transcription must be
+	// carried as a JSON item. Returning it only in Text made the Invoke
+	// switch silently drop it (the switch has no "json" branch and the
+	// JSON slice was empty). Mirror the JSON-item shape used by the
+	// other parser branches.
+	if outputFormat == "json" {
+		return parserDispatchResult{
+			OutputFormat: "json",
+			DocType:      "audio",
+			JSON: []map[string]any{{
+				"text":         transcription,
+				"doc_type_kwd": "audio",
+			}},
+		}, true, nil
+	}
 	return parserDispatchResult{
 		OutputFormat: outputFormat,
 		DocType:      "audio",
