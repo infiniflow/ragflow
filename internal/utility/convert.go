@@ -133,10 +133,7 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 	// Group by 5 elements
 	var result [][]int
 	for i := 0; i < len(intVals); i += 5 {
-		end := i + 5
-		if end > len(intVals) {
-			end = len(intVals)
-		}
+		end := min(i+5, len(intVals))
 		result = append(result, intVals[i:end])
 	}
 

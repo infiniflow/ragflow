@@ -583,10 +583,7 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	if pageSize <= 0 {
 		pageSize = 30
 	}
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 
 	// Build filter from req.Filter
 	var filterStr string

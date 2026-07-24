@@ -399,7 +399,7 @@ class TaskService(CommonService):
 
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
@@ -407,7 +407,7 @@ class TaskService(CommonService):
         else:
             with DB.lock("update_progress", -1):
                 if info["progress_msg"]:
-                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                    progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                     cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
                 if "progress" in info:
                     prog = info["progress"]
