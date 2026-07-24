@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1040,6 +1041,101 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	pdf, ok := rhyme["pdf"].(map[string]interface{})
 	if !ok || pdf["parse_method"] != "deepdoc" {
 		t.Fatalf("expected pdf setup persisted, got %#v", rhyme)
+	}
+}
+
+func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	incomingMetadata := []interface{}{map[string]interface{}{
+		"key":         "author",
+		"type":        "string",
+		"description": "Author",
+	}}
+	incomingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	parserConfig := map[string]interface{}{
+		"Parser:HipSignsRhyme": map[string]interface{}{
+			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+		},
+		"metadata":          incomingMetadata,
+		"built_in_metadata": incomingBuiltInMetadata,
+		"enable_metadata":   true,
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: parserConfig,
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], incomingMetadata) {
+		t.Fatalf("metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], incomingBuiltInMetadata) {
+		t.Fatalf("built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	}
+	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
+		t.Fatalf("component parser_config missing: %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	existingMetadata := []interface{}{map[string]interface{}{
+		"key":  "category",
+		"type": "string",
+	}}
+	existingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"metadata":          existingMetadata,
+		"built_in_metadata": existingBuiltInMetadata,
+		"enable_metadata":   true,
+	}).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], existingMetadata) {
+		t.Fatalf("existing metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], existingBuiltInMetadata) {
+		t.Fatalf("existing built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("existing enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
 	}
 }
 
