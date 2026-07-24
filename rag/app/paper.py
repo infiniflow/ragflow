@@ -21,6 +21,7 @@ import re
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.app.naive import by_plaintext, PARSERS
@@ -131,6 +132,22 @@ class Pdf(PdfParser):
         }
 
 
+def _merge_sections_by_pivot(sorted_sections, sec_ids, chunk_token_num):
+    """Concatenate consecutive sections sharing a title pivot, bounded by
+    ``chunk_token_num`` so a long section is not emitted as one oversized chunk.
+    A non-positive budget disables the cap.
+    """
+    chunks = []
+    last_sid = -2
+    for (txt, _), sec_id in zip(sorted_sections, sec_ids, strict=True):
+        if sec_id == last_sid and chunks and (chunk_token_num <= 0 or num_tokens_from_string(chunks[-1] + "\n" + txt) <= chunk_token_num):
+            chunks[-1] += "\n" + txt
+            continue
+        chunks.append(txt)
+        last_sid = sec_id
+    return chunks
+
+
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Only pdf is supported.
@@ -214,15 +231,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sec_ids.append(sid)
         logging.debug("{} {} {} {}".format(lvl, sorted_sections[i][0], most_level, sid))
 
-    chunks = []
-    last_sid = -2
-    for (txt, _), sec_id in zip(sorted_sections, sec_ids):
-        if sec_id == last_sid:
-            if chunks:
-                chunks[-1] += "\n" + txt
-                continue
-        chunks.append(txt)
-        last_sid = sec_id
+    # Concatenate sections sharing a title pivot, bounded by chunk_token_num so a
+    # long section is not emitted as one oversized chunk.
+    chunk_token_num = int(parser_config.get("chunk_token_num", 512) or 0)
+    logging.debug("paper chunk policy: section pivots capped at chunk_token_num=%s", chunk_token_num)
+    chunks = _merge_sections_by_pivot(sorted_sections, sec_ids, chunk_token_num)
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))

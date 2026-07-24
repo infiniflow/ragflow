@@ -218,6 +218,45 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	return recordGroups
 }
 
+// capChunkText splits text so no piece exceeds maxTok tokens. maxTok <= 0 (unset)
+// returns the text unchanged. Splitting is on line boundaries, re-accumulating up
+// to the cap; a single line longer than the cap is emitted whole (we do not split
+// mid-line). Mirrors the intent of python naive_merge's chunk_token_num cap.
+func capChunkText(text string, maxTok int) []string {
+	if maxTok <= 0 || tokenizeStr(text) <= maxTok {
+		return []string{text}
+	}
+	var out []string
+	var cur strings.Builder
+	curTok := 0
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+			curTok = 0
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		lineTok := tokenizeStr(line)
+		// +1 for the newline this line is joined with, so curTok upper-bounds the
+		// assembled piece.
+		if curTok > 0 && curTok+1+lineTok > maxTok {
+			flush()
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte('\n')
+			curTok++
+		}
+		cur.WriteString(line)
+		curTok += lineTok
+	}
+	flush()
+	if len(out) == 0 {
+		return []string{text}
+	}
+	return out
+}
+
 // joinGroupText mirrors python's `"".join(record["text"] + "\n" for
 // record in records)` — every record's text followed by a newline
 // (including the last), matching the python text join exactly.
@@ -249,33 +288,72 @@ func isPlainTextFormat(inputs map[string]any) bool {
 //
 // root_chunk_as_heading is applied here, exactly as python does (post
 // materialisation): the root chunk's text is prepended to every
-// following chunk and the root chunk is dropped.
+// following chunk (and to every piece it is split into), and the root
+// chunk is dropped.
 func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+	maxTok := 0
+	if p.ChunkTokenNum != nil && *p.ChunkTokenNum > 0 {
+		maxTok = *p.ChunkTokenNum
+	}
 	chunks := make([]map[string]any, 0, len(groups))
 	for _, g := range groups {
 		if len(g) == 0 {
 			continue
 		}
-		chunk := map[string]any{"text": joinGroupText(g)}
+		var docType string
+		var imgID *string
 		if !plain {
 			first := g[0]
-			if first.docType != "" {
-				chunk["doc_type_kwd"] = first.docType
-			}
-			if first.imgID != nil {
-				chunk["img_id"] = *first.imgID
-			}
+			docType = first.docType
+			imgID = first.imgID
+		}
+		chunk := map[string]any{"text": joinGroupText(g)}
+		if docType != "" {
+			chunk["doc_type_kwd"] = docType
+		}
+		if imgID != nil {
+			chunk["img_id"] = *imgID
 		}
 		chunks = append(chunks, chunk)
 	}
+	// Resolve the heading at group granularity, before any split: it is always the
+	// complete root group.
+	rootText := ""
 	if p.RootChunkAsHeading && len(chunks) > 1 {
-		rootText := toString(chunks[0]["text"])
-		for i := 1; i < len(chunks); i++ {
-			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
-		}
+		rootText = toString(chunks[0]["text"])
 		chunks = chunks[1:]
 	}
-	return chunks
+	if maxTok <= 0 && rootText == "" {
+		return chunks
+	}
+	// Split the body against the budget left after the heading, then prepend the
+	// heading to every piece: each piece keeps the heading and still fits maxTok.
+	budget := maxTok
+	if maxTok > 0 && rootText != "" {
+		// Only shrink while that leaves a usable body budget. A heading at or over
+		// the cap cannot fit either way, and shrinking further would duplicate it
+		// across a flood of single-line pieces.
+		if bodyBudget := maxTok - tokenizeStr(rootText+"\n"); bodyBudget >= 1 {
+			budget = bodyBudget
+		}
+	}
+	out := make([]map[string]any, 0, len(chunks))
+	for _, ch := range chunks {
+		for _, text := range capChunkText(toString(ch["text"]), budget) {
+			if rootText != "" {
+				text = rootText + "\n" + text
+			}
+			piece := map[string]any{"text": text}
+			if v, ok := ch["doc_type_kwd"]; ok {
+				piece["doc_type_kwd"] = v
+			}
+			if v, ok := ch["img_id"]; ok {
+				piece["img_id"] = v
+			}
+			out = append(out, piece)
+		}
+	}
+	return out
 }
 
 // extractLineRecords reads the chunker inputs in the same order the
