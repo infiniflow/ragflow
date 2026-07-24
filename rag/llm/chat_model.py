@@ -35,7 +35,7 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -2247,7 +2247,7 @@ class LiteLLMBase(ABC):
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
 
-            bedrock_key = json.loads(self.api_key)
+            bedrock_key = _resolve_bedrock_credentials(self.api_key)
             mode = bedrock_key.get("auth_mode")
             if not mode:
                 logging.error("Bedrock auth_mode is not provided in the key")

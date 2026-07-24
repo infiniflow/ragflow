@@ -32,6 +32,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.key_utils import _resolve_bedrock_credentials
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -1442,7 +1443,7 @@ class BedrockCV(Base):
         Base.__init__(self, **kwargs)
 
     def _parse_credentials(self, key):
-        bedrock_key = json.loads(key)
+        bedrock_key = _resolve_bedrock_credentials(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
         self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
         self.aws_ak = bedrock_key.get("bedrock_ak", "")
