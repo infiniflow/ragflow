@@ -66,7 +66,7 @@ func TestChatServiceDeleteChatRejectsNonOwner(t *testing.T) {
 		t.Fatalf("expected no authorization, got %v", err)
 	}
 
-	chat, getErr := svc.chatDAO.GetByID(ctx, "chat-1")
+	chat, getErr := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
 	if getErr != nil {
 		t.Fatalf("failed to fetch chat: %v", getErr)
 	}
@@ -92,7 +92,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected success_count 2, got %+v", result["success_count"])
 	}
 
-	owned1, err := svc.chatDAO.GetByID(ctx, "chat-1")
+	owned1, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-1: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected chat-1 invalid, got %+v", owned1.Status)
 	}
 
-	owned2, err := svc.chatDAO.GetByID(ctx, "chat-2")
+	owned2, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-2")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-2: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 		t.Fatalf("expected chat-2 invalid, got %+v", owned2.Status)
 	}
 
-	other, err := svc.chatDAO.GetByID(ctx, "chat-3")
+	other, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-3")
 	if err != nil {
 		t.Fatalf("failed to fetch chat-3: %v", err)
 	}

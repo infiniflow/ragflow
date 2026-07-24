@@ -212,7 +212,10 @@ func maybeDispatchImage(
 	dataURI := "data:" + mimeType + ";base64," + imageB64
 
 	prompt := "Describe this image in detail."
-	if v, ok := setup["prompt"].(string); ok && v != "" {
+	// image family's contract key is system_prompt (parser.go:295),
+	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
+	// here — that key is for the video family, not image.
+	if v, ok := setup["system_prompt"].(string); ok && v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{

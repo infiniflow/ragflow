@@ -888,13 +888,9 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	}
 
 	apiConfig := &modelModule.APIConfig{
-		ApiKey: &apiKey,
-		Region: &region,
-	}
-
-	err := driver.CheckConnection(ctx, apiConfig)
-	if err != nil {
-		return common.CodeServerError, err
+		ApiKey:  &apiKey,
+		Region:  &region,
+		BaseURL: &baseURL,
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
