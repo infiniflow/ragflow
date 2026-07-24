@@ -132,7 +132,7 @@ jobs:
 
       - name: Prepare Python test environment
         run: |
-          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -221,12 +221,15 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
+          GITEE_TOKEN_FILE="$(mktemp)"
+          printf '%s' '${{ secrets.GITEE_TOKEN }}' > "${GITEE_TOKEN_FILE}"
           sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
         run: |
-          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -666,11 +669,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          ) 9>"${BUILD_LOCK_FILE}"
       - name: Prepare Python test environment
         run: |
-          git config --global url."https://oauth2:796df937ae36d0014a35aa8ab2b02609@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
