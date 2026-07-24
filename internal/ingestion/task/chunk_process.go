@@ -91,14 +91,8 @@ func ProcessChunksForPipeline(
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
 		processChunkPositions(ck)
-		removeInternalChunkFields(ck)
 	}
 	return metadata, nil
-}
-
-func removeInternalChunkFields(ck map[string]any) {
-	delete(ck, "_pdf_positions")
-	delete(ck, "image")
 }
 
 // cleanupConsumedChunkFields materializes the stored array form of the
@@ -139,7 +133,11 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 
 // processChunkPositions converts the raw "positions" field into indexable
 // position fields (page_num_int, top_int, position_int) via AddPositions,
-// then removes the raw field.
+// then removes the raw "positions" and the sibling "_pdf_positions" internal
+// field. _pdf_positions is the parser-emitted position matrix consumed by
+// the chunker's image-crop pass (pdfcrop_cgo.go); after the chunker it is
+// dead weight with no index column, so it is pruned unconditionally —
+// independent of "positions" and not gated on the early-return below.
 //
 // Two source types reach this point:
 //   - []float64 — flat array of 5-tuples [page,left,right,top,bottom,…] from
@@ -151,6 +149,7 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 // Both are flattened into a single []float64 for AddPositions, which groups
 // by 5 internally. Unexpected types are logged and discarded.
 func processChunkPositions(ck map[string]any) {
+	delete(ck, "_pdf_positions")
 	poss, exists := ck["positions"]
 	if !exists {
 		return

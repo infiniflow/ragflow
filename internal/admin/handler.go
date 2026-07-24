@@ -1159,11 +1159,6 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Handle the heartbeat
 	errCode, message := h.service.HandleHeartbeat(&req)
-	if errCode != common.CodeLicenseValid {
-		common.ErrorWithCode(c, errCode, message)
-		return
-	}
-
 	common.ErrorWithCode(c, errCode, message)
 }
 
@@ -1245,10 +1240,16 @@ func (h *Handler) PingCache(c *gin.Context) {
 }
 
 func (h *Handler) PingEngine(c *gin.Context) {
-
 	docEngine := engine.Get()
 	ctx := context.Background()
 	if err := docEngine.Ping(ctx); err != nil {
+		var coded interface {
+			Code() common.ErrorCode
+		}
+		if errors.As(err, &coded) {
+			common.ResponseWithHttpCodeData(c, http.StatusServiceUnavailable, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
