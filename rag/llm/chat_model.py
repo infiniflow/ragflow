@@ -742,7 +742,13 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def _async_chat(self, history, gen_conf, **kwargs):
+        """Run non-streaming async chat while dropping unsupported request kwargs."""
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
+        dropped = [k for k in ("images", "chat_template_kwargs") if k in kwargs]
+        kwargs.pop("images", None)
+        kwargs.pop("chat_template_kwargs", None)
+        if dropped:
+            logging.debug("Dropped unsupported async chat kwargs: %s", dropped)
         if self.model_name.lower().find("qwq") >= 0:
             logging.info(f"[INFO] {self.model_name} detected as reasoning model, using async_chat_streamly")
 
@@ -1672,6 +1678,13 @@ class LiteLLMBase(ABC):
         return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Run LiteLLM async chat while dropping unsupported request kwargs."""
+        dropped = [k for k in ("images", "chat_template_kwargs") if k in kwargs]
+        kwargs.pop("images", None)
+        kwargs.pop("chat_template_kwargs", None)
+        if dropped:
+           logging.debug("Dropped unsupported async chat kwargs: %s", dropped)
+
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
