@@ -4,7 +4,15 @@ import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
 import apiDoc from '@parent/docs/references/http_api_reference.md?raw';
 import { Loader2 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import BackendServiceApi from './backend-service-api';
 import MarkdownToc from './markdown-toc';
@@ -48,6 +56,16 @@ const ApiContent = ({ id, idKey }: { id?: string; idKey: string }) => {
     return () => cancelAnimationFrame(id);
   }, []);
 
+  // Ref wrapping the lazily-mounted markdown preview. The TOC scopes its heading
+  // queries to this element, and only mounts once the preview is actually in the
+  // DOM (not while its lazy chunk is still suspended).
+  const previewRef = useRef<HTMLElement | null>(null);
+  const [previewMounted, setPreviewMounted] = useState(false);
+  const setPreviewRef = useCallback((el: HTMLDivElement | null) => {
+    previewRef.current = el;
+    setPreviewMounted(el !== null);
+  }, []);
+
   return (
     <div className="flex flex-col w-full">
       <BackendServiceApi show={showApiKeyModal} />
@@ -58,9 +76,7 @@ const ApiContent = ({ id, idKey }: { id?: string; idKey: string }) => {
         </Button>
       </div>
       <section className="flex flex-col gap-2 pb-5 flex-1 min-h-0 overflow-auto mb-4">
-        <div style={{ position: 'relative' }}>
-          {tocVisible && <MarkdownToc content={cleanDoc} />}
-        </div>
+        {tocVisible && previewMounted && <MarkdownToc container={previewRef} />}
         {docReady ? (
           <Suspense
             fallback={
@@ -69,12 +85,14 @@ const ApiContent = ({ id, idKey }: { id?: string; idKey: string }) => {
               </div>
             }
           >
-            <LazyMarkdownPreview
-              source={cleanDoc}
-              wrapperElement={{
-                'data-color-mode': isDarkTheme ? 'dark' : 'light',
-              }}
-            />
+            <div ref={setPreviewRef}>
+              <LazyMarkdownPreview
+                source={cleanDoc}
+                wrapperElement={{
+                  'data-color-mode': isDarkTheme ? 'dark' : 'light',
+                }}
+              />
+            </div>
           </Suspense>
         ) : (
           <div className="flex justify-center py-10">
