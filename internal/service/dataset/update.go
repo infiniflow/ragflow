@@ -241,7 +241,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
-				updates["parser_config"] = pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				updates["parser_config"] = preserveDatasetParserConfigMetadata(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 		if pagerankRequested {
@@ -260,7 +261,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
-					updates["parser_config"] = resolved
+					updates["parser_config"] = preserveDatasetParserConfigMetadata(resolved, lockedKB.ParserConfig, req.ParserConfig)
 				}
 			}
 		}
@@ -280,7 +281,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				common.Warn("failed to resolve component params defaults on pipeline change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
 			} else if cpDefaults != nil {
-				updates["parser_config"] = cpDefaults
+				updates["parser_config"] = preserveDatasetParserConfigMetadata(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 		if len(updates) > 0 {
