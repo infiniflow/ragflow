@@ -185,6 +185,7 @@ export function useDocumentPipelineForm({
         parser_id: isPipeline ? '' : data.parser_id,
         pipeline_id: isPipeline ? data.pipeline_id : '',
         parser_config: transformedConfig,
+        parseType: data.parseType,
       };
     },
     [],

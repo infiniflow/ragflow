@@ -87,6 +87,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 	if len(ownerIDs) == 0 {
 		chats, total, err = s.chatDAO.ListByTenantIDs(
 			ctx,
+			dao.DB,
 			nil,
 			userID,
 			page,
@@ -111,7 +112,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, filterOwnerIDs, userID, orderBy, desc, keywords)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, orderBy, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +214,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
-		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided.")
+		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
 	}
 
 	name, err := validateCreateChatName(req["name"])
@@ -256,13 +257,13 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
 		if _, ok := mapFromValue(promptConfigValue); !ok {
-			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object.")
+			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
 		}
 	}
 
 	if metaDataFilterValue, ok := req["meta_data_filter"]; ok && metaDataFilterValue != nil {
 		if _, ok := mapFromValue(metaDataFilterValue); !ok {
-			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object.")
+			return nil, common.CodeDataError, errors.New("`meta_data_filter` should be an object")
 		}
 	}
 
@@ -320,20 +321,20 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, name, userID, string(entity.StatusValid))
+	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, name, userID, string(entity.StatusValid))
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	if exists {
-		return nil, common.CodeDataError, errors.New("Duplicated chat name in creating chat.")
+		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
 	}
 
 	chat := buildCreateChatEntity(req, userID)
-	if err = s.chatDAO.Create(ctx, chat); err != nil {
+	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
 		return nil, common.CodeDataError, errors.New("failed to create chat")
 	}
 
-	chat, err = s.chatDAO.GetByID(ctx, chat.ID)
+	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
 	}
@@ -347,18 +348,18 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 func validateCreateChatName(value interface{}) (string, error) {
 	if value == nil {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", errors.New("Chat name must be a string.")
+		return "", errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("`name` is required.")
+		return "", errors.New("`name` is required")
 	}
 	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, nil
 }
@@ -785,7 +786,7 @@ func (s *ChatService) splitModelNameAndFactory(embeddingModelID string) string {
 }
 
 func (s *ChatService) getOwnedValidChat(ctx context.Context, userID, chatID string) (*entity.Chat, error) {
-	chat, err := s.chatDAO.GetByIDAndStatus(ctx, chatID, string(entity.StatusValid))
+	chat, err := s.chatDAO.GetByIDAndStatus(ctx, dao.DB, chatID, string(entity.StatusValid))
 	if err != nil {
 		return nil, errors.New("no authorization")
 	}
@@ -852,7 +853,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if !patch && isTruthy(req["tenant_id"]) {
-		return nil, errors.New("`tenant_id` must not be provided.")
+		return nil, errors.New("`tenant_id` must not be provided")
 	}
 
 	if value, ok := req["name"]; ok {
@@ -912,7 +913,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	if value, ok := req["prompt_config"]; ok {
 		promptConfig, ok := mapFromValue(value)
 		if !ok {
-			return nil, errors.New("`prompt_config` should be an object.")
+			return nil, errors.New("`prompt_config` should be an object")
 		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
@@ -935,7 +936,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		} else {
 			metaDataFilter, ok := mapFromValue(value)
 			if !ok {
-				return nil, errors.New("`meta_data_filter` should be an object.")
+				return nil, errors.New("`meta_data_filter` should be an object")
 			}
 			req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
 		}
@@ -951,20 +952,20 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 			currentName = *currentChat.Name
 		}
 		if strings.ToLower(name) != strings.ToLower(currentName) {
-			existingNames, err := s.chatDAO.GetExistingNames(ctx, userID, string(entity.StatusValid))
+			existingNames, err := s.chatDAO.GetExistingNames(ctx, dao.DB, userID, string(entity.StatusValid))
 			if err != nil {
 				return nil, err
 			}
 			for _, existingName := range existingNames {
 				if strings.EqualFold(existingName, name) {
-					return nil, errors.New("Duplicated chat name.")
+					return nil, errors.New("duplicated chat name")
 				}
 			}
 		}
 	}
 
 	if len(updates) > 0 {
-		if err = s.chatDAO.UpdateByID(ctx, chatID, updates); err != nil {
+		if err = s.chatDAO.UpdateByID(ctx, dao.DB, chatID, updates); err != nil {
 			if patch {
 				return nil, errors.New("failed to update chat")
 			}
@@ -972,7 +973,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		}
 	}
 
-	updatedChat, err := s.chatDAO.GetByID(ctx, chatID)
+	updatedChat, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
 		return nil, errors.New("failed to retrieve updated chat")
 	}
@@ -982,23 +983,23 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
 	if value == nil {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
 		return "", false, nil
 	}
 	name, ok := value.(string)
 	if !ok {
-		return "", false, errors.New("Chat name must be a string.")
+		return "", false, errors.New("chat name must be a string")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		if required {
-			return "", false, errors.New("`name` is required.")
+			return "", false, errors.New("`name` is required")
 		}
-		return "", false, errors.New("`name` cannot be empty.")
+		return "", false, errors.New("`name` cannot be empty")
 	}
 	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
 	}
 	return name, true, nil
 }
@@ -1157,7 +1158,7 @@ func (s *ChatService) DeleteChat(ctx context.Context, userID, chatID string) err
 	if _, err := s.getOwnedValidChat(ctx, userID, chatID); err != nil {
 		return err
 	}
-	if err := s.chatDAO.UpdateByID(ctx, chatID, map[string]interface{}{
+	if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 		"status": string(entity.StatusInvalid),
 	}); err != nil {
 		return fmt.Errorf("failed to delete chat %s", chatID)
@@ -1201,7 +1202,7 @@ func checkDuplicateChatIDs(ids []string) ([]string, []string) {
 func (s *ChatService) BulkDeleteChats(ctx context.Context, userID string, req *BulkDeleteChatsRequest) (map[string]interface{}, error) {
 	ids := req.IDs
 	if len(ids) == 0 && req.DeleteAll {
-		chats, err := s.chatDAO.ListByTenantID(ctx, userID, string(entity.StatusValid))
+		chats, err := s.chatDAO.ListByTenantID(ctx, dao.DB, userID, string(entity.StatusValid))
 		if err != nil {
 			return nil, err
 		}
@@ -1223,7 +1224,7 @@ func (s *ChatService) BulkDeleteChats(ctx context.Context, userID string, req *B
 			errorsList = append(errorsList, fmt.Sprintf("Chat(%s) not found.", chatID))
 			continue
 		}
-		if err := s.chatDAO.UpdateByID(ctx, chatID, map[string]interface{}{
+		if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 			"status": string(entity.StatusInvalid),
 		}); err != nil {
 			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s", chatID))
@@ -1275,7 +1276,7 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	// Python: for tenant in tenants: if DialogService.query(tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value): break
 	hasPermission := false
 	for _, tenant := range tenants {
-		chats, err := s.chatDAO.QueryByTenantIDAndID(ctx, tenant.TenantID, chatID, "1")
+		chats, err := s.chatDAO.QueryByTenantIDAndID(ctx, dao.DB, tenant.TenantID, chatID, "1")
 		if err != nil {
 			continue // Try next tenant
 		}
@@ -1290,7 +1291,7 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	}
 
 	// Step 3: Get chat detail (same as Python DialogService.get_by_id(chat_id))
-	chat, err := s.chatDAO.GetByID(ctx, chatID)
+	chat, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("chat not found")
 	}

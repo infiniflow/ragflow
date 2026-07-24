@@ -281,7 +281,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     :return: (success, result) or (success, error_message)
     """
     if not req:
-        return False, "No properties were modified"
+        return False, "no properties were modified"
 
     kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
     if kb is None:

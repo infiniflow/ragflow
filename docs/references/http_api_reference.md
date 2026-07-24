@@ -3097,7 +3097,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name."
+    "message": "duplicated chat name"
 }
 ```
 
@@ -3234,7 +3234,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name."
+    "message": "duplicated chat name"
 }
 ```
 

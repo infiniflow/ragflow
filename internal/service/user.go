@@ -1020,7 +1020,7 @@ func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization strin
 
 	// Query API token from database
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAPIToken(ctx, token)
+	userToken, err := apiTokenDAO.GetUserByAPIToken(ctx, dao.DB, token)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
 	}
@@ -1066,7 +1066,7 @@ func (s *UserService) GetAPITokenByBeta(ctx context.Context, authorization strin
 		return nil, fmt.Errorf("invalid authorization format")
 	}
 	apiTokenDAO := dao.NewAPITokenDAO()
-	tokens, err := apiTokenDAO.GetByBeta(ctx, token)
+	tokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
 	if err != nil {
 		return nil, err
 	}
@@ -1101,7 +1101,7 @@ func (s *UserService) GetUserByBetaAPIToken(ctx context.Context, authorization s
 	}
 
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userTokens, err := apiTokenDAO.GetByBeta(ctx, token)
+	userTokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
 	if err != nil || len(userTokens) == 0 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
 	}

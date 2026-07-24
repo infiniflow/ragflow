@@ -90,7 +90,6 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"qa":           true,
 		"resume":       true,
 		"table":        true,
-		"tag":          true,
 	}
 	for h := range hardcoded {
 		t.Logf("Hardcoded has: %s", h)
