@@ -120,7 +120,7 @@ class TenkiProvider(SandboxProvider):
         self._assert_connectivity()
 
         self._initialized = True
-        logger.info("Tenki provider initialized (project_id=%s)", self.project_id)
+        logger.info("Tenki provider initialized")
         return True
 
     def create_instance(self, template: str = "python") -> SandboxInstance:
