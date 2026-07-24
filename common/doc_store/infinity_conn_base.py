@@ -33,7 +33,6 @@ from rag.nlp import is_english
 from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
 
-
 # Concurrent CREATE/DROP TABLE on the same Infinity instance can race on
 # Infinity's RocksDB-backed catalog counters (e.g. ``db|1|next_table_id``).
 # When two writers touch the counter at the same instant, Infinity surfaces
@@ -321,6 +320,17 @@ class InfinityConnectionBase(DocStoreConnection):
                     json_conditions.append(f"json_contains({k}, '{literal}')")
                 if json_conditions:
                     cond.append("(" + " or ".join(json_conditions) + ")")
+            elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
+                values = v if isinstance(v, list) else [v]
+                exact_conditions = []
+                for item in values:
+                    if isinstance(item, str):
+                        item = item.replace("'", "''")
+                        exact_conditions.append(f"{k}='{item}'")
+                    else:
+                        exact_conditions.append(f"{k}={item}")
+                if exact_conditions:
+                    cond.append("(" + " or ".join(exact_conditions) + ")")
             elif self.field_keyword(k):
                 if isinstance(v, list):
                     inCond = list()
@@ -671,7 +681,6 @@ class InfinityConnectionBase(DocStoreConnection):
                 self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
                 return 0
             filter = self.equivalent_condition_to_str(condition, table_instance)
-            self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
             res = table_instance.delete(filter)
             return res.deleted_rows
         finally:
