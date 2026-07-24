@@ -28,7 +28,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "crawl4ai>=0.9.0,<0.9.1",
+    "crawl4ai>=0.9.2,<0.9.3",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
@@ -217,6 +217,15 @@ constraint-dependencies = [
     # through excessive resource consumption. (CVSS 8.9)
     # urllib3 < 2.7.0 is vulnerable, pulled in transitively via requests, minio, akshare, and others
     "urllib3>=2.7.0",
+    # CVE-2026-41066: lxml < 6.1.0 vulnerable; pulled in transitively via html-text,
+    # readability-lxml, akshare, crawl4ai, duckduckgo-search, and others
+    "lxml>=6.1.1",
+    # CVE-2026-49825, CVE-2026-28348, CVE-2026-28350: lxml_html_clean < 0.4.5 vulnerable;
+    # pulled in transitively via html-text, readability-lxml
+    "lxml_html_clean>=0.4.5",
+    # inscriptis 2.7.0 pins lxml<6.0.0, blocking the lxml CVE fix;
+    # 2.7.3 relaxes to <6.2.0. Pulled in transitively via ir-datasets -> ranx
+    "inscriptis>=2.7.3",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
