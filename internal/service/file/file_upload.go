@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -14,7 +15,7 @@ import (
 )
 
 // UploadFile uploads files to a folder
-func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
 		if err != nil {
@@ -33,7 +34,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		var maxNum int64
 		if _, err = fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
 			var docCount int64
-			docCount, err = s.GetDocCount(tenantID)
+			docCount, err = s.GetDocCount(ctx, tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get document count: %w", err)
 			}
@@ -134,7 +135,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 // UploadInfos mirrors Python's upload_info file branch: store raw bytes in the
 // per-user downloads bucket and return lightweight upload descriptors instead
 // of creating full File rows in the file-management tree.
-func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (s *FileService) UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -143,7 +144,7 @@ func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) 
 	results := make([]map[string]interface{}, 0, len(files))
 	for _, fileHeader := range files {
 		filename := fileHeader.Filename
-		if err := s.checkUploadInfoHealth(userID, filename); err != nil {
+		if err := s.checkUploadInfoHealth(ctx, userID, filename); err != nil {
 			return nil, err
 		}
 		src, err := fileHeader.Open()
@@ -213,7 +214,7 @@ func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) m
 	}
 }
 
-func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
+func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filename string) error {
 	if filename == "" {
 		return fmt.Errorf("No file selected!")
 	}
@@ -222,7 +223,7 @@ func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
 		var maxNum int64
 		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
 			var docCount int64
-			docCount, err = s.GetDocCount(userID)
+			docCount, err = s.GetDocCount(ctx, userID)
 			if err != nil {
 				return fmt.Errorf("failed to get document count: %w", err)
 			}
@@ -262,8 +263,8 @@ func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, f
 // UploadDocumentInfos is the document-level wrapper that stores uploaded blobs
 // without creating Document rows, then returns the file metadata including
 // size/mime-type/extension.
-func (s *FileService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
-	data, err := s.UploadInfos(userID, files)
+func (s *FileService) UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	data, err := s.UploadInfos(ctx, userID, files)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -272,8 +273,8 @@ func (s *FileService) UploadDocumentInfos(userID string, files []*multipart.File
 
 // UploadDocumentInfoByURL fetches a remote URL, stores the content without
 // creating a Document row, then returns file metadata.
-func (s *FileService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
-	data, err := s.UploadFromURL(userID, rawURL)
+func (s *FileService) UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	data, err := s.UploadFromURL(ctx, userID, rawURL)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}

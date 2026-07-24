@@ -176,6 +176,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Running Pipeline E2E test with engine: %s", tc.name)
@@ -205,7 +206,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
-			taskCtx, err := LoadFromIngestionTask(ingestionTask)
+			taskCtx, err := LoadFromIngestionTask(ctx, ingestionTask)
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}

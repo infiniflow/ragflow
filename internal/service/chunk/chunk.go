@@ -87,11 +87,11 @@ type ChunkService struct {
 	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
 	// uses service.DocumentService.StartParseDocuments; tests inject a fake
 	// to avoid the MQ publisher.
-	startParseDocumentsFunc func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error
+	startParseDocumentsFunc func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error
 	// cancelIngestionTaskFunc overrides the document-parsing cancellation.
 	// Production uses service.DocumentService.CancelDocParse; tests inject
 	// a fake to avoid the MQ publisher.
-	cancelIngestionTaskFunc func(doc *entity.Document) error
+	cancelIngestionTaskFunc func(ctx context.Context, doc *entity.Document) error
 	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
 	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
@@ -129,7 +129,7 @@ func NewChunkService() *ChunkService {
 //     - Builds doc_aggs by aggregating chunks per document
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
-func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
 
 	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
@@ -159,8 +159,6 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	if len(req.Datasets) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
-
-	ctx := context.Background()
 
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil {
@@ -504,7 +502,7 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 }
 
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
+func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -512,8 +510,6 @@ func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*servic
 	if req.ChunkID == "" {
 		return nil, fmt.Errorf("chunk_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -599,17 +595,17 @@ const (
 	docStopParsingInvalidStateErrorCode = "DOC_STOP_PARSING_INVALID_STATE"
 )
 
-func (s *ChunkService) cancelAllTasksOfDoc(doc *entity.Document) error {
+func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Document) error {
 	cancel := s.cancelIngestionTaskFunc
 	if cancel == nil {
 		cancel = document.NewDocumentService().CancelDocParse
 	}
-	return cancel(doc)
+	return cancel(ctx, doc)
 }
 
-func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if !s.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
 	if len(req.DocumentIDs) == 0 {
@@ -618,16 +614,16 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 
 	_, err := s.kbDAO.GetByID(datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
 	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
 	successCount := 0
 
 	for _, docID := range docIDs {
-		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(docID, datasetID)
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil || doc == nil {
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", docID)
+			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
 		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(docID)
@@ -641,7 +637,7 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
 		}
 
-		if err := s.cancelAllTasksOfDoc(doc); err != nil {
+		if err = s.cancelAllTasksOfDoc(ctx, doc); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
@@ -699,16 +695,16 @@ func (s *ChunkService) getKnowledgebaseByID(datasetID string) (*entity.Knowledge
 	return s.kbDAO.GetByID(datasetID)
 }
 
-func (s *ChunkService) getDocumentsByIDs(docIDs []string) ([]*entity.Document, error) {
+func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) ([]*entity.Document, error) {
 	if s.getDocumentsByIDsFunc != nil {
 		return s.getDocumentsByIDsFunc(docIDs)
 	}
-	return s.documentDAO.GetByIDs(docIDs)
+	return s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
 }
 
-func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	if !s.accessible(datasetID, userID) {
-		return nil, common.CodeOperatingError, fmt.Errorf("You don't own the dataset %s.", datasetID)
+		return nil, common.CodeOperatingError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
@@ -722,7 +718,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 	docIDs, duplicateMessages := checkDuplicateIDs(req.DocumentIDs, "document")
 	notFound := make([]string, 0)
 
-	docs, err := s.getDocumentsByIDs(docIDs)
+	docs, err := s.getDocumentsByIDs(ctx, docIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -748,7 +744,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 
 	// Batch pre-check: refuse the whole request if any document's ingestion
 	// task is non-terminal (RUNNING/STOPPING), so we never partially clean.
-	if err := (document.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
+	if err = (document.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
 		return nil, common.CodeDataError, err
 	}
 
@@ -762,7 +758,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 
 	for _, docID := range docIDs {
 		doc := docByID[docID]
-		if err := startParse(doc, kb, userID, document.StartParseOptions{RerunWithDelete: true}); err != nil {
+		if err = startParse(ctx, doc, kb, userID, document.StartParseOptions{RerunWithDelete: true}); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -781,7 +777,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 }
 
 // List retrieves chunks for a document
-func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -789,8 +785,6 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 	if req.DocID == "" {
 		return nil, fmt.Errorf("doc_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -803,7 +797,7 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 
 	// Get document to find its tenant
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
@@ -839,15 +833,52 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 
 	page := common.CoalesceInt(req.Page, 1)
 	size := common.CoalesceInt(req.Size, 30)
-	keywords := req.Keywords
+	keywords := strings.TrimSpace(req.Keywords)
+	var orderBy *types.OrderByExpr
+	matchExprs := make([]interface{}, 0, 1)
+	if keywords == "" {
+		orderBy = (&types.OrderByExpr{}).
+			Asc("chunk_order_int").
+			Asc("page_num_int").
+			Asc("top_int").
+			Desc("create_timestamp_flt")
+	} else {
+		matchExprs = append(matchExprs, &types.MatchTextExpr{
+			MatchingText: keywords,
+			TopN:         size,
+		})
+	}
 
 	// Build search request - same as retrieval test but filtered by doc_id
 	searchReq := &types.SearchRequest{
 		IndexNames: []string{indexName},
-		MatchExprs: []interface{}{keywords},
+		MatchExprs: matchExprs,
 		KbIDs:      kbIDs,
 		Offset:     (page - 1) * size,
 		Limit:      size,
+		OrderBy:    orderBy,
+		SelectFields: []string{
+			"id",
+			"content_with_weight",
+			"img_id",
+			"position_int",
+			"docnm",
+			"important_keywords",
+			"questions",
+			"entities_kwd",
+			"entity_kwd",
+			"entity_type_kwd",
+			"from_entity_kwd",
+			"name_kwd",
+			"raptor_kwd",
+			"removed_kwd",
+			"source_id",
+			"tag_kwd",
+			"to_entity_kwd",
+			"toc_kwd",
+			"doc_type_kwd",
+			"available_int",
+		},
 		Filter: map[string]interface{}{
 			"doc_id": req.DocID,
 		},
@@ -887,8 +918,12 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
-			case "content":
+			case "content_with_weight":
 				result["content_with_weight"] = v
+			case "content":
+				if _, ok := result["content_with_weight"]; !ok {
+					result["content_with_weight"] = v
+				}
 			case "docnm":
 				result["docnm_kwd"] = v
 			case "important_keywords":
@@ -964,7 +999,7 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 	}, nil
 }
 
-func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -976,9 +1011,6 @@ func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availa
 	if chunkIDs == nil || len(chunkIDs) == 0 {
 		return fmt.Errorf("req is null")
 	}
-
-	ctx := context.Background()
-	defer ctx.Done()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -1003,7 +1035,7 @@ func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availa
 	}
 
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(documentID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, documentID)
 	if err != nil || doc == nil {
 		return fmt.Errorf("document not found")
 	}
@@ -1028,7 +1060,7 @@ func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availa
 	return nil
 }
 
-func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID string) error {
+func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -1036,8 +1068,6 @@ func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 	if req.ChunkID == "" {
 		return fmt.Errorf("chunk_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -1063,7 +1093,7 @@ func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocumentID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocumentID)
 	if err != nil || doc == nil {
 		return fmt.Errorf("document not found")
 	}
@@ -1169,7 +1199,7 @@ func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 
 	return nil
 }
-func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error) {
+func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
@@ -1177,8 +1207,6 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 	if req.DocID == "" {
 		return 0, fmt.Errorf("doc_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -1191,7 +1219,7 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 
 	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
 	}
@@ -1237,7 +1265,7 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 	}
 
 	if deletedCount > 0 {
-		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 	}
@@ -1261,7 +1289,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
-	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(req.DocumentID, req.DatasetID)
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the document %s.", req.DocumentID)}
 	}

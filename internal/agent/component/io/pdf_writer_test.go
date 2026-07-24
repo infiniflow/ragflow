@@ -116,10 +116,3 @@ func requirePDFLatinFont(t *testing.T) {
 		t.Skip("no local Latin PDF font available")
 	}
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

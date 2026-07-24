@@ -81,12 +81,12 @@ func resolveStorage() storage.Storage {
 // location. It is exported so downstream components can re-acquire the
 // source PDF without threading the raw bytes across the component
 // boundary.
-func ResolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
+func ResolveDocumentStorage(ctx context.Context, docID string) (*DocumentStorageRef, error) {
 	if ResolveDocumentStorageOverride != nil {
 		return ResolveDocumentStorageOverride(docID)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func ResolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
 	return ref, nil
 }
 
-func resolveDocumentName(docID string) (string, error) {
+func resolveDocumentName(ctx context.Context, docID string) (string, error) {
 	if ResolveDocumentStorageOverride != nil {
 		ref, err := ResolveDocumentStorageOverride(docID)
 		if err != nil {
@@ -128,7 +128,7 @@ func resolveDocumentName(docID string) (string, error) {
 			return ref.Name, nil
 		}
 	}
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return "", err
 	}

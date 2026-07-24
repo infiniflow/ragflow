@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	"reflect"
 	"regexp"
@@ -18,7 +19,7 @@ import (
 )
 
 // GetMetadataSummary get metadata summary for documents
-func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
+func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
 	tenantID, err := s.metadataSvc.GetTenantIDByKBID(kbID)
 	if err != nil {
 		return nil, err
@@ -34,9 +35,9 @@ func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[
 }
 
 // SetDocumentMetadata sets metadata for a document in the document engine
-func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]interface{}) error {
+func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
 	// Get document to find kb_id
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("document not found: %w", err)
 	}
@@ -47,7 +48,7 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	if err := s.docEngine.UpdateMetadata(context.Background(), docID, doc.KbID, meta, tenantID); err != nil {
+	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -55,9 +56,9 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 }
 
 // DeleteDocumentMetadata deletes metadata keys for a document in the document engine
-func (s *DocumentService) DeleteDocumentMetadata(docID string, keys []string) error {
+func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
 	// Get document to find kb_id
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("document not found: %w", err)
 	}
@@ -78,9 +79,9 @@ func (s *DocumentService) DeleteDocumentMetadata(docID string, keys []string) er
 }
 
 // DeleteDocumentAllMetadata deletes all metadata for a document in the document engine
-func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
+func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
 	// Get document to find kb_id
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("document not found: %w", err)
 	}
@@ -107,9 +108,9 @@ func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
 }
 
 // GetDocumentMetadataByID get metadata for a specific document
-func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
+func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	// Get document to find kb_id
-	doc, err := s.documentDAO.GetByID(docID)
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, fmt.Errorf("document not found: %w", err)
 	}
@@ -134,7 +135,7 @@ func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]inte
 }
 
 // GetMetadataByKBs get metadata for knowledge bases
-func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error) {
+func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error) {
 	if len(kbIDs) == 0 {
 		return make(map[string]interface{}), nil
 	}
@@ -499,17 +500,17 @@ func isTimeString(s string) bool {
 	return matched
 }
 
-func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]any) error {
+func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
-	if err := s.DeleteDocumentAllMetadata(docID); err != nil {
+	if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
 		return err
 	}
-	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
+	return s.SetDocumentMetadata(ctx, docID, meta)
 }
 
-func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[string]interface{}) error {
+func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID string, before, after map[string]interface{}) error {
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
@@ -521,7 +522,7 @@ func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[
 		}
 	}
 	if len(deleteKeys) > 0 {
-		if err := s.DeleteDocumentMetadata(docID, deleteKeys); err != nil {
+		if err := s.DeleteDocumentMetadata(ctx, docID, deleteKeys); err != nil {
 			return err
 		}
 	}
@@ -535,13 +536,14 @@ func (s *DocumentService) patchDocumentMetadata(docID string, before, after map[
 	if len(updateFields) == 0 {
 		return nil
 	}
-	return s.SetDocumentMetadata(docID, updateFields)
+	return s.SetDocumentMetadata(ctx, docID, updateFields)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
 // PATCH /datasets/:dataset_id/documents/metadatas  and
 // POST  /datasets/:dataset_id/metadata/update.
 func (s *DocumentService) BatchUpdateDocumentMetadatas(
+	ctx context.Context,
 	datasetID string,
 	selector *DocumentMetadataSelector,
 	updates []DocumentMetadataUpdate,
@@ -559,7 +561,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 
 	if len(selector.DocumentIDs) > 0 {
 		// Validate that supplied IDs actually belong to this dataset.
-		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs([]string{datasetID})
+		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, dao.DB, []string{datasetID})
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to list dataset documents: %w", err)
 		}
@@ -628,7 +630,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// semantics instead of a simple merge-then-delete.
 	updated := 0
 	for _, docID := range ids {
-		currentMeta, err := s.GetDocumentMetadataByID(docID)
+		currentMeta, err := s.GetDocumentMetadataByID(ctx, docID)
 		if err != nil {
 			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
 				zap.String("docID", docID), zap.Error(err))
@@ -647,7 +649,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			continue
 		}
 
-		if err := s.patchDocumentMetadata(docID, originalMeta, meta); err != nil {
+		if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
 			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
 				zap.String("docID", docID), zap.Error(err))
 			continue

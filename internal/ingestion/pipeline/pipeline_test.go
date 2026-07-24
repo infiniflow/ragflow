@@ -489,14 +489,14 @@ type recordingSink struct {
 	events   []ProgressEvent
 }
 
-func (r *recordingSink) OnComponentTotal(taskID string, total int) {
+func (r *recordingSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.total = total
 	r.totalSet = true
 }
 
-func (r *recordingSink) OnComponentProgress(ev ProgressEvent) {
+func (r *recordingSink) OnComponentProgress(ctx context.Context, ev ProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)

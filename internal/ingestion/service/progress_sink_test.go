@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"runtime"
 	"sync"
 	"testing"
@@ -56,7 +57,8 @@ func TestProgressSink_EagerlyConstructsDocumentService(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
 	if sink.docSvc == nil {
 		t.Fatal("expected sink to eagerly construct its DocumentService, got nil (lazy)")
 	}
@@ -76,10 +78,11 @@ func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
+	ctx := t.Context()
 	// Deliberately do NOT inject a stub docSvc: the sink's own DocumentService
 	// must already be constructed (not lazily built mid-call) when the
 	// goroutines below race into docSvc.
-	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
 
 	const n = 30
 	var wg sync.WaitGroup
@@ -108,7 +111,8 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
 
 	const n = 30
 	var wg sync.WaitGroup
@@ -118,7 +122,7 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			sink.OnComponentTotal(taskID, 5) // writes s.total
+			sink.OnComponentTotal(ctx, taskID, 5) // writes s.total
 		}()
 	}
 	for i := 0; i < n; i++ {
@@ -142,7 +146,7 @@ type stubDocProgressSvc struct {
 	calls       int
 }
 
-func (s *stubDocProgressSvc) UpdateRunProgress(docID string, progress float64, run, progressMsg string) error {
+func (s *stubDocProgressSvc) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
 	s.calls++
 	s.gotDocID = docID
 	s.gotProgress = progress
@@ -160,11 +164,12 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
 	stub := &stubDocProgressSvc{}
 	sink.docSvc = stub
 
-	sink.OnComponentTotal(taskID, 2)
+	sink.OnComponentTotal(ctx, taskID, 2)
 	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
@@ -173,7 +178,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		t.Fatalf("component_total = %d, want 2", task.ComponentTotal)
 	}
 
-	sink.OnComponentProgress(pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		TaskID:     taskID,
 		DocumentID: docID,
 		Component:  "Parser",
@@ -218,11 +223,12 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	sink := newProgressSink(servicepkg.NewIngestionTaskService())
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
 	stub := &stubDocProgressSvc{}
 	sink.docSvc = stub
 
-	sink.OnComponentProgress(pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		TaskID:    taskID,
 		Component: "Chunker",
 		Phase:     1,

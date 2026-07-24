@@ -72,7 +72,7 @@ type AskStreamOptions struct {
 
 // Retriever abstracts chunk retrieval for AskService.
 type Retriever interface {
-	RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+	RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
 }
 
 // StreamingLLM abstracts streaming chat for AskService.
@@ -159,7 +159,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	req.Page = &page
 	req.Size = &ps
 
-	result, err := s.retriever.RetrievalTest(req, userID)
+	result, err := s.retriever.RetrievalTest(ctx, req, userID)
 	if err != nil {
 		common.Warn("AskService retrieval failed", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "retrieval failed"}, ctx)

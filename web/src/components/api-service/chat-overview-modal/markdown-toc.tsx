@@ -2,23 +2,26 @@ import React, { useEffect, useState } from 'react';
 import Anchor, { AnchorItem } from './anchor';
 
 interface MarkdownTocProps {
-  content: string;
+  // A ref to the container that wraps the markdown preview this TOC tracks.
+  // Headings are queried only inside this element so the TOC can never pick up
+  // headings rendered by another markdown instance.
+  container: React.RefObject<HTMLElement>;
 }
 
-const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
+const MarkdownToc: React.FC<MarkdownTocProps> = ({ container }) => {
   const [items, setItems] = useState<AnchorItem[]>([]);
 
   useEffect(() => {
-    const generateTocItems = () => {
-      const headings = document.querySelectorAll(
+    const root = container.current;
+    if (!root) return;
+
+    let active = true;
+
+    const buildToc = () => {
+      const headings = root.querySelectorAll(
         '.wmde-markdown h2, .wmde-markdown h3',
       );
-
-      // If headings haven't rendered yet, wait for next frame
-      if (headings.length === 0) {
-        requestAnimationFrame(generateTocItems);
-        return;
-      }
+      if (headings.length === 0) return false;
 
       const tocItems: AnchorItem[] = [];
       let currentH2Item: AnchorItem | null = null;
@@ -51,14 +54,26 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         }
       });
 
-      setItems(tocItems.slice(1));
+      if (active) setItems(tocItems.slice(1));
+      return true;
     };
 
-    // Use requestAnimationFrame to ensure execution after DOM rendering
-    requestAnimationFrame(() => {
-      requestAnimationFrame(generateTocItems);
+    // Build immediately if the preview already rendered its headings.
+    if (buildToc()) return;
+
+    // Otherwise wait for the lazy preview to inject its DOM, then build once.
+    // This replaces the previous per-frame requestAnimationFrame loop, which
+    // polled forever when the lazy chunk failed to load and leaked on unmount.
+    const observer = new MutationObserver(() => {
+      if (buildToc()) observer.disconnect();
     });
-  }, [content]);
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [container]);
 
   return (
     <div

@@ -711,15 +711,15 @@ type fakeFileService struct {
 	err  error
 }
 
-func (f *fakeFileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+func (f *fakeFileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
 	return f.blob, f.err
 }
 
-func (f *fakeFileService) UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (f *fakeFileService) UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (f *fakeFileService) UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error) {
+func (f *fakeFileService) UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
