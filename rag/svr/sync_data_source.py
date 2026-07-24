@@ -48,6 +48,7 @@ from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
+    SitemapConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -510,6 +511,52 @@ class RSS(SyncBase):
             end_time,
         )
         return document_generator
+
+
+class Sitemap(SyncBase):
+    SOURCE_NAME: str = FileSource.SITEMAP
+
+    @staticmethod
+    def _sanitize_docs(gen):
+        """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
+        from urllib.parse import urlparse
+        for batch in gen:
+            sanitized = []
+            for doc in batch:
+                si = doc.semantic_identifier
+                if si.startswith(("http://", "https://")):
+                    parsed = urlparse(si)
+                    si = f"{parsed.netloc}{parsed.path}"
+                    if parsed.query:
+                        si += f"?{parsed.query}"
+                    if parsed.fragment:
+                        si += f"#{parsed.fragment}"
+                    si = si.strip("/")
+                    doc = doc.model_copy(update={"semantic_identifier": si})
+                sanitized.append(doc)
+            yield sanitized
+
+    async def _generate(self, task: dict):
+        self.connector = SitemapConnector(
+            sitemap_url=self.conf["sitemap_url"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            user_agent=self.conf.get("user_agent", "RAGFlow-SitemapConnector/1.0"),
+            url_filter=self.conf.get("url_filter"),
+            follow_pdf_links=self.conf.get("follow_pdf_links", False),
+            restrict_pdf_to_domain=self.conf.get("restrict_pdf_to_domain", True),
+        )
+        self.connector.load_credentials(self.conf.get("credentials", {}))
+        self.connector.validate_connector_settings()
+        self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return self._sanitize_docs(self.connector.load_from_state())
+
+        end_time = datetime.now(timezone.utc).timestamp()
+        return self._sanitize_docs(self.connector.poll_source(
+            task["poll_range_start"].timestamp(),
+            end_time,
+        ))
 
 
 class Confluence(SyncBase):
@@ -2138,6 +2185,7 @@ class REST_API(SyncBase):
 
 func_factory = {
     FileSource.RSS: RSS,
+    FileSource.SITEMAP: Sitemap,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
