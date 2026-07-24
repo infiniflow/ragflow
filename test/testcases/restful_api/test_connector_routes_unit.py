@@ -221,9 +221,37 @@ def _load_connector_app(monkeypatch):
         def list_sync_tasks(*_args, **_kwargs):
             return [], 0
 
+    class _StubConnector2KbService:
+        # The production rebuild route now verifies that the connector
+        # is bound to the caller-supplied kb_id via
+        # Connector2KbService.query(connector_id=, kb_id=) — fixes
+        # the access-control gap addressed by PR #15272. Default to a
+        # truthy result so existing pass-through tests do not need to
+        # know about this binding check; tests that exercise the deny
+        # branch monkeypatch this to return an empty list.
+        @staticmethod
+        def query(*_args, **_kwargs):
+            return [object()]
+
     connector_service_mod.ConnectorService = _StubConnectorService
     connector_service_mod.SyncLogsService = _StubSyncLogsService
+    connector_service_mod.Connector2KbService = _StubConnector2KbService
     monkeypatch.setitem(sys.modules, "api.db.services.connector_service", connector_service_mod)
+
+    # KnowledgebaseService.accessible() gates the same rebuild route on
+    # tenant ownership of the kb. Default to True for the same reason
+    # as Connector2KbService above.
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
+    knowledgebase_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(
+        sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod
+    )
 
     api_utils_mod = ModuleType("api.utils.api_utils")
 
@@ -454,6 +482,62 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     assert all(res["message"] == "No authorization." for res in responses)
     assert all(res["data"] is False for res in responses)
     assert touched == []
+
+
+@pytest.mark.p2
+def test_connector_rebuild_rejects_cross_tenant_kb_and_unbound_kb(monkeypatch):
+    """PR #15272 (issue #15268) — the rebuild route must verify the
+    caller-supplied kb_id, not just the connector_id, before reaching
+    ConnectorService.rebuild() (which deletes documents and schedules
+    sync tasks).
+
+    Three branches:
+      1. caller cannot access the kb → "No authorization." / no rebuild
+      2. caller can access the kb but the connector is not bound to it
+         → "Connector is not bound to this knowledge base." / no rebuild
+      3. caller can access the kb AND the connector is bound to it
+         → rebuild() runs and the route returns success
+    """
+    module = _load_connector_app(monkeypatch)
+
+    # The connector_id check passes; we're isolating the two new kb
+    # guards added in #15272.
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda cid, uid: True)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
+
+    rebuild_calls: list[tuple] = []
+
+    def _record_rebuild(*args):
+        rebuild_calls.append(args)
+        return None  # success
+
+    monkeypatch.setattr(module.ConnectorService, "rebuild", _record_rebuild)
+
+    # --- branch 1: KnowledgebaseService.accessible() denies -----------
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, uid: False)
+    monkeypatch.setattr(module.Connector2KbService, "query", lambda **_kwargs: [object()])
+    res = _run(module.rebuild("conn-victim"))
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert res["message"] == "No authorization."
+    assert res["data"] is False
+    assert rebuild_calls == [], "rebuild must NOT run when kb is not accessible"
+
+    # --- branch 2: kb accessible, but connector is not bound ----------
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, uid: True)
+    monkeypatch.setattr(module.Connector2KbService, "query", lambda **_kwargs: [])
+    res = _run(module.rebuild("conn-victim"))
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert res["message"] == "Connector is not bound to this knowledge base."
+    assert res["data"] is False
+    assert rebuild_calls == [], "rebuild must NOT run when connector is not bound to kb"
+
+    # --- branch 3: both gates pass → rebuild runs ---------------------
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, uid: True)
+    monkeypatch.setattr(module.Connector2KbService, "query", lambda **_kwargs: [object()])
+    res = _run(module.rebuild("conn-victim"))
+    assert res["data"] is True
+    assert len(rebuild_calls) == 1
+    assert rebuild_calls[0] == ("kb-1", "conn-victim", "tenant-1")
 
 
 @pytest.mark.p2
