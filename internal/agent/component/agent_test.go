@@ -142,6 +142,7 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
 		DeferAgentToMessage: true,
 	})
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(string, string) {})
 	agent := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
 	out, err := agent.Invoke(ctx, map[string]any{"user_prompt": "hello"})
 	if err != nil {
@@ -155,7 +156,7 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
 	}
 	var got strings.Builder
-	final, err := deferred.Open(context.Background(), func(contentDelta, _ string) {
+	final, err := deferred.Open(ctx, func(contentDelta, _ string) {
 		got.WriteString(contentDelta)
 	})
 	if err != nil {
@@ -166,6 +167,43 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 	}
 	if final["content"] != "lazy answer" {
 		t.Fatalf("final content=%v, want lazy answer", final["content"])
+	}
+}
+
+func TestAgent_DeferredStreamDoesNotAppendFinalAnswerAfterDeltas(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
+		runtime.EmitAgentMessage(ctx, "lazy ", "")
+		runtime.EmitAgentMessage(ctx, "answer", "")
+		return &schema.Message{Role: schema.Assistant, Content: "lazy answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(string, string) {})
+	out, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, map[string]any{
+		"user_prompt": "hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+
+	var streamed strings.Builder
+	final, err := deferred.Open(ctx, func(contentDelta, _ string) {
+		streamed.WriteString(contentDelta)
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if got, want := streamed.String(), "lazy answer"; got != want {
+		t.Fatalf("streamed=%q, want %q", got, want)
+	}
+	if got, want := final["content"], "lazy answer"; got != want {
+		t.Fatalf("final content=%v, want %v", got, want)
 	}
 }
 
@@ -182,7 +220,9 @@ func TestAgent_SuppressesVisibleEventsWithoutMessageDownstream(t *testing.T) {
 	ctx = runtime.WithComponentExecutionOptions(ctx, runtime.ComponentExecutionOptions{
 		SuppressAgentMessageEvents: true,
 	})
-	if _, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, nil); err != nil {
+	if _, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, map[string]any{
+		"user_prompt": "hello",
+	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if len(emitted) != 0 {

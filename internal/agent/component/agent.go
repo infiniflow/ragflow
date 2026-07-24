@@ -282,7 +282,7 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
-				if runtime.AgentMessageEventsEmitted(ctx) {
+				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
 					continue
 				}
 				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
@@ -868,7 +868,8 @@ func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	if !runtime.AgentMessageEventsEmitted(ctx) {
+	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	if !streamed {
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil

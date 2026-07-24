@@ -72,6 +72,12 @@ type agentMessageEmitterState struct {
 type agentDeltaSinkCtxKey struct{}
 type canvasMessageEventEmitterCtxKey struct{}
 
+type agentDeltaSinkState struct {
+	mu      sync.Mutex
+	sink    AgentDeltaSink
+	emitted bool
+}
+
 type componentExecutionOptionsCtxKey struct{}
 type deferredNodeRegistryCtxKey struct{}
 
@@ -152,11 +158,11 @@ func WithAgentDeltaSink(ctx context.Context, sink AgentDeltaSink) context.Contex
 	if sink == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, agentDeltaSinkCtxKey{}, sink)
+	return context.WithValue(ctx, agentDeltaSinkCtxKey{}, &agentDeltaSinkState{sink: sink})
 }
 
-func agentDeltaSinkFromContext(ctx context.Context) AgentDeltaSink {
-	sink, _ := ctx.Value(agentDeltaSinkCtxKey{}).(AgentDeltaSink)
+func agentDeltaSinkFromContext(ctx context.Context) *agentDeltaSinkState {
+	sink, _ := ctx.Value(agentDeltaSinkCtxKey{}).(*agentDeltaSinkState)
 	return sink
 }
 
@@ -224,10 +230,15 @@ func HasAgentMessageEmitter(ctx context.Context) bool {
 // EmitAgentMessage emits Agent answer/thinking deltas when the service layer
 // installed a callback. It returns true when a callback was present.
 func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) bool {
-	if sink := agentDeltaSinkFromContext(ctx); sink != nil {
+	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil && sinkState.sink != nil {
 		// A deferred Agent is being consumed by Message. Do not call the
 		// service SSE emitter here; Message owns the visible event stream.
-		sink(contentDelta, thinkingDelta)
+		sinkState.mu.Lock()
+		sinkState.sink(contentDelta, thinkingDelta)
+		if contentDelta != "" || thinkingDelta != "" {
+			sinkState.emitted = true
+		}
+		sinkState.mu.Unlock()
 		return true
 	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
@@ -330,6 +341,31 @@ func AgentMessageEventsEmitted(ctx context.Context) bool {
 	return state.emitted
 }
 
+// DeferredAgentMessageEventsEmitted reports whether a deferred Agent has
+// already delivered any deltas to its consuming Message node. It is kept
+// separate from AgentMessageEventsEmitted so the model-stream collector can
+// continue forwarding every delta instead of treating the first token as the
+// entire response.
+func DeferredAgentMessageEventsEmitted(ctx context.Context) bool {
+	sinkState := agentDeltaSinkFromContext(ctx)
+	if sinkState == nil {
+		return false
+	}
+	sinkState.mu.Lock()
+	defer sinkState.mu.Unlock()
+	return sinkState.emitted
+}
+
+// HasDeferredAgentMessageSink reports whether the current invocation is being
+// consumed by a downstream Message node. The model stream collector must not
+// use the outer canvas-event flag for de-duplication in this mode: Message
+// marks that flag after the first delta, while the remaining model deltas
+// still need to reach the sink.
+func HasDeferredAgentMessageSink(ctx context.Context) bool {
+	sinkState := agentDeltaSinkFromContext(ctx)
+	return sinkState != nil && sinkState.sink != nil
+}
+
 // FinalizeAgentMessage flushes the invocation-scoped Agent message emitter.
 func FinalizeAgentMessage(ctx context.Context) {
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
@@ -345,6 +381,11 @@ func FinalizeAgentMessage(ctx context.Context) {
 
 // ResetAgentMessageEmission starts a fresh Agent message emission scope.
 func ResetAgentMessageEmission(ctx context.Context) {
+	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil {
+		sinkState.mu.Lock()
+		sinkState.emitted = false
+		sinkState.mu.Unlock()
+	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
 	if !ok || state == nil {
 		return
