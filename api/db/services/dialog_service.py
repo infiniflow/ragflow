@@ -261,7 +261,7 @@ class DialogService(CommonService):
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        dialogs.order_by(cls.model.create_time.asc())
+        dialogs = dialogs.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
