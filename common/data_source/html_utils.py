@@ -76,12 +76,24 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
     text = ""
     list_element_start = False
     verbatim_output = 0
-    in_table = False
     last_added_newline = False
-    link_href: str | None = None
+
+    # ``descendants`` yields opening tags only, so a flag set on <table>/<a> would
+    # never clear. Scope is therefore taken from each element's ancestors, resolved
+    # up-front in one pass: probing per element instead costs O(depth) each.
+    table_scope = {id(d) for table in document.find_all("table") for d in table.descendants}
+    href_scope = {}
+    for anchor in document.find_all("a"):  # document order, so a nested <a> wins over its parent
+        href_value = anchor.get("href", None)
+        # mostly for typing, having multiple hrefs is not valid HTML
+        link_href = href_value[0] if isinstance(href_value, list) else href_value
+        href_scope.update((id(d), link_href) for d in anchor.descendants)
 
     for e in document.descendants:
         verbatim_output -= 1
+        in_table = id(e) in table_scope
+        link_href = href_scope.get(id(e))
+
         if isinstance(e, bs4.element.NavigableString):
             if isinstance(e, (bs4.element.Comment, bs4.element.Doctype)):
                 continue
@@ -109,26 +121,15 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
 
                 list_element_start = False
         elif isinstance(e, bs4.element.Tag):
-            # table is standard HTML element
-            if e.name == "table":
-                in_table = True
             # TR is for rows
-            elif e.name == "tr" and in_table:
+            if e.name == "tr" and in_table:
                 text += "\n"
             # td for data cell, th for header
             elif e.name in ["td", "th"] and in_table:
                 text += table_cell_separator
-            elif e.name == "/table":
-                in_table = False
             elif in_table:
                 # don't handle other cases while in table
                 pass
-            elif e.name == "a":
-                href_value = e.get("href", None)
-                # mostly for typing, having multiple hrefs is not valid HTML
-                link_href = href_value[0] if isinstance(href_value, list) else href_value
-            elif e.name == "/a":
-                link_href = None
             elif e.name in ["p", "div"]:
                 if not list_element_start:
                     text += "\n"
