@@ -15,12 +15,12 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
-	file, err := s.fileDAO.GetByID(fileID)
+func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("Document not found!")
 	}
-	if !s.checkFilePerm(s.fileDAO, file, uid) {
+	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
 		return nil, fmt.Errorf("No authorization.")
 	}
 	return file, nil
@@ -30,7 +30,7 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 // Matches Python's File2DocumentService.get_storage_address function
 func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
-	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	f2d, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 	if err != nil || len(f2d) == 0 {
 		return nil, fmt.Errorf("file2document mapping not found")
 	}
@@ -39,7 +39,7 @@ func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*St
 	if f2d[0].FileID == nil {
 		return nil, fmt.Errorf("file_id is nil in file2document mapping")
 	}
-	file, err := s.fileDAO.GetByID(*f2d[0].FileID)
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, *f2d[0].FileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("file not found")
 	}

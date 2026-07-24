@@ -24,6 +24,8 @@ from common.constants import (
     ModelTypeBinary,
     MINERU_DEFAULT_CONFIG,
     MINERU_ENV_KEYS,
+    MISTRAL_OCR_DEFAULT_CONFIG,
+    MISTRAL_OCR_ENV_KEYS,
     OPENDATALOADER_DEFAULT_CONFIG,
     OPENDATALOADER_ENV_KEYS,
     PADDLEOCR_DEFAULT_CONFIG,
@@ -495,4 +497,13 @@ def ensure_somark_from_env(tenant_id: str) -> str | None:
         "SoMark",
         "somark-from-env",
         _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
+    )
+
+
+def ensure_mistral_ocr_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "Mistral OCR",
+        "mistral-ocr-latest",
+        _collect_env_config(MISTRAL_OCR_ENV_KEYS, MISTRAL_OCR_DEFAULT_CONFIG),
     )

@@ -29,7 +29,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
-	if _, _, err := s.GetDocumentStorageAddress(doc); err != nil {
+	if _, _, err := s.GetDocumentStorageAddress(ctx, doc); err != nil {
 		return err
 	}
 

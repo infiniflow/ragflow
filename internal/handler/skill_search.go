@@ -400,7 +400,8 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.CreateSpace(&service.CreateSpaceRequest{
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.CreateSpace(ctx, &service.CreateSpaceRequest{
 		TenantID:    user.ID,
 		Name:        req.Name,
 		Description: req.Description,
@@ -486,7 +487,8 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.UpdateSpace(spaceID, user.ID, &service.UpdateSpaceRequest{
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.UpdateSpace(ctx, spaceID, user.ID, &service.UpdateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,

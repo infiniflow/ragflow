@@ -84,7 +84,7 @@ type LinkToDatasetsRequest struct {
 // handler can map it to a Python-compatible response without leaking internals.
 func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
-	files, err := s.fileDAO.GetByIDs(req.FileIDs)
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
 	if err != nil {
 		common.Warn("LinkToDatasets: GetByIDs failed", zap.Error(err))
 		return ErrLinkInternal
@@ -117,7 +117,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	for _, id := range req.FileIDs {
 		file := filesSet[id]
 		if file.Type == "folder" {
-			inner, err := s.getAllInnermostFileIDs(id)
+			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
 				return ErrLinkInternal
@@ -131,11 +131,11 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 	// ── 4. Validate expanded file permissions ─────────────────────────────────
 	for _, id := range allFileIDs {
-		file, err := s.fileDAO.GetByID(id)
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, id)
 		if err != nil || file == nil {
 			return ErrLinkFileNotFound
 		}
-		if !service.CheckFileTeamPermission(s.fileDAO, file, userID) {
+		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
 			return ErrLinkNoAuthorization
 		}
 	}
@@ -150,7 +150,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
 	kbIDs := req.KbIDs
 	go func() {
-		if err = s.convertFiles(ctx, allFileIDs, kbIDs, userID, mode); err != nil {
+		newCtx := context.Background()
+		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
 			common.Warn("file2document.convertFiles failed",
 				zap.Strings("file_ids", allFileIDs),
 				zap.Strings("kb_ids", kbIDs),
@@ -168,7 +169,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
 	replaceExisting := mode != "add"
 	for _, fileID := range fileIDs {
-		mappings, err := s.file2DocumentDAO.GetByFileID(fileID)
+		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if err != nil {
 			common.Warn("convertFiles: GetByFileID failed", zap.String("fileID", fileID), zap.Error(err))
 		}
@@ -190,7 +191,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 			// Drop the file2document mappings for this file (mirrors Python
 			// File2DocumentService.delete_by_file_id, done once per file).
-			if err := s.file2DocumentDAO.DeleteByFileID(fileID); err != nil {
+			if err = s.file2DocumentDAO.DeleteByFileID(ctx, dao.DB, fileID); err != nil {
 				common.Warn("convertFiles: DeleteByFileID failed", zap.String("fileID", fileID), zap.Error(err))
 			}
 		} else {
@@ -211,7 +212,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 		}
 
 		// Reload the source file.
-		file, err := s.fileDAO.GetByID(fileID)
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 		if err != nil || file == nil {
 			continue
 		}
@@ -259,7 +260,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err := s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue
@@ -270,7 +271,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}
-			if err := s.file2DocumentDAO.Create(mapping); err != nil {
+			if err = s.file2DocumentDAO.Create(ctx, dao.DB, mapping); err != nil {
 				common.Warn("convertFiles: Create file2document mapping failed",
 					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
 			}
@@ -281,15 +282,15 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 // getAllInnermostFileIDs recursively collects all non-folder file IDs under a folder.
 // Mirrors Python FileService.get_all_innermost_file_ids.
-func (s *File2DocumentService) getAllInnermostFileIDs(folderID string) ([]string, error) {
-	children, err := s.fileDAO.ListByParentID(folderID)
+func (s *File2DocumentService) getAllInnermostFileIDs(ctx context.Context, folderID string) ([]string, error) {
+	children, err := s.fileDAO.ListByParentID(ctx, dao.DB, folderID)
 	if err != nil {
 		return nil, err
 	}
 	var ids []string
 	for _, child := range children {
 		if child.Type == "folder" {
-			sub, err := s.getAllInnermostFileIDs(child.ID)
+			sub, err := s.getAllInnermostFileIDs(ctx, child.ID)
 			if err != nil {
 				return nil, err
 			}

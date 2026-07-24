@@ -2,6 +2,7 @@ package file
 
 import (
 	"bytes"
+	"context"
 
 	"errors"
 	"io"
@@ -33,7 +34,7 @@ func sptr(s string) *string { return &s }
 // testFilePerm controls the permission check returned by testFileService.
 // Tests that need to simulate denied access can set it to a function that
 // returns false.
-var testFilePerm CheckFilePermFunc = func(_ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
+var testFilePerm CheckFilePermFunc = func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
 
 func testFileService() *FileService {
 	return &FileService{

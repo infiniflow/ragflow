@@ -50,7 +50,7 @@
                             }
                         },
                         "image": {
-                            "output_format": "text",
+                            "output_format": "json",
                             "parse_method": "ocr",
                             "preprocess": [
                                 "main_content"
@@ -231,7 +231,7 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
-                                    "output_format": "text",
+                                    "output_format": "json",
                                     "parse_method": "ocr",
                                     "preprocess": [
                                         "main_content"
