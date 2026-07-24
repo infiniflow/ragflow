@@ -108,7 +108,8 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	result, err := h.fileService.ListFiles(userID, parentID, page, pageSize, orderby, desc, keywords)
+	ctx := c.Request.Context()
+	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, orderby, desc, keywords)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -133,8 +134,9 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	}
 	userID := user.ID
 
+	ctx := c.Request.Context()
 	// Get root folder
-	rootFolder, err := h.fileService.GetRootFolder(userID)
+	rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -167,8 +169,9 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get parent folder with permission check
-	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
+	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -201,8 +204,9 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -234,8 +238,9 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -271,6 +276,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	userID := user.ID
 
 	contentType := c.ContentType()
+	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
@@ -285,7 +291,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -326,7 +332,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -334,7 +340,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			parentID = rootFolder["id"].(string)
 		}
 
-		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
+		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -461,8 +467,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get file metadata and check permission
-	file, err := h.fileService.GetFileContent(userID, fileID)
+	file, err := h.fileService.GetFileContent(ctx, userID, fileID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return

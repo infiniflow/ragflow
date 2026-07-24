@@ -36,7 +36,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	// Resolve (and create if needed) the dataset's file-manager folder up front.
 	// Without the File / file2document linkage the document list (which inner-joins
 	// file2document + file) would never surface the uploaded files.
-	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -101,7 +101,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
 			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
@@ -131,7 +131,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 		}
 	}
 
-	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -140,7 +140,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	if err = s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
 		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
@@ -149,22 +149,26 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 // ensureKBFolder resolves (creating as needed) the per-dataset file-manager
 // folder: root -> .knowledgebase -> <dataset name>. Mirrors Python
 // get_root_folder + get_kb_folder + new_a_file_from_kb.
-func (s *DocumentService) ensureKBFolder(kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
-	root, err := s.fileDAO.GetRootFolder(tenantID)
+func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
+	root, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	kbRoot, err := s.newAFileFromKB(tenantID, knowledgebaseFolderName, root.ID)
+	kbRoot, err := s.newAFileFromKB(ctx, tenantID, knowledgebaseFolderName, root.ID)
 	if err != nil {
 		return nil, err
 	}
-	return s.newAFileFromKB(kb.TenantID, kb.Name, kbRoot.ID)
+	return s.newAFileFromKB(ctx, kb.TenantID, kb.Name, kbRoot.ID)
 }
 
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
-func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
-	for _, f := range s.fileDAO.Query(name, parentID, tenantID) {
+func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, parentID string) (*entity.File, error) {
+	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range existingFolders {
 		if f.TenantID == tenantID {
 			return f, nil
 		}
@@ -181,7 +185,7 @@ func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*enti
 		Location:   &loc,
 		SourceType: string(entity.FileSourceKnowledgebase),
 	}
-	if err := s.fileDAO.Create(folder); err != nil {
+	if err := s.fileDAO.Create(ctx, dao.DB, folder); err != nil {
 		return nil, err
 	}
 	return folder, nil
@@ -190,7 +194,7 @@ func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*enti
 // addFileFromKB links a document into the file manager: a File row under the
 // dataset folder plus a file2document mapping. Mirrors Python
 // FileService.add_file_from_kb (idempotent on the document mapping).
-func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string) error {
+func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Document, kbFolderID, tenantID string) error {
 	if existing, err := s.file2DocumentDAO.GetByDocumentID(doc.ID); err == nil && len(existing) > 0 {
 		return nil
 	}
@@ -214,7 +218,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 		Location:   &loc,
 		SourceType: string(entity.FileSourceKnowledgebase),
 	}
-	if err := s.fileDAO.Create(file); err != nil {
+	if err := s.fileDAO.Create(ctx, dao.DB, file); err != nil {
 		return err
 	}
 	docID := doc.ID
@@ -223,7 +227,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}); err != nil {
-		_ = s.fileDAO.Delete(fileID)
+		_ = s.fileDAO.Delete(ctx, dao.DB, fileID)
 		return err
 	}
 	return nil
@@ -235,7 +239,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
 	}
 
-	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -279,7 +283,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
-	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
 		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err

@@ -199,7 +199,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, err
 	}
 
-	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
 		return nil, err
 	}
