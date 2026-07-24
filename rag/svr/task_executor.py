@@ -1966,15 +1966,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Task Executor")
     parser.add_argument("-i", "--index", type=str, default="0")
     parser.add_argument("-t", "--type", type=str, default="common", help="[common, graphrag, raptor, resume]")
+    # Keep backward compatibility with launchers that pass the worker index
+    # positionally instead of using -i/--index.
+    parser.add_argument("legacy_index", nargs="?", default=None)
     args = parser.parse_args()
 
     # Update global variables
     TASK_TYPE = args.type
-    TE_IDX = args.index
+    TE_IDX = args.legacy_index or args.index
     CONSUMER_NAME = f"task_executor_{TASK_TYPE}_{TE_IDX}"
 
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
+    if args.legacy_index is not None:
+        logging.info(
+            "Using legacy positional task executor index without -i/--index: %s",
+            args.legacy_index,
+        )
     try:
         asyncio.run(main())
     except Exception as e:
