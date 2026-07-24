@@ -34,18 +34,17 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
 
-	isPipelineMode := req.ParseType != nil && *req.ParseType == 2
-	isBuiltinMode := req.ParseType != nil && *req.ParseType == 1
-
-	if isBuiltinMode && req.PipelineID != nil {
-		req.PipelineID = nil
-	}
-	if isPipelineMode && req.ParserID != nil {
-		req.ParserID = nil
-	}
-
-	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("parser_id and pipeline_id are mutually exclusive")
+	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if isBuiltin && req.PipelineID != nil {
+			req.PipelineID = nil
+		}
+		if isPipeline && req.ParserID != nil {
+			req.ParserID = nil
+		}
 	}
 
 	parserID := ""
@@ -156,10 +155,10 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 	return datasetToMap(createdKB), common.CodeSuccess, nil
 }
 
-func (d *DatasetService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
 	}
 
 	normalizedID, err := normalizeDatasetID(datasetID)
@@ -169,25 +168,25 @@ func (d *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	datasetID = normalizedID
 
 	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 
 	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
 
 	data := datasetToMap(kb)
 
 	size, err := d.documentDAO.SumSizeByDatasetID(datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	data["size"] = size
 
-	connectors, err := d.connectorDAO.ListByDatasetID(datasetID)
+	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	data["connectors"] = datasetConnectorsOrEmpty(connectors)
 

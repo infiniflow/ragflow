@@ -98,6 +98,7 @@ export const useFetchDatasetSettingOnMount = (
         'description',
         'name',
         'permission',
+        'language',
         'connectors',
         'pagerank',
         'avatar',

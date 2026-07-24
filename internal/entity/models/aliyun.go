@@ -65,38 +65,12 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
@@ -107,10 +81,14 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 
 		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
 			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
 		}
 	}
+
+	// For qwen3 models on DashScope, enable_thinking defaults to true when
+	// omitted. RAGFlow's default is to disable thinking unless explicitly
+	// enabled by the user, matching Python's chat_model.py behavior.
+	applyQwen3ThinkingDefault(modelName, reqBody)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -205,17 +183,10 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
-	baseURL := resolvedBaseURL
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
@@ -223,35 +194,19 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 		chatModelConfig.ToolCallsResult = nil
 
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 
 		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
 			reqBody["tool_choice"] = aliyunToolChoice(modelName, messages, chatModelConfig.ToolChoice)
 		}
 	}
+
+	// For qwen3 models on DashScope, enable_thinking defaults to true when
+	// omitted. RAGFlow's default is to disable thinking unless explicitly
+	// enabled by the user, matching Python's chat_model.py behavior.
+	applyQwen3ThinkingDefault(modelName, reqBody)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -335,6 +290,21 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
+}
+
+// applyQwen3ThinkingDefault ensures enable_thinking=false is sent for qwen3
+// models when it hasn't been explicitly configured. DashScope defaults
+// enable_thinking to true for qwen3 models, which produces reasoning output
+// that RAGFlow doesn't expect in most pipelines. Mirrors Python's
+// chat_model.py default of enable_thinking=False for qwen3.
+func applyQwen3ThinkingDefault(modelName string, reqBody map[string]interface{}) {
+	if !strings.Contains(strings.ToLower(modelName), "qwen3") {
+		return
+	}
+	if _, alreadySet := reqBody["enable_thinking"]; alreadySet {
+		return
+	}
+	reqBody["enable_thinking"] = false
 }
 
 // aliyunToolChoice prevents qwen-flash from repeatedly issuing another tool call

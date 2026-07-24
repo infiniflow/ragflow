@@ -39,10 +39,11 @@ func (e *infinityEngine) IndexDocument(ctx context.Context, tableName, docID str
 // InsertSkill inserts a skill document into skill index
 // Auto-creates the table if it doesn't exist
 func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID string, doc interface{}) error {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "document.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -107,10 +108,11 @@ func (e *infinityEngine) BulkIndex(ctx context.Context, tableName string, docs [
 // matching the behavior of InsertSkill. Creates shallow copies of input maps to
 // avoid mutating caller data.
 func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, docs []interface{}) (int, error) {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "document.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -205,10 +207,11 @@ func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID st
 		return fmt.Errorf("document id cannot be empty")
 	}
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "document.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {

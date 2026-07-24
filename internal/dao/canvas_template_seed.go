@@ -18,6 +18,7 @@ package dao
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,8 +36,8 @@ import (
 
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
 // agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
-func SeedCanvasTemplates() error {
-	if err := addColumnIfNotExists(DB, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
+func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
+	if err := addColumnIfNotExists(ctx, db, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
 		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
 	}
 
@@ -62,9 +63,9 @@ func SeedCanvasTemplates() error {
 		return nil
 	}
 
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, tmpl := range allTemplates {
-			if err := tx.Clauses(clause.OnConflict{
+			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "id"}},
 				DoUpdates: clause.AssignmentColumns([]string{
 					"avatar", "title", "description", "canvas_type", "canvas_types", "canvas_category", "dsl",
@@ -73,7 +74,7 @@ func SeedCanvasTemplates() error {
 				return fmt.Errorf("failed to save agent template %s: %w", tmpl.ID, err)
 			}
 		}
-		if err := tx.Where("id NOT IN ?", allIDs).Delete(&entity.CanvasTemplate{}).Error; err != nil {
+		if err := tx.WithContext(ctx).Where("id NOT IN ?", allIDs).Delete(&entity.CanvasTemplate{}).Error; err != nil {
 			return fmt.Errorf("failed to remove stale agent templates: %w", err)
 		}
 		return nil
@@ -135,7 +136,7 @@ func findIngestionTemplatesDir() string {
 	return ""
 }
 
-func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
+func seedCanvasTemplates(ctx context.Context, db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
 	templates := make([]*entity.CanvasTemplate, 0, len(entries))
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -159,9 +160,9 @@ func seedCanvasTemplates(db *gorm.DB, dir string, entries []os.DirEntry) (int, e
 	if len(templates) == 0 {
 		return 0, nil
 	}
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, tmpl := range templates {
-			if err := tx.Clauses(clause.OnConflict{
+			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "id"}},
 				DoUpdates: clause.AssignmentColumns([]string{
 					"avatar", "title", "description", "canvas_type", "canvas_types", "canvas_category", "dsl",

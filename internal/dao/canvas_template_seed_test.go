@@ -21,9 +21,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"ragflow/internal/entity"
+
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"ragflow/internal/entity"
 )
 
 func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
@@ -31,7 +32,7 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.CanvasTemplate{}); err != nil {
+	if err = db.AutoMigrate(&entity.CanvasTemplate{}); err != nil {
 		t.Fatalf("migrate canvas templates: %v", err)
 	}
 
@@ -39,7 +40,7 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 	writeTemplate := func(name, id, title string) {
 		t.Helper()
 		body := `{"id":"` + id + `","title":{"en":"` + title + `"},"description":{},"dsl":{}}`
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		if err = os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatalf("write template: %v", err)
 		}
 	}
@@ -48,24 +49,26 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 
 	seed := func() {
 		t.Helper()
-		entries, err := os.ReadDir(dir)
+		ctx := t.Context()
+		var entries []os.DirEntry
+		entries, err = os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("read templates: %v", err)
 		}
-		if _, err := seedCanvasTemplates(db, dir, entries); err != nil {
+		if _, err = seedCanvasTemplates(ctx, db, dir, entries); err != nil {
 			t.Fatalf("seed templates: %v", err)
 		}
 	}
 	seed()
 
 	writeTemplate("kept.json", "kept", "updated")
-	if err := os.Remove(filepath.Join(dir, "removed.json")); err != nil {
+	if err = os.Remove(filepath.Join(dir, "removed.json")); err != nil {
 		t.Fatalf("remove stale template file: %v", err)
 	}
 	seed()
 
 	var templates []entity.CanvasTemplate
-	if err := db.Find(&templates).Error; err != nil {
+	if err = db.Find(&templates).Error; err != nil {
 		t.Fatalf("read seeded templates: %v", err)
 	}
 	if len(templates) != 1 {

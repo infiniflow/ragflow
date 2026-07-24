@@ -513,7 +513,7 @@ def test_create_chat_blank_name_is_treated_as_missing(monkeypatch):
     res = _run(module.create.__wrapped__())
 
     assert res["code"] == 102
-    assert res["message"] == "`name` is required."
+    assert res["message"] == "`name` is required"
 
 
 @pytest.mark.p1

@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,7 +66,7 @@ type LLMFactoriesFile struct {
 }
 
 // InitDB initialize database connection
-func InitDB(migrateDB bool) error {
+func InitDB(ctx context.Context, migrateDB bool) error {
 	cfg := server.GetConfig()
 	dbCfg := cfg.Database
 
@@ -161,13 +162,13 @@ func InitDB(migrateDB bool) error {
 	if migrateDB {
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
-			if err = autoMigrateSafely(DB, m); err != nil {
+			if err = autoMigrateSafely(ctx, DB, m); err != nil {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
 
 		// Run manual migrations for complex schema changes
-		if err = RunMigrations(DB); err != nil {
+		if err = RunMigrations(ctx, DB); err != nil {
 			return fmt.Errorf("failed to run manual migrations: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
@@ -175,7 +176,7 @@ func InitDB(migrateDB bool) error {
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
 	// initialization.
-	if err = SeedCanvasTemplates(); err != nil {
+	if err = SeedCanvasTemplates(ctx, DB); err != nil {
 		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
 
@@ -239,9 +240,9 @@ func findModelConfigDir() (string, error) {
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
-func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) error {
 	//err := db.Debug().AutoMigrate(model) // to print debug info
-	err := db.AutoMigrate(model)
+	err := db.WithContext(ctx).AutoMigrate(model)
 	if err == nil {
 		return nil
 	}

@@ -74,6 +74,8 @@ const DocumentKeys = {
     [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
 };
 
+const documentIngestInFlight = new Map<string, Promise<unknown>>();
+
 export const DocumentStructureKeys = {
   graph: (datasetId: string, documentId: string) =>
     [
@@ -389,7 +391,36 @@ export const useRunDocument = () => {
     },
   });
 
-  return { runDocumentByIds: mutateAsync, loading, data };
+  const runDocumentByIds = useCallback(
+    (params: {
+      documentIds: string[];
+      run: number;
+      option?: { delete: boolean; apply_kb: boolean };
+    }) => {
+      const key = JSON.stringify({
+        documentIds: [...params.documentIds].sort(),
+        run: params.run,
+        option: params.option || null,
+      });
+      const existingRequest = documentIngestInFlight.get(key);
+      if (existingRequest) {
+        return existingRequest;
+      }
+
+      const request = mutateAsync(params);
+      documentIngestInFlight.set(key, request);
+      const clearRequest = () => {
+        if (documentIngestInFlight.get(key) === request) {
+          documentIngestInFlight.delete(key);
+        }
+      };
+      void request.then(clearRequest, clearRequest);
+      return request;
+    },
+    [mutateAsync],
+  );
+
+  return { runDocumentByIds, loading, data };
 };
 
 export const useRemoveDocument = () => {
@@ -524,12 +555,14 @@ export const useSetDocumentPipelineParser = () => {
     mutationFn: async ({
       parserId,
       pipelineId,
+      parseType,
       documentId,
       datasetId,
       parserConfig,
     }: {
       parserId: string;
       pipelineId: string;
+      parseType?: number;
       documentId: string;
       datasetId: string;
       parserConfig?: IChangeParserConfigRequestBody;
@@ -538,7 +571,10 @@ export const useSetDocumentPipelineParser = () => {
         parser_id: parserId,
         pipeline_id: pipelineId,
       };
-     
+
+      if (parseType !== undefined) {
+        updateData.parse_type = parseType;
+      }
 
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
