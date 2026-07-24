@@ -140,6 +140,30 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	})
 }
 
+// ListDatasetOwners handles GET /api/v1/datasets/owners.
+func (h *DatasetsHandler) ListDatasetOwners(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	// Query params mirror the Python REST API route.
+	keywords := c.Query("ext_keywords")
+	parserID := c.Query("ext_parser_id")
+
+	owners, code, err := h.datasetsService.ListDatasetOwners(user.ID, nil, keywords, parserID)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": owners,
+	})
+}
+
 // CreateDataset handles POST /api/v1/datasets.
 func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

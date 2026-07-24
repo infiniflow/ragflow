@@ -393,6 +393,37 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 	return data, total, common.CodeSuccess, nil
 }
 
+// ListDatasetOwners returns distinct dataset owners with their dataset counts.
+// This matches the Python list_dataset_owners service function.
+func (d *DatasetService) ListDatasetOwners(userID string, ownerIDs []string, keywords, parserID string) ([]*dao.DatasetOwner, common.ErrorCode, error) {
+	tenantIDs := make([]string, 0, len(ownerIDs))
+	for _, ownerID := range ownerIDs {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID != "" {
+			tenantIDs = append(tenantIDs, ownerID)
+		}
+	}
+	if len(tenantIDs) == 0 {
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+		if err != nil {
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+		for _, joinedTenant := range joinedTenants {
+			if joinedTenant == nil || joinedTenant.TenantID == "" {
+				continue
+			}
+			tenantIDs = append(tenantIDs, joinedTenant.TenantID)
+		}
+	}
+
+	owners, err := d.kbDAO.GetOwnersByTenantIDs(tenantIDs, userID, strings.TrimSpace(keywords), strings.TrimSpace(parserID))
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	return owners, common.CodeSuccess, nil
+}
+
 // ptrStringValue safely dereferences a *string.
 func ptrStringValue(s *string) string {
 	if s == nil {

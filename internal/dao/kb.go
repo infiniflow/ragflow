@@ -226,6 +226,40 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 	return kbs, total, nil
 }
 
+// DatasetOwner is a distinct dataset owner with their dataset count.
+type DatasetOwner struct {
+	TenantID string `json:"tenant_id"`
+	Nickname string `json:"nickname"`
+	Avatar   string `json:"avatar"`
+	Count    int64  `json:"count"`
+}
+
+// GetOwnersByTenantIDs returns distinct dataset owners with dataset counts.
+// This matches the Python KnowledgebaseService.get_owners method.
+func (dao *KnowledgebaseDAO) GetOwnersByTenantIDs(tenantIDs []string, userID string, keywords, parserID string) ([]*DatasetOwner, error) {
+	var owners []*DatasetOwner
+
+	query := DB.Model(&entity.Knowledgebase{}).
+		Select(`knowledgebase.tenant_id, user.nickname, user.avatar, COUNT(knowledgebase.id) as count`).
+		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
+		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
+			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
+
+	if keywords != "" {
+		query = query.Where("LOWER(knowledgebase.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	if parserID != "" {
+		query = query.Where("knowledgebase.parser_id = ?", parserID)
+	}
+
+	if err := query.Group("knowledgebase.tenant_id, user.nickname, user.avatar").Scan(&owners).Error; err != nil {
+		return nil, err
+	}
+
+	return owners, nil
+}
+
 // GetAllByTenantIDs retrieves all permitted knowledge bases by tenant IDs
 // This matches the Python get_all_kb_by_tenant_ids method
 func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string) ([]*entity.Knowledgebase, error) {
