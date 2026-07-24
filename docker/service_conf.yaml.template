@@ -157,21 +157,21 @@ user_default_llm:
 #     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
 #     token_url: "https://your-oauth-provider.com/oauth/token"
 #     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
 #   oidc:
 #     display_name: "OIDC"
 #     client_id: "your_client_id"
 #     client_secret: "your_client_secret"
 #     issuer: "https://your-oauth-provider.com/oidc"
 #     scope: "openid email profile"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
 #   github:
 #     type: "github"
 #     icon: "github"
 #     display_name: "Github"
 #     client_id: "your_client_id"
 #     client_secret: "your_client_secret"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 # authentication:
 #  client:
 #    switch: false
