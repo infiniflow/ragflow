@@ -120,7 +120,7 @@ class TestDocumentsUpdated:
             (
                 INVALID_ID_32,
                 102,
-                "you don't own the dataset",
+                "You don't own the dataset.",
             ),
         ],
     )

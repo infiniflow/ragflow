@@ -215,7 +215,7 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         return get_error_data_result(message="Can't find this dataset!")
@@ -1216,7 +1216,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message="You don't own the dataset.")
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -1963,7 +1963,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message="You don't own the dataset.")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:

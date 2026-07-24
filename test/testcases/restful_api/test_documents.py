@@ -584,7 +584,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_body = invalid_dataset_res.json()
     assert invalid_dataset_body["code"] == 102, invalid_dataset_body
-    assert "you don't own the dataset" in invalid_dataset_body["message"], invalid_dataset_body
+    assert "You don't own the dataset." in invalid_dataset_body["message"], invalid_dataset_body
 
     invalid_document_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
@@ -1012,7 +1012,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "you don't own the dataset", invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "You don't own the dataset.", invalid_dataset_payload
 
     invalid_document_res = rest_client.put(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",

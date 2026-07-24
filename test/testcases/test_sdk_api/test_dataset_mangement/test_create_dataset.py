@@ -94,9 +94,9 @@ class TestDatasetCreate:
             if name == "":
                 expected_message = "failed on the 'required' tag"
             elif isinstance(name, str) and not name.strip():
-                expected_message = "dataset name can't be empty"
+                expected_message = "Dataset name can't be empty."
             elif isinstance(name, str):
-                expected_message = f"dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
+                expected_message = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3

@@ -1131,9 +1131,9 @@ def test_dataset_create_name_validation(rest_client, clear_datasets, name, expec
         if not name:
             expected_fragment = "failed on the 'required' tag"
         elif not name.strip():
-            expected_fragment = "dataset name can't be empty"
+            expected_fragment = "Dataset name can't be empty."
         else:
-            expected_fragment = f"dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
+            expected_fragment = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
     assert expected_fragment in payload["message"], payload
 
 
