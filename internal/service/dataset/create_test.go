@@ -44,9 +44,11 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	insertCreateDatasetTenant(t, "tenant-1")
 
 	chunkMethod := "naive"
+	parseType := 1
 	result, code, err := testDatasetCreateService(t).CreateDataset(&service.CreateDatasetRequest{
-		Name:     "ds-no-cp",
-		ParserID: &chunkMethod,
+		Name:      "ds-no-cp",
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -65,9 +67,11 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	insertCreateDatasetTenant(t, "tenant-1")
 
 	chunkMethod := "general"
+	parseType := 1
 	result, code, err := testDatasetCreateService(t).CreateDataset(&service.CreateDatasetRequest{
-		Name:     "ds-with-cp",
-		ParserID: &chunkMethod,
+		Name:      "ds-with-cp",
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -216,25 +220,5 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 				t.Fatalf("unexpected error: got %q, want %q", err.Error(), tc.expectedMessage)
 			}
 		})
-	}
-}
-
-func TestCreateDataset_RejectsBothWithoutParseType(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertCreateDatasetTenant(t, "tenant-1")
-
-	pipelineID := "0123456789abcdef0123456789abcdef"
-	chunkMethod := "naive"
-	_, code, err := testDatasetCreateService(t).CreateDataset(&service.CreateDatasetRequest{
-		Name:       "ds-both",
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-	}, "tenant-1")
-	if err == nil {
-		t.Fatal("expected error when both parser_id and pipeline_id are provided without parse_type")
-	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected CodeDataError, got %d", code)
 	}
 }

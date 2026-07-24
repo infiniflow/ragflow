@@ -672,6 +672,73 @@ async def get_wiki_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_dataset_structure(tenant_id, dataset_id):
+    """Return the dataset-scope (KB-wide) structure graph for one kind.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    where ``kind`` is one of:
+      graph | mindmap | timeline | session_essence | session_graph
+
+    These are the non-tree structured artifacts merged across the whole
+    dataset (written when a template has ``dataset_merge`` enabled). Response
+    mirrors the per-document structure graph so the frontend reuses its view::
+
+        {"code": 0, "data": {"kind": "<kind>", "templates": [
+            {"template_id", "template_name", "kind", "entities", "relations"}
+        ]}}
+    """
+    try:
+        kind = request.args.get("kind", "")
+        if isinstance(kind, str):
+            kind = kind.strip()
+        if not kind:
+            return get_error_data_result(
+                message="`kind` is required (one of: graph, mindmap, timeline, session_essence, session_graph).",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        if dataset_api_service._resolve_dataset_structure_kind(kind) is None:
+            return get_error_data_result(
+                message=f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph.",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        success, result = await dataset_api_service.get_dataset_structure(
+            dataset_id,
+            tenant_id,
+            kind,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/artifacts/alteration", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_wiki_alteration(tenant_id, dataset_id):
+    """Return document drift for the dataset Artifact wiki.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts/alteration
+    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
+    """
+    try:
+        success, result = await dataset_api_service.get_wiki_alteration(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/artifacts", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -764,6 +831,28 @@ async def get_skill_tree(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/skills", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_all_skills(tenant_id, dataset_id):
+    """Delete every compiled skill for this dataset.
+
+    DELETE /api/v1/datasets/<dataset_id>/skills
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_skills(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/skills/<path:skill_kwd>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -775,6 +864,119 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
     """
     try:
         success, result = await dataset_api_service.get_skill_page(
+            dataset_id,
+            tenant_id,
+            skill_kwd,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/nav", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_dataset_nav(tenant_id, dataset_id):
+    """First level of the dataset navigation tree — the top-level clusters.
+
+    GET /api/v1/datasets/<dataset_id>/nav
+    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children}, ...]}}
+    """
+    try:
+        success, result = await dataset_api_service.list_nav_clusters(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/nav/<path:name>/children", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_dataset_nav_children(tenant_id, dataset_id, name):
+    """Direct children of a navigation node (hierarchical, one level per call).
+
+    GET /api/v1/datasets/<dataset_id>/nav/<name>/children
+    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, doc_id, has_children}, ...]}}
+    """
+    try:
+        success, result = await dataset_api_service.list_nav_children(
+            dataset_id,
+            tenant_id,
+            name,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/nav", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_dataset_nav(tenant_id, dataset_id):
+    """Delete the entire dataset navigation tree.
+
+    DELETE /api/v1/datasets/<dataset_id>/nav
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_nav(
+            dataset_id,
+            tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/nav/<path:name>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_dataset_nav_node(tenant_id, dataset_id, name):
+    """Delete one navigation node and its whole subtree.
+
+    DELETE /api/v1/datasets/<dataset_id>/nav/<name>
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_nav_node(
+            dataset_id,
+            tenant_id,
+            name,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/skills/<path:skill_kwd>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_skill_page(tenant_id, dataset_id, skill_kwd):
+    """Delete one compiled skill node by skill_kwd.
+
+    DELETE /api/v1/datasets/<dataset_id>/skills/<skill_kwd>
+    Success: {"code": 0, "data": {"deleted": <n>}}
+    """
+    try:
+        success, result = await dataset_api_service.delete_skill(
             dataset_id,
             tenant_id,
             skill_kwd,

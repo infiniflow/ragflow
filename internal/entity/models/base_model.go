@@ -24,9 +24,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/clickhouse"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type BaseModel struct {
@@ -34,6 +38,96 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+}
+
+// chatResponseParts is the provider-normalized result of a non-streaming chat
+// completion. Provider response structs remain provider-specific; only the
+// common ChatResponse and model-usage handling is shared.
+type chatResponseParts struct {
+	RequestID     string
+	Content       *string
+	ReasonContent *string
+	ToolCalls     []map[string]interface{}
+	Usage         *TokenUsage
+}
+
+// chatResponseExtractor parses one provider-specific response and maps it
+// into the common result used by RAGFlow's chat model abstraction.
+type chatResponseExtractor func([]byte, *ChatConfig) (chatResponseParts, error)
+
+// parseChatCompletionResponse applies the shared ChatResponse and
+// usage-accounting flow after the provider-specific response is parsed.
+func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor) (*ChatResponse, error) {
+	parts, err := extract(body, chatConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := collectChatModelUsage(modelUsage, parts.RequestID, parts.Usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
+
+	return &ChatResponse{
+		Answer:        parts.Content,
+		ReasonContent: parts.ReasonContent,
+		ToolCalls:     parts.ToolCalls,
+		Usage:         parts.Usage,
+	}, nil
+}
+
+// collectChatModelUsage records one completed chat response when the caller
+// supplied a usage sink.
+func collectChatModelUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage) error {
+	if modelUsage == nil {
+		return nil
+	}
+	modelUsage.RequestID = requestID
+	return collectModelUsage(modelUsage, usage)
+}
+
+// collectModelUsage records token usage and response time for one model call.
+// The caller owns setting RequestID because streaming providers can receive it
+// in a different event from usage.
+func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
+	if modelUsage == nil {
+		return nil
+	}
+	if usage != nil {
+		modelUsage.InputTokens = usage.PromptTokens
+		modelUsage.OutputTokens = usage.CompletionTokens
+		modelUsage.TotalTokens = usage.TotalTokens
+	}
+	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+}
+
+// decodeOpenAICompatibleStreamUsage extracts aggregate token usage from one
+// OpenAI-compatible streaming event. A missing usage field is not an error.
+func decodeOpenAICompatibleStreamUsage(event map[string]any) (*TokenUsage, bool, error) {
+	rawUsage, ok := event["usage"].(map[string]any)
+	if !ok {
+		return nil, false, nil
+	}
+	usage := &TokenUsage{}
+	if err := mapstructure.Decode(rawUsage, usage); err != nil {
+		return nil, false, err
+	}
+	return usage, true, nil
+}
+
+// applyStreamUsage exposes streamed token usage to the caller and records it
+// for model-usage analytics when a usage event is received. Analytics failures
+// are logged but do not interrupt the stream.
+func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
+	if usage == nil {
+		return
+	}
+	if chatConfig != nil {
+		chatConfig.UsageResult = usage
+	}
+	if err := collectModelUsage(modelUsage, usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
@@ -219,6 +313,55 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 func ReadErrorBody(r io.Reader) string {
 	b, _ := io.ReadAll(r)
 	return string(b)
+}
+
+func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := map[string]any{
+		"model":       modelName,
+		"messages":    buildChatMessages(messages),
+		"stream":      stream,
+		"temperature": 1,
+	}
+
+	if cfg != nil {
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
+		if cfg.Temperature != nil {
+			reqBody["temperature"] = *cfg.Temperature
+		}
+
+		if cfg.DoSample != nil {
+			reqBody["do_sample"] = *cfg.DoSample
+		}
+
+		if cfg.TopP != nil {
+			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.Stop != nil {
+			reqBody["stop"] = *cfg.Stop
+		}
+
+		if cfg.Tools != nil {
+			reqBody["tools"] = cfg.Tools
+			toolChoice := "auto"
+			if cfg.ToolChoice != nil {
+				toolChoice = *cfg.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
+	}
+
+	return reqBody
+}
+
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
 }
 
 // buildChatMessages converts internal messages to chat API payload items.

@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,7 @@ import (
 )
 
 // GetDocumentImage retrieves an image object from storage.
-func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
+func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
 	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("Image not found.")
@@ -36,7 +37,7 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 // gate runs BEFORE the storage read so a probe of an unknown
 // filename cannot distinguish "you cannot see it" from "it
 // exists" — both return ErrArtifactNotFound. Mirrors PR #16169.
-func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*ArtifactResponse, error) {
+func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, userID string) (*ArtifactResponse, error) {
 	basename := filepath.Base(filename)
 	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
 		return nil, ErrArtifactInvalidFilename
@@ -192,8 +193,8 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
-	doc, err := s.documentDAO.GetByID(docID)
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, err
 	}

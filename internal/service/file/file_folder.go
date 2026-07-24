@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -254,9 +255,9 @@ func (s *FileService) GetAllParentFolders(userID, fileID string) ([]map[string]i
 }
 
 // GetDocCount gets document count for a tenant
-func (s *FileService) GetDocCount(tenantID string) (int64, error) {
+func (s *FileService) GetDocCount(ctx context.Context, tenantID string) (int64, error) {
 	documentDAO := dao.NewDocumentDAO()
-	return documentDAO.CountByTenantID(tenantID)
+	return documentDAO.CountByTenantID(ctx, dao.DB, tenantID)
 }
 
 func (s *FileService) createFolderRecursive(parentFolder *entity.File, names []string, count int, tenantID string) (*entity.File, error) {
@@ -335,7 +336,7 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 // - new_name only: rename in place (no storage operation)
 // - dest_file_id only: move to new folder (keep names)
 // - both: move and rename simultaneously
-func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID string, newName string) (bool, string) {
+func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []string, destFileID string, newName string) (bool, string) {
 	// 1. Get all source files
 	files, err := s.fileDAO.GetByIDs(srcFileIDs)
 	if err != nil || len(files) == 0 {
@@ -448,7 +449,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 	if destFolder != nil {
 		// Move to destination folder
 		for _, file := range files {
-			if err := s.moveEntryRecursive(file, destFolder, newName); err != nil {
+			if err = s.moveEntryRecursive(ctx, file, destFolder, newName); err != nil {
 				return false, err.Error()
 			}
 		}
@@ -461,7 +462,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 			return false, "Source files not found!"
 		}
 		file := filesMap[srcFileIDs[0]]
-		if err := s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}); err != nil {
+		if err = s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}); err != nil {
 			return false, "Database error (File rename)!"
 		}
 
@@ -470,7 +471,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()
-			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": newName}); err != nil {
+			if err := documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"name": newName}); err != nil {
 				return false, "Database error (Document rename)!"
 			}
 		}
@@ -480,7 +481,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 }
 
 // moveEntryRecursive recursively moves a file or folder entry
-func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
+func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
 	effectiveName := overrideName
 	if effectiveName == "" {
 		effectiveName = sourceFile.Name
@@ -511,7 +512,7 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 			return err
 		}
 		for _, subFile := range subFiles {
-			if err := s.moveEntryRecursive(subFile, newFolder, ""); err != nil {
+			if err = s.moveEntryRecursive(ctx, subFile, newFolder, ""); err != nil {
 				return err
 			}
 		}
@@ -566,7 +567,7 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()
-			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": overrideName}); err != nil {
+			if err = documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"name": overrideName}); err != nil {
 				return fmt.Errorf("database error (Document rename): %w", err)
 			}
 		}

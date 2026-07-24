@@ -306,7 +306,8 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			}
 		}
 
-		result, err := h.fileService.UploadFile(userID, parentID, files)
+		ctx := c.Request.Context()
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -427,7 +428,8 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
+	ctx := c.Request.Context()
+	success, message := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
 	if !success {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
@@ -482,7 +484,8 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	// If blob is empty, try fallback via file2document
 	if len(blob) == 0 {
-		storageAddr, err := h.fileService.GetStorageAddress(fileID)
+		ctx := c.Request.Context()
+		storageAddr, err := h.fileService.GetStorageAddress(ctx, fileID)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
@@ -564,8 +567,8 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "mode must be 'add' or 'replace'")
 		return
 	}
-
-	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req, mode); err != nil {
+	ctx := c.Request.Context()
+	if err := h.file2DocumentService.LinkToDatasets(ctx, user.ID, &req, mode); err != nil {
 		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}

@@ -18,6 +18,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -82,7 +83,7 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 }
 
-func (f *fakeDocumentService) Ingest(userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
+func (f *fakeDocumentService) Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
 	f.ingestUserID = userID
 	f.ingestReq = req
 	if f.ingestCode != 0 || f.ingestErr != nil {
@@ -93,14 +94,14 @@ func (f *fakeDocumentService) Ingest(userID string, req *document.IngestDocument
 
 const uploadTestDatasetID = "123e4567-e89b-12d3-a456-426614174000"
 
-func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+func (f *fakeDocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
 
-func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*document.ArtifactResponse, error) {
+func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename, _ string) (*document.ArtifactResponse, error) {
 	if filename == "error.txt" {
 		return nil, document.ErrArtifactNotFound
 	}
@@ -114,7 +115,7 @@ func (f *fakeDocumentService) GetDocumentArtifact(filename, _ string) (*document
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
 		return nil, fmt.Errorf("not found")
 	}
@@ -124,7 +125,7 @@ func (f *fakeDocumentService) GetDocumentPreview(docID string) (*document.Docume
 		FileName:    "preview.txt",
 	}, nil
 }
-func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*document.DownloadDocumentResp, error) {
+func (f *fakeDocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error) {
 	if docID == "not-found" {
 		return nil, fmt.Errorf("not found")
 	}
@@ -134,7 +135,7 @@ func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*docume
 		FileName:    "doc.pdf",
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentByID(id string) (*document.DocumentResponse, error) {
+func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error) {
 	if f.docErr != nil {
 		return nil, f.docErr
 	}
@@ -143,109 +144,109 @@ func (f *fakeDocumentService) GetDocumentByID(id string) (*document.DocumentResp
 	}
 	return nil, fmt.Errorf("document not found")
 }
-func (f *fakeDocumentService) UpdateDocument(id string, req *document.UpdateDocumentRequest) error {
+func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error {
 	f.updateCalled = true
 	f.updatedID = id
 	return nil
 }
-func (f *fakeDocumentService) DeleteDocument(id string) error {
+func (f *fakeDocumentService) DeleteDocument(ctx context.Context, id string) error {
 	f.deleteCalled = true
 	f.deletedID = id
 	return nil
 }
-func (f *fakeDocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+func (f *fakeDocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	return f.deleted, f.err
 }
-func (f *fakeDocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (f *fakeDocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
+func (f *fakeDocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	return f.stopResult, f.stopErr
 }
-func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*document.DocumentResponse, int64, error) {
+func (f *fakeDocumentService) ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
-func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (f *fakeDocumentService) ListDocumentsByDatasetID(ctx context.Context, kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	return nil, 0, nil
 }
-func (f *fakeDocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (f *fakeDocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	f.listOpts = opts
 	return nil, 0, nil
 }
-func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
+func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error) {
 	f.listOpts = opts
 	return f.listIDs, nil
 }
-func (f *fakeDocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+func (f *fakeDocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
 	f.filterOpts = opts
 	if f.filterResult != nil {
 		return f.filterResult, f.filterTotal, nil
 	}
 	return map[string]interface{}{}, 0, nil
 }
-func (f *fakeDocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error) {
+func (f *fakeDocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error) {
 	if f.metadataByKBs != nil {
 		return f.metadataByKBs, nil
 	}
 	return map[string]interface{}{}, nil
 }
-func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	return map[string]interface{}{}, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+func (f *fakeDocumentService) GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
 	f.thumbnailUserID = userID
 	f.thumbnailDocIDs = append([]string(nil), docIDs...)
 	return f.thumbnails, f.thumbnailErr
 }
-func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
+func (f *fakeDocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
+func (f *fakeDocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
-func (f *fakeDocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
+func (f *fakeDocumentService) GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
 	f.metadataKBID = kbID
 	f.metadataDocIDs = docIDs
 	return f.metadataSummary, f.metadataErr
 }
-func (f *fakeDocumentService) SetDocumentMetadata(docID string, meta map[string]interface{}) error {
+func (f *fakeDocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
 	f.setMetaCalled = true
 	f.setMetaDocID = docID
 	f.setMetaValue = meta
 	return nil
 }
-func (f *fakeDocumentService) DeleteDocumentMetadata(docID string, keys []string) error {
+func (f *fakeDocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
 	return nil
 }
-func (f *fakeDocumentService) DeleteDocumentAllMetadata(docID string) error {
+func (f *fakeDocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
 	return nil
 }
-func (f *fakeDocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
+func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
 	f.uploadLocalPath = parentPath
 	f.uploadOverride = parserConfigOverride
 	return f.uploadLocalData, f.uploadLocalErrs
 }
-func (f *fakeDocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("not implemented")
 }
-func (f *fakeDocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("not implemented")
 }
 
-func (f *fakeDocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return f.stopIngestionTasks, f.stopIngestionTaskErr
 }
-func (f *fakeDocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
+func (f *fakeDocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
 	return f.removeIngestionTasks, f.removeIngestionTaskErr
 }
 

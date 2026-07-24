@@ -64,10 +64,12 @@
 //     side-effect component (out of scope for Phase 2.2).
 //
 //   - The Python _param.check() business validation
-//     (parse_method whitelist, output_format whitelist, etc.) is
-//     not replicated. The component trusts the param block
-//     passed in at construction time; invalid values surface as
-//     runtime errors in the chosen parser branch.
+//     (parse_method whitelist, conditional lang checks) is mirrored
+//     by (*ParserComponent).Check() below, which NewParserComponent
+//     runs at construction time. The Python flow check() also
+//     validates audio/video vlm.llm_id, but Go media_dispatch uses
+//     tenant default models (resolveTenantModelByType) rather than
+//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
 //
 //   - NO PERSISTENCE: parsed pages live only in the per-run
 //     output map, exactly as the schema.Page type is intended.
@@ -166,7 +168,70 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 		p.AllowedOutputFormat = allowed
 	}
-	return &ParserComponent{Setups: s, Param: p}, nil
+	pc := &ParserComponent{Setups: s, Param: p}
+	if err := pc.Check(); err != nil {
+		return nil, fmt.Errorf("Parser: %w", err)
+	}
+	return pc, nil
+}
+
+// Check mirrors the applicable subset of Python ParserParam.check()
+// (rag/flow/parser/parser.py:251-321). Runs at construction time so
+// a malformed DSL surfaces as a canvas compile failure rather than a
+// mid-run error. Returns the first validation error encountered
+// (Python raises ValueError on the first failure).
+//
+// NOT covered here (intentional):
+//   - output_format whitelist: already enforced at Invoke time by
+//     resolveOutputFormat (parser_dispatch.go:100-122).
+//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
+//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
+//     The Python flow check() for vlm.llm_id does not apply — Go
+//     never reads that field, and validating it would block every
+//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+func (c *ParserComponent) Check() error {
+	// PDF family (parser.py:252-261).
+	if pdf, ok := c.Setups["pdf"]; ok {
+		pm, _ := pdf["parse_method"].(string)
+		if pm == "" {
+			return errors.New("Parse method abnormal. does not support empty value.")
+		}
+		pmLower := strings.ToLower(pm)
+		pdfWhitelist := []string{
+			"deepdoc", "plain_text", "mineru", "docling",
+			"opendataloader", "tcadp parser", "paddleocr", "somark",
+		}
+		if !containsString(pdfWhitelist, pmLower) {
+			// Non-whitelist parse_method is treated as a VLM method,
+			// which requires lang (Python parser.py:257-258).
+			if lang, _ := pdf["lang"].(string); lang == "" {
+				return errors.New("PDF VLM language does not support empty value.")
+			}
+		}
+	}
+	// image family (parser.py:283-287).
+	if img, ok := c.Setups["image"]; ok {
+		pm, _ := img["parse_method"].(string)
+		// OCR mode does not need a VLM language; any other value does.
+		if pm != "ocr" {
+			if lang, _ := img["lang"].(string); lang == "" {
+				return errors.New("Image VLM language does not support empty value.")
+			}
+		}
+	}
+	return nil
+}
+
+// containsString reports whether s is in list. Used by Check() for
+// whitelist membership tests; kept unexported and local to this file
+// to avoid polluting the package namespace.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -245,7 +310,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -573,7 +638,7 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}

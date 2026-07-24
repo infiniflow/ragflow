@@ -117,8 +117,8 @@ type ProgressEvent struct {
 // (internal/ingestion/service). A nil sink is valid: events are dropped and
 // the pipeline stays DB-independent (unit tests, headless runs).
 type ProgressSink interface {
-	OnComponentTotal(taskID string, total int)
-	OnComponentProgress(ev ProgressEvent)
+	OnComponentTotal(ctx context.Context, taskID string, total int)
+	OnComponentProgress(ctx context.Context, ev ProgressEvent)
 }
 
 // WithProgressSink injects a sink that receives component progress events
@@ -272,7 +272,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// progress percentage. Best-effort: a DB failure (or headless run
 	// with no DB) must not abort the pipeline — progress is observability.
 	if p.sink != nil {
-		p.sink.OnComponentTotal(p.taskID, len(p.canvas.Components))
+		p.sink.OnComponentTotal(ctx, p.taskID, len(p.canvas.Components))
 	}
 
 	runState := canvas.NewCanvasState("", p.taskID)
@@ -284,7 +284,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// is nil when the DB is not initialized (unit tests, headless
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
-	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback())
+	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -303,7 +303,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// Resumable path: record the run, then loop Invoke until the graph
 	// completes or a non-resumable error surfaces.
 	if tracker != nil {
-		if err := tracker.Start(ctx, p.taskID, "", "", ""); err != nil {
+		if err = tracker.Start(ctx, p.taskID, "", "", ""); err != nil {
 			common.Error(fmt.Sprintf("pipeline: RunTracker.Start for task %s failed: %v", p.taskID, err), err)
 		}
 	}
@@ -459,7 +459,7 @@ func finalizeResult(current, out map[string]any, runState *canvas.CanvasState) m
 // never touches the DAO layer. Returns nil when no sink is attached, leaving
 // TrackProgress a no-op and the pipeline DB-independent (unit tests, headless
 // runs).
-func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
+func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.ProgressCallback {
 	if p.sink == nil {
 		return nil
 	}
@@ -477,7 +477,7 @@ func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 				msg = ev.Component + " Error"
 			}
 		}
-		p.sink.OnComponentProgress(ProgressEvent{
+		p.sink.OnComponentProgress(ctx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
 			Component:  ev.Component,
