@@ -225,7 +225,7 @@ jobs:
           printf '%s' '${{ secrets.GITEE_TOKEN }}' > "${GITEE_TOKEN_FILE}"
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-          ) 9>"${BUILD_LOCK_FILE}"
+          rm -f "${GITEE_TOKEN_FILE}"
 
       - name: Prepare Python test environment
         run: |
@@ -668,9 +668,12 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
+          GITEE_TOKEN_FILE="$(mktemp)"
+          printf '%s' '${{ secrets.GITEE_TOKEN }}' > "${GITEE_TOKEN_FILE}"
           sudo docker pull ubuntu:24.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
-          ) 9>"${BUILD_LOCK_FILE}"
+          rm -f "${GITEE_TOKEN_FILE}"
+
       - name: Prepare Python test environment
         run: |
           git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
