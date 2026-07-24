@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -73,7 +74,7 @@ func (s *IngestionTaskService) ListByUser(userID string, datasetID *string, page
 	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(userID, *datasetID, page, pageSize)
 }
 
-func (s *IngestionTaskService) CreateForDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if len(uniqueDocIDs) == 0 {
 		return nil, fmt.Errorf("no documents to parse")
@@ -81,7 +82,7 @@ func (s *IngestionTaskService) CreateForDocuments(datasetID, userID string, docI
 
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(docID)
+		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -104,7 +105,7 @@ func (s *IngestionTaskService) CreateForDocuments(datasetID, userID string, docI
 			Schema:     nil,
 			Status:     common.CREATED,
 		}
-		task, err = s.CreateAndEnqueue(task)
+		task, err = s.CreateAndEnqueue(ctx, task)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -164,7 +165,8 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 
 	showTasks := make([]map[string]interface{}, 0, len(ingestionTasks))
 	for _, task := range ingestionTasks {
-		user, err := s.userDAO.GetByTenantID(task.UserID)
+		var user *entity.User
+		user, err = s.userDAO.GetByTenantID(task.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -198,14 +200,14 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 	return showTasks, nil
 }
 
-func (s *IngestionTaskService) StartRunning(taskID string) (*entity.IngestionTask, error) {
+func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(taskID)
 	if err != nil {
 		return nil, err
 	}
 	switch task.Status {
 	case common.CREATED:
-		task, err := s.transition(taskID, common.RUNNING)
+		task, err = s.transition(taskID, common.RUNNING)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +217,7 @@ func (s *IngestionTaskService) StartRunning(taskID string) (*entity.IngestionTas
 		// the task transition and trigger a redelivery loop. run uses the
 		// document's numeric TaskStatus enum ("1"), not the task's string
 		// status label.
-		if err := s.documentDAO.UpdateByID(task.DocumentID, map[string]interface{}{
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
 			"run":              string(entity.TaskStatusRunning),
 			"progress":         float64(0),
 			"chunk_num":        int64(0),
@@ -244,7 +246,7 @@ func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask
 	case common.CREATED:
 		return s.transition(taskID, common.STOPPED)
 	case common.RUNNING:
-		task, err := s.transition(taskID, common.STOPPING)
+		task, err = s.transition(taskID, common.STOPPING)
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +356,7 @@ func (s *IngestionTaskService) transition(taskID string, to string) (*entity.Ing
 	if err != nil {
 		return nil, err
 	}
-	if err := validateTransition(task.Status, to); err != nil {
+	if err = validateTransition(task.Status, to); err != nil {
 		var transitionErr *InvalidTaskTransitionError
 		if errors.As(err, &transitionErr) {
 			return task, &InvalidTaskTransitionError{TaskID: taskID, From: transitionErr.From, To: transitionErr.To}
@@ -372,7 +374,7 @@ func (s *IngestionTaskService) transition(taskID string, to string) (*entity.Ing
 	return task, nil
 }
 
-func (s *IngestionTaskService) CreateAndEnqueue(task *entity.IngestionTask) (*entity.IngestionTask, error) {
+func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(task.DocumentID)
 	if err != nil {
 		return nil, err
@@ -385,7 +387,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(task *entity.IngestionTask) (*en
 			if err != nil {
 				return nil, err
 			}
-			if err := s.enqueueTask(existing.ID); err != nil {
+			if err = s.enqueueTask(existing.ID); err != nil {
 				if rollbackErr := s.rollbackRetriedTask(existing.ID, originalStatus); rollbackErr != nil {
 					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
 				}
@@ -400,7 +402,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(task *entity.IngestionTask) (*en
 	if err != nil {
 		return nil, err
 	}
-	if err := s.enqueueTask(created.ID); err != nil {
+	if err = s.enqueueTask(created.ID); err != nil {
 		if rollbackErr := s.rollbackCreatedTask(created.ID); rollbackErr != nil {
 			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", created.ID, err, rollbackErr)
 		}

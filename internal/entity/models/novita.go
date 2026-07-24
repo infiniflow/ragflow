@@ -133,14 +133,8 @@ func (e *novitaThinkExtractor) Feed(chunk string) []novitaThinkSegment {
 			// (max marker length - 1) trailing bytes so we don't
 			// emit "<thin" as content when the next chunk completes
 			// it to "<think>".
-			reserve := len(marker) - 1
-			if len(otherMarker)-1 > reserve {
-				reserve = len(otherMarker) - 1
-			}
-			safe := len(s) - reserve
-			if safe < 0 {
-				safe = 0
-			}
+			reserve := max(len(otherMarker)-1, len(marker)-1)
+			safe := max(len(s)-reserve, 0)
 			// Don't reserve if the trailing bytes can't possibly be
 			// the start of a tag (no '<' suffix).
 			if safe < len(s) && !strings.Contains(s[safe:], "<") {

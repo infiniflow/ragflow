@@ -49,10 +49,11 @@ const GoMarkdown = "go_markdown"
 var ssrfAllowLoopback bool
 
 type MarkdownParser struct {
-	libType      string
-	ParseMethod  string
-	OutputFormat string
-	VLM          map[string]any
+	libType            string
+	ParseMethod        string
+	OutputFormat       string
+	VLM                map[string]any
+	FlattenMediaToText bool
 }
 
 func NewMarkdownParser(libType string) (*MarkdownParser, error) {
@@ -79,6 +80,9 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["vlm"].(map[string]any); ok {
 		p.VLM = v
 	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
+	}
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
@@ -94,7 +98,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	rawText := string(data)
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, rawText, &items)
+	walkMarkdownBlocksWithImages(doc, rawText, &items, p.FlattenMediaToText)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -123,8 +127,10 @@ func markdownNew() *parser.Parser {
 // emitted with their text. When a block contains a markdown image
 // reference (![alt](src)), the image data is resolved via
 // resolveMarkdownImage and the item carries `doc_type_kwd: "image"`
-// together with the base64-encoded image payload.
-func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[string]any) {
+// together with the base64-encoded image payload. When flatten is
+// true, all items are forced to doc_type_kwd="text" (mirrors Python
+// parser.py:1034 flatten_media_to_text).
+func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[string]any, flatten bool) {
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -166,9 +172,13 @@ func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[strin
 		// Detect markdown image references in the raw source text
 		// that corresponds to this block. When found, resolve the
 		// image data so downstream vision enhancement can describe it.
+		// When flatten is true, keep doc_type_kwd="text" (Python
+		// parser.py:1034: flatten_media_to_text overrides image).
 		if imgData, imgFound := resolveMarkdownImage(txt, rawText); imgFound && imgData != "" {
-			item["doc_type_kwd"] = "image"
 			item["image"] = imgData
+			if !flatten {
+				item["doc_type_kwd"] = "image"
+			}
 		}
 
 		*out = append(*out, item)

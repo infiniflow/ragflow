@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,14 +13,14 @@ import (
 )
 
 // UpdateDocumentMetadataConfig updates the metadata config for a document in a dataset.
-func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
 	if !d.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 	}
 
-	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
@@ -38,11 +39,11 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	}
 	parserConfig["metadata"] = metadata
 
-	if err = d.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	doc, err = d.documentDAO.GetByID(doc.ID)
+	doc, err = d.documentDAO.GetByID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}

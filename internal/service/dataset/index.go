@@ -35,7 +35,7 @@ func checkType(indexType string) bool {
 	return haveType
 }
 
-func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
+func (d *DatasetService) newRaptorOrGraphRagTask(ctx context.Context, sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
 	if docIDs == nil || len(docIDs) == 0 {
 		docIDs = make([]string, 0)
 	}
@@ -43,7 +43,7 @@ func (d *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, tas
 		return nil, nil, errors.New("type should be graphrag, raptor or mindmap")
 	}
 
-	chunkingConfig, err := d.documentDAO.GetChunkingConfig(sampleDoc.ID)
+	chunkingConfig, err := d.documentDAO.GetChunkingConfig(ctx, dao.DB, sampleDoc.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -124,7 +124,7 @@ func createDatasetIndexTaskInTx(tx *gorm.DB, task *entity.Task, queueDocID strin
 	if task.BeginAt != nil {
 		beginAt = *task.BeginAt
 	}
-	if err := tx.Model(&entity.Document{}).Where("id = ?", queueDocID).Updates(map[string]interface{}{
+	if err = tx.Model(&entity.Document{}).Where("id = ?", queueDocID).Updates(map[string]interface{}{
 		"progress_msg":     "Task is queued...",
 		"process_begin_at": beginAt,
 	}).Error; err != nil {
@@ -262,30 +262,30 @@ func clearGraphPhaseMarkers(redisClient *redisengine.Client, datasetID string) {
 	}
 }
 
-func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) RunIndex(ctx context.Context, userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
 	if !checkType(indexType) {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
+		return nil, common.CodeDataError, fmt.Errorf("invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
 
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
 	kb, err := d.kbDAO.GetByID(datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+			return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 		}
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
 	taskType := indexTypeToTaskType[indexType]
 	displayName := indexTypeToDisplayName[indexType]
 
-	documents, code, err := d.getDocumentsByDatasetForIndex(datasetID)
+	documents, code, err := d.getDocumentsByDatasetForIndex(ctx, datasetID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -298,17 +298,17 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 		documentIDs[i] = doc.ID
 	}
 
-	task, queueMessage, err := d.newRaptorOrGraphRagTask(sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
+	task, queueMessage, err := d.newRaptorOrGraphRagTask(ctx, sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
 	if err != nil {
 		common.Warn("Failed to build dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
 	var updatedDocument *entity.Document
 	var dataErr error
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		var lockedKB entity.Knowledgebase
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		if err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND status = ?", kb.ID, string(entity.StatusValid)).
 			First(&lockedKB).Error; err != nil {
 			return err
@@ -324,7 +324,7 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 					return taskErr
 				}
 			} else if existingTask.Progress != 1 && existingTask.Progress != -1 {
-				dataErr = fmt.Errorf("Task %s in progress with status %v. A %s Task is already running.", existingTaskID, existingTask.Progress, displayName)
+				dataErr = fmt.Errorf("task %s in progress with status %v. A %s Task is already running", existingTaskID, existingTask.Progress, displayName)
 				return dataErr
 			}
 		}
@@ -340,22 +340,22 @@ func (d *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 			return nil, common.CodeDataError, dataErr
 		}
 		common.Warn("Failed to create dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
-	if err := enqueueDatasetIndexTask(0, queueMessage); err != nil {
+	if err = enqueueDatasetIndexTask(0, queueMessage); err != nil {
 		if cleanupErr := cleanupFailedDatasetIndexTask(task.ID, updatedDocument, kb.ID, indexType); cleanupErr != nil {
 			err = errors.Join(err, cleanupErr)
 		}
 		common.Warn("Failed to queue dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
 	return map[string]interface{}{"task_id": task.ID}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
-	documents, _, err := d.documentDAO.GetByKBID(datasetID)
+func (d *DatasetService) getDocumentsByDatasetForIndex(ctx context.Context, datasetID string) ([]*entity.Document, common.ErrorCode, error) {
+	documents, _, err := d.documentDAO.GetByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
 		common.Warn("Failed to load dataset documents for index", zap.String("dataset_id", datasetID), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")

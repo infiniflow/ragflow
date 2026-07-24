@@ -589,14 +589,15 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	err := svc.deleteDocumentFull("doc-1")
+	err := svc.deleteDocumentFull(ctx, "doc-1")
 	if err != nil {
 		t.Fatalf("deleteDocumentFull failed: %v", err)
 	}
 
 	// Verify document deleted
-	_, err = dao.NewDocumentDAO().GetByID("doc-1")
+	_, err = dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should be deleted but it still exists")
 	}
@@ -628,8 +629,9 @@ func TestDeleteDocumentFull_NotFound(t *testing.T) {
 	pushServiceDB(t, db)
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	err := svc.deleteDocumentFull("nonexistent")
+	err := svc.deleteDocumentFull(ctx, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent document")
 	}
@@ -647,8 +649,9 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	err := svc.deleteDocumentFull("doc-1")
+	err := svc.deleteDocumentFull(ctx, "doc-1")
 	if err != nil {
 		t.Fatalf("deleteDocumentFull failed: %v", err)
 	}
@@ -683,9 +686,10 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	insertTestFile2Document(t, "f2d-2", "file-shared", "doc-2")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
 	// Delete doc-1; file-shared should survive because doc-2 still references it
-	err := svc.deleteDocumentFull("doc-1")
+	err := svc.deleteDocumentFull(ctx, "doc-1")
 	if err != nil {
 		t.Fatalf("deleteDocumentFull failed: %v", err)
 	}
@@ -761,9 +765,10 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("insert existing doc: %v", err)
 	}
 
+	ctx := t.Context()
 	svc := testDocumentService(t)
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
-	got, errs := svc.UploadLocalDocuments(kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
+	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
 		"table_column_mode": "assist",
 	})
 	if len(errs) != 0 {
@@ -819,8 +824,9 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
+	ctx := t.Context()
 	svc := testDocumentService(t)
-	got, code, err := svc.UploadEmptyDocument(kb, "user-1", "draft.md")
+	got, code, err := svc.UploadEmptyDocument(ctx, kb, "user-1", "draft.md")
 	if err != nil {
 		t.Fatalf("UploadEmptyDocument error: %v", err)
 	}
@@ -900,8 +906,9 @@ func TestDeleteDocuments_DeleteAll(t *testing.T) {
 	insertTestIngestionTask(t, "task-3", "user-1", "doc-3", "kb-1")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	deleted, err := svc.DeleteDocuments(nil, true, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, nil, true, "kb-1", "user-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -930,8 +937,8 @@ func TestDeleteDocuments_ByIDs(t *testing.T) {
 	insertTestIngestionTask(t, "task-3", "user-1", "doc-3", "kb-1")
 
 	svc := testDocumentService(t)
-
-	deleted, err := svc.DeleteDocuments([]string{"doc-1", "doc-2"}, false, "kb-1", "user-1")
+	ctx := t.Context()
+	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-2"}, false, "kb-1", "user-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -940,7 +947,7 @@ func TestDeleteDocuments_ByIDs(t *testing.T) {
 	}
 
 	// doc-3 should still exist
-	_, err = dao.NewDocumentDAO().GetByID("doc-3")
+	_, err = dao.NewDocumentDAO().GetByID(ctx, db, "doc-3")
 	if err != nil {
 		t.Fatal("doc-3 should not have been deleted")
 	}
@@ -957,8 +964,9 @@ func TestDeleteDocuments_WrongDataset(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-2", 10, 5) // belongs to kb-2, not kb-1
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	_, err := svc.DeleteDocuments([]string{"doc-1"}, false, "kb-1", "user-1")
+	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1", "user-1")
 	if err == nil {
 		t.Fatal("expected error for doc not belonging to dataset")
 	}
@@ -971,9 +979,10 @@ func TestDeleteDocuments_NotAccessible(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
 	// user-1 has no user_tenant entry → accessible returns false
-	_, err := svc.DeleteDocuments([]string{"doc-1"}, false, "kb-1", "user-1")
+	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1", "user-1")
 	if err == nil {
 		t.Fatal("expected error for inaccessible dataset")
 	}
@@ -988,7 +997,8 @@ func TestDeleteDocuments_EmptyIDs(t *testing.T) {
 	svc := testDocumentService(t)
 
 	// Empty ids, no deleteAll → returns 0, no error
-	deleted, err := svc.DeleteDocuments([]string{}, false, "kb-1", "user-1")
+	ctx := t.Context()
+	deleted, err := svc.DeleteDocuments(ctx, []string{}, false, "kb-1", "user-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1007,8 +1017,9 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	deleted, err := svc.DeleteDocuments([]string{"doc-1", "doc-1", "doc-1"}, false, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-1", "doc-1"}, false, "kb-1", "user-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -1064,17 +1075,18 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
 
 	kb, err := svc.kbDAO.GetByID("kb-1")
 	if err != nil {
 		t.Fatalf("load kb: %v", err)
 	}
-	doc, err := svc.documentDAO.GetByID("doc-1")
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	if err := svc.StartParseDocuments(doc, kb, "user-1", StartParseOptions{}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{}); err != nil {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
@@ -1128,8 +1140,8 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-
-	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
 	}
@@ -1143,7 +1155,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	}
 
 	// Verify document run status updated to CANCEL
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if doc == nil || doc.Run == nil {
 		t.Fatal("doc not found or run is nil")
 	}
@@ -1162,8 +1174,8 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-
-	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
 	}
@@ -1183,8 +1195,8 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
 
 	svc := testDocumentService(t)
-
-	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
 	}
@@ -1209,8 +1221,8 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-
-	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
 	}
@@ -1230,8 +1242,8 @@ func TestStopParseDocuments_WrongDataset(t *testing.T) {
 	insertTestDocWithRun(t, "doc-1", "kb-2", string(entity.TaskStatusRunning), 10, 5)
 
 	svc := testDocumentService(t)
-
-	_, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	ctx := t.Context()
+	_, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err == nil {
 		t.Fatal("expected error for doc not belonging to dataset")
 	}
@@ -1244,8 +1256,8 @@ func TestStopParseDocuments_NotFound(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 
 	svc := testDocumentService(t)
-
-	_, err := svc.StopParseDocuments("kb-1", []string{"nonexistent"})
+	ctx := t.Context()
+	_, err := svc.StopParseDocuments(ctx, "kb-1", []string{"nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent document IDs")
 	}
@@ -1258,8 +1270,8 @@ func TestStopParseDocuments_EmptyIDs(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 
 	svc := testDocumentService(t)
-
-	_, err := svc.StopParseDocuments("kb-1", []string{})
+	ctx := t.Context()
+	_, err := svc.StopParseDocuments(ctx, "kb-1", []string{})
 	if err == nil {
 		t.Fatal("expected error for empty doc IDs")
 	}
@@ -1274,8 +1286,8 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-
-	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1", "doc-1", "doc-1"})
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1", "doc-1", "doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
 	}
@@ -1296,14 +1308,15 @@ func TestDeleteDocument_DeligatesToFullCleanup(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
 	// Public DeleteDocument should delegate to deleteDocumentFull
-	err := svc.DeleteDocument("doc-1")
+	err := svc.DeleteDocument(ctx, "doc-1")
 	if err != nil {
 		t.Fatalf("DeleteDocument failed: %v", err)
 	}
 
-	_, err = dao.NewDocumentDAO().GetByID("doc-1")
+	_, err = dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should be deleted")
 	}
@@ -1319,8 +1332,9 @@ func TestResolveDocAndKB_Success(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	doc, kb, err := svc.resolveDocAndKB("doc-1")
+	doc, kb, err := svc.resolveDocAndKB(ctx, "doc-1")
 	if err != nil {
 		t.Fatalf("resolveDocAndKB: %v", err)
 	}
@@ -1340,8 +1354,9 @@ func TestResolveDocAndKB_DocNotFound(t *testing.T) {
 	pushServiceDB(t, db)
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	_, _, err := svc.resolveDocAndKB("nonexistent")
+	_, _, err := svc.resolveDocAndKB(ctx, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent doc")
 	}
@@ -1361,8 +1376,9 @@ func TestResolveDocAndKB_KBNotFound(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
-	_, _, err := svc.resolveDocAndKB("orphan-doc")
+	_, _, err := svc.resolveDocAndKB(ctx, "orphan-doc")
 	if err == nil {
 		t.Fatal("expected error for nonexistent KB")
 	}
@@ -1375,16 +1391,17 @@ func TestDeleteDocRecordWithCounters_Success(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 3, 100, 50)
 	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	svc := testDocumentService(t)
 
-	err := svc.deleteDocRecordWithCounters(doc, "kb-1")
+	err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1")
 	if err != nil {
 		t.Fatalf("deleteDocRecordWithCounters: %v", err)
 	}
 
 	// Doc gone
-	_, err = dao.NewDocumentDAO().GetByID("doc-1")
+	_, err = dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should be deleted")
 	}
@@ -1409,16 +1426,17 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	svc := testDocumentService(t)
 
 	// First delete: row removed, counters decremented
-	if err := svc.deleteDocRecordWithCounters(doc, "kb-1"); err != nil {
+	if err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1"); err != nil {
 		t.Fatalf("first delete: %v", err)
 	}
 
 	// Second delete: RowsAffected==0 → counters NOT decremented again
-	if err := svc.deleteDocRecordWithCounters(doc, "kb-1"); err != nil {
+	if err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1"); err != nil {
 		t.Fatalf("second delete should not error: %v", err)
 	}
 
@@ -1441,14 +1459,15 @@ func TestDeleteDocRecordWithCounters_KBUpdateFailureRollsBackDocumentDelete(t *t
 
 	insertTestDoc(t, "doc-1", "missing-kb", 10, 5)
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	svc := testDocumentService(t)
 
-	if err := svc.deleteDocRecordWithCounters(doc, "missing-kb"); err == nil {
+	if err := svc.deleteDocRecordWithCounters(ctx, doc, "missing-kb"); err == nil {
 		t.Fatal("expected missing KB counter update to return an error")
 	}
 
-	if _, err := dao.NewDocumentDAO().GetByID("doc-1"); err != nil {
+	if _, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1"); err != nil {
 		t.Fatalf("expected document delete to roll back, got: %v", err)
 	}
 }
@@ -1532,16 +1551,18 @@ func TestArtifactHelpers(t *testing.T) {
 
 func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentArtifact("../test.txt", "user-1")
-	if err != ErrArtifactInvalidFilename {
+	ctx := t.Context()
+	_, err := svc.GetDocumentArtifact(ctx, "../test.txt", "user-1")
+	if !errors.Is(err, ErrArtifactInvalidFilename) {
 		t.Errorf("expected ErrArtifactInvalidFilename, got %v", err)
 	}
 }
 
 func TestGetDocumentArtifact_InvalidFileType(t *testing.T) {
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentArtifact("test.exe", "user-1")
-	if err != ErrArtifactInvalidFileType {
+	ctx := t.Context()
+	_, err := svc.GetDocumentArtifact(ctx, "test.exe", "user-1")
+	if !errors.Is(err, ErrArtifactInvalidFileType) {
 		t.Errorf("expected ErrArtifactInvalidFileType, got %v", err)
 	}
 }
@@ -1551,7 +1572,8 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	pushServiceDB(t, db)
 	svc := testDocumentService(t)
 
-	_, err := svc.GetDocumentPreview("nonexistent")
+	ctx := t.Context()
+	_, err := svc.GetDocumentPreview(ctx, "nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent document")
 	}
@@ -1559,7 +1581,8 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 
 func TestDownloadDocument_MissingDocID(t *testing.T) {
 	svc := testDocumentService(t)
-	_, err := svc.DownloadDocument("ds-1", "")
+	ctx := t.Context()
+	_, err := svc.DownloadDocument(ctx, "ds-1", "")
 	if err == nil {
 		t.Error("expected error for missing docID")
 	}
@@ -1572,7 +1595,8 @@ func TestDownloadDocument_WrongDataset(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 5, 2)
 	svc := testDocumentService(t)
 
-	_, err := svc.DownloadDocument("wrong-ds", "doc-1")
+	ctx := t.Context()
+	_, err := svc.DownloadDocument(ctx, "wrong-ds", "doc-1")
 	if err == nil {
 		t.Error("expected error for wrong dataset")
 	}
@@ -1585,7 +1609,8 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument("tenant-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
@@ -1605,7 +1630,8 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 
 	chunkCount := int64(6)
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ChunkCount: &chunkCount,
 	}, map[string]bool{"chunk_count": true})
 	if err == nil {
@@ -1614,7 +1640,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "Can't change `chunk_count`." {
+	if err.Error() != "can't change `chunk_count`" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }
@@ -1627,7 +1653,8 @@ func TestUpdateDatasetDocumentAllowsZeroCounterLikePythonTruthyCheck(t *testing.
 
 	chunkCount := int64(0)
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ChunkCount: &chunkCount,
 	}, map[string]bool{"chunk_count": true})
 	if err != nil {
@@ -1647,7 +1674,8 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	parserID := "naive"
 	parseType := 1
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &parserID,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -1657,7 +1685,7 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "Not supported yet!" {
+	if err.Error() != "not supported yet" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }
@@ -1672,7 +1700,8 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 
 	newName := "new.pdf"
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Name: &newName,
 	}, map[string]bool{"name": true})
 	if err != nil {
@@ -1682,7 +1711,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 		t.Fatalf("response name = %#v, want %q", resp, newName)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if doc.Name == nil || *doc.Name != newName {
 		t.Fatalf("document name = %v, want %q", doc.Name, newName)
 	}
@@ -1701,7 +1730,8 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	parseType := 1
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -1712,7 +1742,7 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 		t.Fatalf("response = %+v, want method=%s run=UNSTART counts=0", resp, chunkMethod)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if doc.ParserID != chunkMethod {
 		t.Fatalf("parser_id = %q, want %q", doc.ParserID, chunkMethod)
 	}
@@ -1731,21 +1761,22 @@ func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
-	staleDoc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	staleDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
 
 	svc := testDocumentService(t)
 	parserID := "manual"
-	if err := svc.resetDocumentForReparse(staleDoc, "tenant-1", &parserID, nil); err != nil {
+	if err = svc.resetDocumentForReparse(ctx, staleDoc, "tenant-1", &parserID, nil); err != nil {
 		t.Fatalf("first resetDocumentForReparse failed: %v", err)
 	}
-	if err := svc.resetDocumentForReparse(staleDoc, "tenant-1", &parserID, nil); err != nil {
+	if err = svc.resetDocumentForReparse(ctx, staleDoc, "tenant-1", &parserID, nil); err != nil {
 		t.Fatalf("second resetDocumentForReparse failed: %v", err)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
 	}
@@ -1762,7 +1793,8 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -1771,11 +1803,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 
-	if err := svc.clearDocumentParseResults(doc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(doc, "tenant-1"); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 
-	updatedDoc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	updatedDoc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if updatedDoc.TokenNum != 0 || updatedDoc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", updatedDoc.TokenNum, updatedDoc.ChunkNum)
 	}
@@ -1802,7 +1834,8 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
 
-	staleDoc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	staleDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -1815,7 +1848,7 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 		t.Fatalf("second clearDocumentParseResults failed: %v", err)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
 	}
@@ -1837,8 +1870,8 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
-
-			doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+			ctx := t.Context()
+			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 			if err != nil {
 				t.Fatalf("get doc: %v", err)
 			}
@@ -1867,8 +1900,8 @@ func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
-
-			doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+			ctx := t.Context()
+			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 			if err != nil {
 				t.Fatalf("get doc: %v", err)
 			}
@@ -1929,8 +1962,9 @@ func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
 
+	ctx := t.Context()
 	svc := testDocumentService(t)
-	_, err := svc.Ingest("user-1", &IngestDocumentRequest{
+	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
@@ -1955,8 +1989,8 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
-
-	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},
 	}, map[string]bool{"meta_fields": true})
 	if err == nil {
@@ -1989,7 +2023,8 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 
-	if err := svc.SetDocumentMetadata("doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
+	ctx := t.Context()
+	if err := svc.SetDocumentMetadata(ctx, "doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
 	if got := engine.records["doc-1"]["author"]; got != "alice" {
@@ -2060,8 +2095,8 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-
-	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+	ctx := t.Context()
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
 	}, []DocumentMetadataUpdate{
 		{Key: "tags", Value: "new", Match: "old"},
@@ -2121,8 +2156,8 @@ func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *t
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-
-	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+	ctx := t.Context()
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
 		DocumentIDs: []string{"doc-1"},
 	}, []DocumentMetadataUpdate{
 		{Key: "category", Value: "paper"},
@@ -2158,8 +2193,8 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-
-	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+	ctx := t.Context()
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
 	}, nil, []DocumentMetadataDelete{{Key: "status", Value: "draft"}})
 	if err != nil || code != common.CodeSuccess {
@@ -2187,8 +2222,8 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-
-	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+	ctx := t.Context()
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
 		DocumentIDs: []string{"doc-1"},
 	}, []DocumentMetadataUpdate{
 		{Key: "score", Value: "42", ValueType: "number"},
@@ -2217,7 +2252,8 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 
 func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	svc := testDocumentService(t)
-	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+	ctx := t.Context()
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
 		{Key: "status"},
 	}, nil)
 	if err == nil {
@@ -2276,7 +2312,8 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	chunkMethod := "manual"
 	parseType := 2
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID: &pipelineID,
 		ParserID:   &chunkMethod,
 		ParseType:  &parseType,
@@ -2311,7 +2348,8 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	parserID := "manual"
 	pipelineIDEmpty := ""
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineIDEmpty,
@@ -2328,7 +2366,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 
 	// Assert the persisted pipeline_id was cleared, not merely the response.
 	var updated entity.Document
-	if err := db.First(&updated, "id = ?", "doc-1").Error; err != nil {
+	if err = db.First(&updated, "id = ?", "doc-1").Error; err != nil {
 		t.Fatalf("read back doc: %v", err)
 	}
 	if updated.PipelineID != nil && *updated.PipelineID != "" {
@@ -2345,7 +2383,8 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
@@ -2381,7 +2420,8 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	parserID := "manual"
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineID,
@@ -2418,7 +2458,8 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	parseType := 1
 	parserID := "manual"
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType: &parseType,
 		ParserID:  &parserID,
 		ParserConfig: map[string]any{
@@ -2445,7 +2486,8 @@ func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
 
 	enabled := 0
 	svc := testDocumentService(t)
-	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Enabled: &enabled,
 	}, map[string]bool{"enabled": true})
 	if err != nil {
@@ -2603,14 +2645,15 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
+	ctx := t.Context()
 
 	// Case 1: empty user -> not allowed.
-	if _, err := svc.GetDocumentArtifact("result.png", ""); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png", ""); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("empty user: want ErrArtifactNotFound, got %v", err)
 	}
 
 	// Case 2: another user without any session reference -> not allowed.
-	if _, err := svc.GetDocumentArtifact("result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("unrelated user: want ErrArtifactNotFound, got %v", err)
 	}
 
@@ -2632,7 +2675,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed conv 2: %v", err)
 	}
-	if _, err := svc.GetDocumentArtifact("result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
 	}
 }
@@ -2703,7 +2746,8 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	got, err := svc.GetThumbnails("user-1", []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
+	ctx := t.Context()
+	got, err := svc.GetThumbnails(ctx, "user-1", []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
 	if err != nil {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
@@ -2732,7 +2776,8 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -2747,7 +2792,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	err = svc.StartParseDocuments(doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
 	if err == nil {
 		t.Fatal("expected error from GetDocumentStorageAddress, got nil")
 	}
@@ -2772,7 +2817,8 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := testDocumentService(t)
-	_, err := svc.Ingest("user-1", &IngestDocumentRequest{
+	ctx := t.Context()
+	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 		Delete: true,
@@ -2794,10 +2840,11 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 
 	svc := testDocumentService(t)
-	if err := svc.UpdateRunProgress("doc-1", 0.5, "1", "halfway"); err != nil {
+	ctx := t.Context()
+	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "1", "halfway"); err != nil {
 		t.Fatalf("UpdateRunProgress failed: %v", err)
 	}
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
@@ -2815,6 +2862,7 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	ctx := t.Context()
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
 	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
@@ -2843,12 +2891,12 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 		docSvc,
 	)
 
-	success, msg := fileSvc.DeleteFiles(context.Background(), "tenant-1", []string{"file-1"})
+	success, msg := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"})
 	if !success {
 		t.Fatalf("DeleteFiles failed: %s", msg)
 	}
 
-	_, err := dao.NewDocumentDAO().GetByID("doc-1")
+	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should have been deleted but still exists")
 	}

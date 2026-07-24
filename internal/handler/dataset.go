@@ -284,9 +284,9 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
+	ctx := c.Request.Context()
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetIngestionSummary(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetIngestionSummary(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -784,8 +784,9 @@ func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	data, code, err := h.datasetsService.RunIndex(userID, datasetID, indexType)
+	data, code, err := h.datasetsService.RunIndex(ctx, userID, datasetID, indexType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -950,7 +951,8 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	ctx := c.Request.Context()
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(ctx, userID, datasetID, documentID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

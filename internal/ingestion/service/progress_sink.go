@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 
@@ -50,10 +51,10 @@ type progressSink struct {
 // tests can inject a stub and assert the mirror call without depending on the
 // full DocumentService surface.
 type docProgressSvc interface {
-	UpdateRunProgress(docID string, progress float64, run, progressMsg string) error
+	UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error
 }
 
-func newProgressSink(taskSvc *servicepkg.IngestionTaskService) *progressSink {
+func newProgressSink(ctx context.Context, taskSvc *servicepkg.IngestionTaskService) *progressSink {
 	// Eagerly construct the DocumentService so docSvc is immutable after this
 	// point. eino's compose graph runs parallel branches concurrently, so
 	// OnComponentProgress (and thus docSvc) can fire from multiple goroutines;
@@ -65,14 +66,14 @@ func newProgressSink(taskSvc *servicepkg.IngestionTaskService) *progressSink {
 	}
 }
 
-func (s *progressSink) OnComponentTotal(taskID string, total int) {
+func (s *progressSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	s.total.Store(int64(total))
 	if err := s.taskSvc.UpdateComponentTotal(taskID, total); err != nil {
 		common.Error(fmt.Sprintf("progressSink: update component_total for task %s failed: %v", taskID, err), err)
 	}
 }
 
-func (s *progressSink) OnComponentProgress(ev pipeline.ProgressEvent) {
+func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.ProgressEvent) {
 	if err := s.taskSvc.RecordComponentProgress(ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: record component progress for task %s failed: %v", ev.TaskID, err), err)
 	}
@@ -89,7 +90,7 @@ func (s *progressSink) OnComponentProgress(ev pipeline.ProgressEvent) {
 		return
 	}
 	progress, run := deriveDocumentProgress(agg, int(total))
-	if err := s.docSvc.UpdateRunProgress(ev.DocumentID, progress, run, ev.Message); err != nil {
+	if err = s.docSvc.UpdateRunProgress(ctx, ev.DocumentID, progress, run, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: mirror progress to document %s for task %s failed: %v", ev.DocumentID, ev.TaskID, err), err)
 	}
 }

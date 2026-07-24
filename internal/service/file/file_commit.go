@@ -216,7 +216,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 		if err != nil {
 			return fmt.Errorf("failed to marshal tree state: %w", err)
 		}
-		if err := tx.Model(&entity.FileCommit{}).Where("id = ?", commitID).Update("tree_state", string(treeJSON)).Error; err != nil {
+		if err = tx.Model(&entity.FileCommit{}).Where("id = ?", commitID).Update("tree_state", string(treeJSON)).Error; err != nil {
 			return fmt.Errorf("failed to update tree state: %w", err)
 		}
 		treeStr = string(treeJSON)
