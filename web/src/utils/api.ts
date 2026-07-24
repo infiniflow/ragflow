@@ -165,6 +165,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  artifactsStructure: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>

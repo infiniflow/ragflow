@@ -50,7 +50,7 @@ export function BlueprintSection({
             placeholder={t('common.selectPlaceholder')}
           />
 
-          <div className="rounded-lg border border-border-button bg-bg-card p-4 space-y-4">
+          <div className="space-y-4">
             <RAGFlowFormItem
               name={instructionPath}
               label={t('setting.instruction')}

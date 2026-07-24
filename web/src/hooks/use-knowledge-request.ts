@@ -17,6 +17,7 @@ import {
   IWikiCommitDetail,
   IWikiCommitListResponse,
 } from '@/interfaces/database/dataset';
+import { type IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IFetchArtifactGraphRequestParams,
   ITestRetrievalRequestBody,
@@ -28,6 +29,7 @@ import kbService, {
   deleteKnowledgeGraph,
   getArtifactGraph,
   getArtifactPage,
+  getArtifactsStructure,
   getKbDetail,
   getKnowledgeGraph,
   getWikiCommit,
@@ -83,6 +85,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
+  FetchDatasetStructure = 'fetchDatasetStructure',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -719,6 +722,31 @@ export function useFetchArtifactGraph(
     queryFn: async () => {
       const { data } = await getArtifactGraph(knowledgeBaseId, params);
       return data?.data ?? { entities: [], relations: [] };
+    },
+  });
+
+  return { data, loading };
+}
+
+export const DatasetStructureKeys = {
+  all: (datasetId: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId] as const,
+  kind: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId, kind] as const,
+};
+
+export function useFetchDatasetStructureGraph(kind: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const enabled = !!knowledgeBaseId && !!kind;
+
+  const { data, isFetching: loading } = useQuery<IStructureGraphResponse | null>({
+    queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
+    initialData: null,
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactsStructure(knowledgeBaseId, kind);
+      return (data?.data as IStructureGraphResponse | null) ?? null;
     },
   });
 

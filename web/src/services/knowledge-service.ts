@@ -416,6 +416,9 @@ export const getArtifactGraph = (
   params?: { node?: string },
 ) => request.get(api.getArtifactGraph(datasetId), { params });
 
+export const getArtifactsStructure = (datasetId: string, kind: string) =>
+  request.get(api.artifactsStructure(datasetId), { params: { kind } });
+
 export const updateArtifactPage = (
   datasetId: string,
   pageType: string,

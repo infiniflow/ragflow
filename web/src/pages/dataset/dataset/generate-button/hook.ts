@@ -74,6 +74,10 @@ const TraceTypeMap: Record<GenerateType, TraceType> = {
   [GenerateType.Raptor]: TraceType.Raptor,
   [GenerateType.Artifact]: TraceType.Artifact,
   [GenerateType.ToSkills]: TraceType.Skill,
+  [GenerateType.MindMap]: TraceType.MindMap,
+  [GenerateType.Timeline]: TraceType.Timeline,
+  [GenerateType.SessionEssence]: TraceType.SessionEssence,
+  [GenerateType.SessionGraph]: TraceType.SessionGraph,
 };
 
 export const useTraceRunData = (type: GenerateType) => {

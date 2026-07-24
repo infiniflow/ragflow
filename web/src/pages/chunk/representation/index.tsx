@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import {
   type ClickableNode,
   RepresentationRenderer,
-} from './components/representation-renderer';
+} from '@/components/structure-graph/representation-renderer';
 import { RepresentationSelect } from './components/representation-select';
 import { useSelectedTemplate } from './hooks/use-selected-template';
 

@@ -20,7 +20,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 
-import { LeftPanelTab } from './constants';
+import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { CompilationLoadingCard } from './loading-card';
@@ -70,7 +70,7 @@ export function LlmWikiView() {
   if (isEmpty) {
     return (
       <CompilationEmptyState
-        type="llm-wiki"
+        type={ViewMode.LlmWiki}
         disabled={!canGenerate}
         data={artifactRunData}
       />

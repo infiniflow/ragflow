@@ -15,7 +15,13 @@ import { formatKindLabel } from '@/utils/compilation-template-util';
 import { useCompilationTemplateGroupForm } from './use-compilation-template-group-form';
 import { useCompilationTemplateGroupSubmit } from './use-compilation-template-group-submit';
 
-export const useEditNextCompilationTemplateGroup = () => {
+type UseEditNextCompilationTemplateGroupOptions = {
+  onSuccess?: () => void;
+};
+
+export const useEditNextCompilationTemplateGroup = ({
+  onSuccess,
+}: UseEditNextCompilationTemplateGroupOptions = {}) => {
   const { id } = useParams<{ id: string }>();
   const { navigateToCompilationTemplates } = useNavigatePage();
 
@@ -51,7 +57,7 @@ export const useEditNextCompilationTemplateGroup = () => {
     id,
     createGroup,
     updateGroup,
-    onSuccess: navigateToCompilationTemplates,
+    onSuccess: onSuccess ?? navigateToCompilationTemplates,
   });
 
   return {

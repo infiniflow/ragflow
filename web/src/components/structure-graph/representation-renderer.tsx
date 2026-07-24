@@ -14,7 +14,7 @@ import {
   adaptTimelineToX6Data,
   adaptTreeToTreeData,
   filterTreeDataByKeyword,
-} from '../utils/adapters';
+} from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
 
