@@ -16,6 +16,7 @@ import (
 	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -275,6 +276,79 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "currently being processed") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+
+	page := 2
+	size := 5
+	resp, err := svc.List(&service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+		Keywords:  "  invoice terms  ",
+	}, userID)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want 1", resp.Total)
+	}
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if engine.searchReq.Offset != 5 || engine.searchReq.Limit != 5 {
+		t.Fatalf("pagination = offset %d limit %d, want offset 5 limit 5", engine.searchReq.Offset, engine.searchReq.Limit)
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want %#v", engine.searchReq.KbIDs, []string{datasetID})
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if slices.Contains(engine.searchReq.SelectFields, "content") {
+		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
+	}
+	for _, field := range []string{"content_with_weight", "img_id", "position_int"} {
+		if !slices.Contains(engine.searchReq.SelectFields, field) {
+			t.Fatalf("SelectFields = %#v, missing %q", engine.searchReq.SelectFields, field)
+		}
+	}
+	if got := resp.Chunks[0]["content_with_weight"]; got != "weighted invoice terms body" {
+		t.Fatalf("formatted content_with_weight = %#v, want %q", got, "weighted invoice terms body")
+	}
+	if len(engine.searchReq.MatchExprs) != 1 {
+		t.Fatalf("MatchExprs length = %d, want 1", len(engine.searchReq.MatchExprs))
+	}
+	matchText, ok := engine.searchReq.MatchExprs[0].(*types.MatchTextExpr)
+	if !ok {
+		t.Fatalf("MatchExprs[0] = %T, want *types.MatchTextExpr", engine.searchReq.MatchExprs[0])
+	}
+	if matchText.MatchingText != "invoice terms" {
+		t.Fatalf("MatchingText = %q, want %q", matchText.MatchingText, "invoice terms")
+	}
+	if matchText.TopN != size {
+		t.Fatalf("TopN = %d, want %d", matchText.TopN, size)
 	}
 }
 
@@ -1030,6 +1104,26 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
 	return nil, e.insertErr
+}
+
+type listChunksSearchEngine struct {
+	parseTestDocEngine
+	searchReq *types.SearchRequest
+}
+
+func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return &types.SearchResult{
+		Chunks: []map[string]interface{}{
+			{
+				"id":                  "chunk-1",
+				"content":             "plain invoice terms body",
+				"content_with_weight": "weighted invoice terms body",
+				"doc_id":              "doc-1",
+			},
+		},
+		Total: 1,
+	}, nil
 }
 
 type chunkImageStorage struct {
