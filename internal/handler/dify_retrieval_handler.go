@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/dao"
 	"strconv"
 	"strings"
 
@@ -66,7 +67,7 @@ type RetrievalServiceIface interface {
 
 // DocumentDAOIface abstracts DocumentDAO for the Dify handler.
 type DocumentDAOIface interface {
-	GetByIDs(ids []string) ([]*entity.Document, error)
+	GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error)
 }
 
 // --- Request / Response types ---
@@ -321,10 +322,11 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		allDocIDs = append(allDocIDs, id)
 	}
 
+	ctx := c.Request.Context()
 	docMap := make(map[string]*entity.Document)
 	if len(allDocIDs) > 0 {
 		var docs []*entity.Document
-		docs, err = h.docDAO.GetByIDs(allDocIDs)
+		docs, err = h.docDAO.GetByIDs(ctx, dao.DB, allDocIDs)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
 			return

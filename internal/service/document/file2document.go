@@ -17,6 +17,7 @@
 package document
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"ragflow/internal/service"
@@ -81,7 +82,7 @@ type LinkToDatasetsRequest struct {
 //
 // On validation failure it returns a sentinel error (see ErrLink* above) so the
 // handler can map it to a Python-compatible response without leaking internals.
-func (s *File2DocumentService) LinkToDatasets(userID string, req *LinkToDatasetsRequest, mode string) error {
+func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
 	files, err := s.fileDAO.GetByIDs(req.FileIDs)
 	if err != nil {
@@ -149,7 +150,7 @@ func (s *File2DocumentService) LinkToDatasets(userID string, req *LinkToDatasets
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
 	kbIDs := req.KbIDs
 	go func() {
-		if err := s.convertFiles(allFileIDs, kbIDs, userID, mode); err != nil {
+		if err = s.convertFiles(ctx, allFileIDs, kbIDs, userID, mode); err != nil {
 			common.Warn("file2document.convertFiles failed",
 				zap.Strings("file_ids", allFileIDs),
 				zap.Strings("kb_ids", kbIDs),
@@ -164,7 +165,7 @@ func (s *File2DocumentService) LinkToDatasets(userID string, req *LinkToDatasets
 // either remove existing documents/mappings (replace) or keep them and skip
 // already-linked KBs (add), then create a new document in each target KB and
 // a fresh mapping.
-func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID, mode string) error {
+func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
 	replaceExisting := mode != "add"
 	for _, fileID := range fileIDs {
 		mappings, err := s.file2DocumentDAO.GetByFileID(fileID)
@@ -182,7 +183,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID, mod
 				if m.DocumentID == nil {
 					continue
 				}
-				if err := s.documentSvc.RemoveDocumentKeepFile(*m.DocumentID); err != nil {
+				if err = s.documentSvc.RemoveDocumentKeepFile(ctx, *m.DocumentID); err != nil {
 					common.Warn("convertFiles: RemoveDocumentKeepFile failed",
 						zap.String("docID", *m.DocumentID), zap.Error(err))
 				}
@@ -196,11 +197,12 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID, mod
 			// "add" mode: collect KB IDs already linked to this file so we
 			// skip them when creating new documents below. Existing links
 			// are preserved (mirrors Python _convert_files add path).
+			var doc *entity.Document
 			for _, m := range mappings {
 				if m.DocumentID == nil {
 					continue
 				}
-				doc, err := s.documentDAO.GetByID(*m.DocumentID)
+				doc, err = s.documentDAO.GetByID(ctx, dao.DB, *m.DocumentID)
 				if err != nil || doc == nil {
 					continue
 				}
@@ -227,7 +229,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID, mod
 			// Mirror Python duplicate_name: generate a non-colliding document
 			// name within the dataset so that linking does not silently create
 			// duplicate-name documents in the same KB.
-			docName, err := s.documentSvc.UniqueDocumentName(kbID, file.Name)
+			docName, err := s.documentSvc.UniqueDocumentName(ctx, kbID, file.Name)
 			if err != nil {
 				common.Warn("convertFiles: UniqueDocumentName failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))

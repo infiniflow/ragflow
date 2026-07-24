@@ -183,7 +183,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	task, err := e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
+	task, err := e.ingestionTaskSvc.StartRunning(e.ctx, taskMessage.TaskID)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -609,7 +609,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 // appended timestamped cancel message (progress_msg += cancelMsg).
 func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(task.DocumentID)
+	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
 		return
@@ -619,7 +619,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
 }
 
 // markTimeoutProgress writes the timeout-progress markers to the document
@@ -627,7 +627,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 // failure rather than a user-initiated stop.
 func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(task.DocumentID)
+	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
 		return
@@ -637,7 +637,7 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another
@@ -697,7 +697,7 @@ func (e *Ingestor) releaseTask(taskID string) {
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ingestionTask)
+	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
@@ -732,11 +732,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 			return dsl, parserID, nil
 		})
 	}
-	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}
-	e.docState.apply(result)
+	e.docState.apply(ctx, result)
 	return nil
 }
 

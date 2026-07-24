@@ -28,7 +28,7 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 
 // GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
 // Matches Python's File2DocumentService.get_storage_address function
-func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
 	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
 	if err != nil || len(f2d) == 0 {
@@ -61,7 +61,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	}
 
 	documentDAO := dao.NewDocumentDAO()
-	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	doc, err := documentDAO.GetByID(ctx, dao.DB, *f2d[0].DocumentID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
@@ -77,7 +77,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -95,6 +95,19 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 
 // GetFileContents fetches file contents (text + image) from storage
 // for the given file dicts.
+//
+// File dicts are the descriptors returned by the upload_info endpoint
+// (UploadInfos / storeUploadInfoBlob). They contain:
+//
+//   - "id":         storage location UUID (key in the downloads bucket)
+//   - "created_by": the user ID who owns the downloads bucket
+//   - "name":       the original filename
+//   - "mime_type":  the content type
+//
+// Blobs are stored directly in "{created_by}-downloads/{id}" in object
+// storage WITHOUT a corresponding File entity row in the database.
+// Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
+//
 //   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
 //   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
 func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
@@ -108,28 +121,36 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		if id == "" {
 			continue
 		}
-		file, ferr := s.fileDAO.GetByID(id)
-		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
-			continue
+		name, _ := fd["name"].(string)
+		mimeType, _ := fd["mime_type"].(string)
+		createdBy, _ := fd["created_by"].(string)
+		if createdBy == "" {
+			createdBy = uid
 		}
-		if !s.checkFilePerm(s.fileDAO, file, uid) {
+		// Permission: only the owner can access their uploads bucket.
+		if createdBy != uid {
 			return nil, nil, fmt.Errorf("No authorization.")
 		}
-		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+
+		data, derr := storageImpl.Get(createdBy+"-downloads", id)
 		if derr != nil || len(data) == 0 {
 			continue
 		}
-		ft := utility.FilenameType(file.Name)
+
+		ft := utility.FilenameType(name)
 		if ft == utility.FileTypeVISUAL {
 			if raw {
 				images = append(images, string(data))
 			} else {
-				ext := utility.GetFileExtension(file.Name)
-				mime := utility.GetContentType(ext, string(ft))
-				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+				mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+				if mediaType == "" {
+					ext := utility.GetFileExtension(name)
+					mediaType = utility.GetContentType(ext, string(ft))
+				}
+				images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 			}
 		} else {
-			texts = append(texts, parseFileContent(ctx, file.Name, data))
+			texts = append(texts, parseFileContent(ctx, name, data))
 		}
 	}
 	return texts, images, nil

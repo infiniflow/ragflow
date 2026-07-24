@@ -206,10 +206,7 @@ func (tc *TaskContext) Duration() time.Duration {
 
 // calculateBackoff calculates the backoff duration.
 func calculateBackoff(attempt int, policy *types.RetryPolicy) time.Duration {
-	backoff := time.Duration(float64(policy.InitialInterval) * math.Pow(policy.BackoffFactor, float64(attempt-1)))
-	if backoff > policy.MaxInterval {
-		backoff = policy.MaxInterval
-	}
+	backoff := min(time.Duration(float64(policy.InitialInterval)*math.Pow(policy.BackoffFactor, float64(attempt-1))), policy.MaxInterval)
 
 	if policy.Jitter {
 		backoff = addJitter(backoff)

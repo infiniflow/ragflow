@@ -152,7 +152,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}
 
 	// Prune deleted chunks
-	searchResult, err = s.PruneDeletedChunks(searchResult)
+	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
 	if err != nil {
 		return nil, fmt.Errorf("PruneDeletedChunks failed: %w", err)
 	}
@@ -573,10 +573,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	if _, ok := filters["available_int"]; !ok {
 		filters["available_int"] = 1
 	}
-	pg := req.Page - 1
-	if pg < 0 {
-		pg = 0
-	}
+	pg := max(req.Page-1, 0)
 	topk := req.Top
 	if topk <= 0 {
 		topk = 1024
@@ -973,7 +970,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 }
 
 // PruneDeletedChunks removes chunks whose documents no longer exist
-func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
+func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
 	if s.documentDAO == nil {
 		return nil, fmt.Errorf("documentDAO is not initialized")
 	}
@@ -1000,7 +997,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 	}
 
 	// Get existing document IDs
-	docs, err := s.documentDAO.GetByIDs(uniqueDocIDs)
+	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, uniqueDocIDs)
 	if err != nil {
 		return nil, fmt.Errorf("GetByIDs failed: %w", err)
 	}

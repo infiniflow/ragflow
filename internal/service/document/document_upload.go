@@ -1,11 +1,13 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"ragflow/internal/dao"
 	"strings"
 
 	"ragflow/internal/common"
@@ -25,7 +27,7 @@ import (
 //
 // Gaps vs Python (documented, not yet ported): thumbnail generation and
 // read_potential_broken_pdf repair.
-func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, []string{"storage not initialized"}
@@ -52,7 +54,7 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 
 	// Don't silently disable dedupe protection: a transient lookup failure means
 	// the existing-name set is unknown, so fail rather than risk duplicates.
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -65,7 +67,8 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 	var errMsgs []string
 
 	for _, fh := range files {
-		blob, err := readFileHeaderBytes(fh)
+		var blob []byte
+		blob, err = readFileHeaderBytes(fh)
 		if err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -86,22 +89,22 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		for storageImpl.ObjExist(kb.ID, location) {
 			location += "_"
 		}
-		if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+		if err = storageImpl.Put(kb.ID, location, blob); err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
 
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
-		if err := s.InsertDocument(doc); err != nil {
+		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
-			err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
+			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -115,16 +118,16 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 }
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
-func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
 	// A transient lookup failure means the existing-name set is unknown; fail
 	// rather than write blind and risk a duplicate.
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	for _, n := range names {
 		if n == name {
-			return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
+			return nil, common.CodeDataError, fmt.Errorf("duplicated document name in the same dataset")
 		}
 	}
 
@@ -134,11 +137,11 @@ func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
-	if err := s.InsertDocument(doc); err != nil {
+	if err = s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(doc, kb.ID, err)
+	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
@@ -226,7 +229,7 @@ func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenant
 	return nil
 }
 
-func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
@@ -237,7 +240,7 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 		return nil, common.CodeServerError, err
 	}
 
-	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -246,7 +249,7 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 		taken[n] = true
 	}
 
-	blob, headers, _, err := utility.FetchRemoteFileSafely(url, maxUploadDocSize)
+	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, maxUploadDocSize)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -260,24 +263,24 @@ func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, 
 
 	filetype := utility.FilenameType(filename)
 	if filetype == utility.FileTypeOTHER {
-		return nil, common.CodeDataError, fmt.Errorf("This type of file has not been supported yet!")
+		return nil, common.CodeDataError, fmt.Errorf("this type of file has not been supported yet")
 	}
 
 	location := filename
 	for storageImpl.ObjExist(kb.ID, location) {
 		location += "_"
 	}
-	if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+	if err = storageImpl.Put(kb.ID, location, blob); err != nil {
 		return nil, common.CodeServerError, err
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
-	if err := s.InsertDocument(doc); err != nil {
+	if err = s.InsertDocument(doc); err != nil {
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
-	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
+	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
