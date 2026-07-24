@@ -54,6 +54,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -261,8 +262,9 @@ func matchLayoutLevel(text, layout string, fallbackLevel int) int {
 
 // resolveTitleLevels mirrors common.py:resolve_frequency_levels over the
 // full record stream. It is the "frequency" branch of
-// common.py:resolve_title_levels (the outline branch is parity-gap
-// territory per the SCOPE comment above).
+// common.py:resolve_title_levels. The outline branch
+// (common.py:resolve_outline_levels) is handled by resolveOutlineLevels and
+// tried first in newLevelContext.
 //
 // For each record:
 //   - a non-text record is pinned to BODY_LEVEL directly (python skips
@@ -339,6 +341,140 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 	return out
 }
 
+// outlineEntry is one PDF bookmark/heading from the parser-supplied
+// outline, mirroring Python extract_pdf_outlines' (text, level, page)
+// tuple. The page is unused by title detection.
+type outlineEntry struct {
+	title string
+	level int
+}
+
+// outlineSimilarity mirrors common.py:_outline_similarity: the Jaccard
+// overlap of character bigrams between two strings. It is rune-based so it
+// matches Python's code-point indexing (str[i] is a Unicode character, not
+// a byte). The right-hand bigram set is capped at min(len(left), len(right)-1)
+// characters, exactly as the Python range() does.
+func outlineSimilarity(left, right string) float64 {
+	lr := []rune(left)
+	rr := []rune(right)
+	leftPairs := make(map[string]struct{}, max(0, len(lr)-1))
+	for i := 0; i+1 < len(lr); i++ {
+		leftPairs[string(lr[i])+string(lr[i+1])] = struct{}{}
+	}
+	n := len(lr)
+	if m := len(rr) - 1; m < n {
+		n = m
+	}
+	if n < 0 {
+		n = 0
+	}
+	rightPairs := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		rightPairs[string(rr[i])+string(rr[i+1])] = struct{}{}
+	}
+	denom := len(leftPairs)
+	if len(rightPairs) > denom {
+		denom = len(rightPairs)
+	}
+	if denom == 0 {
+		return 0
+	}
+	inter := 0
+	for k := range leftPairs {
+		if _, ok := rightPairs[k]; ok {
+			inter++
+		}
+	}
+	return float64(inter) / float64(denom)
+}
+
+// resolveOutlineLevels mirrors common.py:resolve_outline_levels. Each text
+// record is matched against the outline by character-bigram similarity (>0.8
+// assigns level+1); unmatched records stay BODY_LEVEL. It returns ok=false
+// when there is no outline, or when the outline is too sparse relative to the
+// record count (len(outlines)/len(records) <= 0.03), in which case the
+// caller falls back to frequency-based detection. mostLevel mirrors Python's
+// max(1, max_outline_level).
+func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels []int, mostLevel int, ok bool) {
+	if len(outline) == 0 || len(records) == 0 {
+		return nil, 0, false
+	}
+	if float64(len(outline))/float64(len(records)) <= 0.03 {
+		return nil, 0, false
+	}
+	maxLevel := 0
+	for _, o := range outline {
+		if o.level > maxLevel {
+			maxLevel = o.level
+		}
+	}
+	levels = make([]int, len(records))
+	for i, rec := range records {
+		if !rec.isText() {
+			levels[i] = bodyLevel
+			continue
+		}
+		matched := 0
+		for _, o := range outline {
+			if outlineSimilarity(o.title, rec.text) > 0.8 {
+				matched = o.level + 1
+				break
+			}
+		}
+		if matched == 0 {
+			levels[i] = bodyLevel
+		} else {
+			levels[i] = matched
+		}
+	}
+	return levels, max(1, maxLevel), true
+}
+
+// outlineFromInputs reads the parser-supplied PDF outline from the upstream
+// file metadata (file.outline, written by the ingestion PDF parser's
+// outlinesToFileMeta) and normalizes it into the chunker's outlineEntry
+// shape. Returns nil when no outline is present, so callers fall back to
+// frequency-based title detection. Numbers are coerced from int/float64
+// because the runtime may hand the chunker a JSON-decoded payload.
+func outlineFromInputs(inputs map[string]any) []outlineEntry {
+	file, _ := inputs["file"].(map[string]any)
+	if file == nil {
+		return nil
+	}
+	raw, _ := file["outline"].([]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]outlineEntry, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		title, _ := m["title"].(string)
+		if title == "" {
+			continue
+		}
+		out = append(out, outlineEntry{title: title, level: anyToInt(m["level"])})
+	}
+	return out
+}
+
+func anyToInt(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case float32:
+		return int(t)
+	default:
+		return 0
+	}
+}
+
 // bodyLevel is the sentinel python uses for non-heading lines. We use
 // the same large int (sys.maxsize - 1) for parity. Practically this
 // just needs to be "larger than any realistic heading level"; tests
@@ -357,11 +493,12 @@ func lineRecordsFromText(text string) []lineRecord {
 			continue
 		}
 		out = append(out, lineRecord{
-			text:    ln,
-			docType: "text",
-			imgID:   nil,
-			layout:  "",
-			pdfPos:  nil,
+			text:         ln,
+			docType:      "text",
+			imgID:        nil,
+			layout:       "",
+			pdfPositions: nil,
+			positions:    nil,
 		})
 	}
 	return out
@@ -371,13 +508,14 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text       string
-	docType    string
-	imgID      *string
-	layout     string
-	ckType     string
-	pdfPos     []map[string]any
-	parentMeta map[string]any
+	text         string
+	docType      string
+	imgID        *string
+	layout       string
+	ckType       string
+	pdfPositions json.RawMessage
+	positions    json.RawMessage
+	parentMeta   map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }
@@ -421,7 +559,13 @@ type LevelContext struct {
 	mostLevel int
 }
 
-func newLevelContext(records []lineRecord, p *titleChunkerParam) LevelContext {
+// newLevelContext resolves per-line heading levels, mirroring Python's
+// resolve_title_levels: try the PDF outline branch first (when an outline is
+// supplied and dense enough), otherwise fall back to frequency detection.
+func newLevelContext(records []lineRecord, outline []outlineEntry, p *titleChunkerParam) LevelContext {
+	if levels, mostLevel, ok := resolveOutlineLevels(records, outline); ok {
+		return LevelContext{levels: levels, mostLevel: mostLevel}
+	}
 	levels := resolveTitleLevels(records, p)
 	// most_level is the most-frequent non-body heading level
 	// (common.py:resolve_frequency_levels). Python computes this via

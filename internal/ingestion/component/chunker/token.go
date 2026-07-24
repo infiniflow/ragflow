@@ -46,10 +46,10 @@
 //     Media-context attachment is per-item sequential; merge is
 //     index-deterministic.
 //
-//   - No PDF/outline awareness (Python `restore_pdf_text_previews`).
-//     That depends on deepdoc/parser which is out of scope for this
-//     phase; the chunker accepts the parser-style structured JSON
-//     payload and runs the same logic against it.
+//   - PDF text previews (Python `restore_pdf_text_previews`) are
+//     generated on demand for text chunks that carry PDF positions:
+//     cropImageChunks crops the text region and writes a preview image,
+//     then imageUploadDecorator uploads it to img_id. See pdfcrop_cgo.go.
 package chunker
 
 import (
@@ -722,6 +722,12 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				prev.Text = prev.Text + "\n" + ck.Text
 				prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 			}
+			// Preserve PDF coordinates across the merge: extend the
+			// coordinate lists instead of dropping the incoming item's
+			// positions. Mirrors Python token_chunker.py:240
+			// `merged[prev][PDF_POSITIONS_KEY].extend(...)` (diffs 2.5 / 2.3).
+			prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
+			prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
 		}
 		perItem[idx] = merged
 	}
@@ -742,11 +748,46 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		v := *in.PageNumber
 		out.PageNumber = &v
 	}
+	// Deep-copy the coordinate byte slices so the clone does not alias
+	// the source's backing array (diff 2.5 defensive fix).
+	if in.PDFPositions != nil {
+		out.PDFPositions = append(json.RawMessage(nil), in.PDFPositions...)
+	}
+	if in.Positions != nil {
+		out.Positions = append(json.RawMessage(nil), in.Positions...)
+	}
 	if in.Extra != nil {
 		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
 		for k, v := range in.Extra {
 			out.Extra[k] = append(json.RawMessage(nil), v...)
 		}
+	}
+	return out
+}
+
+// extendRawJSONArray concatenates two JSON array payloads, mirroring
+// Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
+// empty; the result is always a valid JSON array (or an empty raw message).
+// It is used to accumulate PDF coordinate lists (`_pdf_positions`,
+// `positions`) when text chunks are merged (diffs 2.5 / 2.3).
+func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	var arrA, arrB []json.RawMessage
+	if err := json.Unmarshal(a, &arrA); err != nil {
+		return b
+	}
+	if err := json.Unmarshal(b, &arrB); err != nil {
+		return a
+	}
+	arrA = append(arrA, arrB...)
+	out, err := json.Marshal(arrA)
+	if err != nil {
+		return a
 	}
 	return out
 }
