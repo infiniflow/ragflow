@@ -840,8 +840,15 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 	page := common.CoalesceInt(req.Page, 1)
 	size := common.CoalesceInt(req.Size, 30)
 	keywords := strings.TrimSpace(req.Keywords)
+	var orderBy *types.OrderByExpr
 	matchExprs := make([]interface{}, 0, 1)
-	if keywords != "" {
+	if keywords == "" {
+		orderBy = (&types.OrderByExpr{}).
+			Asc("chunk_order_int").
+			Asc("page_num_int").
+			Asc("top_int").
+			Desc("create_timestamp_flt")
+	} else {
 		matchExprs = append(matchExprs, &types.MatchTextExpr{
 			MatchingText: keywords,
 			TopN:         size,
@@ -855,6 +862,7 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 		KbIDs:      kbIDs,
 		Offset:     (page - 1) * size,
 		Limit:      size,
+		OrderBy:    orderBy,
 		SelectFields: []string{
 			"id",
 			"content_with_weight",
