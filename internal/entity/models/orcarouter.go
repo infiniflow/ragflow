@@ -122,8 +122,11 @@ func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 
 	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
+ return &ChatResponse{
+     Answer:        &content,
+     ReasonContent: &emptyReason,
+    ToolCalls:     toolCalls,
+ }, nil
 		return nil, fmt.Errorf("no message in response")
 	}
 
