@@ -1224,12 +1224,13 @@ async def session_completion(chat_id_in_arg=""):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
-        elif not dia.llm_id:
-            logging.info("empty chat_model_id in req, use default chat model.")
-            _, tenant_info = TenantService.get_by_id(dia.tenant_id)
-            if not tenant_info or not tenant_info.llm_id:
-                raise LookupError("No default chat model for tenant.")
-            dia.llm_id = tenant_info.llm_id
+        else:
+            if not dia.llm_id:
+                logging.info("empty chat_model_id in req, use default chat model.")
+                _, tenant_info = TenantService.get_by_id(dia.tenant_id)
+                if not tenant_info or not tenant_info.llm_id:
+                    raise LookupError("No default chat model for tenant.")
+                dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
 
         legacy = _get_bool_request_flag(
