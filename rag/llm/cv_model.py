@@ -772,7 +772,7 @@ class OllamaCV(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         from ollama import Client
 
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
