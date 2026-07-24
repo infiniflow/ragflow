@@ -162,9 +162,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // RetrievalTest performs a retrieval test against specified knowledge bases.
 // @Summary Retrieval Test
 // @Description Test document retrieval across knowledge bases with optional filters, reranking, and KG search.
-// @Tags searchbots
-// @Accept json
-// @Produce json
+// @Tags searchBots
 // @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval_test [post]
@@ -203,8 +201,8 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
-
-	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
+	ctx := c.Request.Context()
+	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeServerError, nil, "retrieval test failed")
@@ -360,7 +358,8 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		searchConfig = searchConfigFromDetail(detail)
 	}
 
-	mindMap, err := runMindMap(mindMapRunConfig{
+	ctx := c.Request.Context()
+	mindMap, err := runMindMap(ctx, mindMapRunConfig{
 		Question:      req.Question,
 		KbIDs:         filtered,
 		SearchID:      req.SearchID,

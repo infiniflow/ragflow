@@ -19,7 +19,7 @@ import (
 )
 
 // GetMetadataSummary get metadata summary for documents
-func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
+func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
 	tenantID, err := s.metadataSvc.GetTenantIDByKBID(kbID)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 }
 
 // GetMetadataByKBs get metadata for knowledge bases
-func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface{}, error) {
+func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error) {
 	if len(kbIDs) == 0 {
 		return make(map[string]interface{}), nil
 	}

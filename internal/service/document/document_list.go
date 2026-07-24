@@ -121,7 +121,7 @@ func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opt
 	if err != nil {
 		return nil, 0, err
 	}
-	metadataFilter, err := s.getDocumentMetadataFilter(opts.KbID, docIDs)
+	metadataFilter, err := s.getDocumentMetadataFilter(ctx, opts.KbID, docIDs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -129,8 +129,8 @@ func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opt
 	return filters, total, nil
 }
 
-func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string) (map[string]interface{}, error) {
-	metadataByKey, err := s.GetMetadataByKBs([]string{kbID})
+func (s *DocumentService) getDocumentMetadataFilter(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
+	metadataByKey, err := s.GetMetadataByKBs(ctx, []string{kbID})
 	if err != nil {
 		return nil, err
 	}

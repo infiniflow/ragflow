@@ -254,7 +254,7 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	}
 
 	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
-	if err := s.deleteDocRecordWithCounters(doc, kb.ID); err != nil {
+	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
 	s.cleanupFileReferences(docID)
@@ -276,7 +276,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
 	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
-	return s.deleteDocRecordWithCounters(doc, kb.ID)
+	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
 }
 
 // InsertDocument creates a document row and increments the owning KB's doc_num
@@ -356,7 +356,7 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 // KB counters in a single transaction. Counters are only decremented when a
 // document row was actually removed (RowsAffected > 0), guarding against
 // double-decrement on retries or concurrent deletes.
-func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID string) error {
+func (s *DocumentService) deleteDocRecordWithCounters(ctx context.Context, doc *entity.Document, kbID string) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("id = ?", doc.ID).Delete(&entity.Document{})
 		if result.Error != nil {
@@ -383,8 +383,8 @@ func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID
 	})
 }
 
-func (s *DocumentService) rollbackAddFileFromKBError(doc *entity.Document, kbID string, err error) error {
-	if cleanupErr := s.deleteDocRecordWithCounters(doc, kbID); cleanupErr != nil {
+func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *entity.Document, kbID string, err error) error {
+	if cleanupErr := s.deleteDocRecordWithCounters(ctx, doc, kbID); cleanupErr != nil {
 		return fmt.Errorf("%w; rollback cleanup failed: %w", err, cleanupErr)
 	}
 	return err

@@ -62,8 +62,6 @@ func NewChunkHandler(chunkService chunkService, userService *service.UserService
 // @Summary Retrieval Test
 // @Description Test retrieval of chunks based on question and knowledge base
 // @Tags chunks
-// @Accept json
-// @Produce json
 // @Param request body service.RetrievalTestRequest true "retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/search [post]
@@ -141,8 +139,6 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 // @Summary Get Chunk
 // @Description Retrieve a single chunk by its ID.
 // @Tags chunks
-// @Accept json
-// @Produce json
 // @Param dataset_id path string true "Dataset ID"
 // @Param document_id path string true "Document ID"
 // @Param chunk_id path string true "Chunk ID"
@@ -337,8 +333,6 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 // @Summary List Chunks
 // @Description Retrieve paginated chunks for a document with optional filtering.
 // @Tags chunks
-// @Accept json
-// @Produce json
 // @Param request body service.ListChunksRequest true "List chunks parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chunk/list [post]
@@ -483,18 +477,16 @@ func parseAvailableBody(rawBody map[string]interface{}) (int, error) {
 			return 0, fmt.Errorf("available must be a boolean")
 		}
 	}
-	return 0, fmt.Errorf("`available_int` or `available` is required.")
+	return 0, fmt.Errorf("`available_int` or `available` is required")
 }
 
 // UpdateChunk updates a chunk
 // @Summary Update Chunk
 // @Description Update chunk fields
 // @Tags chunks
-// @Accept json
-// @Produce json
 // @Param request body service.UpdateChunkRequest true "update chunk"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/chunk/update [post]
+// @Router /api/v1/chunk/update [post]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -613,8 +605,6 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 // @Summary Remove Chunks
 // @Description Remove chunks from a document
 // @Tags chunks
-// @Accept json
-// @Produce json
 // @Param request body service.RemoveChunksRequest true "remove chunks request"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [delete]

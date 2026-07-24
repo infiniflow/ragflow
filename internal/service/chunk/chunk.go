@@ -129,7 +129,7 @@ func NewChunkService() *ChunkService {
 //     - Builds doc_aggs by aggregating chunks per document
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
-func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
 
 	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
@@ -159,8 +159,6 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	if len(req.Datasets) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
-
-	ctx := context.Background()
 
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil {
@@ -504,7 +502,7 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 }
 
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
+func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -512,8 +510,6 @@ func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*servic
 	if req.ChunkID == "" {
 		return nil, fmt.Errorf("chunk_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -1023,7 +1019,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	return nil
 }
 
-func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID string) error {
+func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -1031,8 +1027,6 @@ func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 	if req.ChunkID == "" {
 		return fmt.Errorf("chunk_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)

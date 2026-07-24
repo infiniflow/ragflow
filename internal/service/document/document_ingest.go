@@ -10,7 +10,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	return s.ingestionTaskSvc.ListByUser(userID, datasetID, page, pageSize)
 }
 
@@ -23,11 +23,11 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID
 	return responses, nil
 }
 
-func (s *DocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return s.ingestionTaskSvc.RequestStopMany(tasks, &userID)
 }
 
-func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
+func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
 	return s.ingestionTaskSvc.RemoveMany(tasks, &userID)
 }
 

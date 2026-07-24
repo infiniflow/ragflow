@@ -67,7 +67,8 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	var errMsgs []string
 
 	for _, fh := range files {
-		blob, err := readFileHeaderBytes(fh)
+		var blob []byte
+		blob, err = readFileHeaderBytes(fh)
 		if err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -88,22 +89,22 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		for storageImpl.ObjExist(kb.ID, location) {
 			location += "_"
 		}
-		if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+		if err = storageImpl.Put(kb.ID, location, blob); err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
 
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
-		if err := s.InsertDocument(doc); err != nil {
+		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
-			err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
+			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
@@ -136,11 +137,11 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
-	if err := s.InsertDocument(doc); err != nil {
+	if err = s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(doc, kb.ID, err)
+	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
@@ -269,17 +270,17 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	for storageImpl.ObjExist(kb.ID, location) {
 		location += "_"
 	}
-	if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+	if err = storageImpl.Put(kb.ID, location, blob); err != nil {
 		return nil, common.CodeServerError, err
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
-	if err := s.InsertDocument(doc); err != nil {
+	if err = s.InsertDocument(doc); err != nil {
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}
-	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
-		err = s.rollbackAddFileFromKBError(doc, kb.ID, err)
+	if err = s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 		_ = storageImpl.Remove(kb.ID, location)
 		return nil, common.CodeServerError, err
 	}

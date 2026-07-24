@@ -78,20 +78,20 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 			}
 			docID := *inform.DocumentID
 			if s.documentService != nil {
-				if err := s.documentService.RemoveDocumentKeepFile(docID); err != nil {
+				if err = s.documentService.RemoveDocumentKeepFile(ctx, docID); err != nil {
 					common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 				}
 			}
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
-		if err := s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
+		if err = s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
 			return fmt.Errorf("failed to delete file2document mapping: %w", err)
 		}
 	}
 
 	// 3. Delete file record
-	if err := s.fileDAO.Delete(file.ID); err != nil {
+	if err = s.fileDAO.Delete(file.ID); err != nil {
 		return err
 	}
 

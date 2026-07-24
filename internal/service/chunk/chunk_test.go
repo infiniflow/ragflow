@@ -145,7 +145,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "missing-doc", "doc-2"},
 	})
 	if err == nil {
@@ -159,14 +160,14 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 
 	var taskCount int64
-	if err = dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+	if err = db.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount != 1 {
 		t.Fatalf("expected existing task to remain, got %d tasks", taskCount)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -184,8 +185,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 func TestParseRejectsInaccessibleDataset(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return false }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -200,9 +201,9 @@ func TestParseRejectsInaccessibleDataset(t *testing.T) {
 func TestParseRequiresDocumentIDs(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-
+	ctx := t.Context()
 	for _, req := range []*service.ParseFileRequest{nil, {DocumentIDs: nil}, {DocumentIDs: []string{}}} {
-		_, code, err := svc.Parse("user-1", "kb-1", req)
+		_, code, err := svc.Parse(ctx, "user-1", "kb-1", req)
 		if err == nil {
 			t.Fatal("expected parse to fail")
 		}
@@ -219,8 +220,8 @@ func TestParseReturnsDataErrorWhenDatasetMissing(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
 	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) { return nil, nil }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -242,8 +243,8 @@ func TestParseReturnsServerErrorWhenDocumentsQueryFails(t *testing.T) {
 	svc.getDocumentsByIDsFunc = func([]string) ([]*entity.Document, error) {
 		return nil, queryErr
 	}
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if !errors.Is(err, queryErr) {
 		t.Fatalf("expected query error, got %v", err)
 	}
@@ -261,12 +262,13 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, "doc-1", datasetID)
 	running := string(entity.TaskStatusRunning)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
 		t.Fatalf("mark doc running: %v", err)
 	}
 
 	svc := newParseTestService(t)
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -595,8 +597,8 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
 	}, "user-1")
@@ -619,7 +621,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		t.Fatalf("delete id condition = %#v", engine.deleteChunksCondition["id"])
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -660,8 +662,8 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 			return nil
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:     "doc-1",
 		DeleteAll: true,
 	}, "user-1")
@@ -694,8 +696,8 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 			return errors.New("stats update failed")
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2"},
 	}, "user-1")
@@ -723,8 +725,8 @@ func TestDecrementChunkStatsClampsCounters(t *testing.T) {
 	if err := svc.decrementChunkStats("doc-1", "kb-1", 5, 7, -1); err != nil {
 		t.Fatalf("decrementChunkStats() error = %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -751,8 +753,8 @@ func TestDecrementChunkStatsRollsBackWhenKnowledgebaseMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "knowledgebase not found") {
 		t.Fatalf("expected missing knowledgebase error, got %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -1214,7 +1216,8 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	if err := svc.SwitchChunks("user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
+	ctx := t.Context()
+	if err = svc.SwitchChunks(ctx, "user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
 		t.Fatalf("SwitchChunks() error = %v", err)
 	}
 
@@ -1351,7 +1354,8 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-	_, _, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
+	ctx := t.Context()
+	_, _, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
 	if err == nil {
 		t.Fatal("expected error for RUNNING ingestion task, got nil")
 	}
@@ -1368,13 +1372,13 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 	svc.accessibleFunc = func(string, string) bool { return true }
 	var calledOpts document.StartParseOptions
 	var calledDocID string
-	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
 		calledOpts = opts
 		calledDocID = doc.ID
 		return nil
 	}
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -1397,11 +1401,12 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 	insertChunkTestDoc(t, "doc-1", datasetID)
 
 	svc := newParseTestService(t)
-	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(context.Context, *entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
 		return nil
 	}
 
-	result, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
+	ctx := t.Context()
+	result, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "doc-1"},
 	})
 	if err == nil {
@@ -1429,12 +1434,12 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	var calledDocID string
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error {
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
 		calledDocID = doc.ID
 		return nil
 	}
-
-	_, _, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
 	}
@@ -1452,9 +1457,9 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	var called bool
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error { called = true; return nil }
-
-	_, code, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error { called = true; return nil }
+	ctx := t.Context()
+	_, code, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected error for document without ingestion task")
 	}
@@ -1481,21 +1486,21 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error {
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
 		// Simulate CancelDocParse: set doc.run=CANCEL.
 		return dao.DB.Model(&entity.Document{}).Where("id = ?", doc.ID).
 			Update("run", string(entity.TaskStatusCancel)).Error
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine
-
-	_, _, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
 	}
 
 	// Counters must NOT be reset.
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("reload doc: %v", err)
 	}

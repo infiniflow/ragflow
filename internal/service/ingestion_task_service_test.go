@@ -31,7 +31,8 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	resp, err := svc.CreateForDocuments("kb-1", "user-1", []string{"doc-1"})
+	ctx := t.Context()
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -204,7 +205,8 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
-	task, err := svc.StartRunning("task-1")
+	ctx := t.Context()
+	task, err := svc.StartRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -236,7 +238,8 @@ func TestStartRunningMarksDocumentRunning(t *testing.T) {
 	}
 
 	svc := NewIngestionTaskService()
-	if _, err := svc.StartRunning("task-1"); err != nil {
+	ctx := t.Context()
+	if _, err := svc.StartRunning(ctx, "task-1"); err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
 
@@ -289,7 +292,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	}
 
 	svc := NewIngestionTaskService()
-	task, err := svc.StartRunning("task-1")
+	ctx := t.Context()
+	task, err := svc.StartRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}

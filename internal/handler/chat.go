@@ -202,7 +202,8 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		return
 	}
 
-	mindMap, err := runMindMap(mindMapRunConfig{
+	ctx := c.Request.Context()
+	mindMap, err := runMindMap(ctx, mindMapRunConfig{
 		Question:      req.Question,
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,

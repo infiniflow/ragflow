@@ -29,6 +29,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ import (
 // agentAttachmentFileService is the subset of FileService used by
 // the attachment-download handler.
 type agentAttachmentFileService interface {
-	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 }
 
 // attachmentRequestMetadata holds the parsed query params used when
@@ -81,7 +82,8 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmen
 		return
 	}
 
-	blob, err := h.fileService.DownloadAgentFile(tenantID, attachmentID)
+	ctx := c.Request.Context()
+	blob, err := h.fileService.DownloadAgentFile(ctx, tenantID, attachmentID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Attachment not found!")
 		return
