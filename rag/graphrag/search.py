@@ -275,6 +275,8 @@ class KGSearch(Dealer):
         }
 
     def _community_retrieval_(self, entities, condition, kb_ids, idxnms, topn, max_token):
+        if not entities:
+            return ""
         ## Community retrieval
         fields = ["docnm_kwd", "content_with_weight"]
         odr = OrderByExpr()
