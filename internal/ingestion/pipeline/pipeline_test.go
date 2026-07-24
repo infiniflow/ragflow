@@ -453,6 +453,204 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	}
 }
 
+// TestPipelineRunResumableDSLChanged discards a stale checkpoint when the DSL
+// is edited between the failed run and the resume. Run 1 fails on the terminal
+// stage, persisting a checkpoint keyed by taskID. Run 2 re-runs the SAME
+// taskID but with a modified DSL (a param edit, enough to change the
+// fingerprint). The guard must detect the mismatch, discard the checkpoint,
+// and start fresh — so every stage re-executes (A runs on both runs) instead
+// of erroring while resuming an incompatible graph (the original bug).
+func TestPipelineRunResumableDSLChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.DSLChangedA"
+		nameB = "p.DSLChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-dsl-changed"
+
+	// Shared store + tracker across both runs (same taskID).
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	// Run 1: original DSL; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt for the original DSL fingerprint.
+	pipe1, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME taskID, but a modified DSL (param added to "a" → different
+	// fingerprint). Without the guard this would resume the stale checkpoint
+	// against an incompatible graph and error; with the guard it discards and
+	// re-runs from scratch.
+	pipe2, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {"chunk_size": 128}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after DSL edit, got error: %v", err)
+	}
+
+	// Fresh run re-executed A (and B, which now delegates successfully at n=2).
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on DSL change, got deleteCount=%d", store.deleteCount())
+	}
+}
+
+// TestClassifyDSLChange is the table-driven unit test for the mismatch-reason
+// classifier used by the warning log. It isolates the "DSL file changed vs
+// runtime override changed" decision from the Run/resume plumbing so the
+// diagnostic label can be verified directly (the log text itself is not
+// asserted by capture).
+func TestClassifyDSLChange(t *testing.T) {
+	const (
+		dsl = "dslfp"
+		ovf = "ovrfp"
+	)
+	cases := []struct {
+		name       string
+		storedDsl  string
+		storedOvf  string
+		dslFP      string
+		ovfFP      string
+		wantReason string
+	}{
+		{"no change", dsl, ovf, dsl, ovf, ""},
+		{"dsl file changed", dsl + "x", ovf, dsl, ovf, "DSL/template changed"},
+		{"override changed", dsl, ovf + "x", dsl, ovf, "runtime override/parser-config changed"},
+		{"both changed", dsl + "x", ovf + "x", dsl, ovf, "DSL/template changed"},
+		// Caller only invokes classify when a checkpoint exists; a missing
+		// fingerprint is treated as "changed" (safe: discard + fresh run).
+		{"missing stored fingerprint", "", "", dsl, ovf, "DSL/template changed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := classifyDSLChange(c.storedDsl, c.storedOvf, c.dslFP, c.ovfFP)
+			if got != c.wantReason {
+				t.Fatalf("classifyDSLChange = %q, want %q", got, c.wantReason)
+			}
+		})
+	}
+}
+
+// TestPipelineRunResumableOverrideChanged verifies that editing ONLY the
+// runtime override_params (same DSL file) between the failed run and the
+// resume is detected as a change and forces a fresh run (the checkpoint is
+// discarded) — it must NOT resume against stale override state. This is the
+// "runtime override/parser-config changed" branch of guardDSLChange.
+func TestPipelineRunResumableOverrideChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.OvfChangedA"
+		nameB = "p.OvfChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-override-changed"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	dsl := `{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "` + nameA + `", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "` + nameB + `", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`
+
+	// Run 1: override v1; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt. The DSL file fingerprint is recorded too.
+	pipe1, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v1"}); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME DSL file, but override changed to v2. The guard must detect
+	// the override change, discard the stale checkpoint, and re-run from
+	// scratch (A runs again).
+	pipe2, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v2"}); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after override edit, got error: %v", err)
+	}
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run on override change), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on override change, got deleteCount=%d", store.deleteCount())
+	}
+}
+
 // TestPipelineRun_RequireResumeRejectsWithoutStore verifies that with
 // WithRequireResume set and no checkpoint store resolvable (no
 // injected store, no global Redis in unit scope), Run must refuse to start

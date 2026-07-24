@@ -18,6 +18,8 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +39,12 @@ import (
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
 	taskID     string
+	// rawDSL holds the canonical (key-sorted) JSON of the canvas DSL this
+	// pipeline was compiled from. It is the basis for the resume-time DSL
+	// fingerprint (guardDSLChange): any edit to the template DSL changes
+	// these bytes, so a stale checkpoint can be detected and discarded
+	// instead of being resumed against an incompatible graph.
+	rawDSL     []byte
 	documentID string // owning document; progress is mirrored back to the
 	// document table so the existing GET /api/v1/datasets/{dataset_id}/documents
 	// endpoint (which reads document.progress/run/progress_msg) reflects the
@@ -144,9 +152,17 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: decode canvas DSL: %w", err)
 	}
+	// Capture the canonical canvas DSL bytes for the resume-time DSL
+	// fingerprint. json.Marshal sorts map keys, so this is stable across
+	// re-decodes of the same logical DSL (formatting-independent).
+	rawBytes, err := json.Marshal(canvasDSL)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: canonicalize DSL: %w", err)
+	}
 	p := &Pipeline{
 		taskID: taskID,
 		canvas: cnv,
+		rawDSL: rawBytes,
 	}
 	for _, o := range opts {
 		o(p)
@@ -207,6 +223,145 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
 var defaultCheckpointTTL = 24 * time.Hour
+
+// dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
+// checkpoint id. Both live in the same CheckPointStore as the eino payload
+// (under cpID+dslKeySuffix / cpID+ovfKeySuffix) so a resume can compare the
+// current DSL against the one that wrote the checkpoint — without depending
+// on the RunTracker being injected. eino only ever reads/writes the exact
+// cpID, so these sibling keys never collide with eino's checkpoint.
+//
+// The split is deliberate: dslKeySuffix fingerprints the DSL FILE (the full
+// canvas DSL — topology, component params, everything the user edits in the
+// template), while ovfKeySuffix fingerprints only the runtime override_params
+// (Doc.ParserConfig + injected LLM id). This lets the mismatch warning say
+// whether the DSL file changed or the runtime override changed, instead of an
+// ambiguous "params changed".
+const (
+	dslKeySuffix = ":dsl"
+	ovfKeySuffix = ":ovf"
+)
+
+// dslFileFingerprint returns a stable hash of the FULL canvas DSL this
+// pipeline was compiled from. It captures topology (components, edges, graph
+// grouping) AND the per-component params/defaults — i.e. everything the user
+// can edit in the DSL template file. The raw DSL bytes are key-sorted at
+// decode time, so logical edits (not whitespace) drive the value.
+// dslFileFingerprint returns a stable hash of the FULL canvas DSL this
+// pipeline was compiled from. It captures topology (components, edges, graph
+// grouping) AND the per-component params/defaults — i.e. everything the user
+// can edit in the DSL template file. The raw DSL bytes are key-sorted at
+// decode time, so logical edits (not whitespace) drive the value.
+//
+// It returns an error (instead of a silent fallback) when rawDSL is unset:
+// NewPipelineFromDSL always populates rawDSL, so an empty value means the
+// Pipeline was built through an unexpected path. A fallback that re-encodes
+// p.canvas would produce a different hash (Canvas.NodeParents is json:"-",
+// and struct field order differs from the map form), silently breaking the
+// change-detection contract.
+func (p *Pipeline) dslFileFingerprint() (string, error) {
+	if len(p.rawDSL) == 0 {
+		return "", fmt.Errorf("rawDSL not set (Pipeline built without NewPipelineFromDSL?)")
+	}
+	h := sha256.New()
+	h.Write(p.rawDSL)
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// overrideFingerprint returns a stable hash of the run-level override_params
+// (Doc.ParserConfig + injected LLM id). It is tracked separately from the DSL
+// file so a change limited to the runtime override is distinguishable (in the
+// warning log) from an edit to the DSL template file.
+func overrideFingerprint(override map[string]any) string {
+	h := sha256.New()
+	_ = json.NewEncoder(h).Encode(override)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// classifyDSLChange decides why a stored fingerprint pair no longer matches
+// the current run, for the mismatch warning log. It returns "" when neither
+// changed (no stale checkpoint to discard). A DSL file change takes precedence
+// in the label because an edited template is the more common/expected case;
+// when both changed the label still says DSL. The caller only invokes this
+// when a checkpoint actually exists, so an empty stored fingerprint is treated
+// as "changed" (safe: discard and re-run from scratch).
+func classifyDSLChange(storedDsl, storedOvf, dslFP, ovfFP string) string {
+	dslChanged := storedDsl != dslFP
+	ovfChanged := storedOvf != ovfFP
+	if !dslChanged && !ovfChanged {
+		return ""
+	}
+	if dslChanged {
+		return "DSL/template changed"
+	}
+	return "runtime override/parser-config changed"
+}
+
+// guardDSLChange prevents resuming a checkpoint written by a DIFFERENT DSL
+// than the one currently compiled. eino checkpoints are bound to the graph's
+// node ids / wiring; resuming against a modified graph restores state for
+// nodes that no longer exist (or have different wiring) and makes eino error
+// out. When either the DSL file fingerprint or the runtime override
+// fingerprint differs we drop the stale checkpoint (and the persisted
+// interrupt marker) so the run starts fresh from the entry node. When no
+// checkpoint exists this is simply a fresh run, and we record both
+// fingerprints so a later resume can detect edits. All store writes are
+// best-effort: a write failure must not abort the run.
+func (p *Pipeline) guardDSLChange(ctx context.Context, store canvas.CheckPointStore, tracker *canvas.RunTracker, cpID string, override map[string]any) {
+	// Only meaningful when a checkpoint store is wired (the resumable path).
+	// The non-resumable runPlain path never calls here, but guard anyway so a
+	// future caller cannot nil-panic on store.Get.
+	if store == nil {
+		return
+	}
+	dslKey := cpID + dslKeySuffix
+	ovfKey := cpID + ovfKeySuffix
+
+	dslFP, err := p.dslFileFingerprint()
+	if err != nil {
+		// Without a DSL fingerprint we cannot detect edits. Skip the guard
+		// rather than risk an empty hash that silently mismatches every run.
+		// The run still proceeds (best-effort); resume safety is unchanged
+		// only because rawDSL is always set via NewPipelineFromDSL.
+		common.Error(fmt.Sprintf("pipeline: skip DSL-change guard for %s: %v", p.taskID, err), err)
+		return
+	}
+	ovfFP := overrideFingerprint(override)
+
+	// A checkpoint from a previous run exists → this is a resume candidate.
+	if _, found, _ := store.Get(ctx, cpID); found {
+		storedDsl, dOk, _ := store.Get(ctx, dslKey)
+		storedOvf, oOk, _ := store.Get(ctx, ovfKey)
+		reason := classifyDSLChange(orEmpty(dOk, storedDsl), orEmpty(oOk, storedOvf), dslFP, ovfFP)
+		if reason != "" {
+			common.Warn(fmt.Sprintf("pipeline: DSL for task %s changed since checkpoint was written (%s); discarding stale checkpoint and re-running from scratch", p.taskID, reason))
+			if err := store.Delete(ctx, cpID); err != nil {
+				common.Error(fmt.Sprintf("pipeline: delete stale checkpoint for %s failed: %v", p.taskID, err), err)
+			}
+			if tracker != nil {
+				if err := tracker.ClearInterruptID(ctx, cpID); err != nil {
+					common.Error(fmt.Sprintf("pipeline: clear interrupt id for %s failed: %v", p.taskID, err), err)
+				}
+			}
+		}
+	}
+	// Record the fingerprints of the DSL + override that produced this run.
+	if err := store.Set(ctx, dslKey, []byte(dslFP)); err != nil {
+		common.Error(fmt.Sprintf("pipeline: persist DSL fingerprint for %s failed: %v", p.taskID, err), err)
+	}
+	if err := store.Set(ctx, ovfKey, []byte(ovfFP)); err != nil {
+		common.Error(fmt.Sprintf("pipeline: persist override fingerprint for %s failed: %v", p.taskID, err), err)
+	}
+}
+
+// orEmpty returns the byte slice when ok, else an empty string, so a missing
+// stored fingerprint is treated as "" (classifyDSLChange then sees a change).
+func orEmpty(ok bool, b []byte) string {
+	if !ok {
+		return ""
+	}
+	return string(b)
+}
 
 // Run executes the full ingestion graph described by the canonical DSL.
 // There is no pipeline-layer partial resume entry point: execution always
@@ -299,6 +454,10 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	if !resumable {
 		return p.runPlain(runCtx, current, compiled, tracker, runState)
 	}
+
+	// Resumable path: detect DSL / override edits since the checkpoint was
+	// written and discard a stale checkpoint before resuming (see guardDSLChange).
+	p.guardDSLChange(ctx, store, tracker, p.taskID, override_params)
 
 	// Resumable path: record the run, then loop Invoke until the graph
 	// completes or a non-resumable error surfaces.
@@ -393,6 +552,8 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			}
 			if store != nil {
 				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+dslKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+ovfKeySuffix) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
