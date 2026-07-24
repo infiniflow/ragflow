@@ -122,7 +122,8 @@ func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 
@@ -188,6 +189,7 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -206,6 +208,8 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 			return nil
 		}
 
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
 			if err := sender(&content, nil); err != nil {
@@ -222,6 +226,7 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 	_ = done
 	_ = sawTerminal
 

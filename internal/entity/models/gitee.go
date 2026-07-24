@@ -25,7 +25,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
-	"sort"
 	"strings"
 	"time"
 )
@@ -264,6 +263,8 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 			return nil
 		}
 
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
 			common.Info(content)
@@ -296,56 +297,6 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 			}
 		}
 
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if !hasExisting {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-					continue
-				}
-				if id, ok := tcMap["id"].(string); ok && id != "" {
-					if eid, ok := existing["id"].(string); ok {
-						existing["id"] = eid + id
-					} else {
-						existing["id"] = id
-					}
-				}
-				if typ, ok := tcMap["type"].(string); ok && typ != "" {
-					existing["type"] = typ
-				}
-				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-					ef, ok := existing["function"].(map[string]interface{})
-					if !ok {
-						ef = make(map[string]interface{})
-						existing["function"] = ef
-					}
-					if name, ok := fn["name"].(string); ok && name != "" {
-						if en, ok := ef["name"].(string); ok {
-							ef["name"] = en + name
-						} else {
-							ef["name"] = name
-						}
-					}
-					if args, ok := fn["arguments"].(string); ok && args != "" {
-						if ea, ok := ef["arguments"].(string); ok {
-							ef["arguments"] = ea + args
-						} else {
-							ef["arguments"] = args
-						}
-					}
-				}
-			}
-		}
-
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
@@ -365,18 +316,7 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		}
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		chatModelConfig.ToolCallsResult = &tcs
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

@@ -127,10 +127,12 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 	if err != nil {
 		return nil, err
 	}
+	toolCalls := extractToolCalls(messageMap)
 
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -226,6 +228,7 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -241,6 +244,8 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
@@ -258,6 +263,7 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("mistral: stream ended before [DONE] or finish_reason")
 	}

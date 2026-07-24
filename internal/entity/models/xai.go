@@ -133,7 +133,8 @@ func (x *XAIModel) ChatWithMessages(ctx context.Context, modelName string, messa
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -150,6 +151,7 @@ func (x *XAIModel) ChatWithMessages(ctx context.Context, modelName string, messa
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -201,6 +203,7 @@ func (x *XAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -216,6 +219,8 @@ func (x *XAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -240,6 +245,7 @@ func (x *XAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("xai: stream ended before [DONE] or finish_reason")
 	}

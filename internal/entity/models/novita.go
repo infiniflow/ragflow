@@ -262,7 +262,8 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	rawContent, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -275,18 +276,22 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	//     `reasoning_content` field, with `content` already cleaned.
 	// Handle both so the visible Answer is always tag-free and any
 	// reasoning the upstream supplied is preserved.
-	visible, reasoning := splitNovitaThink(rawContent)
-	if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
-		if reasoning != "" {
-			reasoning += "\n" + r
-		} else {
-			reasoning = r
+	visible, reasoning := "", ""
+	if ok {
+		visible, reasoning = splitNovitaThink(rawContent)
+		if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
+			if reasoning != "" {
+				reasoning += "\n" + r
+			} else {
+				reasoning = r
+			}
 		}
 	}
 
 	return &ChatResponse{
 		Answer:        &visible,
 		ReasonContent: &reasoning,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
