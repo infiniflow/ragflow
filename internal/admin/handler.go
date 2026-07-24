@@ -309,7 +309,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeleteUser(username)
+	result, err := h.service.DeleteUser(c.Request.Context(), username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
