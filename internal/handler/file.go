@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -509,15 +508,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Determine content type based on extension and file type
 	contentType := utility.GetContentType(ext, file.Type)
 
-	// Set response headers
-	if contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	if utility.ShouldForceAttachment(ext, contentType) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		encodedName := url.QueryEscape(file.Name)
-		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
-	}
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, file.Name)
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)
