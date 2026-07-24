@@ -30,14 +30,23 @@ from common.constants import (
     PADDLEOCR_ENV_KEYS,
     SOMARK_DEFAULT_CONFIG,
     SOMARK_ENV_KEYS,
+    StatusEnum,
 )
-from api.db.services.tenant_llm_service import TenantService
+from api.db.services.tenant_llm_service import TenantLLMService, TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 from api.utils.model_utils import calculate_model_type, get_model_type_human
+from common.parser_config_utils import is_tenant_model_id, normalize_layout_recognizer
 
 logger = logging.getLogger(__name__)
+
+_OCR_PARSER_BY_PROVIDER = {
+    "MinerU": "MinerU",
+    "PaddleOCR": "PaddleOCR",
+    "OpenDataLoader": "OpenDataLoader",
+    "SoMark": "SoMark",
+}
 
 
 def _factory_model_types(llm: dict) -> list[str]:
@@ -226,6 +235,41 @@ def split_model_name(model_name: str):
         instance_name = ""
     return pure_model_name, instance_name, provider_name
 
+def _get_model_config_from_tenant_llm(tenant_id: str, model_name: str, model_type: str | None = None):
+    """Resolve self-added models (e.g. OpenAI-API-Compatible) stored only in tenant_llm."""
+    tenant_llm = TenantLLMService.get_api_key(tenant_id, model_name, model_type)
+    if not tenant_llm:
+        return None
+    if str(tenant_llm.status) == StatusEnum.INVALID.value:
+        raise LookupError(f"Model {model_name} is disabled.")
+
+    record = tenant_llm.to_dict()
+    api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(record.get("api_key", ""))
+    model_config = {
+        "llm_factory": record["llm_factory"],
+        "api_key": api_key,
+        "llm_name": record["llm_name"],
+        "api_base": record.get("api_base") or "",
+        "model_type": record["model_type"],
+        "is_tools": bool(is_tools) if is_tools is not None else False,
+        "max_tokens": 8192,
+    }
+    if api_key_payload is not None:
+        model_config["api_key_payload"] = api_key_payload
+    return model_config
+
+
+def _get_provider_or_sync_legacy(tenant_id: str, provider_name: str):
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if provider_obj:
+        return provider_obj
+
+    from api.db.joint_services.tenant_llm_sync_service import sync_tenant_llm_factory_if_exists
+
+    if sync_tenant_llm_factory_if_exists(tenant_id, provider_name):
+        return TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    return None
+
 
 def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: str):
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
@@ -250,7 +294,47 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
 
+def resolve_layout_recognizer(tenant_id: str, layout_recognizer_raw):
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognizer_raw)
+    if not isinstance(layout_recognizer_raw, str):
+        return layout_recognizer, parser_model_name
+
+    raw = layout_recognizer_raw.strip()
+    if not is_tenant_model_id(raw):
+        return layout_recognizer, parser_model_name
+
+    exist, model_obj = TenantModelService.get_by_id(raw)
+    if not exist:
+        raise LookupError(
+            f"TenantModel id={raw} not found. The PDF parser model was removed; "
+            "re-select MinerU (or another parser) in the document settings and parse again."
+        )
+
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
+        raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={raw}.")
+
+    # Same tenant-scope check as get_model_config_by_id (owner or joined tenant).
+    if tenant_id != provider_obj.tenant_id:
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+        if provider_obj.tenant_id not in joined_tenant_ids:
+            raise LookupError(
+                f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}."
+            )
+
+    parser_kind = _OCR_PARSER_BY_PROVIDER.get(provider_obj.provider_name)
+    if parser_kind:
+        return parser_kind, raw
+
+    # Vision / image2text models keep model_id for by_plaintext.
+    return raw, raw
+
+
 def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
+    ref = (model_ref or "").strip()
+    if is_tenant_model_id(ref):
+        return get_model_config_by_id(tenant_id, model_type, ref)
     try:
         return get_model_config_by_id(tenant_id, model_type, model_ref)
     except LookupError:
@@ -276,7 +360,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "model_type": LLMType.EMBEDDING.value,
         }
 
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    provider_obj = _get_provider_or_sync_legacy(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
@@ -316,7 +400,26 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
 
         return model_config
     else:
-        raise LookupError(f"Model {model_name} not found for model {model_type_val}")
+        llm_info = _lookup_factory_llm_info(provider_obj.provider_name, pure_model_name, extra_fields)
+        if not llm_info:
+            tenant_llm_config = _get_model_config_from_tenant_llm(tenant_id, model_name, model_type_val)
+            if tenant_llm_config:
+                return tenant_llm_config
+            raise LookupError(f"Model config not found: {model_name}")
+        if model_type_val not in _factory_model_types(llm_info):
+            raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
+        model_config = {
+            "llm_factory": provider_obj.provider_name,
+            "api_key": api_key,
+            "llm_name": llm_info["llm_name"],
+            "api_base": extra_fields.get("base_url", ""),
+            "model_type": model_type_val,
+            "is_tools": llm_info.get("is_tools", is_tool),
+            "max_tokens": llm_info.get("max_tokens") or 8192,
+        }
+        if api_key_payload is not None:
+            model_config["api_key_payload"] = api_key_payload
+        return model_config
 
 
 def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id: str):
@@ -437,7 +540,7 @@ def get_api_key(tenant_id: str, model_name: str):
 
     if not provider_name:
         raise LookupError("Provider name is required.")
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    provider_obj = _get_provider_or_sync_legacy(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
     instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
@@ -460,16 +563,27 @@ def resolve_model_type(tenant_id: str, model_ref: str):
 
 def get_model_type_by_name(tenant_id: str, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    provider_obj = _get_provider_or_sync_legacy(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
-    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
+        provider_obj.id, instance_obj.id, pure_model_name
+    )
+    types_in_json = []
     if not model_obj:
-        raise LookupError(f"Model {model_name} not found.")
-    return get_model_type_human(model_obj.model_type)
+        extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+        llm_info = _lookup_factory_llm_info(provider_obj.provider_name, pure_model_name, extra_fields)
+        if not llm_info:
+            tenant_llm_config = _get_model_config_from_tenant_llm(tenant_id, model_name)
+            if tenant_llm_config:
+                return [tenant_llm_config["model_type"]]
+            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+        types_in_json = _factory_model_types(llm_info)
+    active_types: list[str] = []
+    if model_obj and model_obj.status != ActiveStatusEnum.UNSUPPORTED.value:
+        active_types.extend(get_model_type_human(model_obj.model_type))
+    return list(set(types_in_json + active_types))
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
