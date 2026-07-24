@@ -1174,30 +1174,6 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 	}, nil
 }
 
-type listChunksSearchEngine struct {
-	parseTestDocEngine
-	searchReq *types.SearchRequest
-}
-
-func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	e.searchReq = req
-	return &types.SearchResult{
-		Chunks: []map[string]interface{}{
-			{
-				"id":                   "chunk-1",
-				"content":              "chunk body",
-				"doc_id":               "doc-1",
-				"available_int":        1,
-				"chunk_order_int":      0,
-				"page_num_int":         []interface{}{1},
-				"top_int":              []interface{}{10},
-				"create_timestamp_flt": 1.0,
-			},
-		},
-		Total: 1,
-	}, nil
-}
-
 type chunkImageStorage struct {
 	exists    bool
 	oldBinary []byte
