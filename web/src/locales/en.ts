@@ -1540,6 +1540,8 @@ Example: Virtual Hosted Style`,
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      webdavCaCertPathTip:
+        'Optional: Path to a CA certificate bundle mounted inside the RAGFlow container.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:

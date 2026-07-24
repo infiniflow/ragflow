@@ -26,6 +26,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         base_url: str,
         remote_path: str = "/",
         batch_size: int = INDEX_BATCH_SIZE,
+        ca_cert_path: str | None = None,
     ) -> None:
         """Initialize WebDAV connector
 
@@ -33,6 +34,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base_url: Base URL of the WebDAV server (e.g., "https://webdav.example.com")
             remote_path: Remote path to sync from (default: "/")
             batch_size: Number of documents per batch
+            ca_cert_path: Optional path to a custom CA certificate bundle inside the container
         """
         self.base_url = base_url.rstrip("/")
         if not remote_path:
@@ -43,6 +45,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             remote_path = remote_path.rstrip("/")
         self.remote_path = remote_path
         self.batch_size = batch_size
+        self.ca_cert_path = ca_cert_path.strip() if ca_cert_path else None
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
@@ -126,8 +129,16 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorMissingCredentialError("WebDAV requires 'username' and 'password' credentials")
 
         try:
-            # Initialize WebDAV client
-            self.client = WebDAVClient(base_url=self.base_url, auth=(username, password))
+            # Omit `verify` unless a custom CA is configured so webdav4 keeps its secure default.
+            client_options: dict[str, Any] = {}
+            if self.ca_cert_path:
+                client_options["verify"] = self.ca_cert_path
+
+            self.client = WebDAVClient(
+                base_url=self.base_url,
+                auth=(username, password),
+                **client_options,
+            )
         except Exception as e:
             logging.error(f"Failed to connect to WebDAV server: {e}")
             raise ConnectorMissingCredentialError(f"Failed to authenticate with WebDAV server: {e}")
