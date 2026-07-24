@@ -363,3 +363,67 @@ def test_tenki_provider_allow_outbound_configurable(monkeypatch):
     provider.allow_outbound = False
     provider.create_instance("python")
     assert client.create_kwargs["allow_outbound"] is False
+
+
+def test_tenki_provider_maps_session_terminated(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        raise _FakeErrors.SessionTerminatedError("reclaimed")
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+    inst = provider.create_instance("python")
+    with pytest.raises(RuntimeError, match="no longer available"):
+        provider.execute_code(inst.instance_id, "def main():\n    return 1\n", "python", timeout=5)
+
+
+def test_tenki_provider_create_maps_rate_limit(monkeypatch):
+    sandbox = _FakeSandbox()
+    provider, client = _build_provider(sandbox, monkeypatch)
+
+    def _raise_rate(**kwargs):
+        raise _FakeErrors.RateLimitedError("slow down")
+
+    client.create = _raise_rate
+    with pytest.raises(RuntimeError, match="rate limited"):
+        provider.create_instance("python")
+
+
+def test_tenki_provider_create_wraps_unexpected_sdk_error(monkeypatch):
+    sandbox = _FakeSandbox()
+    provider, client = _build_provider(sandbox, monkeypatch)
+
+    def _raise_other(**kwargs):
+        raise ValueError("weird sdk failure")
+
+    client.create = _raise_other
+    with pytest.raises(RuntimeError, match="Failed to create Tenki sandbox"):
+        provider.create_instance("python")
+
+
+def test_tenki_provider_enforces_max_artifacts(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        for i in range(3):
+            sandbox.fs.files[posixpath.join(cwd, "artifacts", f"f{i}.json")] = b"{}"
+        return _FakeCommandResult(0, stdout="")
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+    provider.max_artifacts = 2
+
+    inst = provider.create_instance("python")
+    with pytest.raises(RuntimeError, match="more than 2 artifacts"):
+        provider.execute_code(inst.instance_id, "def main():\n    return 1\n", "python", timeout=5)
+
+
+def test_tenki_provider_enforces_max_artifact_bytes(monkeypatch):
+    def run_handler(sandbox, argv, cwd):
+        sandbox.fs.files[posixpath.join(cwd, "artifacts", "big.json")] = b"x" * 5000
+        return _FakeCommandResult(0, stdout="")
+
+    sandbox = _FakeSandbox(run_handler)
+    provider, _ = _build_provider(sandbox, monkeypatch)
+    provider.max_artifact_bytes = 100
+
+    inst = provider.create_instance("python")
+    with pytest.raises(RuntimeError, match="exceeds 100 bytes"):
+        provider.execute_code(inst.instance_id, "def main():\n    return 1\n", "python", timeout=5)

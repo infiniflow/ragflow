@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
 import os
 import posixpath
@@ -37,6 +38,8 @@ from .base import (
     SandboxProvider,
     SandboxProviderConfigError,
 )
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_ARTIFACT_EXTENSIONS = {
     ".csv",
@@ -117,6 +120,7 @@ class TenkiProvider(SandboxProvider):
         self._assert_connectivity()
 
         self._initialized = True
+        logger.info("Tenki provider initialized (project_id=%s)", self.project_id)
         return True
 
     def create_instance(self, template: str = "python") -> SandboxInstance:
@@ -149,6 +153,9 @@ class TenkiProvider(SandboxProvider):
             raise RuntimeError(f"Tenki rate limited, please retry: {exc}") from exc
         except errors.UnauthorizedError as exc:
             raise SandboxProviderConfigError("Tenki authentication failed: check the API key.") from exc
+        except Exception as exc:
+            # Satisfy the base contract: any other SDK failure becomes RuntimeError.
+            raise RuntimeError(f"Failed to create Tenki sandbox: {exc}") from exc
 
         remote_work_dir = posixpath.join(SANDBOX_HOME, f"ragflow-codeexec-{uuid.uuid4().hex}")
         try:
@@ -168,6 +175,7 @@ class TenkiProvider(SandboxProvider):
             "remote_work_dir": remote_work_dir,
             "language": language,
         }
+        logger.info("Tenki sandbox created (instance=%s, session=%s)", instance_id, sandbox.id)
 
         return SandboxInstance(
             instance_id=instance_id,
@@ -207,11 +215,14 @@ class TenkiProvider(SandboxProvider):
         try:
             result = sandbox.exec(*argv, cwd=remote_work_dir, timeout=exec_timeout)
         except (errors.CommandTimeoutError, errors.PrimitiveTimeoutError) as exc:
+            logger.warning("Tenki execution timed out (instance=%s, timeout=%ss)", instance_id, exec_timeout)
             raise TimeoutError(f"Execution timed out after {exec_timeout} seconds") from exc
         except (errors.SessionTerminatedError, errors.SessionNotFoundError) as exc:
             # The sandbox was reclaimed (e.g. max_lifetime) or lost mid-run;
             # surface it as RuntimeError per the base contract, not an SDK type.
             raise RuntimeError(f"Tenki sandbox is no longer available: {exc}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Tenki execution failed: {exc}") from exc
         execution_time = time.time() - start_time
 
         stdout = result.stdout_text
@@ -248,6 +259,7 @@ class TenkiProvider(SandboxProvider):
 
         instance = self._instances.pop(instance_id)
         self._safe_terminate(instance["sandbox"])
+        logger.info("Tenki sandbox destroyed (instance=%s)", instance_id)
         return True
 
     def health_check(self) -> bool:
@@ -398,7 +410,9 @@ class TenkiProvider(SandboxProvider):
 
     def _create_client(self):
         tenki = _get_tenki_module()
-        kwargs: dict[str, Any] = {"auth_token": self.api_key}
+        # Bound control-plane requests (who_am_i, create) so a slow or
+        # unreachable API cannot block initialize()/create_instance() forever.
+        kwargs: dict[str, Any] = {"auth_token": self.api_key, "timeout": float(self.timeout)}
         if self.base_url:
             kwargs["base_url"] = self.base_url
         return tenki.Client(**kwargs)
@@ -488,10 +502,11 @@ class TenkiProvider(SandboxProvider):
             )
 
     def _safe_terminate(self, sandbox) -> None:
+        # Best-effort: max_lifetime reclaims the sandbox if this fails.
         try:
             sandbox.terminate()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to terminate Tenki sandbox, relying on max_lifetime: %s", exc)
 
     def _tenki_errors(self):
         tenki = _get_tenki_module()
