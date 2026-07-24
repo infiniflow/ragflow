@@ -76,6 +76,16 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		return
 	}
 
+	if c.Query("type") == "filter" {
+		data, code, err := h.datasetsService.ListDatasetFilters(user.ID)
+		if err != nil {
+			common.ErrorWithCode(c, code, err.Error())
+			return
+		}
+		common.SuccessNoMessage(c, data)
+		return
+	}
+
 	page := 1
 	if pageStr := c.Query("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {

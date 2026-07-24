@@ -363,6 +363,20 @@ def list_datasets(tenant_id):
           items:
             type: object
     """
+    if request.args.get("type") == "filter":
+        try:
+            success, result = dataset_api_service.list_dataset_filters(tenant_id)
+            if success:
+                return get_result(data=result)
+            else:
+                return get_error_data_result(message=result)
+        except OperationalError as e:
+            logging.exception(e)
+            return get_error_data_result(message="Database operation failed")
+        except Exception as e:
+            logging.exception(e)
+            return get_error_data_result(message="Internal server error")
+
     args, err = validate_and_parse_request_args(request, ListDatasetReq)
     if err is not None:
         return get_error_argument_result(err)

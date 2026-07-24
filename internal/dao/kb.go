@@ -226,6 +226,21 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 	return kbs, total, nil
 }
 
+// GetOwnerFilter returns owner counts for datasets visible to a user.
+func (dao *KnowledgebaseDAO) GetOwnerFilter(tenantIDs []string, userID string) ([]*entity.DatasetOwnerFilter, error) {
+	owners := make([]*entity.DatasetOwnerFilter, 0)
+
+	err := DB.Model(&entity.Knowledgebase{}).
+		Select("knowledgebase.tenant_id as id, user.nickname as label, COUNT(knowledgebase.id) as count").
+		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
+		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
+			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid)).
+		Group("knowledgebase.tenant_id, user.nickname").
+		Scan(&owners).Error
+
+	return owners, err
+}
+
 // GetAllByTenantIDs retrieves all permitted knowledge bases by tenant IDs
 // This matches the Python get_all_kb_by_tenant_ids method
 func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string) ([]*entity.Knowledgebase, error) {

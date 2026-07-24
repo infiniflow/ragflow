@@ -393,6 +393,40 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 	return data, total, common.CodeSuccess, nil
 }
 
+func (d *DatasetService) ListDatasetFilters(userID string) (map[string]interface{}, common.ErrorCode, error) {
+	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+
+	tenantIDs := make([]string, 0, len(joinedTenants))
+	for _, joinedTenant := range joinedTenants {
+		if joinedTenant == nil || joinedTenant.TenantID == "" {
+			continue
+		}
+		tenantIDs = append(tenantIDs, joinedTenant.TenantID)
+	}
+
+	owners, err := d.kbDAO.GetOwnerFilter(tenantIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+
+	var total int64
+	for _, owner := range owners {
+		if owner != nil {
+			total += owner.Count
+		}
+	}
+
+	return map[string]interface{}{
+		"filter": map[string]interface{}{
+			"owner": owners,
+		},
+		"total": total,
+	}, common.CodeSuccess, nil
+}
+
 // ptrStringValue safely dereferences a *string.
 func ptrStringValue(s *string) string {
 	if s == nil {

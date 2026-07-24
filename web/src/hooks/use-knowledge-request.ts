@@ -8,6 +8,7 @@ import {
   IArtifactPage,
   IArtifactTopic,
   IDataset,
+  IDatasetFilter,
   IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
@@ -33,6 +34,7 @@ import kbService, {
   getWikiCommit,
   listArtifactTopics,
   listArtifacts,
+  datasetFilter,
   listDataset,
   listTag,
   listWikiCommits,
@@ -65,6 +67,7 @@ import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
+  FetchDatasetFilter = 'fetchDatasetFilter',
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
@@ -206,6 +209,24 @@ export const useFetchNextKnowledgeListByPage = () => {
     loading,
     filterValue,
     handleFilterSubmit,
+  };
+};
+
+export const useGetDatasetFilter = (): { filter: IDatasetFilter } => {
+  const { data } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+    queryFn: async () => {
+      const { data } = await datasetFilter();
+      if (data.code === 0) {
+        return data.data;
+      }
+    },
+  });
+
+  return {
+    filter: data?.filter || {
+      owner: [],
+    },
   };
 };
 
