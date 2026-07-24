@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	cloud.google.com/go/storage v1.63.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/TenkiCloud/tenki-sdk-go/sandbox v0.3.3
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
 	github.com/alicebob/miniredis/v2 v2.38.0
@@ -69,6 +70,7 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.21.0 // indirect
@@ -76,7 +78,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
-	connectrpc.com/connect v1.19.2 // indirect
+	connectrpc.com/connect v1.20.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.32.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
