@@ -28,12 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/clickhouse"
-	"sort"
 	"strings"
-	"time"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
@@ -150,53 +145,34 @@ func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result ZhipuChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if result.Choices == nil || len(result.Choices) == 0 {
-		return nil, fmt.Errorf("empty response")
-	}
-
-	content := &result.Choices[0].Message.Content
-
-	var reasonContent *string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent = &result.Choices[0].Message.ReasoningContent
-	}
-
-	var toolCalls = result.Choices[0].Message.ToolCalls
-
-	usage := &TokenUsage{
-		PromptTokens:     result.Usage.PromptTokens,
-		CompletionTokens: result.Usage.CompletionTokens,
-		TotalTokens:      result.Usage.TotalTokens,
-	}
-
-	if modelUsage != nil {
-		modelUsage.RequestID = result.RequestId
-		modelUsage.InputTokens = result.Usage.PromptTokens
-		modelUsage.OutputTokens = result.Usage.CompletionTokens
-		modelUsage.TotalTokens = result.Usage.TotalTokens
-		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
-
-		clickhouseDriver := clickhouse.GetDriver()
-		err = clickhouseDriver.CollectModelUsage(modelUsage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to collect model usage: %w", err)
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result ZhipuChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        content,
-		ReasonContent: reasonContent,
-		Usage:         usage,
-		ToolCalls:     toolCalls,
-	}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("empty response")
+		}
 
-	return chatResponse, nil
+		choice := &result.Choices[0]
+		var reasonContent *string
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = &choice.Message.ReasoningContent
+		}
+
+		return chatResponseParts{
+			RequestID:     result.RequestId,
+			Content:       &choice.Message.Content,
+			ReasonContent: reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -263,25 +239,12 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
-		tokenUsageMap, ok := event["usage"].(map[string]interface{})
-		if ok {
-			tokenUsage := TokenUsage{}
-			if err = mapstructure.Decode(tokenUsageMap, &tokenUsage); err != nil {
-				return err
-			}
-			if chatModelConfig != nil {
-				chatModelConfig.UsageResult = &tokenUsage
-			}
-			if modelUsage != nil {
-				modelUsage.InputTokens = tokenUsage.PromptTokens
-				modelUsage.OutputTokens = tokenUsage.CompletionTokens
-				modelUsage.TotalTokens = tokenUsage.TotalTokens
-				modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
-				clickhouseDriver := clickhouse.GetDriver()
-				if err = clickhouseDriver.CollectModelUsage(modelUsage); err != nil {
-					return err
-				}
-			}
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
 		}
 
 		choices, ok := event["choices"].([]interface{})
@@ -298,61 +261,12 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
 			if err = sender(nil, &reasoningContent); err != nil {
 				return err
-			}
-		}
-
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if !hasExisting {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-					continue
-				}
-				if id, ok := tcMap["id"].(string); ok && id != "" {
-					if eid, ok := existing["id"].(string); ok {
-						existing["id"] = eid + id
-					} else {
-						existing["id"] = id
-					}
-				}
-				if typ, ok := tcMap["type"].(string); ok && typ != "" {
-					existing["type"] = typ
-				}
-				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-					ef, ok := existing["function"].(map[string]interface{})
-					if !ok {
-						ef = make(map[string]interface{})
-						existing["function"] = ef
-					}
-					if name, ok := fn["name"].(string); ok && name != "" {
-						if en, ok := ef["name"].(string); ok {
-							ef["name"] = en + name
-						} else {
-							ef["name"] = name
-						}
-					}
-					if args, ok := fn["arguments"].(string); ok && args != "" {
-						if ea, ok := ef["arguments"].(string); ok {
-							ef["arguments"] = ea + args
-						} else {
-							ef["arguments"] = args
-						}
-					}
-				}
 			}
 		}
 
@@ -368,18 +282,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		toolCalls := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			toolCalls = append(toolCalls, accumulatedToolCalls[idx])
-		}
-		chatModelConfig.ToolCallsResult = &toolCalls
-	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
