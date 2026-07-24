@@ -822,6 +822,10 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=prompt[0]["content"],
                 images=[image],
+                # think is only honored as a top-level kwarg, not inside
+                # options. Without it, Qwen3-family models emit a full
+                # reasoning trace before the answer.
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -835,6 +839,8 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=vision_prompt[0]["content"],
                 images=[image],
+                # See describe() above.
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
