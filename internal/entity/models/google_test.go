@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -388,6 +389,103 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	})
 	if !errors.Is(err, pageErr) {
 		t.Fatalf("expected page error %v, got %v", pageErr, err)
+	}
+}
+
+func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
+	toolChoice := "required"
+	cfg := googleGenerateContentConfig(&ChatConfig{
+		Tools: []map[string]interface{}{{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "search_my_dataset",
+				"description": "Search dataset.",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{"type": "string"},
+					},
+					"required": []string{"query"},
+				},
+			},
+		}},
+		ToolChoice: &toolChoice,
+	})
+	if cfg == nil || len(cfg.Tools) != 1 || len(cfg.Tools[0].FunctionDeclarations) != 1 {
+		t.Fatalf("tools = %#v, want one function declaration", cfg)
+	}
+	declaration := cfg.Tools[0].FunctionDeclarations[0]
+	if declaration.Name != "search_my_dataset" || declaration.Description != "Search dataset." {
+		t.Fatalf("declaration = %#v", declaration)
+	}
+	if declaration.ParametersJsonSchema == nil {
+		t.Fatal("ParametersJsonSchema is nil")
+	}
+	if cfg.ToolConfig == nil || cfg.ToolConfig.FunctionCallingConfig == nil {
+		t.Fatalf("ToolConfig = %#v", cfg.ToolConfig)
+	}
+	if cfg.ToolConfig.FunctionCallingConfig.Mode != genai.FunctionCallingConfigModeAny {
+		t.Fatalf("mode = %s, want ANY", cfg.ToolConfig.FunctionCallingConfig.Mode)
+	}
+}
+
+func TestGoogleChatContentsConvertsToolHistory(t *testing.T) {
+	contents := googleChatContents([]Message{
+		{
+			Role:    "assistant",
+			Content: nil,
+			ToolCalls: []map[string]interface{}{{
+				"id":   "call-1",
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":      "search_my_dataset",
+					"arguments": `{"query":"marigold"}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call-1", Content: "flower result"},
+	})
+	if len(contents) != 2 {
+		t.Fatalf("contents len = %d, want 2", len(contents))
+	}
+	functionCall := contents[0].Parts[0].FunctionCall
+	if functionCall == nil || functionCall.ID != "call-1" || functionCall.Name != "search_my_dataset" {
+		t.Fatalf("function call = %#v", functionCall)
+	}
+	if functionCall.Args["query"] != "marigold" {
+		t.Fatalf("args = %#v", functionCall.Args)
+	}
+	functionResponse := contents[1].Parts[0].FunctionResponse
+	if functionResponse == nil || functionResponse.ID != "call-1" || functionResponse.Name != "search_my_dataset" {
+		t.Fatalf("function response = %#v", functionResponse)
+	}
+	if functionResponse.Response["output"] != "flower result" {
+		t.Fatalf("response = %#v", functionResponse.Response)
+	}
+}
+
+func TestGoogleToolCallsConvertsFunctionCalls(t *testing.T) {
+	toolCalls := googleToolCalls([]*genai.FunctionCall{{
+		ID:   "call-1",
+		Name: "search_my_dataset",
+		Args: map[string]any{"query": "marigold"},
+	}})
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool calls len = %d, want 1", len(toolCalls))
+	}
+	if toolCalls[0]["id"] != "call-1" || toolCalls[0]["type"] != "function" {
+		t.Fatalf("tool call = %#v", toolCalls[0])
+	}
+	function, _ := toolCalls[0]["function"].(map[string]interface{})
+	if function["name"] != "search_my_dataset" {
+		t.Fatalf("function = %#v", function)
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(function["arguments"].(string)), &args); err != nil {
+		t.Fatalf("arguments JSON: %v", err)
+	}
+	if args["query"] != "marigold" {
+		t.Fatalf("arguments = %#v", args)
 	}
 }
 

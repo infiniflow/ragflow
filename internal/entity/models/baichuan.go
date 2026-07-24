@@ -117,7 +117,8 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 
@@ -126,6 +127,7 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &emptyReason,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -177,6 +179,7 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -194,6 +197,8 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
@@ -214,6 +219,8 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if !done && !sawTerminal {
 		return fmt.Errorf("baichuan: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
