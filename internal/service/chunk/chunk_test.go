@@ -301,9 +301,10 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 		documentDAO:   dao.NewDocumentDAO(),
 	}
 
+	ctx := t.Context()
 	page := 1
 	size := 30
-	if _, err := svc.List(&service.ListChunksRequest{
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
 		Page:      &page,
@@ -348,10 +349,11 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 		userTenantDAO: dao.NewUserTenantDAO(),
 		documentDAO:   dao.NewDocumentDAO(),
 	}
+	ctx := t.Context()
 
 	page := 2
 	size := 5
-	resp, err := svc.List(&service.ListChunksRequest{
+	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
 		Page:      &page,
