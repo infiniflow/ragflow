@@ -577,6 +577,41 @@ func TestClassifyDSLChange(t *testing.T) {
 	}
 }
 
+// errCheckpointStore fails every Get with getErr and records whether Set was
+// ever called. It lets us assert that guardDSLChange does NOT overwrite the
+// DSL/override fingerprints after a failed checkpoint lookup (which would mask
+// a real stale-checkpoint mismatch on a later resume).
+type errCheckpointStore struct {
+	getErr    error
+	setCalled bool
+}
+
+func (s *errCheckpointStore) Get(_ context.Context, _ string) ([]byte, bool, error) {
+	return nil, false, s.getErr
+}
+func (s *errCheckpointStore) Set(_ context.Context, _ string, _ []byte) error {
+	s.setCalled = true
+	return nil
+}
+func (s *errCheckpointStore) Delete(_ context.Context, _ string) error { return nil }
+
+// TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite verifies the
+// CodeRabbit finding: when store.Get(cpID) returns an error, guardDSLChange
+// bails out entirely and must NOT call Set on the fingerprint keys.
+func TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite(t *testing.T) {
+	const taskID = "task-lookup-err"
+	store := &errCheckpointStore{getErr: errors.New("redis temporarily unavailable")}
+	p := &Pipeline{
+		taskID: taskID,
+		rawDSL: []byte(`{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}}}}}}`),
+	}
+	// tracker is nil-safe (only used on the delete branch, which is skipped).
+	p.guardDSLChange(context.Background(), store, nil, taskID, map[string]any{"k": "v"})
+	if store.setCalled {
+		t.Fatal("guardDSLChange must not overwrite fingerprints after a failed checkpoint lookup")
+	}
+}
+
 // TestPipelineRunResumableOverrideChanged verifies that editing ONLY the
 // runtime override_params (same DSL file) between the failed run and the
 // resume is detected as a change and forces a fresh run (the checkpoint is

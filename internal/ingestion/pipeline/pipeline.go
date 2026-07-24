@@ -247,11 +247,6 @@ const (
 // grouping) AND the per-component params/defaults — i.e. everything the user
 // can edit in the DSL template file. The raw DSL bytes are key-sorted at
 // decode time, so logical edits (not whitespace) drive the value.
-// dslFileFingerprint returns a stable hash of the FULL canvas DSL this
-// pipeline was compiled from. It captures topology (components, edges, graph
-// grouping) AND the per-component params/defaults — i.e. everything the user
-// can edit in the DSL template file. The raw DSL bytes are key-sorted at
-// decode time, so logical edits (not whitespace) drive the value.
 //
 // It returns an error (instead of a silent fallback) when rawDSL is unset:
 // NewPipelineFromDSL always populates rawDSL, so an empty value means the
@@ -329,9 +324,23 @@ func (p *Pipeline) guardDSLChange(ctx context.Context, store canvas.CheckPointSt
 	ovfFP := overrideFingerprint(override)
 
 	// A checkpoint from a previous run exists → this is a resume candidate.
-	if _, found, _ := store.Get(ctx, cpID); found {
-		storedDsl, dOk, _ := store.Get(ctx, dslKey)
-		storedOvf, oOk, _ := store.Get(ctx, ovfKey)
+	// A read error means we cannot trust the existence check, so bail out
+	// entirely: do NOT overwrite cpID:dsl / cpID:ovf. Writing current
+	// fingerprints after a failed lookup could mask a real stale-checkpoint
+	// mismatch on a later resume (the old checkpoint would survive, but its
+	// fingerprint would be overwritten to match the new DSL).
+	_, found, cpErr := store.Get(ctx, cpID)
+	if cpErr != nil {
+		common.Error(fmt.Sprintf("pipeline: lookup checkpoint for %s failed, skip DSL-change guard: %v", p.taskID, cpErr), cpErr)
+		return
+	}
+	if found {
+		storedDsl, dOk, dErr := store.Get(ctx, dslKey)
+		storedOvf, oOk, oErr := store.Get(ctx, ovfKey)
+		if dErr != nil || oErr != nil {
+			common.Error(fmt.Sprintf("pipeline: read DSL fingerprints for %s failed, skip DSL-change guard: %v", p.taskID, coalesceErr(dErr, oErr)), coalesceErr(dErr, oErr))
+			return
+		}
 		reason := classifyDSLChange(orEmpty(dOk, storedDsl), orEmpty(oOk, storedOvf), dslFP, ovfFP)
 		if reason != "" {
 			common.Warn(fmt.Sprintf("pipeline: DSL for task %s changed since checkpoint was written (%s); discarding stale checkpoint and re-running from scratch", p.taskID, reason))
@@ -361,6 +370,17 @@ func orEmpty(ok bool, b []byte) string {
 		return ""
 	}
 	return string(b)
+}
+
+// coalesceErr returns the first non-nil error, so a single message can report
+// whichever of two reads failed without dereferencing nil.
+func coalesceErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // Run executes the full ingestion graph described by the canonical DSL.
