@@ -595,6 +595,16 @@ func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPoin
 		if err := store.Delete(ctx, cpID); err != nil {
 			common.Error(fmt.Sprintf("pipeline: delete checkpoint %s failed: %v", cpID, err), err)
 		}
+		// Drop the DSL / override fingerprints alongside the checkpoint so
+		// they share one lifecycle on cancellation (otherwise the fingerprint
+		// keys linger up to TTL while the checkpoint is gone — harmless, but
+		// inconsistent). A later re-run overwrites them anyway.
+		if err := store.Delete(ctx, cpID+dslKeySuffix); err != nil {
+			common.Error(fmt.Sprintf("pipeline: delete DSL fingerprint %s failed: %v", cpID, err), err)
+		}
+		if err := store.Delete(ctx, cpID+ovfKeySuffix); err != nil {
+			common.Error(fmt.Sprintf("pipeline: delete override fingerprint %s failed: %v", cpID, err), err)
+		}
 	}
 	if tracker != nil {
 		_ = tracker.ClearInterruptID(ctx, cpID)
