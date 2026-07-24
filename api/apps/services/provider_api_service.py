@@ -668,7 +668,23 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     else:
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
-            return False, f"No models found for provider '{provider_id_or_name}'", {}
+            model_base_url = base_url or factory_info[0].get("url", "")
+            try:
+                if provider_name in ModelMeta:
+                    remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+                    if remote_models:
+                        factory_llms = [
+                            {
+                                "model_type": mt,
+                                "llm_name": m["name"],
+                            }
+                            for m in remote_models
+                            for mt in m.get("model_types", [])
+                        ]
+            except Exception:
+                pass
+            if not factory_llms:
+                return False, f"No models found for provider '{provider_id_or_name}'", {}
 
     model_verify_result = {}
     # test if api key works
