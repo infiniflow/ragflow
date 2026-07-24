@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -79,6 +80,9 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 			docID := *inform.DocumentID
 			if s.documentService != nil {
 				if err = s.documentService.RemoveDocumentKeepFile(ctx, docID); err != nil {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return fmt.Errorf("context cancelled while removing document %s: %w", docID, err)
+					}
 					common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 				}
 			}

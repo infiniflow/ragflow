@@ -433,7 +433,7 @@ func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
 		t.Fatalf("unexpected error_code: %v", data["error_code"])
 	}
-	if resp["message"] != "Can't stop parsing document that has not started or already completed" {
+	if resp["message"] != "can't stop parsing document that has not started or already completed" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }

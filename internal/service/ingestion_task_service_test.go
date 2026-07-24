@@ -438,6 +438,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 		{name: "stopped", status: common.STOPPED},
 	}
 
+	ctx := t.Context()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			publisher.subject = ""
@@ -450,7 +451,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 				t.Fatalf("set terminal status: %v", err)
 			}
 
-			task, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+			task, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 				DocumentID: "doc-1",
 				UserID:     "user-1",
 				DatasetID:  "kb-1",
@@ -487,7 +488,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testin
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
 	if err == nil {
 		t.Fatal("expected CreateAndEnqueue to reject existing created task")
 	}
@@ -503,7 +505,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 		DocumentID: "doc-1",
 		UserID:     "user-1",
 		DatasetID:  "kb-1",
@@ -533,7 +536,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 		DocumentID: "doc-1",
 		UserID:     "user-1",
 		DatasetID:  "kb-1",

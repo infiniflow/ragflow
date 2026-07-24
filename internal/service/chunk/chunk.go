@@ -1224,7 +1224,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	if deletedCount > 0 {
-		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 	}
