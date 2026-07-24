@@ -328,6 +328,15 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Capture the source object version for version-aware indexing
+    source_version_id = ""
+    if hasattr(settings.STORAGE_IMPL, "get_active_version"):
+        try:
+            source_version_id = settings.STORAGE_IMPL.get_active_version(bucket, name) or ""
+        except Exception:
+            logging.debug("Failed to get active version for %s/%s", bucket, name)
+    task["_source_version_id"] = source_version_id
+
     # Table parser column roles / mode are stored on the dataset (KB) parser_config;
     # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
     parser_config_for_chunk = merge_table_parser_config_from_kb(task)
@@ -407,6 +416,8 @@ async def build_chunks(task, progress_callback):
             d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
+            # Stamp the source object version for audit / drift detection
+            d["source_version_id"] = task.get("_source_version_id", "")
 
             if d.get("img_id"):
                 docs.append(d)

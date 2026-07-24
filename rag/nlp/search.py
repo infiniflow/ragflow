@@ -710,6 +710,11 @@ class Dealer:
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
+                # Version-aware retrieval: expose the source object version
+                # that produced this chunk, and a drift flag that callers
+                # can populate via Dealer.check_version_drift().
+                "source_version_id": chunk.get("source_version_id", ""),
+                "version_drift": None,
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
@@ -954,3 +959,43 @@ class Dealer:
             chunks.append(d)
 
         return sorted(chunks, key=lambda x: x["similarity"] * -1)
+
+    # ------------------------------------------------------------------
+    # Version-drift detection
+    # ------------------------------------------------------------------
+    @staticmethod
+    def check_version_drift(chunks: list[dict],
+                            doc_id_to_active_version: dict) -> list[dict]:
+        """Populate the ``version_drift`` field on each chunk.
+
+        Compares the ``source_version_id`` stamped at indexing time
+        with the current ``active_version`` of the source object.
+        When they differ, the chunk is stale relative to the active
+        object version — a signal that the answer may not reflect the
+        version the operator pinned.
+
+        Parameters
+        ----------
+        chunks:
+            Chunk list returned by :meth:`retrieval`.
+        doc_id_to_active_version:
+            Mapping ``{doc_id: active_version_id}`` built by the
+            caller (typically the API layer) by looking up each
+            document's storage address and calling
+            ``VersionedStorageWrapper.get_active_version``.
+
+        Returns
+        -------
+        list of dict
+            The same *chunks* list with ``version_drift`` populated:
+            ``True`` if drifted, ``False`` if aligned, ``None`` if
+            either side is unknown (version tracking not active).
+        """
+        for chunk in chunks:
+            indexed = chunk.get("source_version_id", "")
+            active = doc_id_to_active_version.get(chunk.get("doc_id", ""), "")
+            if indexed and active:
+                chunk["version_drift"] = (indexed != active)
+            else:
+                chunk["version_drift"] = None
+        return chunks
