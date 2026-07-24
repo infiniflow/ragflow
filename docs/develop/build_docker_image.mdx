@@ -24,9 +24,9 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 - Disk &ge; 50 GB
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
 
-## Build a Docker image
+## Build the dependency image
 
-This image is approximately 2 GB in size and relies on external LLM and embedding services.
+RAGFlow's main Docker image is approximately 2 GB in size and relies on external LLM and embedding services. Before building it, prepare the dependency image required by the main `Dockerfile`.
 
 :::danger IMPORTANT
 - While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
@@ -37,29 +37,28 @@ This image is approximately 2 GB in size and relies on external LLM and embeddin
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/ragflow_deps
 uv run python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow_deps .
-cd ..
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 ```
 
-## Launch a RAGFlow Service from Docker for MacOS
+The `infiniflow/ragflow_deps:latest` image contains the resources required by the main RAGFlow `Dockerfile`. It only needs to be rebuilt when these downloaded dependencies change.
 
-After building the infiniflow/ragflow:nightly image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+## Build and launch RAGFlow on macOS
+
+After preparing the dependency image, Docker Compose can build RAGFlow from the current source checkout and launch a fully-functional service with all required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
 
 ## Example: Apple M2 Pro (Sequoia)
 
-1. Edit Docker Compose Configuration
-
-Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.26.4` to `infiniflow/ragflow:nightly` to use the pre-built image.
-
-
-2. Launch the Service
+1. Build and launch the service
 
 ```bash
-cd docker
-$ docker compose -f docker-compose-macos.yml up -d
+cd ..
+docker compose -f docker/docker-compose-macos.yml up -d --build --force-recreate ragflow
 ```
 
-3. Access the RAGFlow Service
+- Use `docker compose -f docker/docker-compose-macos.yml restart ragflow` to restart the existing container when the source, image, and Compose configuration—including `.env`, ports, volumes, and other settings—are unchanged.
+- Use `docker compose -f docker/docker-compose-macos.yml up -d --force-recreate ragflow` to recreate the container when the image or Compose configuration changes but the source does not require rebuilding.
+- Use `docker compose -f docker/docker-compose-macos.yml up -d --build --force-recreate ragflow` to rebuild the image from the current source and recreate the container when the source changes.
+
+2. Access the RAGFlow Service
 
 Once the setup is complete, open your web browser and navigate to http://127.0.0.1 or your server's \<IP_ADDRESS\>; (the default port is \<PORT\> = 80). You will be directed to the RAGFlow welcome page. Enjoy!🍻
