@@ -65,7 +65,7 @@ export function AgentCanvasSection({
     showCreatingModal,
     loading,
     handleCreateAgentOrPipeline,
-  } = useCreateAgentOrPipeline();
+  } = useCreateAgentOrPipeline(canvasCategory);
 
   const {
     handleImportJson,
@@ -112,7 +112,6 @@ export function AgentCanvasSection({
               <DropdownMenuTrigger data-testid="create-agent" asChild>
                 <Button>
                   <Plus className="size-[1em]" />
-                  {t('flow.createGraph')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent data-testid="agent-create-menu">
@@ -211,7 +210,11 @@ export function AgentCanvasSection({
                 </li>
 
                 <li>
-                  <Button variant="static" size="auto" onClick={handleImportJson}>
+                  <Button
+                    variant="static"
+                    size="auto"
+                    onClick={handleImportJson}
+                  >
                     <FileInput className="size-[1em]" />
                     {t('flow.importJsonFile')}
                   </Button>
@@ -235,7 +238,7 @@ export function AgentCanvasSection({
           loading={loading}
           visible={creatingVisible}
           hideModal={hideCreatingModal}
-          shouldChooseAgent
+          canvasCategory={canvasCategory}
           onOk={handleCreateAgentOrPipeline}
         ></CreateAgentDialog>
       )}

@@ -72,7 +72,6 @@ export function CompilationOperatorSection({
         >
           <Button onClick={handleAdd} data-testid="create-compilation-template">
             <Plus className="size-[1em]" />
-            {t('setting.addTemplateGroup')}
           </Button>
         </ListFilterBar>
       </header>

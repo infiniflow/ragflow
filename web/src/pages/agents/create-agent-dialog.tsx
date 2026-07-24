@@ -6,30 +6,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AgentCategory } from '@/constants/agent';
 import { TagRenameId } from '@/constants/knowledge';
+import { BrainCircuit, Route } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
 
-type CreateAgentDialogProps = CreateAgentFormProps;
+type CreateAgentDialogProps = CreateAgentFormProps & {
+  canvasCategory?: AgentCategory;
+};
 
 export function CreateAgentDialog({
   hideModal,
   onOk,
   loading,
-  shouldChooseAgent,
+  canvasCategory,
 }: CreateAgentDialogProps) {
   const { t } = useTranslation();
+
+  const dialogTitle =
+    canvasCategory === AgentCategory.DataflowCanvas
+      ? t('flow.createIngestionPipeline')
+      : t('flow.createWorkflow');
+
+  const DialogIcon =
+    canvasCategory === AgentCategory.DataflowCanvas
+      ? Route
+      : canvasCategory === AgentCategory.AgentCanvas
+        ? BrainCircuit
+        : undefined;
 
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent data-testid="agent-create-modal" className="max-w-[800px]">
         <DialogHeader>
-          <DialogTitle>{t('flow.createGraph')}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {DialogIcon && <DialogIcon className="size-5" />}
+            {dialogTitle}
+          </DialogTitle>
         </DialogHeader>
         <CreateAgentForm
           hideModal={hideModal}
           onOk={onOk}
-          shouldChooseAgent={shouldChooseAgent}
         ></CreateAgentForm>
         <DialogFooter>
           <ButtonLoading

@@ -2787,6 +2787,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       duplicate: '复制',
       copyOfAgentName: '{{name}} (副本)',
       chooseAgentType: '选择智能体类型',
+      createPipeline: '数据管道',
+      createIngestionPipeline: '创建数据管道',
+      createWorkflow: '创建工作流',
       tabList: {
         ingestionPipeline: '数据管道',
         compilationOperator: '编译算子',

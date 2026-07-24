@@ -3191,6 +3191,8 @@ This process aggregates variables from multiple branches into a single variable 
       copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
+      createIngestionPipeline: 'Create ingestion pipeline',
+      createWorkflow: 'Create workflow',
       tabList: {
         ingestionPipeline: 'Ingestion pipeline',
         compilationOperator: 'Compilation operator',
