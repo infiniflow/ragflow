@@ -664,7 +664,7 @@ async def get_wiki_graph(tenant_id, dataset_id):
         if isinstance(node, str):
             node = node.strip() or None
         keywords = request.args.get("keywords", "")
-        top_n_arg = request.args.get("top_n") or request.args.get("topN") or 6
+        top_n_arg = request.args.get("top_n") or request.args.get("topN")
         top_n = None
         if top_n_arg is not None:
             try:
