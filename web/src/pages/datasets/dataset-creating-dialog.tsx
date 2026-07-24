@@ -173,7 +173,7 @@ export function DatasetCreatingDialog({
       <DialogContent
         className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col"
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             const form = document.getElementById(FormId) as HTMLFormElement;
             form?.requestSubmit();
