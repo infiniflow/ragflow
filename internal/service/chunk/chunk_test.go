@@ -326,10 +326,16 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
 	}
-	for _, field := range []string{"content", "content_with_weight", "img_id", "position_int"} {
+	if slices.Contains(engine.searchReq.SelectFields, "content") {
+		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
+	}
+	for _, field := range []string{"content_with_weight", "img_id", "position_int"} {
 		if !slices.Contains(engine.searchReq.SelectFields, field) {
 			t.Fatalf("SelectFields = %#v, missing %q", engine.searchReq.SelectFields, field)
 		}
+	}
+	if got := resp.Chunks[0]["content_with_weight"]; got != "weighted invoice terms body" {
+		t.Fatalf("formatted content_with_weight = %#v, want %q", got, "weighted invoice terms body")
 	}
 	if len(engine.searchReq.MatchExprs) != 1 {
 		t.Fatalf("MatchExprs length = %d, want 1", len(engine.searchReq.MatchExprs))
@@ -1110,9 +1116,10 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 	return &types.SearchResult{
 		Chunks: []map[string]interface{}{
 			{
-				"id":      "chunk-1",
-				"content": "invoice terms body",
-				"doc_id":  "doc-1",
+				"id":                  "chunk-1",
+				"content":             "plain invoice terms body",
+				"content_with_weight": "weighted invoice terms body",
+				"doc_id":              "doc-1",
 			},
 		},
 		Total: 1,

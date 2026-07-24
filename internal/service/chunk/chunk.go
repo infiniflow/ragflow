@@ -857,7 +857,6 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 		Limit:      size,
 		SelectFields: []string{
 			"id",
-			"content",
 			"content_with_weight",
 			"img_id",
 			"position_int",
@@ -917,8 +916,12 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
-			case "content":
+			case "content_with_weight":
 				result["content_with_weight"] = v
+			case "content":
+				if _, ok := result["content_with_weight"]; !ok {
+					result["content_with_weight"] = v
+				}
 			case "docnm":
 				result["docnm_kwd"] = v
 			case "important_keywords":
