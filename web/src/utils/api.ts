@@ -140,6 +140,7 @@ export default {
   checkEmbedding: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
+  datasetFilter: `${restAPIv1}/datasets?type=filter`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,

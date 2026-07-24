@@ -239,3 +239,10 @@ type KnowledgebaseListItem struct {
 	TenantAvatar *string `json:"tenant_avatar,omitempty"`
 	UpdateTime   *int64  `json:"update_time,omitempty"`
 }
+
+// DatasetOwnerFilter represents an owner option in dataset filter responses.
+type DatasetOwnerFilter struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
