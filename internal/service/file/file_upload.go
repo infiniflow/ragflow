@@ -111,7 +111,11 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
-		uniqueName := s.getUniqueFilename(ctx, fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
+		var uniqueName string
+		uniqueName, err = s.getUniqueFilename(ctx, fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unique filename: %w", err)
+		}
 
 		fileRecord := &entity.File{
 			ID:         utility.GenerateToken(),

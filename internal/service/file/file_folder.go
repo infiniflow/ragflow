@@ -111,7 +111,10 @@ func (s *FileService) initDatasetDocs(ctx context.Context, rootID, tenantID stri
 // Deduplicates duplicate entries that may have been created by
 // concurrent race conditions (TOCTOU).
 func (s *FileService) initSkillsFolder(ctx context.Context, rootID, tenantID string) error {
-	existing := s.fileDAO.Query(ctx, dao.DB, SkillsFolderName, rootID, tenantID)
+	existing, err := s.fileDAO.Query(ctx, dao.DB, SkillsFolderName, rootID, tenantID)
+	if err != nil {
+		return err
+	}
 	if len(existing) > 0 {
 		if len(existing) > 1 {
 			common.Logger.Warn(fmt.Sprintf(
@@ -275,10 +278,14 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 	return s.createFolderRecursive(ctx, newFolder, names, count+1, tenantID)
 }
 
-func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) string {
-	existingFiles := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
+	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+	if err != nil {
+		return "", err
+	}
+
 	if len(existingFiles) == 0 {
-		return name
+		return name, nil
 	}
 
 	base := filepath.Base(name)
@@ -288,9 +295,12 @@ func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, ten
 	counter := 1
 	for {
 		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles = s.fileDAO.Query(ctx, dao.DB, newName, parentID, tenantID)
+		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, parentID, tenantID)
+		if err != nil {
+			return "", err
+		}
 		if len(existingFiles) == 0 {
-			return newName
+			return newName, nil
 		}
 		counter++
 	}
@@ -310,7 +320,10 @@ func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID
 		return nil, fmt.Errorf("parent folder not found")
 	}
 
-	existingFiles := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing files: %w", err)
+	}
 	if len(existingFiles) > 0 {
 		return nil, fmt.Errorf("duplicated folder name in the same folder")
 	}
@@ -428,7 +441,11 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		existingFiles := s.fileDAO.Query(ctx, dao.DB, newName, targetParentID, file.TenantID)
+		var existingFiles []*entity.File
+		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, targetParentID, file.TenantID)
+		if err != nil {
+			return false, fmt.Sprintf("failed to query existing files: %v", err)
+		}
 		for _, f := range existingFiles {
 			if f.Name == newName {
 				return false, "duplicated file name in the same folder"
@@ -437,7 +454,11 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 	} else if destFolder != nil {
 		// Plain move (no rename): check for duplicate names in destination folder
 		for _, file := range files {
-			existingFiles := s.fileDAO.Query(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID)
+			var existingFiles []*entity.File
+			existingFiles, err = s.fileDAO.Query(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID)
+			if err != nil {
+				return false, fmt.Sprintf("failed to query existing files: %v", err)
+			}
 			for _, f := range existingFiles {
 				// Ignore the source file itself
 				if f.ID != file.ID {
@@ -491,7 +512,10 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 
 	if sourceFile.Type == FileTypeFolder {
 		// Handle folder move
-		existingFolders := s.fileDAO.Query(ctx, dao.DB, effectiveName, destFolder.ID, sourceFile.TenantID)
+		existingFolders, err := s.fileDAO.Query(ctx, dao.DB, effectiveName, destFolder.ID, sourceFile.TenantID)
+		if err != nil {
+			return fmt.Errorf("failed to query existing folders: %w", err)
+		}
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
 			// Prevent moving a folder into itself (self-target merge)
