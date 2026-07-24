@@ -32,7 +32,7 @@ class RAGFlowS3:
         self.access_key = self.s3_config.get("access_key", None)
         self.secret_key = self.s3_config.get("secret_key", None)
         self.session_token = self.s3_config.get("session_token", None)
-        self.region_name = self.s3_config.get("region_name", None)
+        self.region_name = self.s3_config.get("region_name") or self.s3_config.get("region")
         self.endpoint_url = self.s3_config.get("endpoint_url", None)
         self.signature_version = self.s3_config.get("signature_version", None)
         self.addressing_style = self.s3_config.get("addressing_style", None)
@@ -113,15 +113,15 @@ class RAGFlowS3:
         return exists
 
     def health(self):
-        bucket = self.bucket
-        fnm = "txtxtxtxt1"
-        fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
-        if not self.bucket_exists(bucket):
-            self.conn[0].create_bucket(Bucket=bucket)
-            logging.debug(f"create bucket {bucket} ********")
-
-        r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
-        return r
+        try:
+            if self.bucket:
+                self.conn[0].head_bucket(Bucket=self.bucket)
+            else:
+                self.conn[0].list_buckets()
+            return True
+        except Exception as e:
+            logging.warning(f"S3 health check failed: {e}")
+            return False
 
     def get_properties(self, bucket, key):
         return {}
