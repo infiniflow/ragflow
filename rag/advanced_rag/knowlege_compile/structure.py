@@ -445,7 +445,7 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
     if not isinstance(aliases, list):
         aliases = []
     aliases = [str(a).strip() for a in aliases if str(a).strip()]
-    description = payload.get("description") or payload.get("discription") or payload.get("definition_excerpt") or ""
+    description = payload.get("description") or payload.get("description") or payload.get("definition_excerpt") or ""
     if isinstance(source_chunk_ids, str):
         source_chunk_ids = [source_chunk_ids]
     source_chunk_ids = _struct_union_chunk_ids(source_chunk_ids)
@@ -455,7 +455,7 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
         "name": name,
         "source_chunk_ids": source_chunk_ids,
         "type": typ or "other",
-        "discription": str(description).strip() if description is not None else "",
+        "description": str(description).strip() if description is not None else "",
     }
 
 
@@ -489,8 +489,8 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
         for alias in entity.get("aliases") or []:
             if alias not in aliases:
                 aliases.append(alias)
-        if not target.get("discription") and entity.get("discription"):
-            target["discription"] = entity["discription"]
+        if not target.get("description") and entity.get("description"):
+            target["description"] = entity["description"]
         target["source_chunk_ids"] = _struct_union_chunk_ids(
             target.get("source_chunk_ids"),
             entity.get("source_chunk_ids"),
@@ -586,6 +586,26 @@ def _struct_to_doc_storage_doc(
         f"q_{len(vec_list)}_vec": vec_list,
         "id": row_id,
     }
+
+    # Surface two payload fields as queryable top-level columns so the store can
+    # filter/sort on them without parsing ``content_with_weight``. Both are
+    # copies: the originals stay in the payload, so payload consumers (merge,
+    # graph projection) are unaffected and ``row_id`` — which hashes the payload
+    # JSON — does not shift. Merges rebuild through this same function, so the
+    # columns re-derive from the merged payload automatically.
+    try:
+        mention_count = int(payload.get("mention_count") or 1)
+    except (TypeError, ValueError):
+        mention_count = 1
+    doc["mention_count_int"] = mention_count
+
+    # Lower-cased name for case-insensitive exact lookups. Relations carry no
+    # ``name`` (they use source/target), so the column is only stamped when the
+    # payload actually has one.
+    name_value = _struct_entity_name(payload)
+    if name_value:
+        doc["name_kwd"] = name_value.lower()
+
     if template_id_str:
         doc["compilation_template_ids"] = [template_id_str]
     if compilation_template_kind:
