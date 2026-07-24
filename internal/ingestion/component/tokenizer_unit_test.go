@@ -53,7 +53,7 @@ func (s *stubEmbedder) MaxTokens() int {
 	return s.maxTokens
 }
 
-func (s *stubEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	s.calls.Add(1)
 	copied := append([]string(nil), texts...)
 	s.callInputs = append(s.callInputs, copied)

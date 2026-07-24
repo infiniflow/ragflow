@@ -355,8 +355,8 @@ func NewAgentServiceWithOptions(
 // ListTemplates returns every canvas template. Mirrors Python
 // agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
 // and serialises each row.
-func (s *AgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
-	return s.canvasTemplateDAO.GetAll()
+func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTemplate, error) {
+	return s.canvasTemplateDAO.GetAll(ctx)
 }
 
 // AgentItem is one entry in the list response.
@@ -498,17 +498,17 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	title := strings.TrimSpace(*req.Title)
 	req.Title = &title
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, errors.New(title + " already exists.")
-	}
-
 	if req.Permission == "" {
 		req.Permission = "me"
 	}
 	if req.CanvasCategory == "" {
 		req.CanvasCategory = "agent_canvas"
+	}
+
+	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
+	} else if existing != nil {
+		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
@@ -525,9 +525,42 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		DSL:            req.DSL,
 	}
 	if err := s.canvasDAO.Create(row); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+		}
 		return nil, common.CodeServerError, fmt.Errorf("create agent: %w", err)
 	}
 	return row, common.CodeSuccess, nil
+}
+
+func agentTitleAlreadyExistsError(title string) error {
+	return errors.New(title + " already exists.")
+}
+
+func updatedAgentTitle(canvasInstance *entity.UserCanvas, updates map[string]interface{}) (string, bool) {
+	if value, ok := updates["title"]; ok {
+		title, ok := value.(string)
+		if !ok {
+			return "", false
+		}
+		return title, true
+	}
+	if _, ok := updates["canvas_category"]; !ok {
+		return "", false
+	}
+	if canvasInstance.Title == nil {
+		return "", false
+	}
+	return *canvasInstance.Title, true
+}
+
+func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[string]interface{}) string {
+	if value, ok := updates["canvas_category"]; ok {
+		if canvasCategory, ok := value.(string); ok {
+			return canvasCategory
+		}
+	}
+	return canvasInstance.CanvasCategory
 }
 
 // loadCanvasForUser is the shared IDOR guard used by every non-List
@@ -581,10 +614,21 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
+//
+// Permission is an owner-only setting: team members who have access to the
+// canvas can still update title/avatar/description, but any permission value
+// they send is ignored so they cannot make a team agent private (or vice
+// versa). The owner can change permission together with title/avatar in one
+// request.
 func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
 	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return err
+	}
+
+	// Only the canvas owner may change the permission field.
+	if _, ok := patch["permission"]; ok && canvasInstance.UserID != userID {
+		delete(patch, "permission")
 	}
 
 	updates := map[string]interface{}{}
@@ -596,6 +640,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 				}
 			}
 			updates[key] = value
+		}
+	}
+	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
+		if existing, err := s.canvasDAO.GetByUserAndTitle(userID, title, canvasCategory); err != nil {
+			return fmt.Errorf("check duplicate title: %w", err)
+		} else if existing != nil && existing.ID != canvasID {
+			return agentTitleAlreadyExistsError(title)
 		}
 	}
 	if dsl, ok := patch["dsl"]; ok && dsl != nil {
@@ -612,6 +664,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 
 	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
 	if err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+				return agentTitleAlreadyExistsError(title)
+			}
+			return errors.New("Agent title already exists.")
+		}
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	if dslValue, ok := updates["dsl"]; ok {
@@ -962,7 +1020,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = normalisedDSLForRun(versionRow)
 	}
 	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetBySessionID(sessionID, canvasID)
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, canvasID)
 		if sessionErr != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
 		}
@@ -974,7 +1032,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 	if newSession && len(dsl) > 0 {
-		if err := s.createAgentRunSession(sessionID, userID, canvasID, dsl, versionRow); err != nil {
+		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 	}
@@ -1223,7 +1281,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
 			// this FileService MUST NOT be used for DeleteFiles.
 			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-			files, ferr := fileSvc.ParseAgentUploads(userID, rawFiles, beginLayoutRecognize(c))
+			files, ferr := fileSvc.ParseAgentUploads(ctx, userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
@@ -1368,7 +1426,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if answer != "" {
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
-				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
 				if answer != "" {
@@ -1385,7 +1443,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
-				if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
@@ -1419,7 +1477,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
-		if persistErr := s.persistAgentRunSession(canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 		}
@@ -1466,6 +1524,7 @@ func beginLayoutRecognize(c *canvas.Canvas) string {
 }
 
 func (s *AgentService) createAgentRunSession(
+	ctx context.Context,
 	sessionID, userID, agentID string,
 	runDSL map[string]any,
 	versionRow *entity.UserCanvasVersion,
@@ -1486,7 +1545,7 @@ func (s *AgentService) createAgentRunSession(
 	if versionRow != nil {
 		session.VersionTitle = versionRow.Title
 	}
-	return s.api4ConversationDAO.Create(session)
+	return s.api4ConversationDAO.Create(ctx, session)
 }
 
 // runIDFor builds the per-run CanvasState identifier: canvasID
@@ -1524,6 +1583,7 @@ func emptyDownloadValue(value any) bool {
 }
 
 func (s *AgentService) persistAgentRunSession(
+	ctx context.Context,
 	agentID, userID, sessionID, messageID string,
 	userInput any,
 	answer string,
@@ -1535,7 +1595,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 		return nil
@@ -1562,7 +1622,7 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
-	return s.api4ConversationDAO.Update(session)
+	return s.api4ConversationDAO.Update(ctx, session)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

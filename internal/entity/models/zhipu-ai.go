@@ -87,7 +87,7 @@ type ZhipuChatResponse struct {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -247,7 +247,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -507,7 +507,7 @@ type zhipuUsage struct {
 }
 
 // Embed embeddings a list of texts into embeddings
-func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -530,7 +530,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
 	reqBody["input"] = texts
-	if embeddingConfig.Dimension > 0 {
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
@@ -539,7 +539,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -583,7 +583,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	return embeddings, nil
 }
 
-func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (z *ZhipuAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -595,7 +595,7 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -630,11 +630,11 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 	return ParseListModel(modelList), nil
 }
 
-func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (z *ZhipuAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
+func (z *ZhipuAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -646,7 +646,7 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Files)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -710,7 +710,7 @@ type zhipuOCRResponse struct {
 // Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
-func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (z *ZhipuAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -748,7 +748,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -792,7 +792,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 }
 
 // TranscribeAudio transcribe audio
-func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (z *ZhipuAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -844,7 +844,7 @@ func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfi
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
@@ -919,12 +919,12 @@ func writeZhipuASRField(writer *multipart.Writer, key string, value interface{})
 	}
 }
 
-func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // AudioSpeech convert text to audio
-func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (z *ZhipuAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -939,7 +939,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -966,7 +966,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -984,7 +984,7 @@ func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -1064,7 +1064,7 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 }
 
 // OCRFile OCR file
-func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (z *ZhipuAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -1108,7 +1108,7 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(z.baseModel.URLSuffix.OCR, "/"))
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -1147,14 +1147,14 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 }
 
 // ParseFile parse file
-func (z *ZhipuAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (z *ZhipuAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (z *ZhipuAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *ZhipuAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (z *ZhipuAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

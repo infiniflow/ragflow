@@ -344,11 +344,12 @@ type fakeEmbedDriver struct {
 
 func (f *fakeEmbedDriver) Name() string { return f.name }
 
-func (f *fakeEmbedDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, config *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (f *fakeEmbedDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *modelModule.APIConfig, config *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: f.vector}}, nil
 }
 
 func TestBuildKGDenseExpr_WithModel(t *testing.T) {
+	ctx := t.Context()
 	embModel := &modelModule.EmbeddingModel{
 		ModelName: strPtr("test-model"),
 		ModelDriver: &fakeEmbedDriver{
@@ -357,7 +358,7 @@ func TestBuildKGDenseExpr_WithModel(t *testing.T) {
 		},
 		APIConfig: &modelModule.APIConfig{},
 	}
-	dense, err := buildDenseExpr(embModel, "test question", 10)
+	dense, err := buildDenseExpr(ctx, embModel, "test question", 10)
 	if err != nil {
 		t.Fatalf("buildDenseExpr failed: %v", err)
 	}
@@ -373,14 +374,16 @@ func TestBuildKGDenseExpr_WithModel(t *testing.T) {
 }
 
 func TestBuildKGDenseExpr_NilModel(t *testing.T) {
-	dense, err := buildDenseExpr(nil, "test", 10)
+	ctx := t.Context()
+	dense, err := buildDenseExpr(ctx, nil, "test", 10)
 	if dense != nil || err != nil {
 		t.Errorf("expected nil,nil for nil model, got dense=%v err=%v", dense, err)
 	}
 }
 
 func TestBuildKGDenseExpr_EmptyQuestion(t *testing.T) {
-	dense, err := buildDenseExpr(&modelModule.EmbeddingModel{}, "", 10)
+	ctx := t.Context()
+	dense, err := buildDenseExpr(ctx, &modelModule.EmbeddingModel{}, "", 10)
 	if dense != nil || err != nil {
 		t.Errorf("expected nil,nil for empty question, got dense=%v err=%v", dense, err)
 	}

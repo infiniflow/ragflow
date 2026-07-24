@@ -89,7 +89,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // data is resolved and the item carries `doc_type_kwd: "image"` with
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
-func (p *MarkdownParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc := markdownNew().Parse(data)
 	rawText := string(data)
 
