@@ -223,6 +223,11 @@ class InfinityConnection(InfinityConnectionBase):
                 elif isinstance(matchExpr, MatchDenseExpr):
                     if filter_fulltext and "filter" not in matchExpr.extra_options:
                         matchExpr.extra_options.update({"filter": filter_fulltext})
+                    elif filter_cond and "filter" not in matchExpr.extra_options:
+                        # Dense-only search (no MatchTextExpr, e.g. the zero-result
+                        # fallback in Dealer.search): still honor the scope
+                        # conditions (doc_ids, available_int, metadata).
+                        matchExpr.extra_options.update({"filter": filter_cond})
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)
