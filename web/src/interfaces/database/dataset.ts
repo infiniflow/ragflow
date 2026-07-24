@@ -284,6 +284,7 @@ export interface IArtifactGraphEntity {
 export interface IArtifactGraphRelation {
   from: string;
   to: string;
+  type?: string;
 }
 
 export interface IArtifactGraph {

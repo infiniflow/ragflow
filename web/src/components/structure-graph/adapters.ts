@@ -200,6 +200,7 @@ export function adaptKnowledgeGraphToForceGraph(
       .map((relation) => ({
         from: relation.from,
         to: relation.to,
+        type: relation.type ?? '',
       })),
   };
 }

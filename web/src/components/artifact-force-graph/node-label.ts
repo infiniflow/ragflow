@@ -20,6 +20,6 @@ export const renderNodeLabel: NonNullable<
   ctx.fillStyle = `rgb(${textSecondary})`;
 
   if (typeof graphNode.x === 'number' && typeof graphNode.y === 'number') {
-    ctx.fillText(label, graphNode.x, graphNode.y + radius - 2);
+    ctx.fillText(label, graphNode.x, graphNode.y + radius - 9);
   }
 };
