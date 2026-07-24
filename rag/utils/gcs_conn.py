@@ -22,6 +22,8 @@ from google.api_core.exceptions import NotFound
 from common.decorator import singleton
 from common import settings
 
+MAX_RETRIES = 3
+
 
 @singleton
 class RAGFlowGCS:
@@ -67,7 +69,7 @@ class RAGFlowGCS:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket (to match interface)
-        for _ in range(3):
+        for attempt in range(MAX_RETRIES):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, fnm)
@@ -79,9 +81,11 @@ class RAGFlowGCS:
                 logging.error(f"Fail to put: Main bucket {self.bucket_name} does not exist.")
                 return False
             except Exception:
-                logging.exception(f"Fail to put {bucket}/{fnm}:")
+                logging.exception(f"Fail to put {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
         return False
 
     def rm(self, bucket, fnm, tenant_id=None):
@@ -98,7 +102,7 @@ class RAGFlowGCS:
 
     def get(self, bucket, filename, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, filename)
@@ -108,9 +112,11 @@ class RAGFlowGCS:
                 logging.warning(f"File not found {bucket}/{filename} in {self.bucket_name}")
                 return None
             except Exception:
-                logging.exception(f"Fail to get {bucket}/{filename}")
+                logging.exception(f"Fail to get {bucket}/{filename} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
         return None
 
     def obj_exist(self, bucket, filename, tenant_id=None):

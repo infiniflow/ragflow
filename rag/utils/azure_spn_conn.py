@@ -20,7 +20,10 @@ import time
 from common.decorator import singleton
 from azure.identity import ClientSecretCredential, AzureAuthorityHosts
 from azure.storage.filedatalake import FileSystemClient
+from azure.core.exceptions import ResourceNotFoundError
 from common import settings
+
+MAX_RETRIES = 3
 
 _CLOUD_AUTHORITY_MAP = {
     "public": AzureAuthorityHosts.AZURE_PUBLIC_CLOUD,
@@ -68,16 +71,17 @@ class RAGFlowAzureSpnBlob:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob = f"{bucket}/{fnm}"
-        for _ in range(3):
+        for attempt in range(MAX_RETRIES):
             try:
                 f = self.conn.create_file(f"{blob}")
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
-                logging.exception(f"Fail put {blob}")
+                logging.exception(f"Fail put {blob} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
-                return None
+                time.sleep(2 ** attempt)
         return None
 
     def rm(self, bucket, fnm):
@@ -89,15 +93,19 @@ class RAGFlowAzureSpnBlob:
 
     def get(self, bucket, fnm):
         blob = f"{bucket}/{fnm}"
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 client = self.conn.get_file_client(f"{blob}")
                 r = client.download_file()
                 return r.read()
+            except ResourceNotFoundError:
+                return None
             except Exception:
-                logging.exception(f"fail get {blob}")
+                logging.exception(f"fail get {blob} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
         return None
 
     def obj_exist(self, bucket, fnm):
