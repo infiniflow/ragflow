@@ -74,7 +74,7 @@ class TenkiProvider(SandboxProvider):
         self.project_id = ""
         self.base_url = ""
         self.image = ""
-        self.allow_outbound = True
+        self.allow_outbound = False
         self.timeout = 30
         self.max_lifetime = 3600
         self.cpu_cores = 0
@@ -92,7 +92,7 @@ class TenkiProvider(SandboxProvider):
         self.project_id = str(config.get("project_id", "") or "").strip()
         self.base_url = str(config.get("base_url", "") or "").strip()
         self.image = str(config.get("image", "") or "").strip()
-        self.allow_outbound = bool(config.get("allow_outbound", True))
+        self.allow_outbound = bool(config.get("allow_outbound", False))
         self.timeout = int(config.get("timeout", 30) or 30)
         self.max_lifetime = int(config.get("max_lifetime", 3600) or 3600)
         self.cpu_cores = int(config.get("cpu_cores", 0) or 0)
@@ -309,8 +309,8 @@ class TenkiProvider(SandboxProvider):
                 "type": "boolean",
                 "required": False,
                 "label": "Allow Outbound Network",
-                "default": True,
-                "description": "Security-relevant. Allow the sandbox to make outbound network connections (needed to install packages). Disable to run code without network access.",
+                "default": False,
+                "description": "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages).",
             },
             "timeout": {
                 "type": "integer",

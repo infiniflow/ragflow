@@ -223,6 +223,7 @@ def test_tenki_provider_create_passes_project_and_outbound(monkeypatch):
     provider, client = _build_provider(sandbox, monkeypatch)
     provider.image = "my-image"
     provider.cpu_cores = 4
+    provider.allow_outbound = True
 
     provider.create_instance("python")
 

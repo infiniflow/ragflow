@@ -52,6 +52,8 @@ const tenkiDefaultSandboxTimeout = 5 * time.Minute
 // TenkiProvider is the Go port of the Python TenkiProvider.
 type TenkiProvider struct {
 	client         *tenkisdk.Client
+	apiKey         string
+	apiURL         string
 	projectID      string
 	image          string
 	allowOutbound  bool
@@ -62,18 +64,17 @@ type TenkiProvider struct {
 }
 
 // newTenkiProviderFromEnv reads TENKI_* env vars and returns a
-// provider ready for Initialize. The auth token (TENKI_API_KEY) is
-// resolved by Initialize; the remaining tunables mirror the config map.
+// provider ready for Initialize.
 func newTenkiProviderFromEnv() *TenkiProvider {
 	return newTenkiProviderFromConfig(tenkiConfigFromEnv())
 }
 
 // tenkiConfigFromEnv builds a config map from the TENKI_* env vars,
-// mirroring the admin-panel settings JSON shape. TENKI_API_KEY and
-// TENKI_API_URL are read directly by Initialize (the SDK requires
-// them at client construction), so they are NOT in the config map.
+// mirroring the admin-panel settings JSON shape.
 func tenkiConfigFromEnv() map[string]any {
 	return map[string]any{
+		"API_KEY":        common.GetEnv(common.EnvTenkiApiKey),
+		"API_URL":        common.GetEnv(common.EnvTenkiAPIURL),
 		"PROJECT_ID":     common.GetEnv(common.EnvTenkiProjectID),
 		"IMAGE":          common.GetEnv(common.EnvTenkiImage),
 		"TIMEOUT":        common.GetEnv(common.EnvTenkiTimeout),
@@ -82,15 +83,18 @@ func tenkiConfigFromEnv() map[string]any {
 }
 
 // newTenkiProviderFromConfig builds the provider from a JSON config
-// map. The auth token / API URL are read by Initialize from env.
+// map (admin-panel settings or the env-backed map above).
 func newTenkiProviderFromConfig(cfg map[string]any) *TenkiProvider {
 	p := &TenkiProvider{
+		apiKey:    configString(cfg, "API_KEY"),
+		apiURL:    configString(cfg, "API_URL"),
 		projectID: configString(cfg, "PROJECT_ID"),
 		image:     configString(cfg, "IMAGE"),
-		// Outbound network is on by default because installing
-		// packages needs it; operators set ALLOW_OUTBOUND=false to
-		// run code with no network access.
-		allowOutbound: configString(cfg, "ALLOW_OUTBOUND") != "false",
+		// Outbound network is opt-in: sandboxed code has no egress
+		// unless ALLOW_OUTBOUND is explicitly "true". This matches
+		// the self_managed sandbox, which treats network access as an
+		// unauthorized-access event by default.
+		allowOutbound: configString(cfg, "ALLOW_OUTBOUND") == "true",
 	}
 	timeoutSec := configInt(cfg, "TIMEOUT", int(tenkiDefaultSandboxTimeout.Seconds()))
 	if timeoutSec > 0 {
@@ -104,16 +108,23 @@ func newTenkiProviderFromConfig(cfg map[string]any) *TenkiProvider {
 // ProviderType returns ProviderTenki.
 func (p *TenkiProvider) ProviderType() ProviderType { return ProviderTenki }
 
-// Initialize builds the Tenki SDK client. The auth token is required;
-// New also resolves it from TENKI_API_KEY, but we check explicitly so
-// the manager does not register a broken provider.
+// Initialize builds the Tenki SDK client. The auth token comes from
+// the admin config or TENKI_API_KEY; we check explicitly so the
+// manager does not register a broken provider.
 func (p *TenkiProvider) Initialize(ctx context.Context) error {
-	apiKey := common.GetEnv(common.EnvTenkiApiKey)
+	apiKey := p.apiKey
 	if apiKey == "" {
-		return errors.New("tenki: TENKI_API_KEY env var is required")
+		apiKey = common.GetEnv(common.EnvTenkiApiKey)
+	}
+	if apiKey == "" {
+		return errors.New("tenki: API key is required (set it in Admin > Sandbox Settings or TENKI_API_KEY)")
+	}
+	apiURL := p.apiURL
+	if apiURL == "" {
+		apiURL = common.GetEnv(common.EnvTenkiAPIURL)
 	}
 	opts := []tenkisdk.Option{tenkisdk.WithAuthToken(apiKey)}
-	if apiURL := common.GetEnv(common.EnvTenkiAPIURL); apiURL != "" {
+	if apiURL != "" {
 		opts = append(opts, tenkisdk.WithBaseURL(apiURL))
 	}
 	c, err := tenkisdk.New(opts...)
@@ -235,8 +246,9 @@ func (p *TenkiProvider) ExecuteCode(
 	if err != nil {
 		// A non-zero exit is reported as a *Result, not an error;
 		// a nil result here means a transport, timeout or session
-		// error that we cannot map to stdout/stderr.
-		return nil, fmt.Errorf("tenki: %s %v: %w", cmd, runArgs, err)
+		// error that we cannot map to stdout/stderr. Do not include
+		// runArgs — they embed the user's code and arguments.
+		return nil, fmt.Errorf("tenki: exec %s: %w", cmd, err)
 	}
 	return buildTenkiExecutionResult(res, lang, start), nil
 }
@@ -260,8 +272,9 @@ func buildTenkiExecutionResult(r *tenkisdk.Result, lang string, start time.Time)
 	}
 }
 
-// DestroyInstance terminates the sandbox. A missing or already
-// terminated session is treated as success so the call is idempotent.
+// DestroyInstance terminates the sandbox. A session that is already
+// gone (not found, terminated, or expired past its max duration) is
+// treated as success so the call is idempotent.
 func (p *TenkiProvider) DestroyInstance(ctx context.Context, inst *SandboxInstance) error {
 	if !p.isInitialized() {
 		return fmt.Errorf("tenki: provider not initialized")
@@ -274,7 +287,9 @@ func (p *TenkiProvider) DestroyInstance(ctx context.Context, inst *SandboxInstan
 		return fmt.Errorf("tenki: Session(%s): %w", inst.InstanceID, err)
 	}
 	if err := sess.Close(ctx); err != nil {
-		if errors.Is(err, tenkisdk.ErrSessionNotFound) || errors.Is(err, tenkisdk.ErrSessionTerminated) {
+		if errors.Is(err, tenkisdk.ErrSessionNotFound) ||
+			errors.Is(err, tenkisdk.ErrSessionTerminated) ||
+			errors.Is(err, tenkisdk.ErrSessionExpired) {
 			return nil
 		}
 		return fmt.Errorf("tenki: Close(%s): %w", inst.InstanceID, err)

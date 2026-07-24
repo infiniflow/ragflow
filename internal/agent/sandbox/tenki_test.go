@@ -34,9 +34,16 @@ func TestTenkiProvider_ProviderTypeAndLanguages(t *testing.T) {
 	}
 	langs := p.SupportedLanguages()
 	want := map[string]bool{"python": true, "nodejs": true, "javascript": true}
+	got := map[string]bool{}
 	for _, l := range langs {
 		if !want[l] {
 			t.Errorf("unexpected language: %q", l)
+		}
+		got[l] = true
+	}
+	for l := range want {
+		if !got[l] {
+			t.Errorf("missing required language: %q", l)
 		}
 	}
 }
@@ -55,8 +62,8 @@ func TestTenkiProvider_Defaults(t *testing.T) {
 	if p.sandboxTimeout != tenkiDefaultSandboxTimeout {
 		t.Errorf("sandboxTimeout = %v, want %v", p.sandboxTimeout, tenkiDefaultSandboxTimeout)
 	}
-	if !p.allowOutbound {
-		t.Errorf("allowOutbound = false, want true by default")
+	if p.allowOutbound {
+		t.Errorf("allowOutbound = true, want false by default (network is opt-in)")
 	}
 }
 
@@ -64,7 +71,7 @@ func TestTenkiProvider_EnvOverride(t *testing.T) {
 	t.Setenv("TENKI_PROJECT_ID", "proj-123")
 	t.Setenv("TENKI_IMAGE", "custom-image")
 	t.Setenv("TENKI_TIMEOUT", "120")
-	t.Setenv("TENKI_ALLOW_OUTBOUND", "false")
+	t.Setenv("TENKI_ALLOW_OUTBOUND", "true")
 	p := newTenkiProviderFromEnv()
 	if p.projectID != "proj-123" {
 		t.Errorf("projectID = %q, want %q", p.projectID, "proj-123")
@@ -75,8 +82,8 @@ func TestTenkiProvider_EnvOverride(t *testing.T) {
 	if p.sandboxTimeout != 120*time.Second {
 		t.Errorf("sandboxTimeout = %v, want 120s", p.sandboxTimeout)
 	}
-	if p.allowOutbound {
-		t.Errorf("allowOutbound = true, want false when TENKI_ALLOW_OUTBOUND=false")
+	if !p.allowOutbound {
+		t.Errorf("allowOutbound = false, want true when TENKI_ALLOW_OUTBOUND=true")
 	}
 }
 
@@ -253,7 +260,13 @@ func TestTenkiProvider_FullE2E_SkipWithoutKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer func() { _ = p.DestroyInstance(ctx, inst) }()
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := p.DestroyInstance(cleanupCtx, inst); err != nil {
+			t.Errorf("DestroyInstance: %v", err)
+		}
+	}()
 
 	result, err := p.ExecuteCode(ctx, inst, "def main(): return 1+1", "python", 30, nil)
 	if err != nil {

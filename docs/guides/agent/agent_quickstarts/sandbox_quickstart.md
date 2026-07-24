@@ -56,7 +56,7 @@ Configure it in **Admin > Sandbox Settings**:
 - `project_id` (required): the Tenki project that sandboxes are created under.
 - `base_url` (optional): override the Tenki API endpoint.
 - `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
-- `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `true` because installing packages needs network access; set it to `false` to run code without network.
+- `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `false` so sandboxed code has no network access; set it to `true` when code needs the network (for example, to install packages).
 - `timeout`, `max_lifetime`, `cpu_cores`, `memory_mb`, `disk_size_gb`, and the output/artifact limits have sensible defaults and can be tuned in the same page.
 
 Notes:
