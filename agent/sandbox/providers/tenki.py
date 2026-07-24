@@ -160,7 +160,9 @@ class TenkiProvider(SandboxProvider):
         remote_work_dir = posixpath.join(SANDBOX_HOME, f"ragflow-codeexec-{uuid.uuid4().hex}")
         try:
             result = sandbox.exec(
-                "mkdir", "-p", posixpath.join(remote_work_dir, "artifacts"),
+                "mkdir",
+                "-p",
+                posixpath.join(remote_work_dir, "artifacts"),
                 timeout=min(self.timeout, 10),
             )
             if result.exit_code != 0:

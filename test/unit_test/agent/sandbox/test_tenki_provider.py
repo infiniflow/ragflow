@@ -59,7 +59,7 @@ class _FakeFS:
         for file_path, payload in self.files.items():
             if not file_path.startswith(prefix):
                 continue
-            relative = file_path[len(prefix):]
+            relative = file_path[len(prefix) :]
             head, _, tail = relative.partition("/")
             if tail:  # nested -> surface the intermediate directory once
                 if head not in seen_dirs:
@@ -141,9 +141,7 @@ def test_tenki_provider_executes_python_main_and_collects_artifacts(monkeypatch)
     def run_handler(sandbox, argv, cwd):
         # Simulate the script run: emit a structured result + write an artifact.
         sandbox.fs.files[posixpath.join(cwd, "artifacts", "chart.png")] = b"PNGDATA"
-        payload = base64.b64encode(
-            b'{"present":true,"value":{"message":"hello tenki"},"type":"json"}'
-        ).decode("ascii")
+        payload = base64.b64encode(b'{"present":true,"value":{"message":"hello tenki"},"type":"json"}').decode("ascii")
         return _FakeCommandResult(0, stdout=f"debug line\n{RESULT_MARKER_PREFIX}{payload}\n")
 
     sandbox = _FakeSandbox(run_handler)
