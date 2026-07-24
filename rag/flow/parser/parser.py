@@ -35,6 +35,9 @@ from api.db.joint_services.tenant_model_service import (
     resolve_model_config,
     get_tenant_default_model_by_type,
 )
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -337,6 +340,17 @@ class Parser(ProcessBase):
 
         # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
+        # If raw_parse_method is a tenant_model ID, resolve it to
+        # model_name@instance_name@provider_name so the provider-specific
+        # branches below can match the per-provider suffix.
+        if isinstance(raw_parse_method, str) and raw_parse_method:
+            exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
+            if exist:
+                provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+                instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+                if provider_ok and instance_ok:
+                    raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
         parser_model_name = None
         parse_method = raw_parse_method
         parse_method = parse_method or ""
