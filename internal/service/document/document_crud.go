@@ -29,7 +29,7 @@ func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) 
 	return s.kbDAO.Accessible(doc.KbID, userID)
 }
 
-func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (string, string, error) {
+func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *entity.Document) (string, string, error) {
 	if doc == nil {
 		return "", "", fmt.Errorf("document is nil")
 	}
@@ -43,7 +43,7 @@ func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (strin
 	}
 
 	if len(mappings) > 0 && mappings[0].FileID != nil {
-		file, err := fileDAO.GetByID(*mappings[0].FileID)
+		file, err := fileDAO.GetByID(ctx, dao.DB, *mappings[0].FileID)
 		if err != nil {
 			return "", "", err
 		}
@@ -70,7 +70,7 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 	if err != nil || doc.KbID != datasetID {
 		return nil, fmt.Errorf("Document not found!")
 	}
-	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,11 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
-	s.cleanupFileReferences(docID)
+
+	cleanupCtx := context.WithoutCancel(ctx)
+	if err = s.cleanupFileReferences(cleanupCtx, docID); err != nil {
+		return fmt.Errorf("document deleted but file cleanup failed: %w", err)
+	}
 
 	return nil
 }
@@ -395,13 +399,14 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 // the file is a knowledgebase-owned upload (source_type == knowledgebase) and
 // no other document still references the same file_id. Files linked from file
 // management are only unlinked — the file record and blob stay intact.
-func (s *DocumentService) cleanupFileReferences(docID string) {
+func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
 	if mapErr != nil {
 		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
+		return mapErr
 	}
 	if len(mappings) == 0 {
-		return
+		return nil
 	}
 
 	// Collect unique file_ids
@@ -418,6 +423,7 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 	// Delete all file2document rows for this document
 	if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
+		return delErr
 	}
 
 	// For each file, only delete the record and blob when it is a
@@ -433,7 +439,7 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 		}
 
 		fileDAO := dao.NewFileDAO()
-		file, fErr := fileDAO.GetByID(fileID)
+		file, fErr := fileDAO.GetByID(ctx, dao.DB, fileID)
 		if fErr != nil || file == nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
 			continue
@@ -441,7 +447,7 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 		if entity.FileSource(file.SourceType) != entity.FileSourceKnowledgebase {
 			continue // linked from file management — unlink only, keep the file
 		}
-		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
+		if _, delErr := fileDAO.DeleteByIDs(ctx, dao.DB, []string{fileID}); delErr != nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
 			continue // keep the blob so the live file row still has its object
 		}
@@ -454,4 +460,5 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 			}
 		}
 	}
+	return nil
 }

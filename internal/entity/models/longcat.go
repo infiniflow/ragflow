@@ -123,7 +123,8 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -140,6 +141,7 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -200,6 +202,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("longcat: upstream stream error: %v", apiErr)
@@ -219,6 +222,8 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
@@ -242,6 +247,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("longcat: stream ended before [DONE] or finish_reason")
 	}
