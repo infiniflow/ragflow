@@ -211,6 +211,7 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
         get_by_id=lambda *_args, **_kwargs: (False, None),
         update_by_id=lambda *_args, **_kwargs: True,
         decrement_chunk_num=lambda *_args, **_kwargs: None,
+        increment_chunk_num=lambda *_args, **_kwargs: True,
         get_embd_id=lambda *_args, **_kwargs: "",
         get_tenant_embd_id=lambda *_args, **_kwargs: None,
     )
@@ -669,6 +670,54 @@ class TestDocRoutesUnit:
         res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
         assert res["code"] == module.RetCode.DATA_ERROR
         assert "Duplicate document ids" in res["message"]
+
+    def test_parse_and_stop_decrement_kb_counters(self, monkeypatch):
+        # Both routes delete the document's chunks, so the knowledgebase aggregate
+        # must drop by the document's current counters. Zeroing only the document
+        # row leaves that amount stranded in the KB total on every re-parse.
+        module = _load_doc_module(monkeypatch)
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
+        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, _DummyDoc()))
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
+        monkeypatch.setattr(module.TaskService, "filter_delete", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(module, "queue_tasks", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(module, "cancel_all_task_of", lambda *_args, **_kwargs: None)
+        _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: None)
+
+        decrements = []
+        updates = []
+        update_by_id_payloads = []
+
+        def _capture_filter_update(_conditions, info):
+            updates.append(info)
+            return 1
+
+        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda _id, info: update_by_id_payloads.append(info) or True)
+
+        monkeypatch.setattr(module.DocumentService, "increment_chunk_num", lambda *args: decrements.append(args))
+        monkeypatch.setattr(module.DocumentService, "filter_update", _capture_filter_update)
+
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(token_num=70, chunk_num=7, process_duration=1.5)])
+        assert _run(module.parse.__wrapped__("tenant-1", "ds-1"))["code"] == 0
+        assert decrements == [("doc-1", "kb-1", -70, -7, -1.5)]
+        # The document update must not zero the counters itself; that is exactly
+        # what strands the difference in the KB aggregate.
+        assert "chunk_num" not in updates[0]
+        assert "token_num" not in updates[0]
+
+        decrements.clear()
+        monkeypatch.setattr(
+            module.DocumentService,
+            "query",
+            lambda **_kwargs: [_DummyDoc(run=module.TaskStatus.RUNNING.value, token_num=70, chunk_num=7, process_duration=1.5)],
+        )
+        assert _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1"))["code"] == 0
+        assert decrements == [("doc-1", "kb-1", -70, -7, -1.5)]
+        # stop_parsing must not zero the counters in its own document update either.
+        assert "chunk_num" not in update_by_id_payloads[0]
+        assert "token_num" not in update_by_id_payloads[0]
 
     def test_stop_parsing_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
