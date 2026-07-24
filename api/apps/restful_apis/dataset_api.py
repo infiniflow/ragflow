@@ -381,6 +381,72 @@ def list_datasets(tenant_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/owners", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def list_dataset_owners(tenant_id):
+    """
+    List distinct dataset owners with their dataset counts.
+    ---
+    tags:
+      - Datasets
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: ext_keywords
+        type: string
+        required: false
+        description: Keyword filter (matched against dataset names).
+      - in: query
+        name: ext_parser_id
+        type: string
+        required: false
+        description: Parser ID filter.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Successful operation.
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              tenant_id:
+                type: string
+              nickname:
+                type: string
+              avatar:
+                type: string
+              count:
+                type: integer
+    """
+    args = {}
+    keywords = request.args.get("ext_keywords", "")
+    parser_id = request.args.get("ext_parser_id", "")
+    ext = {}
+    if keywords:
+        ext["keywords"] = keywords
+    if parser_id:
+        ext["parser_id"] = parser_id
+    if ext:
+        args["ext"] = ext
+
+    try:
+        success, result = dataset_api_service.list_dataset_owners(tenant_id, args)
+        if success:
+            return get_result(data=result.get("data"))
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

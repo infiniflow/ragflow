@@ -458,6 +458,27 @@ def list_datasets(tenant_id: str, args: dict):
     return True, {"data": response_data_list, "total": total}
 
 
+def list_dataset_owners(tenant_id: str, args: dict):
+    """List distinct dataset owners with their dataset counts.
+
+    :param tenant_id: tenant ID of the current user
+    :param args: optional query arguments (keywords, parser_id, owner_ids)
+    :return: (success, result)
+    """
+    ext_fields = args.get("ext", {}) if args else {}
+    keywords = ext_fields.get("keywords", "")
+    parser_id = ext_fields.get("parser_id")
+
+    if ext_fields.get("owner_ids", []):
+        tenant_ids = ext_fields["owner_ids"]
+    else:
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        tenant_ids = [m["tenant_id"] for m in tenants]
+
+    owners = KnowledgebaseService.get_owners(tenant_ids, tenant_id, keywords, parser_id)
+    return True, {"data": owners}
+
+
 async def get_knowledge_graph(dataset_id: str, tenant_id: str):
     """
     Get knowledge graph for a dataset.

@@ -34,6 +34,7 @@ import kbService, {
   listArtifactTopics,
   listArtifacts,
   listDataset,
+  listDatasetOwners,
   listTag,
   listWikiCommits,
   removeTag,
@@ -81,6 +82,7 @@ export const enum KnowledgeApiAction {
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
+  FetchDatasetOwners = 'fetchDatasetOwners',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
 }
@@ -924,6 +926,28 @@ export const useFetchAllKnowledgeList = (
   }, [hasNextPage, loading, fetchNextPage]);
 
   return { list, loading };
+};
+
+export const useFetchDatasetOwners = (keywords = '') => {
+  const debouncedKeywords = useDebounce(keywords, { wait: 500 });
+
+  const { data, isFetching: loading } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchDatasetOwners, debouncedKeywords],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listDatasetOwners(
+        debouncedKeywords ? { ext_keywords: debouncedKeywords } : undefined,
+      );
+      return (data?.data ?? []) as Array<{
+        tenant_id: string;
+        nickname: string;
+        avatar: string;
+        count: number;
+      }>;
+    },
+  });
+
+  return { owners: data ?? [], loading };
 };
 
 export const useSelectKnowledgeOptions = () => {

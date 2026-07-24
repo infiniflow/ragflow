@@ -22,7 +22,7 @@ from api.db.db_models import DB, Document, Knowledgebase, User, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
 from api.db.services import duplicate_name
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserService
 from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
@@ -500,6 +500,34 @@ class KnowledgebaseService(CommonService):
         kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), total
+
+    @classmethod
+    @DB.connection_context()
+    def get_owners(cls, joined_tenant_ids, user_id, keywords=None, parser_id=None):
+        """Return a list of distinct owners with their dataset counts.
+
+        Each item: {tenant_id, nickname, avatar, count}
+        """
+        kbs = cls.model.select()
+        if keywords:
+            kbs = kbs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
+        if parser_id:
+            kbs = kbs.where(cls.model.parser_id == parser_id)
+        kbs = kbs.where(cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+
+        rows = list(kbs.select(cls.model.tenant_id, fn.COUNT(cls.model.id).alias("count")).group_by(cls.model.tenant_id).dicts())
+
+        if not rows:
+            return []
+
+        users = UserService.get_by_ids([r["tenant_id"] for r in rows])
+        user_map = {u.id: u.to_dict() for u in users}
+
+        for r in rows:
+            user_dict = user_map.get(r["tenant_id"], {})
+            r["nickname"] = user_dict.get("nickname", "")
+            r["avatar"] = user_dict.get("avatar", "")
+        return rows
 
     @classmethod
     @DB.connection_context()

@@ -41,7 +41,7 @@ export default function Datasets() {
     loading,
   } = useFetchNextKnowledgeListByPage();
 
-  const owners = useSelectOwners();
+  const owners = useSelectOwners(searchString);
 
   const {
     datasetRenameLoading,

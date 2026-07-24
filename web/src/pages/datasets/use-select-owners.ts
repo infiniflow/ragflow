@@ -1,14 +1,21 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
-import { useFetchAllKnowledgeList } from '@/hooks/use-knowledge-request';
-import { buildOwnersFilter } from '@/utils/list-filter-util';
+import { useFetchDatasetOwners } from '@/hooks/use-knowledge-request';
 import { useTranslation } from 'react-i18next';
 
-export function useSelectOwners() {
-  const { list } = useFetchAllKnowledgeList();
+export function useSelectOwners(keywords = '') {
+  const { owners } = useFetchDatasetOwners(keywords);
   const { t } = useTranslation();
 
   const filters: FilterCollection[] = [
-    buildOwnersFilter(list, undefined, t('common.owner')),
+    {
+      field: 'owner',
+      list: owners.map((item) => ({
+        id: item.tenant_id,
+        label: item.nickname,
+        count: item.count,
+      })),
+      label: t('common.owner'),
+    },
   ];
 
   return filters;
