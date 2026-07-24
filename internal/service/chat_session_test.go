@@ -10,11 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+
+	"gorm.io/gorm"
 )
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
-func (f *fakeSessionStore) GetByID(id string) (*entity.ChatSession, error) {
+func (f *fakeSessionStore) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	if f.getByIDErr != nil {
 		return nil, f.getByIDErr
 	}
@@ -57,8 +58,8 @@ func (f *fakeSessionStore) GetByID(id string) (*entity.ChatSession, error) {
 	return s, nil
 }
 
-func (f *fakeSessionStore) GetBySessionIDAndChatID(sessionID, chatID string) (*entity.ChatSession, error) {
-	s, err := f.GetByID(sessionID)
+func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
+	s, err := f.GetByID(ctx, db, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func (f *fakeSessionStore) GetBySessionIDAndChatID(sessionID, chatID string) (*e
 	return s, nil
 }
 
-func (f *fakeSessionStore) Create(conv *entity.ChatSession) error {
+func (f *fakeSessionStore) Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -79,7 +80,7 @@ func (f *fakeSessionStore) Create(conv *entity.ChatSession) error {
 	return nil
 }
 
-func (f *fakeSessionStore) UpdateByID(id string, updates map[string]interface{}) error {
+func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.updateByIDErr != nil {
@@ -112,12 +113,12 @@ func (f *fakeSessionStore) UpdateByID(id string, updates map[string]interface{})
 	return nil
 }
 
-func (f *fakeSessionStore) DeleteByID(id string) error {
+func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
 	delete(f.sessions, id)
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(chatID string) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
 		if s.DialogID == chatID {
@@ -127,7 +128,7 @@ func (f *fakeSessionStore) ListByChatID(chatID string) ([]*entity.ChatSession, e
 	return result, nil
 }
 
-func (f *fakeSessionStore) GetDialogByID(chatID string) (*entity.Chat, error) {
+func (f *fakeSessionStore) GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error) {
 	if f.getDialogErr != nil {
 		return nil, f.getDialogErr
 	}
@@ -138,7 +139,7 @@ func (f *fakeSessionStore) GetDialogByID(chatID string) (*entity.Chat, error) {
 	return d, nil
 }
 
-func (f *fakeSessionStore) CheckDialogExists(tenantID, chatID string) (bool, error) {
+func (f *fakeSessionStore) CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error) {
 	key := tenantID + "|" + chatID
 	return f.dialogExists[key], nil
 }
@@ -289,7 +290,8 @@ func TestListChatSessions_Success(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, err := svc.ListChatSessions("user-1", "chat-1")
+	ctx := t.Context()
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -307,7 +309,8 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, err := svc.ListChatSessions("user-1", "chat-1")
+	ctx := t.Context()
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
 	if err == nil || !strings.Contains(err.Error(), "only owner") {
 		t.Fatalf("expected 'only owner' error, got %v", err)
 	}
@@ -340,7 +343,8 @@ func TestGetSession_Success(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, code, err := svc.GetSession("user-1", "chat-1", "session-1")
+	ctx := t.Context()
+	resp, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -382,7 +386,8 @@ func TestGetSession_NotOwner(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.GetSession("user-1", "chat-1", "session-1")
+	ctx := t.Context()
+	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
 	if err == nil || err.Error() != "No authorization." {
 		t.Fatalf("err=%v", err)
 	}
@@ -402,7 +407,8 @@ func TestGetSession_WrongChat(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.GetSession("user-1", "chat-1", "session-1")
+	ctx := t.Context()
+	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
 	if err == nil || err.Error() != "Session does not belong to this chat!" {
 		t.Fatalf("err=%v", err)
 	}
@@ -428,7 +434,8 @@ func TestUpdateSession_Success(t *testing.T) {
 	}
 
 	longName := "  " + strings.Repeat("x", 260) + "  "
-	resp, code, err := svc.UpdateSession("user-1", "chat-1", "session-1", map[string]interface{}{
+	ctx := t.Context()
+	resp, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "session-1", map[string]interface{}{
 		"name":    longName,
 		"user_id": "spoof",
 		"chat_id": "spoof-chat",
@@ -482,7 +489,8 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, code, err := svc.UpdateSession("user-1", "chat-1", "session-1", tc.req)
+			ctx := t.Context()
+			_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "session-1", tc.req)
 			if err == nil || err.Error() != tc.message {
 				t.Fatalf("err=%v", err)
 			}
@@ -503,7 +511,8 @@ func TestUpdateSession_NotFound(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, code, err := svc.UpdateSession("user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
+	ctx := t.Context()
+	_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
 	if err == nil || err.Error() != "Session not found!" {
 		t.Fatalf("err=%v", err)
 	}
@@ -541,7 +550,8 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	resp, code, err := svc.DeleteSessionMessage("user-1", "chat-1", "session-1", "msg-1")
+	ctx := t.Context()
+	resp, code, err := svc.DeleteSessionMessage(ctx, "user-1", "chat-1", "session-1", "msg-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -834,7 +844,8 @@ func TestCompletion_Success(t *testing.T) {
 		pipeline:       pipeline,
 	}
 
-	result, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+	ctx := t.Context()
+	result, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
 	if err != nil {
@@ -1104,7 +1115,8 @@ func TestCompletion_EmptyMessages(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, err := svc.Completion("user-1", "session-1", nil, "", nil, "msg-1")
+	ctx := t.Context()
+	_, err := svc.Completion(ctx, "user-1", "session-1", nil, "", nil, "msg-1")
 	if err == nil || err.Error() != "messages cannot be empty" {
 		t.Fatalf("expected 'messages cannot be empty', got %v", err)
 	}
@@ -1117,7 +1129,8 @@ func TestCompletion_LastMessageNotFromUser(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+	ctx := t.Context()
+	_, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "assistant", "content": "hello"},
 	}, "", nil, "msg-1")
 	if err == nil || !strings.Contains(err.Error(), "not from user") {
@@ -1134,7 +1147,8 @@ func TestCompletion_ConversationNotFound(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, err := svc.Completion("user-1", "missing", []map[string]interface{}{
+	ctx := t.Context()
+	_, err := svc.Completion(ctx, "user-1", "missing", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
 	if err == nil || err.Error() != "Conversation not found" {
@@ -1156,7 +1170,8 @@ func TestCompletion_DialogNotFound(t *testing.T) {
 		pipeline:       &fakePipeline{},
 	}
 
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+	ctx := t.Context()
+	_, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
 	if err == nil || err.Error() != "Dialog not found" {
@@ -1182,7 +1197,8 @@ func TestCompletion_PipelineError(t *testing.T) {
 		pipeline:       &fakePipeline{err: errors.New("model unavailable")},
 	}
 
-	_, err := svc.Completion("user-1", "session-1", []map[string]interface{}{
+	ctx := t.Context()
+	_, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
 	if err == nil || err.Error() != "model unavailable" {

@@ -8,7 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { getBackendLanguage } from '@/utils/backend-runtime';
+import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -212,6 +212,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
+          pages: number[][];
         }
       > = {
         output_format: cur.output_format,
@@ -230,6 +231,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
+            ...(isGoBackend()
+              ? {
+                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
+                }
+              : {}),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {

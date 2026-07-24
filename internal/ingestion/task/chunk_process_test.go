@@ -126,11 +126,16 @@ func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
 	}
 }
 
+// TestProcessChunksForPipeline_RemovesInternalPipelineFields pins that
+// processChunkPositions prunes the _pdf_positions internal field (the
+// parser-emitted position matrix) before indexing. The "image" field is
+// no longer dropped here — its lifecycle is owned by the chunker's
+// imageUploadDecorator (register.go + image_upload.go), which uploads and
+// deletes it at the chunker stage.
 func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 	chunks := []map[string]any{{
 		"text":           "hello",
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
-		"image":          "data:image/png;base64,abc",
 	}}
 
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
@@ -139,9 +144,6 @@ func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 	}
 	if _, exists := chunks[0]["_pdf_positions"]; exists {
 		t.Fatalf("_pdf_positions should be removed before indexing: %v", chunks[0]["_pdf_positions"])
-	}
-	if _, exists := chunks[0]["image"]; exists {
-		t.Fatalf("image should be removed before indexing: %v", chunks[0]["image"])
 	}
 }
 
@@ -330,9 +332,17 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 }
 
 func TestProcessChunkPositions_NoPositions(t *testing.T) {
-	chunk := map[string]any{"text": "hello"}
+	// _pdf_positions is pruned unconditionally, even on the early-return path
+	// where "positions" is absent, since the two fields are independent.
+	chunk := map[string]any{
+		"text":           "hello",
+		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
+	}
 	processChunkPositions(chunk)
 	if _, exists := chunk["page_num_int"]; exists {
 		t.Error("page_num_int must not be set when positions is missing")
+	}
+	if _, exists := chunk["_pdf_positions"]; exists {
+		t.Error("_pdf_positions must be pruned even when positions is missing")
 	}
 }

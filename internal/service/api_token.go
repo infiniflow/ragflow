@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -37,9 +38,9 @@ type APIKeyResponse struct {
 }
 
 // ListAPIKeys list all API keys for a tenant
-func (s *SystemService) ListAPIKeys(tenantID string) ([]*APIKeyResponse, error) {
+func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
-	keys, err := APITokenDAO.GetByTenantID(tenantID)
+	keys, err := APITokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func (s *SystemService) ListAPIKeys(tenantID string) ([]*APIKeyResponse, error) 
 		beta := key.Beta
 		if beta == nil || *beta == "" {
 			generatedBeta := utility.GenerateBetaAPIToken()
-			if err = dao.DB.Model(&entity.APIToken{}).
+			if err = dao.DB.WithContext(ctx).Model(&entity.APIToken{}).
 				Where("tenant_id = ? AND token = ?", tenantID, key.Token).
 				Updates(map[string]interface{}{
 					"beta": generatedBeta,
@@ -82,7 +83,7 @@ type CreateAPIKeyRequest struct {
 }
 
 // CreateAPIKey creates a new API key for a tenant
-func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
 
 	// Generate key and beta values
@@ -97,7 +98,7 @@ func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) 
 		Beta:     &betaAPIKey,
 	}
 
-	if err := APITokenDAO.Create(APIKeyData); err != nil {
+	if err := APITokenDAO.Create(ctx, dao.DB, APIKeyData); err != nil {
 		return nil, err
 	}
 
@@ -114,8 +115,8 @@ func (s *SystemService) CreateAPIKey(tenantID string, req *CreateAPIKeyRequest) 
 	}, nil
 }
 
-func (s *SystemService) DeleteAPIKey(tenantID, key string) error {
+func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {
 	APITokenDAO := dao.NewAPITokenDAO()
-	_, err := APITokenDAO.DeleteByTenantIDAndToken(tenantID, key)
+	_, err := APITokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	return err
 }
