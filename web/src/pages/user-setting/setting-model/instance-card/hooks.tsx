@@ -305,17 +305,30 @@ type VerifyTransform = (values: Record<string, any>) => {
  * `opendataloader_api_key`), it is used to build the verify args;
  * otherwise the generic `values.api_key` / `values.base_url` mapping
  * is used.
+ *
+ * `modelInfoRef` carries the models selected in the List-models picker
+ * (not registered as form fields). Without it, verify payloads for
+ * local providers often omit `model_info` and the backend falls back
+ * to an empty factory catalog.
  */
 export function useVerifyProvider(
   providerName: string,
   formRef: RefObject<DynamicFormRef>,
   verifyTransform?: VerifyTransform,
+  modelInfoRef?: { current: IModelInfo[] },
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
   return useCallback(
     async (params: any) => {
       const values = { ...(formRef.current?.getValues?.() ?? {}), ...params };
+      const selectedModels =
+        modelInfoRef?.current?.length && modelInfoRef.current.length > 0
+          ? modelInfoRef.current
+          : undefined;
+      if (selectedModels && !values.model_info) {
+        values.model_info = selectedModels;
+      }
       let verifyArgs: {
         api_key: string | object;
         base_url?: string;
@@ -327,14 +340,17 @@ export function useVerifyProvider(
         verifyArgs = {
           api_key: transformed.apiKey,
           base_url: transformed.baseUrl,
-          model_info: transformed.modelInfo ?? values.model_info,
+          model_info:
+            transformed.modelInfo?.length
+              ? transformed.modelInfo
+              : (selectedModels ?? values.model_info),
           region: transformed.region,
         };
       } else {
         verifyArgs = {
           api_key: values.api_key ?? '',
-          base_url: values.base_url,
-          model_info: values.model_info,
+          base_url: values.base_url ?? values.api_base,
+          model_info: selectedModels ?? values.model_info,
         };
       }
       const ret = await verifyProviderConnection({
@@ -352,7 +368,13 @@ export function useVerifyProvider(
         logs: string;
       };
     },
-    [providerName, formRef, verifyProviderConnection, verifyTransform],
+    [
+      providerName,
+      formRef,
+      verifyProviderConnection,
+      verifyTransform,
+      modelInfoRef,
+    ],
   );
 }
 
@@ -494,6 +516,9 @@ export function useInstanceSaveState({
           llm_factory: providerName,
           instance_name: trimmed,
           model_info: modelInfo,
+          // Accept legacy api_base from older transforms so draft Save
+          // all does not drop the URL (which fails with "url cannot be None").
+          base_url: transformed.base_url ?? transformed.api_base ?? '',
         };
       }
       const resolvedId = instanceDetails?.id || instanceId;

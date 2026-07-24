@@ -358,7 +358,9 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
             return get_error_data_result(message="Internal server error")
 
     api_key = data.get("api_key", "")
-    base_url = data.get("base_url", "")
+    # Frontend submitTransform historically sends api_base for local/compatible
+    # providers; accept it as an alias so Save does not drop the URL.
+    base_url = data.get("base_url") or data.get("api_base") or ""
     region = data.get("region", "")
     model_info = data.get("model_info", [])
 
@@ -430,7 +432,7 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
     if not data or ("api_key" not in data and provider_id_or_name != "VLLM"):
         return get_error_argument_result(message="api_key is required")
 
-    base_url = data.get("base_url", "")
+    base_url = data.get("base_url") or data.get("api_base") or ""
     api_key = data.get("api_key", "")
     region = data.get("region", "default")
     model_info = data.get("model_info", [])
@@ -628,14 +630,16 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
         return get_error_argument_result(message="instance_id_or_name is required")
     if not data:
         return get_error_argument_result(message="Request body is required")
-    required_keys = ["instance_name", "api_key", "base_url", "model_info"]
+    required_keys = ["instance_name", "api_key", "model_info"]
     missing = [k for k in required_keys if k not in data]
+    if "base_url" not in data and "api_base" not in data:
+        missing.append("base_url")
     if missing:
         return get_error_argument_result(message=f"Missing required fields: {', '.join(missing)}")
 
     instance_name = data["instance_name"]
     api_key = data["api_key"]
-    base_url = data["base_url"]
+    base_url = data.get("base_url") or data.get("api_base") or ""
     region = data.get("region", "default")
     model_info = data["model_info"]
     verify = data.get("verify", True)
