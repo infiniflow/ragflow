@@ -244,16 +244,15 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				updates["parser_config"] = pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
 			}
 		}
-		if pagerankRequested {
+		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
 			pagerankUpdate = &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			if requestedPagerank != lockedKB.Pagerank {
-				updates["pagerank"] = requestedPagerank
-			}
+			updates["pagerank"] = requestedPagerank
 		}
+
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
 				if resolved, cpErr := service.ResolveComponentParamsDefaults(parserID, nil); cpErr != nil {
