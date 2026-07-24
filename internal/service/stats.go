@@ -57,7 +57,7 @@ func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate st
 		return nil, ErrTenantNotFound
 	}
 
-	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, tenants[0].TenantID, fromDate, toDate, source)
+	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, dao.DB, tenants[0].TenantID, fromDate, toDate, source)
 	if err != nil {
 		return nil, err
 	}

@@ -26,6 +26,20 @@ from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDense
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
 
 
+_JSON_LIST_FIELDS = frozenset(
+    (
+        "source_chunk_ids",
+        "source_doc_ids",
+        "compilation_template_ids",
+        "doc_ids_kwd",
+        "entity_names_kwd",
+        "outlinks_kwd",
+        "related_kb_pages_kwd",
+        "rechunked_from_chunk_ids",
+    )
+)
+
+
 @singleton
 class InfinityConnection(InfinityConnectionBase):
     """
@@ -35,7 +49,11 @@ class InfinityConnection(InfinityConnectionBase):
     @staticmethod
     def field_keyword(field_name: str):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
-        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]):
+        # source_doc_ids / source_chunk_ids are multi-valued provenance lists (artifact/wiki rows) and must be
+        # stored/read/updated as keyword lists so the delete-time ref-count (remove one id, drop row when empty) works.
+        if field_name in ("source_id", "source_doc_ids", "source_chunk_ids") or (
+            field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]
+        ):
             return True
         return False
 
@@ -436,6 +454,8 @@ class InfinityConnection(InfinityConnectionBase):
                     elif k == "question_tks":
                         if not d.get("question_kwd"):
                             d["questions"] = self.list2str(v)
+                    elif k in _JSON_LIST_FIELDS:
+                        d[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                     elif self.field_keyword(k):
                         if isinstance(v, list):
                             d[k] = "###".join(v)
@@ -476,6 +496,10 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = v if v else "{}"
                     else:
                         d[k] = v
+                # Infinity thrift client does not accept None values.
+                for k in list(d.keys()):
+                    if d[k] is None:
+                        del d[k]
                 for k in [
                     "docnm_kwd",
                     "title_tks",
@@ -575,6 +599,8 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k == "question_tks":
                     if not new_value.get("question_kwd"):
                         new_value["questions"] = self.list2str(v)
+                elif k in _JSON_LIST_FIELDS:
+                    new_value[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                 elif self.field_keyword(k):
                     if isinstance(v, list):
                         new_value[k] = "###".join(v)
@@ -790,7 +816,22 @@ class InfinityConnection(InfinityConnectionBase):
 
         for column in list(res2.columns):
             k = column.lower()
-            if self.field_keyword(k):
+            if k in _JSON_LIST_FIELDS:
+
+                def parse_json_list(value):
+                    if isinstance(value, list):
+                        return value
+                    if not value:
+                        return []
+                    try:
+                        parsed = json.loads(value)
+                        return parsed if isinstance(parsed, list) else [parsed]
+                    except (TypeError, json.JSONDecodeError):
+                        # Read rows written by the previous varchar encoding.
+                        return [item for item in str(value).split("###") if item]
+
+                res2[column] = res2[column].apply(parse_json_list)
+            elif self.field_keyword(k):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})

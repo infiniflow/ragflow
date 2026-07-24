@@ -3,19 +3,21 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
 func TestOfficeParsers_ParseWithResult_NoCGO(t *testing.T) {
+	ctx := context.Background()
 	cases := []struct {
 		name string
 		res  ParseResult
 	}{
-		{name: "docx", res: (&DOCXParser{}).ParseWithResult("a.docx", nil)},
-		{name: "doc", res: (&DOCParser{}).ParseWithResult("a.doc", nil)},
-		{name: "pptx", res: (&PPTXParser{}).ParseWithResult("a.pptx", nil)},
-		{name: "ppt", res: (&PPTParser{}).ParseWithResult("a.ppt", nil)},
+		{name: "docx", res: (&DOCXParser{}).ParseWithResult(ctx, "a.docx", nil)},
+		{name: "doc", res: (&DOCParser{}).ParseWithResult(ctx, "a.doc", nil)},
+		{name: "pptx", res: (&PPTXParser{}).ParseWithResult(ctx, "a.pptx", nil)},
+		{name: "ppt", res: (&PPTParser{}).ParseWithResult(ctx, "a.ppt", nil)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

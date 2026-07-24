@@ -32,6 +32,25 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
 
+# KB-level fan-out pipeline task types (task row carries a fake doc_id; the real
+# participants live in task["doc_ids"]) → the KB ``<type>_task_finish_at`` column
+# stamped when the task completes. Membership also marks a task as KB-scoped so
+# the per-document progress update is skipped.
+_PIPELINE_TASK_TYPE_TO_FINISH_FIELD = {
+    PipelineTaskType.GRAPH_RAG: "graphrag_task_finish_at",
+    PipelineTaskType.RAPTOR: "raptor_task_finish_at",
+    PipelineTaskType.MINDMAP: "mindmap_task_finish_at",
+    PipelineTaskType.ARTIFACT: "artifact_task_finish_at",
+    PipelineTaskType.SKILL: "skill_task_finish_at",
+    PipelineTaskType.STRUCTURE_GRAPH: "structure_graph_task_finish_at",
+    PipelineTaskType.STRUCTURE_MINDMAP: "structure_mindmap_task_finish_at",
+    PipelineTaskType.TIMELINE: "timeline_task_finish_at",
+    PipelineTaskType.SESSION_GRAPH: "session_graph_task_finish_at",
+    PipelineTaskType.SESSION_ESSENCE: "session_essence_task_finish_at",
+    PipelineTaskType.STRUCTURE: "structure_task_finish_at",
+}
+
+
 class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
 
@@ -111,7 +130,7 @@ class PipelineOperationLogService(CommonService):
             referred_document_id = document_id
 
         # no need to update document for KB-level fan-out tasks
-        if task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL]:
+        if task_type not in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD:
             ok, document = DocumentService.get_by_id(referred_document_id)
             if not ok:
                 logging.warning(f"Document for referred_document_id {referred_document_id} not found")
@@ -149,7 +168,7 @@ class PipelineOperationLogService(CommonService):
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL]:
+        if task_type in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD:
             # query task to get progress information from task
             ok, task = TaskService.get_by_id(task_id)
             if not ok:
@@ -167,31 +186,10 @@ class PipelineOperationLogService(CommonService):
                 return None
 
             finish_at = process_begin_at + timedelta(seconds=process_duration)
-            if task_type == PipelineTaskType.GRAPH_RAG:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"graphrag_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.RAPTOR:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"raptor_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.MINDMAP:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"mindmap_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.ARTIFACT:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"artifact_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.SKILL:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"skill_task_finish_at": finish_at},
-                )
+            KnowledgebaseService.update_by_id(
+                document.kb_id,
+                {_PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: finish_at},
+            )
         elif not cls._is_final_progress(progress):
             logging.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
             return None

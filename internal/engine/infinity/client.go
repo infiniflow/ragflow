@@ -18,21 +18,31 @@ package infinity
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
 
 	"ragflow/internal/server"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+	"go.uber.org/zap"
 )
 
 type infinityClient struct {
-	conn   *infinity.InfinityConnection
-	dbName string
+	pool        *infinity.ConnectionPool
+	poolMaxOpen int
+	dbName      string
+
+	getDatabaseSeq      atomic.Uint64
+	getDatabaseInflight atomic.Int64
 
 	// Original URI from config, used by RunSQL to extract the host.
 	hostURI string
@@ -44,7 +54,67 @@ type infinityClient struct {
 	mappingFileName string
 }
 
+// defaultPoolMaxSize is the hard upper bound (MaxOpen) for the Go Infinity
+// connection pool. Invalid or missing INFINITY_POOL_MAX_SIZE values fall back
+// to this rather than becoming unbounded.
+const defaultPoolMaxSize = 4
+
+// defaultMaxIdleConnections caps how many established connections the pool
+// keeps idle for reuse, independent of the pool's hard open cap (MaxOpen).
+// It bounds idle socket retention on the Infinity server when MaxOpen is large.
+const defaultMaxIdleConnections = 2
+
+// defaultOperationTimeout bounds the total duration of a single pool operation
+// (applied via ensureDeadline when the caller context has no deadline).
+const defaultOperationTimeout = 30 * time.Second
+
+// defaultSocketTimeout bounds individual thrift read/write waits on a checked-out
+// connection.
+const defaultSocketTimeout = 30 * time.Second
+
+// resolvePoolMaxSize reads INFINITY_POOL_MAX_SIZE and falls back to defaultPoolMaxSize. A value < 1 is
+// rejected so the pool never becomes unbounded.
+func resolvePoolMaxSize() int {
+	raw := os.Getenv("INFINITY_POOL_MAX_SIZE")
+	if raw == "" {
+		return defaultPoolMaxSize
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 1 {
+		common.Warn("INFINITY_POOL_MAX_SIZE must be a positive integer; using default",
+			zap.String("value", raw), zap.Int("default", defaultPoolMaxSize))
+		return defaultPoolMaxSize
+	}
+	return v
+}
+
 // NewInfinityClient creates a new Infinity client using the SDK
+type poolExhaustedError struct {
+	caller string
+}
+
+func (e *poolExhaustedError) Error() string {
+	return fmt.Sprintf("Infinity connection pool exhausted while %s", e.caller)
+}
+
+func (e *poolExhaustedError) Code() common.ErrorCode {
+	return common.CodeConnectionPoolExhausted
+}
+
+func (e *poolExhaustedError) Message() string {
+	return e.Error()
+}
+
+func ensureDeadline(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), timeout)
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 	// Parse URI like "localhost:23817" to get IP and port
 	host := "127.0.0.1"
@@ -60,12 +130,40 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 		}
 	}
 
-	// Retry connecting for up to 120 seconds (24 attempts * 5 seconds)
+	// Build the connection pool object. Connections are created lazily on
+	// first use (InitialSize=0), so this does not verify reachability; the
+	// actual connectivity check happens later in WaitForHealthy. The retry
+	// loop only re-attempts pool construction against transient config errors.
 	common.Info("Connecting to Infinity")
-	var conn *infinity.InfinityConnection
+	uri := infinity.NetworkAddress{IP: host, Port: port}
+	maxOpen := resolvePoolMaxSize()
+	var pool *infinity.ConnectionPool
 	var err error
 	for i := 0; i < 24; i++ {
-		conn, err = infinity.Connect(infinity.NetworkAddress{IP: host, Port: port})
+		// Cap idle connections retained for reuse; never exceed the pool's
+		// hard open cap (MaxOpen).
+		maxIdle := maxOpen
+		if maxIdle > defaultMaxIdleConnections {
+			maxIdle = defaultMaxIdleConnections
+		}
+		poolCfg := infinity.DefaultConnectionPoolConfig(uri)
+		// Don't pre-open connections at process startup (InitialSize=0);
+		// connections are created lazily on first use. Keep MaxIdle so that
+		// established connections are retained for reuse instead of being
+		// reopened on every request.
+		poolCfg.InitialSize = 0
+		poolCfg.MaxOpen = maxOpen
+		poolCfg.MaxIdle = maxIdle
+		pool, err = infinity.NewConnectionPool(poolCfg, func(u infinity.URI) (*infinity.InfinityConnection, error) {
+			networkAddress, ok := u.(infinity.NetworkAddress)
+			if !ok {
+				return nil, fmt.Errorf("unexpected URI type: %T", u)
+			}
+			return infinity.NewInfinityConnectionWithConfig(networkAddress, &thrift.TConfiguration{
+				ConnectTimeout: server.DefaultConnectTimeout,
+				SocketTimeout:  defaultSocketTimeout,
+			})
+		})
 		if err == nil {
 			break
 		}
@@ -78,7 +176,8 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 	}
 
 	client := &infinityClient{
-		conn:            conn,
+		pool:            pool,
+		poolMaxOpen:     maxOpen,
 		dbName:          cfg.DBName,
 		hostURI:         cfg.URI,
 		postgresPort:    cfg.PostgresPort,
@@ -99,7 +198,13 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		default:
 		}
 
-		res, err := c.conn.ShowCurrentNode()
+		conn, release, err := c.checkoutConn(ctx, "WaitForHealthy")
+		if err != nil {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		res, err := conn.ShowCurrentNode()
+		release()
 		if err != nil {
 			time.Sleep(5 * time.Second)
 			continue
@@ -108,6 +213,10 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		// since ShowCurrentNodeResponse is in an internal package
 		v := reflect.ValueOf(res)
 		if v.Kind() != reflect.Ptr {
+			common.Warn("Infinity health check returned unexpected response kind",
+				zap.String("type", fmt.Sprintf("%T", res)),
+				zap.String("kind", v.Kind().String()),
+			)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -115,6 +224,11 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		errorCode := v.FieldByName("ErrorCode")
 		serverStatus := v.FieldByName("ServerStatus")
 		if !errorCode.IsValid() || !serverStatus.IsValid() {
+			common.Warn("Infinity health check response missing expected fields",
+				zap.String("type", fmt.Sprintf("%T", res)),
+				zap.Bool("has_error_code", errorCode.IsValid()),
+				zap.Bool("has_server_status", serverStatus.IsValid()),
+			)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -129,6 +243,91 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		time.Sleep(5 * time.Second)
 	}
 	return fmt.Errorf("Infinity not healthy after %v", timeout)
+}
+
+func (c *infinityClient) checkoutConn(ctx context.Context, caller string) (*infinity.InfinityConnection, func(), error) {
+	if c == nil || c.pool == nil {
+		return nil, nil, fmt.Errorf("Infinity client not initialized")
+	}
+	ctx, cancel := ensureDeadline(ctx, defaultOperationTimeout)
+	conn, err := c.pool.GetContext(ctx)
+	if err != nil {
+		cancel()
+		if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && c.poolMaxOpen > 0 {
+			stats := c.pool.Stats()
+			if stats.TotalConnections >= c.poolMaxOpen && stats.AvailableConnections == 0 {
+				return nil, nil, &poolExhaustedError{caller: caller}
+			}
+		}
+		return nil, nil, err
+	}
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		defer cancel()
+		if err := c.pool.Put(conn); err != nil {
+			common.Warn("Infinity connection release failed",
+				zap.String("caller", caller),
+				zap.String("conn_ptr", fmt.Sprintf("%p", conn)),
+				zap.Error(err),
+			)
+		}
+	}
+	return conn, release, nil
+}
+
+func (c *infinityClient) checkoutDatabase(ctx context.Context, caller string) (*infinity.Database, func(), error) {
+	conn, release, err := c.checkoutConn(ctx, caller)
+	if err != nil {
+		return nil, nil, err
+	}
+	reqID := c.getDatabaseSeq.Add(1)
+	inflight := c.getDatabaseInflight.Add(1)
+	start := time.Now()
+	stats := c.pool.Stats()
+	common.Info("Infinity GetDatabase begin",
+		zap.Uint64("req_id", reqID),
+		zap.String("caller", caller),
+		zap.String("db_name", c.dbName),
+		zap.Bool("is_connected", conn.IsConnected()),
+		zap.Int64("inflight", inflight),
+		zap.String("conn_ptr", fmt.Sprintf("%p", conn)),
+		zap.Int("pool_in_use", stats.InUseConnections),
+		zap.Int("pool_available", stats.AvailableConnections),
+	)
+	db, err := conn.GetDatabase(c.dbName)
+	if err != nil {
+		inflight = c.getDatabaseInflight.Add(-1)
+		elapsed := time.Since(start)
+		common.Warn("Infinity GetDatabase failed",
+			zap.Uint64("req_id", reqID),
+			zap.String("caller", caller),
+			zap.String("db_name", c.dbName),
+			zap.Bool("is_connected", conn.IsConnected()),
+			zap.Int64("inflight", inflight),
+			zap.Duration("elapsed", elapsed),
+			zap.Error(err),
+		)
+		release()
+		return nil, nil, err
+	}
+	wrappedRelease := func() {
+		inflight := c.getDatabaseInflight.Add(-1)
+		elapsed := time.Since(start)
+		common.Info("Infinity GetDatabase done",
+			zap.Uint64("req_id", reqID),
+			zap.String("caller", caller),
+			zap.String("db_name", c.dbName),
+			zap.Bool("is_connected", conn.IsConnected()),
+			zap.Int64("inflight", inflight),
+			zap.Duration("elapsed", elapsed),
+		)
+		release()
+	}
+	return db, wrappedRelease, nil
 }
 
 // Engine Infinity engine implementation using Go SDK
@@ -198,10 +397,15 @@ func (e *infinityEngine) SupportsPageRank() bool {
 
 // Ping checks if Infinity is accessible
 func (e *infinityEngine) Ping(ctx context.Context) error {
-	if e.client == nil || e.client.conn == nil {
+	if e.client == nil || e.client.pool == nil {
 		return fmt.Errorf("Infinity client not initialized")
 	}
-	if !e.client.conn.IsConnected() {
+	conn, release, err := e.client.checkoutConn(ctx, "Ping")
+	if err != nil {
+		return err
+	}
+	defer release()
+	if !conn.IsConnected() {
 		return fmt.Errorf("Infinity not connected")
 	}
 	return nil
@@ -209,16 +413,20 @@ func (e *infinityEngine) Ping(ctx context.Context) error {
 
 // Close closes the Infinity connection
 func (e *infinityEngine) Close() error {
-	if e.client != nil && e.client.conn != nil {
-		_, err := e.client.conn.Disconnect()
-		return err
+	if e.client != nil && e.client.pool != nil {
+		return e.client.pool.Close()
 	}
 	return nil
 }
 
 // MigrateDB creates the database if it doesn't exist
 func (e *infinityEngine) MigrateDB(ctx context.Context) error {
-	_, err := e.client.conn.CreateDatabase(e.client.dbName, infinity.ConflictTypeIgnore, "")
+	conn, release, err := e.client.checkoutConn(ctx, "MigrateDB")
+	if err != nil {
+		return fmt.Errorf("failed to get connection: %w", err)
+	}
+	defer release()
+	_, err = conn.CreateDatabase(e.client.dbName, infinity.ConflictTypeIgnore, "")
 	if err != nil {
 		return fmt.Errorf("failed to create database: %w", err)
 	}
