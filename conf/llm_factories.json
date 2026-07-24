@@ -4924,41 +4924,102 @@
             "logo": "",
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
-            "url": "https://api.hunyuan.cloud.tencent.com/v1",
+            "url": "https://tokenhub.tencentmaas.com/v1",
             "llm": [
                 {
-                    "llm_name": "hunyuan-pro",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "hunyuan-standard",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
+                    "llm_name": "hy3",
+                    "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "hunyuan-standard-256K",
-                    "tags": "LLM,CHAT,256k",
-                    "max_tokens": 262144,
+                    "llm_name": "hy3-preview",
+                    "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "hunyuan-lite",
-                    "tags": "LLM,CHAT,256k",
-                    "max_tokens": 262144,
+                    "llm_name": "kimi-k3",
+                    "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "hunyuan-vision",
-                    "tags": "LLM,IMAGE2TEXT,8k",
+                    "llm_name": "kimi-k2.7-code-highspeed",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "kimi-k2.7-code",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-5.2",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "minimax-m3",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v4-flash-202605",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v4-pro-202606",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v4-pro",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v4-flash",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hy-mt2-pro",
                     "max_tokens": 8192,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ]
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hy-mt2-plus",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hy-mt2-lite",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hy-role",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hunyuan-role-latest",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen3.5-flash",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen3.5-plus",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-5.1",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
                 }
             ]
         },
@@ -7507,12 +7568,14 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": [{
-                "llm_name": "MinerU-model",
-                "tags": "OCR",
-                "max_tokens": 8192,
-                "model_type": "ocr"
-            }]
+            "llm": [
+                {
+                    "llm_name": "MinerU-model",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
         },
         {
             "name": "PaddleOCR",
@@ -7520,24 +7583,28 @@
             "tags": "OCR",
             "status": "1",
             "url": "https://paddleocr.aistudio-app.com",
-            "llm": [{
-                "llm_name": "PaddleOCR-model",
-                "tags": "OCR",
-                "max_tokens": 8192,
-                "model_type": "ocr"
-            }]
+            "llm": [
+                {
+                    "llm_name": "PaddleOCR-model",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
         },
         {
             "name": "OpenDataLoader",
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "llm": [{
-                "llm_name": "OpenDataLoader-model",
-                "tags": "OCR",
-                "max_tokens": 8192,
-                "model_type": "ocr"
-            }]
+            "llm": [
+                {
+                    "llm_name": "OpenDataLoader-model",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
         },
         {
             "name": "SoMark",
@@ -7545,12 +7612,14 @@
             "tags": "OCR",
             "status": "1",
             "rank": "930",
-            "llm": [{
-                "llm_name": "SoMark-model",
-                "tags": "OCR",
-                "max_tokens": 8192,
-                "model_type": "ocr"
-            }]
+            "llm": [
+                {
+                    "llm_name": "SoMark-model",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
         },
         {
             "name": "Mistral OCR",

@@ -17,6 +17,7 @@
 package file
 
 import (
+	"context"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -31,7 +32,7 @@ var (
 
 // DocRemover is the narrow interface FileService needs from the document domain.
 type DocRemover interface {
-	RemoveDocumentKeepFile(docID string) error
+	RemoveDocumentKeepFile(ctx context.Context, docID string) error
 }
 
 // CheckFilePermFunc is the function signature for file-team permission checks,

@@ -442,6 +442,7 @@ export const MultiSelect = React.forwardRef<
           className="w-auto p-0"
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
+          onFocusOutside={(event) => event.preventDefault()}
           data-testid={popoverTestId}
         >
           <Command className="p-5 pb-8" shouldFilter={shouldFilter}>

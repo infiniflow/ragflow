@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, validator
 from quart import request
 
 from api.apps import login_required
+from api.apps.services import structure_graph_common as sgc
 from api.db.joint_services.tenant_model_service import (
     split_model_name,
     resolve_model_config,
@@ -650,57 +651,8 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             template_meta_by_id[template_id] = meta
             template_meta_by_kind.setdefault(kind_norm, []).append(meta)
 
-    # Load every graph row for this doc in one shot. Each row corresponds
-    # to one (compile_kwd, template_id) tuple — written by
-    # ``_struct_upsert_graph_json``.
     index_name = search.index_name(dataset_tenant_id)
-    fields = [
-        "content_with_weight",
-        "compile_kwd",
-        "compilation_template_ids",
-        "compilation_template_kind_kwd",
-    ]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [dataset_id],
-        )
-        rows = settings.docStoreConn.get_fields(res, fields)
-
-        # The RAPTOR graph row is identified by ``compile_kwd``
-        # alone — it intentionally doesn't carry ``knowledge_graph_kwd``
-        # (which belongs to the KG feature). Query it separately and
-        # union into the same bucket map below.
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, fields)
-    except Exception as e:
-        return server_error_response(e)
-
-    # Merge the two field-maps so the grouping loop below treats them
-    # identically. Raptor rows clobber by id, which is fine — both
-    # sources produce stable per-row ids.
-    if raptor_rows:
-        rows = dict(rows or {})
-        rows.update(raptor_rows)
+    keywords = (request.args.get("keywords") or "").strip()
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -712,30 +664,16 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             return raw.strip()
         return None
 
-    # Group: template_id → {entities, relations, kind}
-    grouped: dict[str, dict] = {}
-    for row in (rows or {}).values():
-        graph = {}
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        entities = graph.get("entities") or []
-        relations = graph.get("relations") or []
-        if not entities and not relations:
-            continue
+    def _resolve_bucket(row: dict) -> tuple[dict, dict]:
+        """``(bucket_meta, scope_filter)`` for a graph/entity row.
 
+        ``bucket_meta`` = ``{template_id, template_name, kind}``;
+        ``scope_filter`` is the raw entity/relation-row filter (doc +
+        template, or legacy compile_kwd) WITHOUT ``knowledge_graph_kwd``.
+        """
         tid = _row_template_id(row)
         compile_kwd_val = row.get("compile_kwd") or ""
         kind_val = row.get("compilation_template_kind_kwd") or compile_kwd_val
-
-        # The RAPTOR graph row has no ``compilation_template_ids`` (it
-        # isn't derived from a user-authored template). Treat it as its
-        # own first-class bucket, not a legacy fallback.
-        is_raptor = compile_kwd_val == "raptor_graph"
-
         if tid:
             bucket_id = tid
             row_kind_norm = _compilation_template_kind(kind_val)
@@ -764,31 +702,127 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
                     meta = kind_matches[0]
             bucket_name = (meta or {}).get("template_name") or bucket_id
             bucket_kind = (meta or {}).get("kind") or kind_val
-        elif is_raptor:
-            bucket_id = "raptor"
-            bucket_name = "RAPTOR Summary"
-            bucket_kind = "raptor"
+            scope = {"doc_id": [document_id], "compilation_template_ids": [bucket_id]}
         else:
-            # Legacy row: synthesize a stable id keyed by compile_kwd so
-            # multiple legacy kinds (e.g. ``list`` + ``hypergraph``) on
-            # the same doc surface as separate tabs.
+            # Legacy row (pre-dates the template stamp): keyed by compile_kwd
+            # so multiple legacy kinds surface as separate tabs. Scope excludes
+            # rows that DO carry a template id so it can't shadow a real bucket.
             bucket_id = f"legacy:{compile_kwd_val}"
             bucket_name = f"Legacy ({compile_kwd_val})"
             bucket_kind = kind_val
+            scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
+        return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-        if bucket_id not in grouped:
-            grouped[bucket_id] = {
-                "template_id": bucket_id,
-                "template_name": bucket_name,
-                "kind": bucket_kind,
-                "entities": [],
-                "relations": [],
-            }
-        grouped[bucket_id]["entities"].extend(entities)
-        grouped[bucket_id]["relations"].extend(relations)
+    # ── keywords mode: global KNN → the top-1 entity's focused subgraph ──
+    if keywords:
+        try:
+            embd_id = DocumentService.get_embd_id(document_id)
+            model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+            embd_mdl = TenantLLMService.model_instance(model_config)
+        except Exception:
+            logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
+            return get_result(data={"templates": []})
+        try:
+            bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
+                index_name,
+                dataset_id,
+                embd_mdl,
+                {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
+                keywords,
+                _resolve_bucket,
+                log_ctx=f"doc={document_id}",
+            )
+        except Exception as e:
+            return server_error_response(e)
+        if not bucket_meta or (not kw_entities and not kw_relations):
+            return get_result(data={"templates": []})
+        bucket = dict(bucket_meta)
+        bucket["entities"] = kw_entities
+        bucket["relations"] = kw_relations
+        return get_result(data={"templates": [bucket]})
+
+    # ── normal mode: per-template subgraph sampling from the raw rows ──
+    # Metadata-only scan of the per-doc graph blob rows (one per
+    # (compile_kwd, template_id)) purely to discover buckets and resolve their
+    # display name/kind — WITHOUT loading the (potentially huge)
+    # content_with_weight. Each bucket's entities/relations are then fetched
+    # from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
+    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            meta_fields,
+            [],
+            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index_name,
+            [dataset_id],
+        )
+        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+    except Exception as e:
+        return server_error_response(e)
+
+    # Discover unique buckets. A template can own multiple compile_kwd blob
+    # rows; scoping by template_id folds them together, matching prior behavior.
+    bucket_metas: dict[str, dict] = {}
+    bucket_scopes: dict[str, dict] = {}
+    for row in meta_rows.values():
+        meta, scope = _resolve_bucket(row)
+        bid = meta["template_id"]
+        if bid not in bucket_metas:
+            bucket_metas[bid] = meta
+            bucket_scopes[bid] = scope
+
+    grouped: dict[str, dict] = {}
+    for bid, meta in bucket_metas.items():
+        try:
+            entities, relations = await sgc.build_bucket(index_name, dataset_id, bucket_scopes[bid])
+        except Exception as e:
+            return server_error_response(e)
+        if not entities and not relations:
+            continue
+        grouped[bid] = {**meta, "entities": entities, "relations": relations}
+
+    # RAPTOR summary graph: a standalone blob (no ``knowledge_graph_kwd``, and
+    # no raw entity/relation rows), so read its content directly and don't
+    # sample it.
+    try:
+        res_raptor = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["content_with_weight", "compile_kwd"],
+            [],
+            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
+            [],
+            OrderByExpr(),
+            0,
+            16,
+            index_name,
+            [dataset_id],
+        )
+        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
+    except Exception:
+        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
+        raptor_rows = {}
+    for row in raptor_rows.values():
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        r_entities = graph.get("entities") or []
+        r_relations = graph.get("relations") or []
+        if not r_entities and not r_relations:
+            continue
+        rb = grouped.setdefault("raptor", {"template_id": "raptor", "template_name": "RAPTOR Summary", "kind": "raptor", "entities": [], "relations": []})
+        rb["entities"].extend(r_entities)
+        rb["relations"].extend(r_relations)
 
     # Order: configured templates first (in the user's chosen order),
-    # then any legacy buckets after.
+    # then any discovered / legacy / raptor buckets after.
     ordered_ids: list[str] = []
     for tid in configured_ids:
         if tid in grouped and tid not in ordered_ids:

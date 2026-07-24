@@ -229,7 +229,8 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		t.Fatal("expected runDocumentTask to NOT be called when cancel is detected before pipeline")
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}

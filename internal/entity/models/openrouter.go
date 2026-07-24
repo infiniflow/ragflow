@@ -130,7 +130,8 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 
@@ -148,6 +149,7 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -210,6 +212,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
+	accumulatedToolCalls := make(map[int]map[string]any)
 	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -227,6 +230,8 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning"].(string)
 		if ok && reasoningContent != "" {
@@ -246,6 +251,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

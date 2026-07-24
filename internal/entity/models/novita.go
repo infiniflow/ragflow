@@ -133,14 +133,8 @@ func (e *novitaThinkExtractor) Feed(chunk string) []novitaThinkSegment {
 			// (max marker length - 1) trailing bytes so we don't
 			// emit "<thin" as content when the next chunk completes
 			// it to "<think>".
-			reserve := len(marker) - 1
-			if len(otherMarker)-1 > reserve {
-				reserve = len(otherMarker) - 1
-			}
-			safe := len(s) - reserve
-			if safe < 0 {
-				safe = 0
-			}
+			reserve := max(len(otherMarker)-1, len(marker)-1)
+			safe := max(len(s)-reserve, 0)
 			// Don't reserve if the trailing bytes can't possibly be
 			// the start of a tag (no '<' suffix).
 			if safe < len(s) && !strings.Contains(s[safe:], "<") {
@@ -262,7 +256,8 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	rawContent, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -275,18 +270,22 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	//     `reasoning_content` field, with `content` already cleaned.
 	// Handle both so the visible Answer is always tag-free and any
 	// reasoning the upstream supplied is preserved.
-	visible, reasoning := splitNovitaThink(rawContent)
-	if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
-		if reasoning != "" {
-			reasoning += "\n" + r
-		} else {
-			reasoning = r
+	visible, reasoning := "", ""
+	if ok {
+		visible, reasoning = splitNovitaThink(rawContent)
+		if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
+			if reasoning != "" {
+				reasoning += "\n" + r
+			} else {
+				reasoning = r
+			}
 		}
 	}
 
 	return &ChatResponse{
 		Answer:        &visible,
 		ReasonContent: &reasoning,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 

@@ -309,7 +309,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeleteUser(username)
+	result, err := h.service.DeleteUser(c.Request.Context(), username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1159,11 +1159,6 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Handle the heartbeat
 	errCode, message := h.service.HandleHeartbeat(&req)
-	if errCode != common.CodeLicenseValid {
-		common.ErrorWithCode(c, errCode, message)
-		return
-	}
-
 	common.ErrorWithCode(c, errCode, message)
 }
 

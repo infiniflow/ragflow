@@ -29,10 +29,17 @@ export function transformParserConfigSetups(
   }
 
   return Object.entries(setups)
-    .map(([fileFormat, config]) => ({
-      fileFormat,
-      ...config,
-    }))
+    .map(([fileFormat, config]) => {
+      const { pages, ...rest } = (config ?? {}) as Record<string, any>;
+      const normalizedPages = Array.isArray(pages)
+        ? pages.map(([from, to]: [number, number]) => ({ from, to }))
+        : pages;
+      return {
+        fileFormat,
+        ...rest,
+        ...(normalizedPages !== undefined ? { pages: normalizedPages } : {}),
+      } as Record<string, any>;
+    })
     .sort((a, b) => (a.order_index ?? Infinity) - (b.order_index ?? Infinity));
 }
 

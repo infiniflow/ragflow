@@ -1741,6 +1741,8 @@ Failure:
 
 Lists documents in a specified dataset.
 
+To retrieve a specific document's settings and metadata, pass its document ID in the `id` query parameter: `/api/v1/datasets/{dataset_id}/documents?id={document_id}`.
+
 #### Request
 
 - Method: GET
@@ -3097,7 +3099,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name."
+    "message": "duplicated chat name"
 }
 ```
 
@@ -3234,7 +3236,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name."
+    "message": "duplicated chat name"
 }
 ```
 
@@ -4419,7 +4421,7 @@ Failure:
 ### Create session with agent
 
 :::danger DEPRECATED
-This method is deprecated and not recommended. You can still call it but be mindful that calling `Converse with agent` will automatically generate a session ID for the associated agent.
+This method is deprecated and no longer recommended. Use `Converse with agent` (`POST /api/v1/agents/chat/completions`) instead; it automatically creates a session ID for the associated agent when `session_id` is not specified.
 :::
 
 **POST** `/api/v1/agents/{agent_id}/sessions`

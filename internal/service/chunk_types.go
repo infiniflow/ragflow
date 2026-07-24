@@ -253,7 +253,7 @@ func IndexName(uid string) string {
 	return fmt.Sprintf("ragflow_%s", uid)
 }
 
-func (s *ChunkService) StopParsing(userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
 	if !s.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
@@ -271,7 +271,8 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req StopParsingRequ
 
 	successCount := 0
 	for _, id := range docList {
-		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(id, datasetID)
+		var doc *entity.Document
+		doc, err = s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, id, datasetID)
 		if err != nil {
 			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
 		}
@@ -293,7 +294,7 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req StopParsingRequ
 			"progress":  0,
 			"chunk_num": 0,
 		}
-		if err := s.documentDAO.UpdateByID(doc.ID, info); err != nil {
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, info); err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
 		}
 
@@ -343,7 +344,7 @@ type ListChunksResponse struct {
 }
 
 // List retrieves chunks for a document
-func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksResponse, error) {
+func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID string) (*ListChunksResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -351,8 +352,6 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	if req.DocID == "" {
 		return nil, fmt.Errorf("doc_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -365,7 +364,7 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 
 	// Get document to find its tenant
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
@@ -516,7 +515,7 @@ type UpdateChunkRequest struct {
 }
 
 // UpdateChunk updates a chunk fields
-func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error {
+func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -524,8 +523,6 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 	if req.ChunkID == "" {
 		return fmt.Errorf("chunk_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -551,7 +548,7 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocumentID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocumentID)
 	if err != nil || doc == nil {
 		return fmt.Errorf("document not found")
 	}
@@ -719,7 +716,7 @@ type RemoveChunksRequest struct {
 // RemoveChunks removes chunks from the dataset table.
 // If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
 // Otherwise removes only the specified chunks.
-func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (int64, error) {
+func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
@@ -727,8 +724,6 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 	if req.DocID == "" {
 		return 0, fmt.Errorf("doc_id is required")
 	}
-
-	ctx := context.Background()
 
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
@@ -741,7 +736,7 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 
 	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
 	docDAO := dao.NewDocumentDAO()
-	doc, err := docDAO.GetByID(req.DocID)
+	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
 	}

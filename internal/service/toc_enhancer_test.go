@@ -308,7 +308,7 @@ func TestSortAndTrimChunks_AllKept(t *testing.T) {
 }
 
 func TestIndexName(t *testing.T) {
-	if got := indexName("tenant1"); got != "ragflow_tenant1" {
+	if got := getIndexName("tenant1"); got != "ragflow_tenant1" {
 		t.Errorf("expected 'ragflow_tenant1', got %q", got)
 	}
 }

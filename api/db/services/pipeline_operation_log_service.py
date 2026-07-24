@@ -55,6 +55,13 @@ class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
 
     @classmethod
+    def _is_final_state(cls, progress, operation_status):
+        if progress == 1 or progress == -1:
+            return True
+        status = operation_status.value if isinstance(operation_status, TaskStatus) else str(operation_status)
+        return status in [TaskStatus.CANCEL.value, TaskStatus.DONE.value, TaskStatus.FAIL.value]
+
+    @classmethod
     def get_file_logs_fields(cls):
         return [
             cls.model.id,
@@ -163,17 +170,24 @@ class PipelineOperationLogService(CommonService):
                 raise RuntimeError(f"Task not found for dataset {document.kb_id}")
             title = task_type
             document_name = task_type
-            operation_status = TaskStatus.DONE if task.progress == 1 else TaskStatus.FAIL
+            operation_status = TaskStatus.DONE.value if task.progress == 1 else TaskStatus.FAIL.value if task.progress == -1 else TaskStatus.RUNNING.value
             progress = task.progress
             progress_msg = task.progress_msg
             process_begin_at = task.begin_at
             process_duration = task.process_duration
+
+            if not cls._is_final_state(progress, operation_status):
+                logging.info("Skip non-final dataset pipeline operation log task_id=%s task_type=%s progress=%s", task_id, task_type, progress)
+                return None
 
             finish_at = process_begin_at + timedelta(seconds=process_duration)
             KnowledgebaseService.update_by_id(
                 document.kb_id,
                 {_PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: finish_at},
             )
+        elif not cls._is_final_state(progress, operation_status):
+            logging.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
+            return None
 
         log = dict(
             id=get_uuid(),
@@ -233,7 +247,7 @@ class PipelineOperationLogService(CommonService):
         logs = logs.where(cls.model.document_id != GRAPH_RAPTOR_FAKE_DOC_ID)
 
         if operation_status:
-            logs = logs.where(cls.model.operation_status.in_(operation_status))
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if types:
             logs = logs.where(cls.model.document_type.in_(types))
         if suffix:
@@ -270,7 +284,7 @@ class PipelineOperationLogService(CommonService):
             logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
-            logs = logs.where(cls.model.operation_status.in_(operation_status))
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if create_date_from:
             logs = logs.where(cls.model.create_date >= create_date_from)
         if create_date_to:

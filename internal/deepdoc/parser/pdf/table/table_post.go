@@ -19,10 +19,7 @@ func FilterBoxesByRemoveSet(boxes []pdf.TextBox, removeSet map[int]bool) []pdf.T
 	}
 	// Pre-allocate: estimate final size to avoid resizing
 	// Use max to prevent negative capacity when len(removeSet) > len(boxes)
-	estimatedCap := len(boxes) - len(removeSet)
-	if estimatedCap < 0 {
-		estimatedCap = 0
-	}
+	estimatedCap := max(len(boxes)-len(removeSet), 0)
 	out := make([]pdf.TextBox, 0, estimatedCap)
 	for i, b := range boxes {
 		if !removeSet[i] {

@@ -53,9 +53,9 @@ _STRUCTURE_INDEX_TYPES = frozenset(_STRUCTURE_INDEX_TYPE_TO_KIND)
 _VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"} | set(_STRUCTURE_INDEX_TYPES)
 
 _INDEX_TYPE_TO_TASK_TYPE = {
-    "graph": "graphrag",
+    "graph": "structure_graph",
     "raptor": "raptor",
-    "mindmap": "mindmap",
+    "mindmap": "structure_mindmap",
     "artifact": "artifact",
     "skill": "skill",
     # Structure merge types carry their own task_type (== index_type) so the
@@ -281,7 +281,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     :return: (success, result) or (success, error_message)
     """
     if not req:
-        return False, "No properties were modified"
+        return False, "no properties were modified"
 
     kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
     if kb is None:
@@ -1723,16 +1723,20 @@ def _resolve_dataset_structure_kind(kind) -> str | None:
     return _DATASET_STRUCTURE_KIND_ALIASES.get(kind.strip().lower().replace("-", "_"))
 
 
-async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str):
+async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keywords: str = ""):
     """Load the dataset-scope (KB-wide) structure graph for one ``kind``.
 
     ``kind`` is one of ``graph`` / ``mindmap`` / ``timeline`` /
-    ``session_essence`` / ``session_graph``. Reads the
-    ``knowledge_graph_kwd="dataset_graph"`` rows written by
-    ``rebuild_dataset_structure_graph_json`` (one per template), filters to the
-    requested kind, and returns them grouped by template — mirroring the
-    per-document ``structure/graph`` response so the frontend graph view is
-    reused unchanged.
+    ``session_essence`` / ``session_graph``. The ``knowledge_graph_kwd="dataset_graph"``
+    blob rows (one per template, written by ``rebuild_dataset_structure_graph_json``)
+    are used only to DISCOVER the requested kind's template buckets; each bucket's
+    entities/relations are then fetched from the raw KB-wide ``entity`` / ``relation``
+    rows with subgraph sampling — identical to the per-document endpoint but scoped
+    KB-wide (no ``doc_id`` filter), since dataset-merge templates dedup those rows
+    across documents.
+
+    ``keywords`` (optional): return the single best-matching entity's 1-hop
+    subgraph (top-1 + neighbors + touching relations) across the kind, via KNN.
 
     Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
     ``(False, message)`` on auth/validation failure.
@@ -1754,30 +1758,10 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str):
 
     from common.doc_store.doc_store_base import OrderByExpr
     from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.apps.services import structure_graph_common as sgc
 
-    select_fields = [
-        "content_with_weight",
-        "compile_kwd",
-        "compilation_template_ids",
-        "compilation_template_kind_kwd",
-    ]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            select_fields,
-            [],
-            {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_nm,
-            [dataset_id],
-        )
-        rows = settings.docStoreConn.get_fields(res, select_fields) or {}
-    except Exception:
-        logging.exception("get_dataset_structure: docStore search failed for kb=%s", dataset_id)
-        return True, empty
+    keywords = (keywords or "").strip()
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -1811,40 +1795,148 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str):
         template_kind_cache[tid] = top_kind
         return top_kind
 
-    grouped: dict[str, dict] = {}
-    for row in rows.values():
+    def _bucket_meta_for(tid: str, row_kind: str = "") -> dict:
+        if tid not in template_name_cache:
+            _template_meta(tid)
+        return {
+            "template_id": tid,
+            "template_name": template_name_cache.get(tid, tid),
+            "kind": row_kind or template_kind_cache.get(tid) or resolved_kind,
+        }
+
+    # ── Discovery: dataset_graph blob rows, metadata only (no huge content). ──
+    # Keep only rows whose TOP-LEVEL kind matches the request. Raw entity/relation
+    # rows stamp ``compilation_template_kind_kwd`` with config.kind (which folds the
+    # knowledge_graph family), so we scope raw-row queries by template id — resolved
+    # here from the blobs, whose stamp is the top-level kind — not by kind directly.
+    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            meta_fields,
+            [],
+            {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index_nm,
+            [dataset_id],
+        )
+        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+    except Exception:
+        logging.exception("get_dataset_structure: docStore discovery failed for kb=%s", dataset_id)
+        return True, empty
+
+    kind_template_ids: list[str] = []
+    seen_tid: set[str] = set()
+    has_templateless = False
+    for row in meta_rows.values():
         tid = _row_template_id(row)
         stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
         row_kind = stamped_kind or _template_meta(tid) or ""
         if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
             continue
+        if tid:
+            if tid not in seen_tid:
+                seen_tid.add(tid)
+                kind_template_ids.append(tid)
+        else:
+            has_templateless = True
 
+    # ── keywords mode: global KNN across the kind → top-1's focused subgraph. ──
+    if keywords:
+        if not kind_template_ids:
+            return True, empty
         try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
+            model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING.value, kb.embd_id)
+            embd_mdl = TenantLLMService.model_instance(model_config)
         except Exception:
+            logging.exception("get_dataset_structure: embedding bind failed for kb=%s", dataset_id)
+            return True, empty
+
+        def _scope_for_template(row: dict):
+            tid = _row_template_id(row) or ""
+            stamped = (row.get("compilation_template_kind_kwd") or "").strip()
+            meta = _bucket_meta_for(tid, stamped) if tid else {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind}
+            return meta, {"compilation_template_ids": [tid]} if tid else {"compilation_template_kind_kwd": [stamped]}
+
+        bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
+            index_nm,
+            dataset_id,
+            embd_mdl,
+            {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"]},
+            keywords,
+            _scope_for_template,
+            log_ctx=f"kb={dataset_id}",
+        )
+        if resolved_kind == "mind_map":
+            kw_entities = sgc.filter_entities_with_relations(kw_entities, kw_relations)
+            if not kw_entities:
+                return True, empty
+        if not bucket_meta or (not kw_entities and not kw_relations):
+            return True, empty
+        bucket = dict(bucket_meta)
+        bucket["entities"] = kw_entities
+        bucket["relations"] = kw_relations
+        return True, {"kind": kind, "templates": [bucket]}
+
+    # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
+    templates_out: list[dict] = []
+    for tid in kind_template_ids:
+        try:
+            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid]})
+        except Exception:
+            logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
-        if not isinstance(graph, dict):
-            continue
-        entities = graph.get("entities") or []
-        relations = graph.get("relations") or []
+        if resolved_kind == "mind_map":
+            entities = sgc.filter_entities_with_relations(entities, relations)
+            if not entities:
+                continue
         if not entities and not relations:
             continue
+        meta = _bucket_meta_for(tid)
+        templates_out.append({**meta, "entities": entities, "relations": relations})
 
-        bucket_id = tid or f"kind:{resolved_kind}"
-        if bucket_id not in grouped:
-            if tid and tid not in template_name_cache:
-                _template_meta(tid)
-            grouped[bucket_id] = {
-                "template_id": bucket_id,
-                "template_name": template_name_cache.get(tid or "", bucket_id),
-                "kind": row_kind or resolved_kind,
-                "entities": [],
-                "relations": [],
-            }
-        grouped[bucket_id]["entities"].extend(entities)
-        grouped[bucket_id]["relations"].extend(relations)
+    # Legacy template-less dataset_graph rows have no template id to scope raw
+    # rows by, so fall back to their blob content directly (no sampling). Rare —
+    # rebuild_dataset_structure_graph_json always stamps a template id.
+    if has_templateless:
+        try:
+            res_l = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["content_with_weight", "compilation_template_kind_kwd"],
+                [],
+                {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD], "must_not": {"exists": "compilation_template_ids"}},
+                [],
+                OrderByExpr(),
+                0,
+                1000,
+                index_nm,
+                [dataset_id],
+            )
+            legacy_rows = settings.docStoreConn.get_fields(res_l, ["content_with_weight", "compilation_template_kind_kwd"]) or {}
+        except Exception:
+            logging.exception("get_dataset_structure: legacy blob fetch failed for kb=%s", dataset_id)
+            legacy_rows = {}
+        legacy_bucket = {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind, "entities": [], "relations": []}
+        for row in legacy_rows.values():
+            if _resolve_dataset_structure_kind((row.get("compilation_template_kind_kwd") or "").strip()) != resolved_kind:
+                continue
+            try:
+                graph = json.loads(row.get("content_with_weight") or "{}")
+            except Exception:
+                continue
+            if not isinstance(graph, dict):
+                continue
+            legacy_bucket["entities"].extend(graph.get("entities") or [])
+            legacy_bucket["relations"].extend(graph.get("relations") or [])
+        if resolved_kind == "mind_map":
+            legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
+        if legacy_bucket["entities"] or legacy_bucket["relations"]:
+            if resolved_kind != "mind_map" or legacy_bucket["entities"]:
+                templates_out.append(legacy_bucket)
 
-    templates_out = [g for g in grouped.values() if g["entities"] or g["relations"]]
     return True, {"kind": kind, "templates": templates_out}
 
 
@@ -2452,7 +2544,10 @@ def _nav_item(row: dict) -> dict:
         payload = json.loads(row.get("content_with_weight") or "{}")
     except Exception:
         payload = {}
-    is_cluster = (row.get("type_kwd") or payload.get("type")) == "nav_cluster"
+    row_type = row.get("type_kwd")
+    if isinstance(row_type, (list, tuple, set)):
+        row_type = next(iter(row_type), None)
+    is_cluster = (row_type or payload.get("type")) == "nav_cluster"
     return {
         "name": row.get("name") or "",
         "description": payload.get("description") or "",
@@ -2551,7 +2646,8 @@ async def delete_nav(dataset_id: str, tenant_id: str):
     index_nm, _ = pack
 
     try:
-        deleted = settings.docStoreConn.delete(
+        deleted = await thread_pool_exec(
+            settings.docStoreConn.delete,
             {"compile_kwd": [_NAV_COMPILE_KWD]},
             index_nm,
             dataset_id,
@@ -2592,16 +2688,17 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
         if not frontier:
             break
         try:
-            res = settings.docStoreConn.search(
-                select_fields=["name"],
-                highlight_fields=[],
-                condition={"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
-                match_expressions=[],
-                order_by=OrderByExpr(),
-                offset=0,
-                limit=10000,
-                index_names=index_nm,
-                knowledgebase_ids=[dataset_id],
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["name"],
+                [],
+                {"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
+                [],
+                OrderByExpr(),
+                0,
+                10000,
+                index_nm,
+                [dataset_id],
             )
             rows = settings.docStoreConn.get_fields(res, ["name"]) or {}
         except Exception:
@@ -2616,7 +2713,8 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
         frontier = nxt
 
     try:
-        deleted = settings.docStoreConn.delete(
+        deleted = await thread_pool_exec(
+            settings.docStoreConn.delete,
             {"compile_kwd": [_NAV_COMPILE_KWD], "name": list(names)},
             index_nm,
             dataset_id,
@@ -2865,15 +2963,16 @@ async def _wiki_search_entity_page(
     dataset_id: str,
     offset: int,
     limit: int,
+    keywords: str = "",
 ):
-    """One page of artifact_entity rows, ordered by weight_int DESC."""
-    from common.doc_store.doc_store_base import OrderByExpr
+    """One page of artifact_entity rows.
 
-    order_by = OrderByExpr()
-    try:
-        order_by.desc("weight_int")
-    except Exception:
-        order_by = OrderByExpr()
+    Without ``keywords``: ordered by ``weight_int DESC`` (heaviest nodes first).
+    With ``keywords``: BM25 full-text match over ``content_ltks`` (slug +
+    summary), ordered by relevance. ``artifact_entity`` rows are BM25-only (no
+    embedding vector), so this is a lexical search, not a dense KNN.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
 
     select_fields = [
         "id",
@@ -2882,12 +2981,31 @@ async def _wiki_search_entity_page(
         "source_chunk_ids",
         "content_with_weight",
     ]
+
+    keywords = (keywords or "").strip()
+    match_expressions: list = []
+    order_by = OrderByExpr()
+    if keywords:
+        try:
+            match_text, _ = settings.retriever.qryr.question(keywords, min_match=0.1)
+            match_expressions = [match_text]
+        except Exception:
+            logging.exception("get_wiki_graph: failed to build keyword query for kb=%s", dataset_id)
+            match_expressions = []
+    if not match_expressions:
+        # No keywords (or query build failed) → heaviest-weighted first. When a
+        # text match is present the store ranks by BM25 score instead.
+        try:
+            order_by.desc("weight_int")
+        except Exception:
+            order_by = OrderByExpr()
+
     res = await thread_pool_exec(
         settings.docStoreConn.search,
         select_fields,
         [],
         {"compile_kwd": [_WIKI_GRAPH_ENTITY_KWD]},
-        [],
+        match_expressions,
         order_by,
         offset,
         limit,
@@ -2969,8 +3087,15 @@ async def get_wiki_graph(
     dataset_id: str,
     tenant_id: str,
     node: str | None = None,
+    keywords: str | None = None,
+    top_n: int | None = None,
 ):
     """Load the canvas graph payload incrementally from per-row data.
+
+    ``top_n`` overrides the entity budget (default ``_WIKI_GRAPH_MAX_LOADING_ENTITY``).
+    ``keywords`` (overview mode only; ignored when ``node`` is given) seeds the
+    graph from the best BM25 matches on ``artifact_entity`` rows instead of the
+    heaviest-weighted ones. Only entities referenced by a relation are returned.
 
     Two modes:
 
@@ -3004,7 +3129,18 @@ async def get_wiki_graph(
         return True, empty
     index_nm, _ = pack
 
-    cap = _WIKI_GRAPH_MAX_LOADING_ENTITY
+    from api.apps.services import structure_graph_common as sgc
+
+    keywords = (keywords or "").strip()
+    # Entity budget: caller-overridable, clamped to a sane range so a bad param
+    # can neither disable the cap nor blow up the response.
+    if top_n is not None:
+        try:
+            cap = max(1, min(int(top_n), 1024))
+        except (TypeError, ValueError):
+            cap = _WIKI_GRAPH_MAX_LOADING_ENTITY
+    else:
+        cap = _WIKI_GRAPH_MAX_LOADING_ENTITY
     page_size = _WIKI_GRAPH_ENTITY_PAGE_SIZE
 
     # ``entities`` preserves first-seen order so the canvas paints the
@@ -3105,11 +3241,11 @@ async def get_wiki_graph(
                 to_map = {}
             for row in (to_map or {}).values():
                 payload = _wiki_entity_payload(row)
-                if payload and len(entities) < cap:
+                if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
         return True, {
-            "entities": list(entities.values()),
+            "entities": sgc.filter_entities_with_relations(list(entities.values()), relations),
             "relations": relations,
         }
 
@@ -3124,6 +3260,7 @@ async def get_wiki_graph(
                 dataset_id,
                 offset,
                 page_size,
+                keywords=keywords,
             )
         except Exception:
             logging.exception(
@@ -3217,7 +3354,7 @@ async def get_wiki_graph(
         page += 1
 
     return True, {
-        "entities": list(entities.values()),
+        "entities": sgc.filter_entities_with_relations(list(entities.values()), relations),
         "relations": relations,
     }
 

@@ -494,7 +494,7 @@ type DeleteUserResult struct {
 // Returns:
 //   - *DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
 	result := &DeleteUserResult{
 		Username:       username,
 		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
@@ -559,7 +559,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
 			if err != nil {
 				common.Warn("failed to get document IDs", zap.Error(err))
 			}
@@ -857,7 +857,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	tenantID := userTenants[0].TenantID
 
 	// 3. Get API tokens by tenant ID
-	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, tenantID)
+	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API tokens: %w", err)
 	}
@@ -908,7 +908,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	// 4. Save API token
-	if err = s.apiTokenDAO.Create(ctx, apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(ctx, dao.DB, apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -940,7 +940,7 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	tenantID := userTenants[0].TenantID
 
 	// 3. Delete API token
-	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, tenantID, key)
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}

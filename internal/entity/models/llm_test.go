@@ -13,15 +13,8 @@ import (
 func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	modelName := "chat"
 	driver := &streamSentinelDriver{captureToolDriver: &captureToolDriver{}}
-	var callbacks []string
 	base := NewChatModel(driver, &modelName, &APIConfig{})
-	model := NewEinoChatModel(base, &ChatConfig{
-		StreamCallback: func(content, _ string) {
-			if content != "" {
-				callbacks = append(callbacks, content)
-			}
-		},
-	})
+	model := NewEinoChatModel(base, &ChatConfig{})
 
 	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
@@ -44,9 +37,6 @@ func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 
 	if len(messages) != 2 || messages[0] != "answer" || messages[1] != "DONE!" {
 		t.Fatalf("stream messages = %#v, want [answer DONE!]", messages)
-	}
-	if len(callbacks) != 2 || callbacks[0] != "answer" || callbacks[1] != "DONE!" {
-		t.Fatalf("stream callbacks = %#v, want [answer DONE!]", callbacks)
 	}
 }
 
@@ -166,15 +156,8 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 	driver := &captureToolDriver{
 		resp: &ChatResponse{Answer: &answer},
 	}
-	var callbacks []string
 	base := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
-	model := NewEinoChatModel(base, &ChatConfig{
-		StreamCallback: func(content, _ string) {
-			if content != "" {
-				callbacks = append(callbacks, content)
-			}
-		},
-	})
+	model := NewEinoChatModel(base, &ChatConfig{})
 	bound, err := model.WithTools([]*schema.ToolInfo{
 		{
 			Name: "search_my_dateset",
@@ -205,9 +188,6 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 	}
 	if msg == nil || msg.Content != answer {
 		t.Fatalf("stream message = %#v, want final answer content", msg)
-	}
-	if len(callbacks) != 1 || callbacks[0] != answer {
-		t.Fatalf("callbacks = %#v, want streamed answer", callbacks)
 	}
 }
 

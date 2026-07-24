@@ -21,6 +21,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {

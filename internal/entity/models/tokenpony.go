@@ -118,7 +118,8 @@ func (t *TokenPonyModel) ChatWithMessages(ctx context.Context, modelName string,
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -130,6 +131,7 @@ func (t *TokenPonyModel) ChatWithMessages(ctx context.Context, modelName string,
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -181,6 +183,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("tokenpony: upstream stream error: %v", apiErr)
@@ -196,6 +199,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		}
 
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
+			accumulateToolCallDeltas(delta, accumulatedToolCalls)
 			if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 				rr := r
 				if err := sender(nil, &rr); err != nil {
@@ -217,6 +221,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("tokenpony: stream ended before [DONE] or finish_reason")
 	}

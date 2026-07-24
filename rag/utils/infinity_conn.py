@@ -496,6 +496,10 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = v if v else "{}"
                     else:
                         d[k] = v
+                # Infinity thrift client does not accept None values.
+                for k in list(d.keys()):
+                    if d[k] is None:
+                        del d[k]
                 for k in [
                     "docnm_kwd",
                     "title_tks",
@@ -643,6 +647,22 @@ class InfinityConnection(InfinityConnectionBase):
                 "question_tks",
             ]:
                 if k in new_value:
+                    del new_value[k]
+
+            # The Infinity Python client inspects value[0] for list values
+            # while building an update expression.  An empty list therefore
+            # raises IndexError before the request reaches Infinity.  Keep
+            # JSON and keyword-list columns clearable, but do not send empty
+            # values for other columns (for example, an empty vector returned
+            # by a partial row read).
+            for k, v in list(new_value.items()):
+                if not isinstance(v, list) or v:
+                    continue
+                if k in _JSON_LIST_FIELDS:
+                    new_value[k] = json.dumps([], ensure_ascii=False)
+                elif self.field_keyword(k):
+                    new_value[k] = ""
+                else:
                     del new_value[k]
 
             remove_opt = {}  # "[k,new_value]": [id_to_update, ...]

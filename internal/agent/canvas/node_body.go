@@ -120,6 +120,10 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 }
 
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+	return buildNodeBodyWithOptions(ctx, cpnID, name, params, runtime.ComponentExecutionOptions{})
+}
+
+func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
 	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
@@ -155,7 +159,7 @@ func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]an
 		// to expose Name(). The factory returns the class name as
 		// the DSL's `component_name` field, which is also what
 		// ComponentBase.Name() would have returned.
-		return realComponentBody(cpnID, name, comp), nil
+		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -238,6 +242,10 @@ func componentTimeout() time.Duration {
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
+	return realComponentBodyWithOptions(cpnID, componentClass, comp, runtime.ComponentExecutionOptions{})
+}
+
+func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		timeout := resolveTimeoutFromContext(ctx, componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
@@ -247,7 +255,7 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(cctx, in)
+				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), in)
 			})
 			return e
 		})
@@ -342,7 +350,13 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			}
 			state.SetVar(outputCpnID, k, v)
 		}
-		nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+		if runtime.IsDeferredStream(out["content"]) {
+			runtime.RegisterDeferredNode(ctx, cpnID, func() {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			})
+		} else {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+		}
 		return out, nil
 	}
 }

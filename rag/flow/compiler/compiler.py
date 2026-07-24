@@ -51,7 +51,6 @@ class CompilerParam(ProcessParamBase, LLMParam):
         self.compilation_template_group_ids = []
 
     def check(self):
-        super().check()
         self.check_empty(self.compilation_template_group_ids, "Compilation Template Groups")
         if isinstance(self.compilation_template_group_ids, str):
             self.compilation_template_group_ids = [self.compilation_template_group_ids]
@@ -163,7 +162,14 @@ class Compiler(ProcessBase, LLM):
             try:
                 from rag.advanced_rag.knowlege_compile.dataset_nav import upsert_dataset_nav_doc
 
-                await upsert_dataset_nav_doc(tenant_id, kb_id, doc_id, tree)
+                await upsert_dataset_nav_doc(
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    tree,
+                    embd_mdl=embedding_model,
+                    chat_mdl=chat_mdl_by_tid[template_id],
+                )
             except Exception:
                 logging.exception("Compiler: tree-template %s dataset navigation upsert failed for doc %s", template_id, doc_id)
 
