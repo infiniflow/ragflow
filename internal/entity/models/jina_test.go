@@ -254,3 +254,28 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
 }
+
+func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
+	srv := newJinaServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["top_n"] != float64(2) {
+			t.Errorf("top_n=%v, want 2", body["top_n"])
+		}
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-reranker-v3"
+	_, err := newJinaForTest(srv.URL).Rerank(
+		t.Context(),
+		&modelName,
+		"weather",
+		[]string{"sunny", "rainy"},
+		&APIConfig{ApiKey: &apiKey},
+		&RerankConfig{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
