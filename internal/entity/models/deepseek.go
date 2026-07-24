@@ -208,7 +208,12 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	return parseChatCompletionResponse[DeepSeekChatResponse](body, chatModelConfig, modelUsage, func(result *DeepSeekChatResponse, _ *ChatConfig) (chatResponseParts, error) {
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
+		var result DeepSeekChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+
 		if len(result.Choices) == 0 {
 			return chatResponseParts{}, fmt.Errorf("no choices in response")
 		}

@@ -51,19 +51,14 @@ type chatResponseParts struct {
 	Usage         *TokenUsage
 }
 
-// chatResponseExtractor maps one provider-specific response type into the
-// common result used by RAGFlow's chat model abstraction.
-type chatResponseExtractor[T any] func(*T, *ChatConfig) (chatResponseParts, error)
+// chatResponseExtractor parses one provider-specific response and maps it
+// into the common result used by RAGFlow's chat model abstraction.
+type chatResponseExtractor func([]byte, *ChatConfig) (chatResponseParts, error)
 
-// parseChatCompletionResponse decodes a provider-specific non-streaming chat
-// response, then applies the shared ChatResponse and usage-accounting flow.
-func parseChatCompletionResponse[T any](body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor[T]) (*ChatResponse, error) {
-	var result T
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	parts, err := extract(&result, chatConfig)
+// parseChatCompletionResponse applies the shared ChatResponse and
+// usage-accounting flow after the provider-specific response is parsed.
+func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor) (*ChatResponse, error) {
+	parts, err := extract(body, chatConfig)
 	if err != nil {
 		return nil, err
 	}

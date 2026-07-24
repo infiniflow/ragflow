@@ -192,7 +192,12 @@ func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	return parseChatCompletionResponse[ZhipuChatResponse](body, chatModelConfig, modelUsage, func(result *ZhipuChatResponse, chatConfig *ChatConfig) (chatResponseParts, error) {
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result ZhipuChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+
 		if len(result.Choices) == 0 {
 			return chatResponseParts{}, fmt.Errorf("empty response")
 		}
