@@ -28,7 +28,6 @@ from rag.nlp import append_context2table_image4pdf
 from rag.utils.lazy_image import ensure_pil_image, open_image_for_processing, is_image_like
 
 
-# need to delete before pr
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     if not figures_data_without_positions:
         return []
@@ -46,19 +45,24 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     return res
 
 
-def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, **kwargs):
+def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, lang="English", **kwargs):
     if not sections:
         return tbls
     try:
         vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
     if vision_model:
         figures_data = vision_figure_parser_figure_data_wrapper(sections)
         try:
-            docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            docx_vision_parser = VisionFigureParser(
+                vision_model=vision_model,
+                figures_data=figures_data,
+                lang=lang,
+                **kwargs,
+            )
             boosted_figures = docx_vision_parser(callback=callback)
             tbls.extend(boosted_figures)
         except Exception as e:
@@ -66,13 +70,13 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, **kwargs):
     return tbls
 
 
-def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
+def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, lang="English", **kwargs):
     tbls = []
     if not images:
         return []
     try:
         vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
         callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
     except Exception:
         vision_model = None
@@ -90,7 +94,12 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
             for img in images
         ]
         try:
-            parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            parser = VisionFigureParser(
+                vision_model=vision_model,
+                figures_data=figures_data,
+                lang=lang,
+                **kwargs,
+            )
             callback(0.22, "Parsing images...")
             boosted_figures = parser(callback=callback)
             tbls.extend(boosted_figures)
@@ -99,7 +108,7 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
     return tbls
 
 
-def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
+def vision_figure_parser_pdf_wrapper(tbls, callback=None, lang="English", **kwargs):
     if not tbls:
         return []
     sections = kwargs.get("sections")
@@ -107,7 +116,7 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
     try:
         vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
@@ -131,6 +140,7 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
                 figures_data=figures_data,
                 figure_contexts=figure_contexts,
                 context_size=context_size,
+                lang=lang,
                 **kwargs,
             )
             boosted_figures = docx_vision_parser(callback=callback)
@@ -141,12 +151,12 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     return tbls
 
 
-def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kwargs):
+def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, lang="English", **kwargs):
     if not chunks:
         return []
     try:
         vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+        vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
@@ -164,12 +174,11 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
                     # context_above + caption if any
                     context_above=ck.get("context_above") + ck.get("text", ""),
                     context_below=ck.get("context_below"),
+                    language=lang,
                 )
                 logging.info(f"[VisionFigureParser] figure={idx} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context")
-                logging.info(f"[VisionFigureParser] figure={idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={idx} context_below_snippet={context_below[:512]}")
             else:
-                prompt = vision_llm_figure_describe_prompt()
+                prompt = vision_llm_figure_describe_prompt(language=lang)
                 logging.info(f"[VisionFigureParser] figure={idx} context_len=0 prompt=default")
 
             try:
@@ -201,6 +210,7 @@ shared_executor = ThreadPoolExecutor(max_workers=10)
 class VisionFigureParser:
     def __init__(self, vision_model, figures_data, *args, **kwargs):
         self.vision_model = vision_model
+        self.language = kwargs.get("lang") or "English"
         self.figure_contexts = kwargs.get("figure_contexts") or []
         self.context_size = max(0, int(kwargs.get("context_size", 0) or 0))
         self._extract_figures_info(figures_data)
@@ -261,14 +271,13 @@ class VisionFigureParser:
                 prompt = vision_llm_figure_describe_prompt_with_context(
                     context_above=context_above,
                     context_below=context_below,
+                    language=self.language,
                 )
                 logging.info(
                     f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context"
                 )
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_above_snippet={context_above[:512]}")
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_below_snippet={context_below[:512]}")
             else:
-                prompt = vision_llm_figure_describe_prompt()
+                prompt = vision_llm_figure_describe_prompt(language=self.language)
                 logging.info(f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_len=0 prompt=default")
             description_text = picture_vision_llm_chunk(
                 binary=figure_binary,

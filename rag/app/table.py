@@ -63,7 +63,16 @@ def _deduplicate_column_names(columns):
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, callback=None, **kwargs):
+    def __call__(
+        self,
+        fnm,
+        binary=None,
+        from_page=0,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
+        callback=None,
+        lang="English",
+        **kwargs,
+    ):
         if not binary:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
@@ -80,7 +89,12 @@ class Excel(ExcelParser):
             images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             pending_cell_images = []
             if images:
-                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(
+                    images=images,
+                    callback=callback,
+                    lang=lang,
+                    **kwargs,
+                )
                 if image_descriptions and len(image_descriptions) == len(images):
                     for i, bf in enumerate(image_descriptions):
                         images[i]["image_description"] = "\n".join(bf[0][1])
@@ -405,7 +419,15 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs, tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
+        dfs, tbls = excel_parser(
+            filename,
+            binary,
+            from_page=from_page,
+            to_page=to_page,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
