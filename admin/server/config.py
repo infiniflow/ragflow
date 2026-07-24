@@ -237,14 +237,14 @@ class S3Config(FileStoreConfig):
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
-        extra_dict = result['extra'].copy()
-        extra_dict['endpoint_url'] = self.endpoint_url
-        extra_dict['scheme'] = self.scheme
+        extra_dict = result["extra"].copy()
+        extra_dict["endpoint_url"] = self.endpoint_url
+        extra_dict["scheme"] = self.scheme
         if self.region:
-            extra_dict['region'] = self.region
+            extra_dict["region"] = self.region
         if self.bucket:
-            extra_dict['bucket'] = self.bucket
-        result['extra'] = extra_dict
+            extra_dict["bucket"] = self.bucket
+        result["extra"] = extra_dict
         return result
 
 

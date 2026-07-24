@@ -29,15 +29,15 @@ class RAGFlowS3:
     def __init__(self):
         self.conn = None
         self.s3_config = settings.S3
-        self.access_key = self.s3_config.get('access_key', None)
-        self.secret_key = self.s3_config.get('secret_key', None)
-        self.session_token = self.s3_config.get('session_token', None)
-        self.region_name = self.s3_config.get('region_name') or self.s3_config.get('region')
-        self.endpoint_url = self.s3_config.get('endpoint_url', None)
-        self.signature_version = self.s3_config.get('signature_version', None)
-        self.addressing_style = self.s3_config.get('addressing_style', None)
-        self.bucket = self.s3_config.get('bucket', None)
-        self.prefix_path = self.s3_config.get('prefix_path', None)
+        self.access_key = self.s3_config.get("access_key", None)
+        self.secret_key = self.s3_config.get("secret_key", None)
+        self.session_token = self.s3_config.get("session_token", None)
+        self.region_name = self.s3_config.get("region_name") or self.s3_config.get("region")
+        self.endpoint_url = self.s3_config.get("endpoint_url", None)
+        self.signature_version = self.s3_config.get("signature_version", None)
+        self.addressing_style = self.s3_config.get("addressing_style", None)
+        self.bucket = self.s3_config.get("bucket", None)
+        self.prefix_path = self.s3_config.get("prefix_path", None)
         self.__open__()
 
     @staticmethod
