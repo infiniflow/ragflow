@@ -284,7 +284,7 @@ class DataflowService:
             return None, token_consumption
 
     @classmethod
-    async def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+    def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
         """Batch encode texts using the embedding model with truncation."""
         truncated = EmbeddingUtils.truncate_texts(txts, embedding_model.max_length)
         return embedding_model.encode(truncated)
@@ -339,7 +339,7 @@ class DataflowService:
         """Update document metadata."""
         existing_meta = DocMetadataService.get_document_metadata(doc_id)
         existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-        metadata = update_metadata_to(metadata, existing_meta)
+        metadata = update_metadata_to(existing_meta, metadata)
         self._task_context.recording_context.record("run_dataflow_metadata", metadata)
         if self._task_context.write_interceptor:
             self._task_context.write_interceptor.intercept("DocMetadataService.update_document_metadata")
