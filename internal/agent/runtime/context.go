@@ -60,13 +60,15 @@ func IsDeferredStream(v any) bool {
 }
 
 type agentMessageEmitterState struct {
-	mu           sync.Mutex
-	emit         AgentMessageEmitter
-	finalize     func() bool
-	reset        func()
-	emitted      bool
-	suppressed   bool
-	agentContent strings.Builder
+	mu            sync.Mutex
+	emit          AgentMessageEmitter
+	finalize      func() bool
+	reset         func()
+	emitted       bool
+	suppressed    bool
+	runEmitted    bool
+	runSuppressed bool
+	agentContent  strings.Builder
 }
 
 type agentDeltaSinkCtxKey struct{}
@@ -210,9 +212,8 @@ func WithCanvasMessageEmitter(ctx context.Context, emit CanvasMessageEmitter) co
 	return context.WithValue(ctx, canvasMessageEmitterCtxKey{}, emit)
 }
 
-// WithCanvasMessageEventEmitter installs the Message presentation callback.
-// It is separate from CanvasMessageEmitter so existing plain-content callers
-// remain source-compatible while Message can surface thinking boundaries.
+// WithCanvasMessageEventEmitter installs the Message presentation callback
+// used for content and thinking-boundary-aware events.
 func WithCanvasMessageEventEmitter(ctx context.Context, emit CanvasMessageEventEmitter) context.Context {
 	if emit == nil {
 		return ctx
@@ -230,11 +231,17 @@ func HasAgentMessageEmitter(ctx context.Context) bool {
 // EmitAgentMessage emits Agent answer/thinking deltas when the service layer
 // installed a callback. It returns true when a callback was present.
 func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) bool {
-	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil && sinkState.sink != nil {
+	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil {
+		sinkState.mu.Lock()
+		sink := sinkState.sink
+		sinkState.mu.Unlock()
+		if sink == nil {
+			return false
+		}
 		// A deferred Agent is being consumed by Message. Do not call the
 		// service SSE emitter here; Message owns the visible event stream.
+		sink(contentDelta, thinkingDelta)
 		sinkState.mu.Lock()
-		sinkState.sink(contentDelta, thinkingDelta)
 		if contentDelta != "" || thinkingDelta != "" {
 			sinkState.emitted = true
 		}
@@ -242,24 +249,32 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 		return true
 	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
-	if !ok || state == nil || state.emit == nil {
+	if !ok || state == nil {
 		return false
 	}
 	if ComponentExecutionOptionsFromContext(ctx).SuppressAgentMessageEvents {
 		state.mu.Lock()
 		state.suppressed = true
+		state.runSuppressed = true
 		state.mu.Unlock()
 		return true
 	}
 	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.emit(contentDelta, thinkingDelta)
+	emit := state.emit
+	state.mu.Unlock()
+	if emit == nil {
+		return false
+	}
+	emit(contentDelta, thinkingDelta)
+	state.mu.Lock()
 	if contentDelta != "" || thinkingDelta != "" {
 		state.emitted = true
+		state.runEmitted = true
 	}
 	if contentDelta != "" {
 		state.agentContent.WriteString(contentDelta)
 	}
+	state.mu.Unlock()
 	return true
 }
 
@@ -273,15 +288,39 @@ func AgentMessageEventsSuppressed(ctx context.Context) bool {
 	return state.suppressed
 }
 
-// EmitCanvasMessageEvent emits one already-presented Message event. When no
-// event callback is installed it falls back to the historical plain-content
-// callback, preserving existing component tests and non-streaming callers.
+// AgentMessageEventsEmittedRun reports whether any visible Agent or Message
+// content was emitted during the entire canvas run.
+func AgentMessageEventsEmittedRun(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.runEmitted
+}
+
+// AgentMessageEventsSuppressedRun reports whether any Agent invocation
+// suppressed terminal message emission during the entire canvas run.
+func AgentMessageEventsSuppressedRun(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.runSuppressed
+}
+
+// EmitCanvasMessageEvent emits one presented Message event and falls back to
+// the plain-content callback when no event callback is installed.
 func EmitCanvasMessageEvent(ctx context.Context, content string, startToThink, endToThink bool) bool {
 	if emit, ok := ctx.Value(canvasMessageEventEmitterCtxKey{}).(CanvasMessageEventEmitter); ok && emit != nil {
 		emit(content, startToThink, endToThink)
 		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil {
 			state.mu.Lock()
 			state.emitted = true
+			state.runEmitted = true
 			state.mu.Unlock()
 		}
 		return true
@@ -301,23 +340,34 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 	state, hasAgentEmitter := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
 	if hasAgentEmitter && state != nil {
 		state.mu.Lock()
-		defer state.mu.Unlock()
-		if content != "" && state.agentContent.Len() > 0 && state.agentContent.String() == content {
+		exactDuplicate := content != "" && state.agentContent.Len() > 0 && state.agentContent.String() == content
+		fallback := state.emit
+		state.mu.Unlock()
+		if exactDuplicate {
+			state.mu.Lock()
 			state.emitted = true
+			state.runEmitted = true
+			state.mu.Unlock()
 			return true
 		}
 		if ok && emit != nil {
 			emit(content)
+			state.mu.Lock()
 			if content != "" {
 				state.emitted = true
+				state.runEmitted = true
 			}
+			state.mu.Unlock()
 			return true
 		}
-		if state.emit != nil {
-			state.emit(content, "")
+		if fallback != nil {
+			fallback(content, "")
+			state.mu.Lock()
 			if content != "" {
 				state.emitted = true
+				state.runEmitted = true
 			}
+			state.mu.Unlock()
 			return true
 		}
 		return false
@@ -369,13 +419,20 @@ func HasDeferredAgentMessageSink(ctx context.Context) bool {
 // FinalizeAgentMessage flushes the invocation-scoped Agent message emitter.
 func FinalizeAgentMessage(ctx context.Context) {
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
-	if !ok || state == nil || state.finalize == nil {
+	if !ok || state == nil {
 		return
 	}
 	state.mu.Lock()
-	defer state.mu.Unlock()
-	if state.finalize() {
+	finalize := state.finalize
+	state.mu.Unlock()
+	if finalize == nil {
+		return
+	}
+	if finalize() {
+		state.mu.Lock()
 		state.emitted = true
+		state.runEmitted = true
+		state.mu.Unlock()
 	}
 }
 
@@ -391,13 +448,16 @@ func ResetAgentMessageEmission(ctx context.Context) {
 		return
 	}
 	state.mu.Lock()
-	defer state.mu.Unlock()
-	if state.reset != nil {
-		state.reset()
+	reset := state.reset
+	state.mu.Unlock()
+	if reset != nil {
+		reset()
 	}
+	state.mu.Lock()
 	state.emitted = false
 	state.suppressed = false
 	state.agentContent.Reset()
+	state.mu.Unlock()
 }
 
 // GetStateFromContext extracts a typed state attached via WithState.

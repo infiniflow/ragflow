@@ -19,6 +19,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -35,6 +36,7 @@ import (
 )
 
 const maxSubAgentDepth = 8
+const defaultAgentDeferredTimeout = 10 * time.Minute
 
 // agentPatternless matches `<model>@<provider>` and
 // `<model>@<instance>@<provider>` (the trailing `@<provider>` is
@@ -715,9 +717,19 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // compile-time canvas decision carried through context, not a DSL parameter.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferAgentToMessage {
+		// Preserve the Agent-class duration installed by the node wrapper, then
+		// start a fresh deadline when Message opens the lazy stream.
+		timeout := defaultAgentDeferredTimeout
+		if deadline, ok := ctx.Deadline(); ok {
+			if remaining := time.Until(deadline); remaining > 0 {
+				timeout = remaining
+			}
+		}
 		deferred := &runtime.DeferredStream{
 			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
-				return c.invokeNow(runtime.WithAgentDeltaSink(openCtx, sink), inputs)
+				agentCtx, cancel := context.WithTimeout(openCtx, timeout)
+				defer cancel()
+				return c.invokeNow(runtime.WithAgentDeltaSink(agentCtx, sink), inputs)
 			},
 		}
 		return map[string]any{"content": deferred}, nil

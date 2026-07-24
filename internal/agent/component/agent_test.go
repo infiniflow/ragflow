@@ -170,6 +170,30 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 	}
 }
 
+func TestAgent_DeferredStreamAppliesFreshTimeout(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("deferred Agent runner context has no deadline")
+		}
+		return &schema.Message{Role: schema.Assistant, Content: "answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	out, err := NewAgentComponent(AgentParam{ModelID: "stub"}).Invoke(ctx, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+	if _, err := deferred.Open(context.Background(), func(string, string) {}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+}
+
 func TestAgent_DeferredStreamDoesNotAppendFinalAnswerAfterDeltas(t *testing.T) {
 	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
 		runtime.EmitAgentMessage(ctx, "lazy ", "")

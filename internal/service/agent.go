@@ -1422,8 +1422,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
 		runtime.FinalizeAgentMessage(ctx2)
-		messageEventsEmitted := runtime.AgentMessageEventsEmitted(ctx2)
-		messageEventsSuppressed := runtime.AgentMessageEventsSuppressed(ctx2)
+		messageEventsEmitted := runtime.AgentMessageEventsEmittedRun(ctx2)
+		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
 		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
 
 		if err != nil {

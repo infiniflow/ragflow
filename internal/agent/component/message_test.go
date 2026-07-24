@@ -352,6 +352,36 @@ func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 	}
 }
 
+func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-final", "task-deferred-final")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("raw answer", "")
+			return map[string]any{"content": "grounded answer [ID:1]"}, nil
+		},
+	})
+	ctx := withStateForTest(context.Background(), state)
+	var streamed []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		streamed = append(streamed, content)
+	})
+
+	out, err := c.Invoke(ctx, map[string]any{"text": "{{agent_0@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "grounded answer [ID:1]" {
+		t.Fatalf("content: got %q, want completed Agent content", got)
+	}
+	if got, _ := state.GetVar("agent_0@content"); got != "grounded answer [ID:1]" {
+		t.Fatalf("state content: got %v, want completed Agent content", got)
+	}
+	if got := strings.Join(streamed, ""); got != "raw answer" {
+		t.Fatalf("streamed events: got %q, want live delta", got)
+	}
+}
+
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")

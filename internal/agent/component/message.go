@@ -194,11 +194,6 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	if streamErr != nil {
 		return nil, streamErr
 	}
-	if !streamed {
-		// Message renders values for display, so keep Python's tolerant behavior:
-		// missing references become empty strings and structured values use JSON.
-		resolved = runtime.ResolveTemplateForDisplay(text, state)
-	}
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
@@ -407,8 +402,10 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %w", err)
 		}
 		finalText := visible.String()
-		if finalText == "" && result != nil {
-			finalText, _ = result["content"].(string)
+		if result != nil {
+			if completedContent, ok := result["content"].(string); ok {
+				finalText = completedContent
+			}
 		}
 		if strings.Contains(ref, "@") {
 			parts := strings.SplitN(ref, "@", 2)
