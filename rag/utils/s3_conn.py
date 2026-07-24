@@ -23,6 +23,8 @@ from io import BytesIO
 from common.decorator import singleton
 from common import settings
 
+MAX_RETRIES = 3
+
 
 @singleton
 class RAGFlowS3:
@@ -133,18 +135,18 @@ class RAGFlowS3:
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 if not self.bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
                     logging.info(f"create bucket {bucket} ********")
-                r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
-
-                return r
+                return self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
 
     @use_prefix_path
     @use_default_bucket
@@ -157,16 +159,18 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
-                object_data = r["Body"].read()
-                return object_data
-            except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                return r["Body"].read()
+            except Exception as e:
+                if isinstance(e, ClientError) and e.response["Error"]["Code"] == "404":
+                    return None
+                logging.exception(f"fail get {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
-        return None
+                time.sleep(2 ** attempt)
 
     @use_prefix_path
     @use_default_bucket
