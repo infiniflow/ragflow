@@ -755,7 +755,7 @@ async def bulk_delete_chats():
 async def create_session(chat_id):
     """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, dia = DialogService.get_by_id(chat_id)
