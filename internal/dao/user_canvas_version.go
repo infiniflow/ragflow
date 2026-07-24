@@ -99,6 +99,50 @@ func (dao *UserCanvasVersionDAO) GetLatest(canvasID string) (*entity.UserCanvasV
 	return &v, nil
 }
 
+// GetLatestReleased returns the most recently updated released version of
+// canvasID, or ErrUserCanvasVersionNotFound when nothing was ever published.
+// Mirrors the released-version lookup in Python's get_agent handler.
+func (dao *UserCanvasVersionDAO) GetLatestReleased(canvasID string) (*entity.UserCanvasVersion, error) {
+	var v entity.UserCanvasVersion
+	err := DB.Where("user_canvas_id = ? AND `release` = ?", canvasID, true).
+		Order("update_time DESC").
+		First(&v).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserCanvasVersionNotFound
+		}
+		return nil, err
+	}
+	return &v, nil
+}
+
+// GetLatestReleaseTimes returns MAX(create_time) of released versions per
+// canvas for the given canvas IDs. Mirrors the release_time aggregation in
+// Python's UserCanvasService.get_list.
+func (dao *UserCanvasVersionDAO) GetLatestReleaseTimes(canvasIDs []string) (map[string]int64, error) {
+	result := make(map[string]int64, len(canvasIDs))
+	if len(canvasIDs) == 0 {
+		return result, nil
+	}
+	type row struct {
+		UserCanvasID string
+		ReleaseTime  int64
+	}
+	var rows []row
+	err := DB.Model(&entity.UserCanvasVersion{}).
+		Select("user_canvas_id, MAX(create_time) AS release_time").
+		Where("user_canvas_id IN ? AND `release` = ?", canvasIDs, true).
+		Group("user_canvas_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		result[r.UserCanvasID] = r.ReleaseTime
+	}
+	return result, nil
+}
+
 // Delete removes a single version by id. No-op when the row is absent.
 func (dao *UserCanvasVersionDAO) Delete(id string) error {
 	return DB.Where("id = ?", id).Delete(&entity.UserCanvasVersion{}).Error
