@@ -1,6 +1,85 @@
 {
     "factory_llm_infos": [
         {
+            "name": "aimlapi.com",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "rank": "1",
+            "url": "https://api.aimlapi.com/v1",
+            "llm": [
+                {
+                    "llm_name": "openai/gpt-4o",
+                    "tags": "LLM,CHAT,128k,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": [
+                        "chat",
+                        "image2text"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "openai/gpt-4o-mini",
+                    "tags": "LLM,CHAT,128k,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": [
+                        "chat",
+                        "image2text"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "anthropic/claude-opus-4-8",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "anthropic/claude-haiku-4.5",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "google/gemini-2.5-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "google/gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek/deepseek-chat",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "openai/text-embedding-3-small",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "openai/text-embedding-3-large",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                }
+            ]
+        },
+        {
             "name": "OpenAI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
