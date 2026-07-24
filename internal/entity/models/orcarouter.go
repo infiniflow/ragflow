@@ -130,7 +130,7 @@ func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("no message in response")
 	}
 
-	// baichuan not support think
+
 	emptyReason := ""
 	chatResponse := &ChatResponse{
 		Answer:        &content,
