@@ -53,7 +53,9 @@ func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream
 	return deepdocpdf.NewEngine(data)
 }
 
-// cropImageChunks crops image/table chunks in place. Each spanned page is
+// cropImageChunks crops image/table chunks and renders text previews (for
+// text chunks that carry PDF positions, mirroring Python
+// restore_pdf_text_previews). Each spanned page is
 // rendered at most once. Chunks arrive in document order, so we keep only a
 // sliding window of page images: once we advance past a chunk whose minimum
 // page is P, no later chunk references a page < P, and we evict those entries
@@ -139,9 +141,14 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	return out
 }
 
+// needsCrop reports whether a chunk should be cropped to a page-region
+// preview from its PDF positions. Image/table chunks get their media region
+// cropped; text chunks with positions get a rendered preview of the text
+// region (Python restore_pdf_text_previews). A pre-existing Image is never
+// re-cropped — cropImageChunks honors that separately.
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch ck.CKType {
-	case "image", "table":
+	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:
 		return false

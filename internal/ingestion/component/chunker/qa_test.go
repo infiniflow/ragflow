@@ -39,7 +39,7 @@ func TestQAChunker_Registered(t *testing.T) {
 }
 
 func TestQAChunker_DelimiterTab(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 }
 
 func TestQAChunker_DelimiterComma(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestQAChunker_HTMLTable(t *testing.T) {
 }
 
 func TestQAChunker_RmQAPrefix(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestQAChunker_Empty(t *testing.T) {
 }
 
 func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +193,8 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	}
 }
 
-func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,8 +212,10 @@ func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: A language model is useful\tAnswer: Q How does it work" {
-		t.Fatalf("space-only separator should not strip prefix: %q", cww)
+	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
+	// a leading "A"/"Q" followed by a space is stripped (diff Chunker-2.12).
+	if cww != "Question: language model is useful\tAnswer: How does it work" {
+		t.Fatalf("space-separator prefix not stripped: %q", cww)
 	}
 }
 

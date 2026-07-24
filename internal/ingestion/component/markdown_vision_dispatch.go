@@ -78,7 +78,10 @@ func maybeDispatchMarkdownVision(
 	var images []imgItem
 	for i, item := range dispatched.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" {
+		// Diff 2.5: Python enhances both image and table items
+		// (parser/utils.py:181 checks {"image","table"}); only items
+		// carrying an image are sent to the VLM (utils.py:183).
+		if kd != "image" && kd != "table" {
 			continue
 		}
 		img, _ := item["image"].(string)
