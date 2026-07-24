@@ -98,7 +98,10 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 	if err != nil {
 		return "", err
 	}
-	files := h.fileDAO.Query(ctx, dao.DB, kb.Name, "", kb.TenantID)
+	files, err := h.fileDAO.Query(ctx, dao.DB, kb.Name, "", kb.TenantID)
+	if err != nil {
+		return "", err
+	}
 	for _, f := range files {
 		if f.SourceType == string(entity.FileSourceKnowledgebase) && f.Type == "folder" && f.TenantID == kb.TenantID {
 			return f.ID, nil

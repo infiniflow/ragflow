@@ -164,7 +164,11 @@ func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowled
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
 func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, parentID string) (*entity.File, error) {
-	for _, f := range s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID) {
+	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range existingFolders {
 		if f.TenantID == tenantID {
 			return f, nil
 		}
