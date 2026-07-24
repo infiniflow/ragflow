@@ -22,7 +22,7 @@ import (
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -113,7 +113,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("you don't own the dataset")
+			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 		}
 		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}

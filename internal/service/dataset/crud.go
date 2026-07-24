@@ -23,10 +23,10 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
+		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
 	}
 	if len(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(tenantID)
