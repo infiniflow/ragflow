@@ -187,6 +187,78 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 	}
 }
 
+func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-owner",
+		UserID:   "owner-1",
+		TenantID: "tenant-1",
+		Role:     "owner",
+	}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	title := "Agent"
+	avatar := "avatar.png"
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "agent-1",
+		UserID:         "owner-1",
+		Title:          &title,
+		Avatar:         &avatar,
+		CanvasCategory: "agent_canvas",
+		DSL: entity.JSONMap{
+			"components": map[string]any{
+				"begin": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Begin",
+						"params": map[string]any{
+							"mode":     "conversational",
+							"prologue": "Welcome from the agent",
+							"inputs": map[string]any{
+								"topic": map[string]any{"type": "line", "name": "Topic"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+
+	svc := NewBotService(nil, nil)
+	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
+		context.Background(), "owner-1", "agent-1")
+	if err != nil {
+		t.Fatalf("AgentbotInputs: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %d, want %d", code, common.CodeSuccess)
+	}
+	if gotTitle != title || gotAvatar != avatar {
+		t.Fatalf("title/avatar = %q/%q, want %q/%q", gotTitle, gotAvatar, title, avatar)
+	}
+	if prologue != "Welcome from the agent" {
+		t.Errorf("prologue = %q, want Welcome from the agent", prologue)
+	}
+	if mode != "conversational" {
+		t.Errorf("mode = %q, want conversational", mode)
+	}
+	if _, ok := inputs["topic"].(map[string]any); !ok {
+		t.Errorf("inputs = %#v, want topic input", inputs)
+	}
+}
+
 // TestWriteChatbotRunEvent_UserInputsEvent guards PR #14589: the
 // SSE envelope must carry the canvas event type so the front-end
 // can distinguish interactive "user_inputs" / "workflow_finished"
@@ -336,7 +408,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// The persisted session must hold exactly the prologue turn —
 	// no empty user message may be written.
 	ctx := t.Context()
-	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, got[0].SessionID, "dlg-1")
+	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1")
 	if derr != nil || row == nil {
 		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
 	}
@@ -401,7 +473,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		Message:  seed,
 	}
 	ctx := t.Context()
-	if err := dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -414,7 +486,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p1", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -453,7 +525,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 
 	ctx := t.Context()
 	sess := &entity.API4Conversation{ID: "sess-p2", DialogID: "dlg-p1", UserID: "tenant-1"}
-	if err := dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -462,7 +534,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p2", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -499,7 +571,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 
 	ctx := t.Context()
 	sess := &entity.API4Conversation{ID: "sess-p3", DialogID: "dlg-p1", UserID: "tenant-1"}
-	if err = dao.NewAPI4ConversationDAO().Create(ctx, sess); err != nil {
+	if err = dao.NewAPI4ConversationDAO().Create(ctx, dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
 
@@ -518,7 +590,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 	}
 	wg.Wait()
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, "sess-p3", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1")
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}

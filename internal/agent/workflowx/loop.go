@@ -584,10 +584,7 @@ func runLoopStream[T any](
 	// size the slice: maxIterations is always set (default or
 	// user-supplied), so a bound of maxIterations - snap.startIteration + 1
 	// is safe and tight.
-	remaining := options.maxIterations - snap.startIteration + 1
-	if remaining < 1 {
-		remaining = 1
-	}
+	remaining := max(options.maxIterations-snap.startIteration+1, 1)
 
 	streamMode := snap.streamMode
 	streamReaders := make([]*schema.StreamReader[T], 0, remaining)

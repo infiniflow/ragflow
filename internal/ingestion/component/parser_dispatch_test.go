@@ -849,3 +849,83 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 	}
 	return buf.Bytes()
 }
+
+// TestPythonFamilyName_FileTypeConstants pins the contract that every
+// utility.FileType semantic constant resolves to the setups key used by
+// defaultSetups / AllowedOutputFormat. Before the fix, FileTypeVISUAL mapped
+// to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
+// no case at all (returning ""), so output_format validation and
+// configureParserFromSetups were silently skipped for image/audio files.
+func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
+	cases := []struct {
+		ft   utility.FileType
+		want string
+	}{
+		{utility.FileTypePDF, "pdf"},
+		{utility.FileTypeDOC, "doc"},
+		{utility.FileTypeDOCX, "docx"},
+		{utility.FileTypePPT, "slides"},
+		{utility.FileTypePPTX, "slides"},
+		{utility.FileTypeXLS, "spreadsheet"},
+		{utility.FileTypeXLSX, "spreadsheet"},
+		{utility.FileTypeCSV, "spreadsheet"},
+		{utility.FileTypeHTML, "html"},
+		{utility.FileTypeMarkdown, "markdown"},
+		{utility.FileTypeTXT, "text&code"},
+		{utility.FileTypeEPUB, "epub"},
+		{utility.FileTypeJSON, "json"},
+		{utility.FileTypeVISUAL, "image"},
+		{utility.FileTypeAURAL, "audio"},
+		{utility.FileTypeVIDEO, "video"},
+		{utility.FileTypeEMAIL, "email"},
+	}
+	for _, c := range cases {
+		got := pythonFamilyName(string(c.ft))
+		if got != c.want {
+			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
+		}
+		// Every mapped family must have a matching setups key and
+		// allowed_output_format entry, otherwise output_format validation
+		// is silently skipped.
+		if _, ok := defaultSetups()[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
+		}
+		allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+		if _, ok := allowed[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no allowed_output_format entry", c.ft, got)
+		}
+	}
+}
+
+// TestConfigureParserFromSetups_VisualAural pins that image and audio
+// files pick up their setup (parse_method / lang / vlm) via the family
+// mapping. Before the fix, configureParserFromSetups silently skipped
+// configuration because resolveParserFamily returned "picture" / "aural",
+// neither of which existed in defaultSetups.
+func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+	setups := defaultSetups()
+
+	t.Run("visual resolves to image setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeVISUAL, setups)
+		want := map[string]any(setups["image"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeVISUAL")
+		}
+		if v, _ := got.setup["parse_method"].(string); v != want["parse_method"] {
+			t.Errorf("FileTypeVISUAL parse_method = %v, want %v", v, want["parse_method"])
+		}
+	})
+
+	t.Run("aural resolves to audio setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
+		want := map[string]any(setups["audio"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
+		}
+		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
+			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
+		}
+	})
+}

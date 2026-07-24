@@ -721,10 +721,3 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 	figs := result.Figures()
 	t.Logf("figures: %d", len(figs))
 }
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}
