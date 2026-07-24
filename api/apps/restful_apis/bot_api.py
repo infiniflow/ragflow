@@ -32,7 +32,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from common.metadata_utils import apply_meta_data_filter
+from common.temporal_retrieval import merge_temporal_reference_fields, resolve_temporal_retrieval_context
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
@@ -359,6 +359,7 @@ async def retrieval_test_embedded(tenant_id=None):
         _question = question
 
         meta_data_filter = {}
+        temporal_retrieval = {}
         chat_mdl = None
         if req.get("search_id", ""):
             nonlocal search_config
@@ -366,6 +367,7 @@ async def retrieval_test_embedded(tenant_id=None):
             if detail:
                 search_config = detail.get("search_config", {})
                 meta_data_filter = search_config.get("meta_data_filter", {})
+                temporal_retrieval = search_config.get("temporal_retrieval") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:
@@ -384,20 +386,18 @@ async def retrieval_test_embedded(tenant_id=None):
                 rerank_id = search_config.get("rerank_id", "")
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
+            temporal_retrieval = req.get("temporal_retrieval")
+            if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+                return get_error_data_result(message="`temporal_retrieval` should be an object.")
+            from common.temporal_validation import validate_temporal_retrieval_config
+
+            temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+            if temporal_err:
+                return get_error_data_result(message=temporal_err)
+            temporal_retrieval = temporal_retrieval or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
-
-        if meta_data_filter:
-            local_doc_ids = await apply_meta_data_filter(
-                meta_data_filter,
-                None,
-                _question,
-                chat_mdl,
-                local_doc_ids,
-                kb_ids=kb_ids,
-                metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-            )
 
         tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for kb_id in kb_ids:
@@ -414,6 +414,18 @@ async def retrieval_test_embedded(tenant_id=None):
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
+        temporal_ctx = await resolve_temporal_retrieval_context(
+            raw_query=question,
+            refined_query=_question,
+            retrieval_query=_question,
+            meta_data_filter=meta_data_filter,
+            temporal_retrieval=temporal_retrieval,
+            kb_ids=kb_ids,
+            chat_mdl=chat_mdl,
+            base_doc_ids=local_doc_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+        local_doc_ids = temporal_ctx.doc_ids
         embd_model_config = await thread_pool_exec(resolve_model_config, kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
@@ -442,6 +454,7 @@ async def retrieval_test_embedded(tenant_id=None):
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
+            temporal_rank_policy=temporal_ctx.temporal_rank_policy,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
@@ -453,6 +466,7 @@ async def retrieval_test_embedded(tenant_id=None):
             c.pop("vector", None)
 
         include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
+        metadata_fields = merge_temporal_reference_fields(include_metadata, metadata_fields, temporal_retrieval)
         if include_metadata:
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 

@@ -27,6 +27,7 @@ from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.tag_feature_utils import parse_tag_features
+from common.temporal_utils import freshness_score, normalized_scores, parse_temporal_value, temporal_sort_score
 from common import settings
 
 from common.misc_utils import thread_pool_exec
@@ -522,7 +523,7 @@ class Dealer:
         return self.qryr.hybrid_similarity(ans_embd, ins_embd, rag_tokenizer.tokenize(ans).split(), rag_tokenizer.tokenize(inst).split())
 
     @staticmethod
-    def _rerank_window(page_size: int, top: int = 0) -> int:
+    def _rerank_window(page_size: int, top: int = 0, temporal_min_candidates: int = 0) -> int:
         """Candidate-window size shared by retrieval's block fetch and slice.
 
         ``retrieval`` reuses this value BOTH as the backend block size and as
@@ -539,12 +540,106 @@ class Dealer:
         by ``top`` when given (i.e. when an external reranker is active), and is
         always rounded UP to a whole number of pages to preserve the invariant.
         """
+        target = max(64, int(temporal_min_candidates or 0))
         if page_size <= 1:
-            return min(30, top) if top > 0 else 30
-        window = math.ceil(64 / page_size) * page_size
+            window = max(30, int(temporal_min_candidates or 0))
+            return min(window, top) if top > 0 else window
+        window = math.ceil(target / page_size) * page_size
         if top > 0:
             window = min(window, math.ceil(top / page_size) * page_size)
         return window
+
+    async def _temporal_sort_scores(self, sim_np, sres, temporal_rank_policy):
+        """Return freshness-aware scores for a retrieved candidate block.
+
+        The method hydrates metadata only for documents already returned by the
+        baseline retriever, then blends normalized relevance with a temporal
+        score. If metadata loading fails, the original similarity array is
+        returned so retrieval remains available without temporal reranking.
+        """
+        if not temporal_rank_policy or not getattr(temporal_rank_policy, "enabled", False):
+            return sim_np
+
+        temporal_field = getattr(temporal_rank_policy, "temporal_field", "")
+        if not temporal_field:
+            return sim_np
+
+        doc_ids_by_kb: dict[str, set[str]] = {}
+        candidate_doc_keys: list[tuple[str | None, str | None]] = []
+        for cid in sres.ids:
+            field = (sres.field or {}).get(cid, {})
+            doc_id = field.get("doc_id")
+            kb_id = field.get("kb_id")
+            if isinstance(kb_id, list):
+                kb_id = kb_id[0] if kb_id else None
+            candidate_doc_keys.append((kb_id, doc_id))
+            if kb_id and doc_id:
+                doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+        if not doc_ids_by_kb:
+            return sim_np
+
+        def _load_metadata():
+            """Load candidate document metadata grouped by dataset."""
+            from api.db.services.doc_metadata_service import DocMetadataService
+
+            meta = {}
+            for kb_id, doc_ids in doc_ids_by_kb.items():
+                for doc_id, doc_meta in DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id).items():
+                    meta[(kb_id, doc_id)] = doc_meta
+            return meta
+
+        try:
+            meta_by_doc = await thread_pool_exec(_load_metadata)
+        except Exception as exc:
+            logging.warning(
+                "Temporal metadata load failed; falling back to baseline ranking: field=%s kb_count=%d error=%s",
+                temporal_field,
+                len(doc_ids_by_kb),
+                exc,
+                exc_info=True,
+            )
+            return sim_np
+        normalized_base = normalized_scores([float(x) for x in sim_np])
+        sort_scores = []
+        boosted = 0
+        for idx, base_score in enumerate(normalized_base):
+            kb_id, doc_id = candidate_doc_keys[idx]
+            meta = meta_by_doc.get((kb_id, doc_id), {})
+            parsed = parse_temporal_value(meta.get(temporal_field)) if isinstance(meta, dict) else None
+            fresh = freshness_score(
+                parsed,
+                None,
+                getattr(temporal_rank_policy, "half_life_days", 14.0),
+                getattr(temporal_rank_policy, "freshness_offset_days", 0.0),
+                getattr(temporal_rank_policy, "future_date_policy", "include_without_boost"),
+            )
+            if fresh > 0:
+                boosted += 1
+            sort_scores.append(
+                temporal_sort_score(
+                    base_score,
+                    fresh,
+                    getattr(temporal_rank_policy, "freshness_weight", 0.15),
+                )
+            )
+
+        sort_np = np.array(sort_scores, dtype=np.float64)
+        if getattr(temporal_rank_policy, "shadow_mode", False):
+            logging.info(
+                "Temporal retrieval shadow mode: field=%s candidates=%d boosted=%d",
+                temporal_field,
+                len(sort_scores),
+                boosted,
+            )
+            return sim_np
+        logging.debug(
+            "Temporal retrieval ranking active: field=%s candidates=%d boosted=%d",
+            temporal_field,
+            len(sort_scores),
+            boosted,
+        )
+        return sort_np
 
     async def retrieval(
         self,
@@ -563,6 +658,7 @@ class Dealer:
         highlight=False,
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
+        temporal_rank_policy=None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -573,7 +669,9 @@ class Dealer:
         # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
         # see _rerank_window. When an external reranker is active the pool is
         # also bounded by top.
-        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
+        temporal_active = bool(temporal_rank_policy and getattr(temporal_rank_policy, "enabled", False))
+        temporal_min_candidates = int(getattr(temporal_rank_policy, "min_candidates", 128) if temporal_active else 0)
+        RERANK_LIMIT = self._rerank_window(page_size, top if (rerank_mdl or temporal_active) else 0, temporal_min_candidates)
         page = max(page, 1)
         global_offset = (page - 1) * page_size
         req = {
@@ -658,8 +756,10 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
+        sort_sim_np = await self._temporal_sort_scores(sim_np, sres, temporal_rank_policy)
+
         # Use stable sort for deterministic ordering when scores are tied
-        sorted_idx = np.argsort(sim_np * -1, kind="stable")
+        sorted_idx = np.argsort(sort_sim_np * -1, kind="stable")
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold

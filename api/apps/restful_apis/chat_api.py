@@ -45,6 +45,7 @@ from api.utils.api_utils import (
 )
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
+from common.temporal_validation import merge_temporal_retrieval_config, validate_temporal_retrieval_config
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
@@ -153,6 +154,10 @@ def _validate_name(name, *, required=True):
     return name, None
 
 
+def _validate_temporal_retrieval(config):
+    return validate_temporal_retrieval_config(config)
+
+
 def _build_session_response(conv: dict) -> dict:
     conv = dict(conv)
     conv["chat_id"] = conv.pop("dialog_id", conv.get("chat_id"))
@@ -178,6 +183,7 @@ def _build_default_completion_dialog():
         similarity_threshold=0.1,
         vector_similarity_weight=0.3,
         meta_data_filter=None,
+        temporal_retrieval={},
     )
 
 
@@ -397,6 +403,10 @@ async def create():
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
+        if "temporal_retrieval" in req:
+            err = _validate_temporal_retrieval(req.get("temporal_retrieval"))
+            if err:
+                return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.tenant_llm_id)
@@ -409,6 +419,7 @@ async def create():
         req.setdefault("rerank_id", "")
         req.setdefault("similarity_threshold", 0.1)
         req.setdefault("vector_similarity_weight", 0.3)
+        req.setdefault("temporal_retrieval", {})
         req.setdefault("icon", "")
         _apply_prompt_defaults(req)
         # err = _validate_prompt_config(req["prompt_config"])
@@ -568,6 +579,10 @@ async def update_chat(chat_id):
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
+        if "temporal_retrieval" in req:
+            err = _validate_temporal_retrieval(req.get("temporal_retrieval"))
+            if err:
+                return get_data_error_result(message=err)
 
         # prompt_config = req.get("prompt_config", {})
         # if not prompt_config:
@@ -656,6 +671,15 @@ async def patch_chat(chat_id):
             llm_setting = deepcopy(current_chat.get("llm_setting", {}))
             llm_setting.update(req["llm_setting"])
             req["llm_setting"] = llm_setting
+        if "temporal_retrieval" in req:
+            temporal_retrieval = merge_temporal_retrieval_config(
+                current_chat.get("temporal_retrieval", {}),
+                req.get("temporal_retrieval"),
+            )
+            err = _validate_temporal_retrieval(temporal_retrieval)
+            if err:
+                return get_data_error_result(message=err)
+            req["temporal_retrieval"] = temporal_retrieval
 
         # if "prompt_config" in req or "kb_ids" in req:
         #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))

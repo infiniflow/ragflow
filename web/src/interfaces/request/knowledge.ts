@@ -71,3 +71,8 @@ export interface IUpdateArtifactPageRequestParams {
   slug: string;
   body: IUpdateArtifactPageRequestBody;
 }
+
+export interface IGetTemporalMetadataProfileRequest {
+  kb_ids: string;
+  temporal_field: string;
+}

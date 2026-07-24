@@ -689,6 +689,84 @@ def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
     return True, DocMetadataService.get_flatted_meta_by_kbs(dataset_ids)
 
 
+def get_metadata_keys(dataset_ids: list[str], tenant_id: str):
+    """
+    Get visible metadata keys for datasets.
+    """
+    if not dataset_ids:
+        return False, "Lack of dataset_ids"
+
+    for dataset_id in dataset_ids:
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+            return False, f"No authorization for dataset '{dataset_id}'"
+
+    from api.db.services.doc_metadata_service import DocMetadataService
+
+    return True, DocMetadataService.get_visible_metadata_keys(dataset_ids)
+
+
+def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_id: str):
+    """Profile a selected metadata field for temporal retrieval.
+
+    Args:
+        dataset_ids: Knowledge base ids to sample, after caller-side parsing.
+        temporal_field: User-selected metadata key to evaluate as a date field.
+        tenant_id: Current tenant used for access checks.
+
+    Returns:
+        ``(True, profile_dict)`` on success or ``(False, message)`` on
+        validation/access failure. Large datasets are bounded by
+        ``MAX_TEMPORAL_PROFILE_SAMPLE`` per dataset so profiling does not load
+        all document metadata inline.
+    """
+    if not dataset_ids:
+        return False, "Lack of dataset_ids"
+    if not temporal_field:
+        return False, "Lack of temporal_field"
+
+    for dataset_id in dataset_ids:
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+            return False, f"No authorization for dataset '{dataset_id}'"
+
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from api.db.services.document_service import DocumentService
+    from common.temporal_utils import profile_metadata_documents
+    from common.temporal_validation import MAX_TEMPORAL_PROFILE_SAMPLE
+    import logging
+
+    metadata_by_doc = {}
+    sampled_total = 0
+    for dataset_id in dataset_ids:
+        sample_ids = [
+            row.id
+            for row in DocumentService.model.select(DocumentService.model.id)
+            .where(DocumentService.model.kb_id == dataset_id)
+            .limit(MAX_TEMPORAL_PROFILE_SAMPLE)
+        ]
+        sampled_total += len(sample_ids)
+        if sample_ids:
+            metadata_by_doc.update(DocMetadataService.get_metadata_for_documents(sample_ids, dataset_id))
+
+    logging.debug(
+        "Temporal field profiling sampled %d documents across %d dataset(s) for field=%s",
+        sampled_total,
+        len(dataset_ids),
+        temporal_field,
+    )
+    profile = profile_metadata_documents(metadata_by_doc, temporal_field)
+    profile["sampled_documents"] = sampled_total
+    logging.info(
+        "Temporal field profile generated: dataset_count=%d field=%s sampled_documents=%d parsed_percentage=%s detected_format=%s supports_hard_filter=%s",
+        len(dataset_ids),
+        temporal_field,
+        sampled_total,
+        profile.get("parsed_percentage"),
+        profile.get("detected_format"),
+        profile.get("supports_hard_filter"),
+    )
+    return True, profile
+
+
 def get_auto_metadata(dataset_id: str, tenant_id: str):
     """
     Get auto-metadata configuration for a dataset.
@@ -968,7 +1046,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
-    from common.metadata_utils import apply_meta_data_filter
+    from common.temporal_retrieval import resolve_temporal_retrieval_context
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
@@ -1013,6 +1091,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
             return False, "Invalid search_id"
         search_config = search_detail.get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
+        temporal_retrieval = search_config.get("temporal_retrieval") or {}
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
         top = max(1, min(int(search_config.get("top_k", top)), 2048))
@@ -1036,20 +1115,10 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
     else:
         meta_data_filter = req.get("meta_data_filter") or {}
+        temporal_retrieval = req.get("temporal_retrieval") or {}
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
-
-    if meta_data_filter:
-        local_doc_ids = await apply_meta_data_filter(
-            meta_data_filter,
-            None,
-            question,
-            chat_mdl,
-            local_doc_ids,
-            kb_ids=[dataset_id],
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs([dataset_id]),
-        )
 
     tenant_ids = []
     tenants = UserTenantService.query(user_id=tenant_id)
@@ -1063,6 +1132,18 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
+    temporal_ctx = await resolve_temporal_retrieval_context(
+        raw_query=question,
+        refined_query=_question,
+        retrieval_query=_question,
+        meta_data_filter=meta_data_filter,
+        temporal_retrieval=temporal_retrieval,
+        kb_ids=[dataset_id],
+        chat_mdl=chat_mdl,
+        base_doc_ids=local_doc_ids,
+        metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs([dataset_id]),
+    )
+    local_doc_ids = temporal_ctx.doc_ids
     if kb.embd_id:
         embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
@@ -1095,6 +1176,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=search_id,
+        temporal_rank_policy=temporal_ctx.temporal_rank_policy,
     )
 
     if use_kg:
@@ -1351,7 +1433,7 @@ async def search_datasets(tenant_id: str, req: dict):
     from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
-    from common.metadata_utils import apply_meta_data_filter
+    from common.temporal_retrieval import resolve_temporal_retrieval_context
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
@@ -1402,6 +1484,7 @@ async def search_datasets(tenant_id: str, req: dict):
             return False, "Invalid search_id"
         search_config = search_detail.get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
+        temporal_retrieval = search_config.get("temporal_retrieval") or {}
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
         top = max(1, min(int(search_config.get("top_k", top)), 2048))
@@ -1425,21 +1508,11 @@ async def search_datasets(tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
     else:
         meta_data_filter = req.get("meta_data_filter") or {}
+        temporal_retrieval = req.get("temporal_retrieval") or {}
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
-    if meta_data_filter:
-        logging.debug("Metadata filter applied: %s, question length: %d, chat_mdl=%s", meta_data_filter, len(question), "None" if chat_mdl is None else "configured")
-        local_doc_ids = await apply_meta_data_filter(
-            meta_data_filter,
-            None,
-            question,
-            chat_mdl,
-            local_doc_ids,
-            kb_ids=kb_ids,
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-        )
 
     tenant_ids = []
     tenants = UserTenantService.query(user_id=tenant_id)
@@ -1454,6 +1527,18 @@ async def search_datasets(tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
+    temporal_ctx = await resolve_temporal_retrieval_context(
+        raw_query=question,
+        refined_query=_question,
+        retrieval_query=_question,
+        meta_data_filter=meta_data_filter,
+        temporal_retrieval=temporal_retrieval,
+        kb_ids=kb_ids,
+        chat_mdl=chat_mdl,
+        base_doc_ids=local_doc_ids,
+        metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+    )
+    local_doc_ids = temporal_ctx.doc_ids
 
     embd_mdl = None
     if kb.embd_id:
@@ -1488,6 +1573,7 @@ async def search_datasets(tenant_id: str, req: dict):
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=search_id,
+        temporal_rank_policy=temporal_ctx.temporal_rank_policy,
     )
 
     if use_kg:

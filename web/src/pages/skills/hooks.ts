@@ -1067,7 +1067,7 @@ export const useSkills = () => {
             // eslint-disable-next-line no-console
             console.log(`[deleteSkill] Successfully deleted index: ${indexId}`);
           } catch (indexError: any) {
-            // eslint-disable-next-line no-console
+             
             console.warn(
               `[deleteSkill] Error deleting skill index for ${indexId}:`,
               indexError?.message || indexError,
@@ -1116,7 +1116,7 @@ export const useSkills = () => {
         return false;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [t, fetchSkills, ensureSkillSpaceFolder, skills],
   );
 

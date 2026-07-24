@@ -36,6 +36,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService, validate
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
+from common.temporal_retrieval import merge_temporal_reference_fields, resolve_temporal_retrieval_context
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -650,6 +651,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     prompt_config = dialog.prompt_config
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
+    temporal_retrieval = getattr(dialog, "temporal_retrieval", None) or {}
+    metadata_fields = merge_temporal_reference_fields(include_reference_metadata, metadata_fields, temporal_retrieval)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
@@ -658,6 +661,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+            if temporal_retrieval.get("enabled"):
+                ans["temporal_skipped_reason"] = "sql_path"
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
                 if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
                     logging.warning(
@@ -685,6 +690,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if p["key"] not in kwargs:
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
+    raw_query = questions[-1]
+
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
         questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
@@ -693,16 +700,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if prompt_config.get("cross_languages"):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
-    if dialog.meta_data_filter:
-        attachments = await apply_meta_data_filter(
-            dialog.meta_data_filter,
-            None,
-            questions[-1],
-            chat_mdl,
-            attachments,
-            kb_ids=dialog.kb_ids,
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
-        )
+    temporal_ctx = await resolve_temporal_retrieval_context(
+        raw_query=raw_query,
+        refined_query=questions[-1],
+        retrieval_query=questions[-1],
+        meta_data_filter=dialog.meta_data_filter,
+        temporal_retrieval=temporal_retrieval,
+        kb_ids=dialog.kb_ids,
+        chat_mdl=chat_mdl,
+        base_doc_ids=attachments,
+        metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
+        metadata_filter_func=apply_meta_data_filter,
+    )
+    attachments = temporal_ctx.doc_ids
 
     if prompt_config.get("keyword", False):
         questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
@@ -731,6 +741,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
                     doc_ids=attachments,
+                    temporal_rank_policy=temporal_ctx.temporal_rank_policy,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -770,6 +781,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    temporal_rank_policy=temporal_ctx.temporal_rank_policy,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1669,7 +1681,9 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
     rerank_id = search_config.get("rerank_id", "")
     meta_data_filter = search_config.get("meta_data_filter")
+    temporal_retrieval = search_config.get("temporal_retrieval") or {}
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
+    metadata_fields = merge_temporal_reference_fields(include_reference_metadata, metadata_fields, temporal_retrieval)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     if not kbs:
@@ -1695,16 +1709,19 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
-    if meta_data_filter:
-        doc_ids = await apply_meta_data_filter(
-            meta_data_filter,
-            None,
-            question,
-            chat_mdl,
-            doc_ids,
-            kb_ids=kb_ids,
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-        )
+    temporal_ctx = await resolve_temporal_retrieval_context(
+        raw_query=question,
+        refined_query=question,
+        retrieval_query=question,
+        meta_data_filter=meta_data_filter,
+        temporal_retrieval=temporal_retrieval,
+        kb_ids=kb_ids,
+        chat_mdl=chat_mdl,
+        base_doc_ids=doc_ids,
+        metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        metadata_filter_func=apply_meta_data_filter,
+    )
+    doc_ids = temporal_ctx.doc_ids
 
     vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
     try:
@@ -1735,6 +1752,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        temporal_rank_policy=temporal_ctx.temporal_rank_policy,
     )
     if include_reference_metadata:
         logging.debug(
@@ -1788,6 +1806,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
 async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     meta_data_filter = search_config.get("meta_data_filter", {})
+    temporal_retrieval = search_config.get("temporal_retrieval") or {}
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
     rerank_mdl = None
@@ -1808,16 +1827,19 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_model_config = resolve_model_config(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
-    if meta_data_filter:
-        doc_ids = await apply_meta_data_filter(
-            meta_data_filter,
-            None,
-            question,
-            chat_mdl,
-            doc_ids,
-            kb_ids=kb_ids,
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-        )
+    temporal_ctx = await resolve_temporal_retrieval_context(
+        raw_query=question,
+        refined_query=question,
+        retrieval_query=question,
+        meta_data_filter=meta_data_filter,
+        temporal_retrieval=temporal_retrieval,
+        kb_ids=kb_ids,
+        chat_mdl=chat_mdl,
+        base_doc_ids=doc_ids,
+        metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        metadata_filter_func=apply_meta_data_filter,
+    )
+    doc_ids = temporal_ctx.doc_ids
 
     ranks = await settings.retriever.retrieval(
         question=question,
@@ -1833,6 +1855,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        temporal_rank_policy=temporal_ctx.temporal_rank_policy,
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])

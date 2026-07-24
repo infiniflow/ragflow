@@ -16,6 +16,8 @@
 
 import logging
 
+from common.temporal_utils import filter_visible_metadata_dict
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,6 +117,7 @@ def enrich_chunks_with_document_metadata(
         meta = meta_by_doc.get(doc_id)
         if not meta:
             continue
+        meta = filter_visible_metadata_dict(meta)
         if metadata_fields is not None:
             meta = {k: v for k, v in meta.items() if k in metadata_fields}
         if meta:

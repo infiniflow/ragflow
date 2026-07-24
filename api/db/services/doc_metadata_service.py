@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from api.db.db_models import DB, Document
 from common import settings
 from common.metadata_utils import dedupe_list
+from common.temporal_utils import is_internal_metadata_key
 from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
 
@@ -718,7 +719,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def get_flatted_meta_by_kbs(cls, kb_ids: List[str]) -> Dict:
+    def get_flatted_meta_by_kbs(cls, kb_ids: List[str], include_internal: bool = False) -> Dict:
         """
         Get flattened metadata for documents in knowledge bases.
 
@@ -785,6 +786,8 @@ class DocMetadataService:
                 doc_meta = cls._extract_metadata(doc)
 
                 for k, v in doc_meta.items():
+                    if not include_internal and is_internal_metadata_key(k):
+                        continue
                     if k not in meta:
                         meta[k] = {}
 
@@ -970,7 +973,7 @@ class DocMetadataService:
             return None
 
     @classmethod
-    def get_metadata_keys_by_kbs(cls, kb_ids: List[str]) -> List[str]:
+    def get_metadata_keys_by_kbs(cls, kb_ids: List[str], include_internal: bool = False) -> List[str]:
         """
         Get unique metadata field names across multiple knowledge bases.
 
@@ -992,12 +995,20 @@ class DocMetadataService:
                     doc_meta = cls._extract_metadata(doc)
                     if not isinstance(doc_meta, dict):
                         continue
-                    keys.update(str(k) for k in doc_meta.keys())
+                    keys.update(
+                        str(k)
+                        for k in doc_meta.keys()
+                        if include_internal or not is_internal_metadata_key(k)
+                    )
             logging.debug(f"get_metadata_keys_by_kbs end: n_keys={len(keys)}, kb_ids={kb_ids}")
             return sorted(keys)
         except Exception as e:
             logging.error(f"Error getting metadata keys for KBs {kb_ids}: {e}")
             return []
+
+    @classmethod
+    def get_visible_metadata_keys(cls, kb_ids: List[str]) -> List[str]:
+        return cls.get_metadata_keys_by_kbs(kb_ids, include_internal=False)
 
     @classmethod
     def get_metadata_for_documents(cls, doc_ids: Optional[List[str]], kb_id: str) -> Dict[str, Dict]:
@@ -1039,7 +1050,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def get_metadata_summary(cls, kb_id: str, doc_ids=None) -> Dict:
+    def get_metadata_summary(cls, kb_id: str, doc_ids=None, include_internal: bool = False) -> Dict:
         """
         Get metadata summary for documents in a knowledge base.
 
@@ -1096,6 +1107,8 @@ class DocMetadataService:
                 doc_meta = cls._extract_metadata(doc)
 
                 for k, v in doc_meta.items():
+                    if not include_internal and is_internal_metadata_key(k):
+                        continue
                     # Track type counts for this field
                     value_type = _meta_value_type(v)
                     if value_type:

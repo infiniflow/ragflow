@@ -22,6 +22,7 @@ from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.doc_metadata_service import DocMetadataService
+from common.temporal_retrieval import resolve_temporal_retrieval_context
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
@@ -69,6 +70,7 @@ class RetrievalParam(ToolParamBase):
         self.cross_languages = []
         self.toc_enhance = False
         self.meta_data_filter = {}
+        self.temporal_retrieval = {}
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -128,55 +130,91 @@ class Retrieval(ToolBase, ABC):
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
 
+        def _load_metas() -> dict:
+            return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+
+        def _resolve_manual_filter(flt: dict) -> dict:
+            # Keep variable substitution scoped to this invocation.
+            pat = re.compile(self.variable_ref_patt)
+            s = flt.get("value", "")
+            out_parts = []
+            last = 0
+
+            for m in pat.finditer(s):
+                out_parts.append(s[last:m.start()])
+                key = m.group(1)
+                v = self._canvas.get_variable_value(key)
+                if v is None:
+                    rep = ""
+                elif isinstance(v, partial):
+                    buf = []
+                    for chunk in v():
+                        buf.append(chunk)
+                    rep = "".join(buf)
+                elif isinstance(v, str):
+                    rep = v
+                else:
+                    rep = json.dumps(v, ensure_ascii=False)
+
+                out_parts.append(rep)
+                last = m.end()
+
+            out_parts.append(s[last:])
+            resolved = dict(flt)
+            resolved["value"] = "".join(out_parts)
+            return resolved
+
         doc_ids = []
+        def _load_metas() -> dict:
+            return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+
+        def _resolve_manual_filter(flt: dict) -> dict:
+            # Return a new dict instead of mutating `flt` in place. The
+            # caller passes filters straight out of self._param.meta_data_filter,
+            # so mutating them would replace the variable reference with its
+            # resolved value and every subsequent invocation (e.g. inside an
+            # Iteration component) would reuse that stale value.
+            pat = re.compile(self.variable_ref_patt)
+            s = flt.get("value", "")
+            out_parts = []
+            last = 0
+
+            for m in pat.finditer(s):
+                out_parts.append(s[last : m.start()])
+                key = m.group(1)
+                v = self._canvas.get_variable_value(key)
+                if v is None:
+                    rep = ""
+                elif isinstance(v, partial):
+                    buf = []
+                    for chunk in v():
+                        buf.append(chunk)
+                    rep = "".join(buf)
+                elif isinstance(v, str):
+                    rep = v
+                else:
+                    rep = json.dumps(v, ensure_ascii=False)
+
+                out_parts.append(rep)
+                last = m.end()
+
+            out_parts.append(s[last:])
+            resolved = dict(flt)
+            resolved["value"] = "".join(out_parts)
+            return resolved
+
+        chat_mdl = None
+        method = self._param.meta_data_filter.get("method")
+        temporal_method = getattr(self._param, "temporal_retrieval", {}).get("method") if getattr(self._param, "temporal_retrieval", {}) else None
+        
+        if method in ["auto", "semi_auto"] or temporal_method in ["auto", "semi_auto"]:
+            tenant_id = self._canvas.get_tenant_id()
+            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+
+        raw_query = query
+
         if self._param.meta_data_filter != {}:
-            # Defer the (potentially expensive) metadata table load — manual
-            # filters served by ES push-down never need it. The loader is
-            # invoked at most once per request by ``apply_meta_data_filter``.
-            def _load_metas() -> dict:
-                return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-
-            def _resolve_manual_filter(flt: dict) -> dict:
-                # Return a new dict instead of mutating `flt` in place. The
-                # caller passes filters straight out of self._param.meta_data_filter,
-                # so mutating them would replace the variable reference with its
-                # resolved value and every subsequent invocation (e.g. inside an
-                # Iteration component) would reuse that stale value.
-                pat = re.compile(self.variable_ref_patt)
-                s = flt.get("value", "")
-                out_parts = []
-                last = 0
-
-                for m in pat.finditer(s):
-                    out_parts.append(s[last : m.start()])
-                    key = m.group(1)
-                    v = self._canvas.get_variable_value(key)
-                    if v is None:
-                        rep = ""
-                    elif isinstance(v, partial):
-                        buf = []
-                        for chunk in v():
-                            buf.append(chunk)
-                        rep = "".join(buf)
-                    elif isinstance(v, str):
-                        rep = v
-                    else:
-                        rep = json.dumps(v, ensure_ascii=False)
-
-                    out_parts.append(rep)
-                    last = m.end()
-
-                out_parts.append(s[last:])
-                resolved = dict(flt)
-                resolved["value"] = "".join(out_parts)
-                return resolved
-
-            chat_mdl = None
-            if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                tenant_id = self._canvas.get_tenant_id()
-                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
-
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
                 None,
@@ -190,6 +228,19 @@ class Retrieval(ToolBase, ABC):
 
         if self._param.cross_languages:
             query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+        temporal_ctx = await resolve_temporal_retrieval_context(
+            raw_query=raw_query,
+            refined_query=query,
+            retrieval_query=query,
+            meta_data_filter=self._param.meta_data_filter,
+            temporal_retrieval=getattr(self._param, "temporal_retrieval", {}) or {},
+            kb_ids=kb_ids,
+            chat_mdl=chat_mdl,
+            base_doc_ids=doc_ids,
+            manual_value_resolver=_resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
+            metas_loader=_load_metas,
+        )
+        doc_ids = temporal_ctx.doc_ids
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
@@ -207,6 +258,7 @@ class Retrieval(ToolBase, ABC):
                 aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
+                temporal_rank_policy=temporal_ctx.temporal_rank_policy,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return

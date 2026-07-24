@@ -77,6 +77,7 @@ export interface IDialog {
   top_n: number;
   rerank_id?: string;
   meta_data_filter: MetaDataFilter;
+  temporal_retrieval?: TemporalRetrieval;
 }
 
 interface MetaDataFilter {
@@ -88,6 +89,13 @@ interface Manual {
   key: string;
   op: string;
   value: string;
+}
+
+export interface TemporalRetrieval {
+  enabled?: boolean;
+  mode?: 'auto' | 'latest' | 'date_range' | 'balanced';
+  temporal_field?: string;
+  half_life_days?: number;
 }
 
 export interface IConversation {
