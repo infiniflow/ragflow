@@ -186,10 +186,19 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		text = fallbackMessageText(inputs)
 	}
 
-	// Message renders values for display, so keep Python's tolerant behavior:
-	// missing references become empty strings and structured values use JSON.
-	// Parameter-binding components continue to use the strict resolver.
-	resolved := runtime.ResolveTemplateForDisplay(text, state)
+	// A direct Agent→Message edge stores a lazy DeferredStream in the Agent
+	// output. Message is the owner of that stream: opening it here preserves
+	// Python's partial(async_generator) execution order and makes this node the
+	// only visible SSE producer.
+	resolved, streamed, streamErr := m.resolveDeferredTemplate(ctx, text, state)
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if !streamed {
+		// Message renders values for display, so keep Python's tolerant behavior:
+		// missing references become empty strings and structured values use JSON.
+		resolved = runtime.ResolveTemplateForDisplay(text, state)
+	}
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.
@@ -225,7 +234,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	// The runtime emitter owns Agent-to-Message de-duplication. It suppresses
 	// only an exact copy of content already streamed by an upstream Agent, so a
 	// Message node that intentionally transforms the answer is still visible.
-	if rendered != "" {
+	if rendered != "" && !streamed {
 		runtime.EmitCanvasMessage(ctx, rendered)
 	}
 
@@ -322,6 +331,82 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	}
 
 	return out, nil
+}
+
+// resolveDeferredTemplate resolves a Message template while consuming any
+// lazy Agent stream it references. It returns the complete visible text and a
+// flag indicating whether a DeferredStream was opened.
+func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text string, state *runtime.CanvasState) (string, bool, error) {
+	matches := runtime.VarRefPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text, false, nil
+	}
+	var out strings.Builder
+	last := 0
+	streamed := false
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		refStart, refEnd := match[2], match[3]
+		literal := text[last:start]
+		if literal != "" {
+			runtime.EmitCanvasMessageEvent(ctx, literal, false, false)
+			out.WriteString(literal)
+		}
+		ref := text[refStart:refEnd]
+		value, _ := state.GetVar(ref)
+		deferred, ok := value.(*runtime.DeferredStream)
+		if !ok || deferred == nil || deferred.Open == nil {
+			resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
+			runtime.EmitCanvasMessageEvent(ctx, resolved, false, false)
+			out.WriteString(resolved)
+			last = end
+			continue
+		}
+
+		streamed = true
+		inThinking := false
+		visible := strings.Builder{}
+		result, err := deferred.Open(ctx, func(contentDelta, reasoningDelta string) {
+			if reasoningDelta != "" {
+				if !inThinking {
+					runtime.EmitCanvasMessageEvent(ctx, "", true, false)
+					inThinking = true
+				}
+				runtime.EmitCanvasMessageEvent(ctx, reasoningDelta, false, false)
+			}
+			if contentDelta != "" {
+				if inThinking {
+					runtime.EmitCanvasMessageEvent(ctx, "", false, true)
+					inThinking = false
+				}
+				runtime.EmitCanvasMessageEvent(ctx, contentDelta, false, false)
+				visible.WriteString(contentDelta)
+			}
+		})
+		if inThinking {
+			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
+		}
+		if err != nil {
+			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %w", err)
+		}
+		finalText := visible.String()
+		if finalText == "" && result != nil {
+			finalText, _ = result["content"].(string)
+		}
+		if strings.Contains(ref, "@") {
+			parts := strings.SplitN(ref, "@", 2)
+			state.SetVar(parts[0], parts[1], finalText)
+			runtime.CompleteDeferredNode(ctx, parts[0])
+		}
+		out.WriteString(finalText)
+		last = end
+	}
+	if last < len(text) {
+		tail := text[last:]
+		runtime.EmitCanvasMessageEvent(ctx, tail, false, false)
+		out.WriteString(tail)
+	}
+	return out.String(), streamed, nil
 }
 
 // extractMemoryIDs normalises a memory_ids value from inputs /

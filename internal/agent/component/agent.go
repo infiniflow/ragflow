@@ -710,9 +710,25 @@ func NewAgentComponent(p AgentParam) *AgentComponent {
 // Name returns the registered component name.
 func (c *AgentComponent) Name() string { return "Agent" }
 
-// Invoke runs the ReAct loop via the configured agentRunner and returns
-// the output map.
+// Invoke either returns a lazy Agent stream for a direct downstream Message,
+// or executes the Agent eagerly for all other graph shapes. The mode is a
+// compile-time canvas decision carried through context, not a DSL parameter.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferAgentToMessage {
+		deferred := &runtime.DeferredStream{
+			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				return c.invokeNow(runtime.WithAgentDeltaSink(openCtx, sink), inputs)
+			},
+		}
+		return map[string]any{"content": deferred}, nil
+	}
+	return c.invokeNow(ctx, inputs)
+}
+
+// invokeNow contains the original eager Agent execution path. Deferred
+// Message consumption calls this function later with an invocation-local
+// delta sink, so the same ReAct/citation/tool behavior is reused once.
+func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	runtime.ResetAgentMessageEmission(ctx)
 	defer runtime.FinalizeAgentMessage(ctx)
 
@@ -961,7 +977,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// would be dead weight. When AgentParam grows Temperature/
 	// MaxTokens, switch to always-build.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
+	if p.TopP != nil || p.Thinking != "" {
 		chatCfg = &models.ChatConfig{TopP: p.TopP}
 		switch p.Thinking {
 		case "enabled":
@@ -970,11 +986,6 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 		case "disabled":
 			f := false
 			chatCfg.Thinking = &f
-		}
-		if runtime.HasAgentMessageEmitter(ctx) {
-			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
-				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
-			}
 		}
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil

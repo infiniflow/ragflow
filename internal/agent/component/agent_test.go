@@ -132,6 +132,67 @@ func TestAgent_MessageEmissionIsScopedPerInvocation(t *testing.T) {
 	}
 }
 
+func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
+	calls := 0
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		calls++
+		return &schema.Message{Role: schema.Assistant, Content: "lazy answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	agent := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := agent.Invoke(ctx, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("runner calls=%d before Message consumed stream, want 0", calls)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+	var got strings.Builder
+	final, err := deferred.Open(context.Background(), func(contentDelta, _ string) {
+		got.WriteString(contentDelta)
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if calls != 1 || got.String() != "lazy answer" {
+		t.Fatalf("calls=%d streamed=%q, want 1 / %q", calls, got.String(), "lazy answer")
+	}
+	if final["content"] != "lazy answer" {
+		t.Fatalf("final content=%v, want lazy answer", final["content"])
+	}
+}
+
+func TestAgent_SuppressesVisibleEventsWithoutMessageDownstream(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "timeline answer"}, nil
+	})
+	var emitted []string
+	ctx := runtime.WithAgentMessageEmitter(context.Background(), func(contentDelta, _ string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+	})
+	ctx = runtime.WithComponentExecutionOptions(ctx, runtime.ComponentExecutionOptions{
+		SuppressAgentMessageEvents: true,
+	})
+	if _, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("visible events=%#v, want none", emitted)
+	}
+	if !runtime.AgentMessageEventsSuppressed(ctx) {
+		t.Fatal("AgentMessageEventsSuppressed=false, want true")
+	}
+}
+
 func TestAgent_ForwardsThinkingParam(t *testing.T) {
 	var gotThinking string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {

@@ -45,6 +45,19 @@ type canvasMessageEmitterCtxKey struct{}
 // shape free of canvas/service imports.
 type AgentMessageEmitter func(contentDelta, thinkingDelta string)
 type CanvasMessageEmitter func(content string)
+type CanvasMessageEventEmitter func(content string, startToThink, endToThink bool)
+type AgentDeltaSink func(contentDelta, thinkingDelta string)
+
+// DeferredStream is a lazy component value. The producer is deliberately
+// opened by the consuming Message node.
+type DeferredStream struct {
+	Open func(context.Context, AgentDeltaSink) (map[string]any, error)
+}
+
+func IsDeferredStream(v any) bool {
+	deferred, ok := v.(*DeferredStream)
+	return ok && deferred != nil && deferred.Open != nil
+}
 
 type agentMessageEmitterState struct {
 	mu           sync.Mutex
@@ -52,7 +65,99 @@ type agentMessageEmitterState struct {
 	finalize     func() bool
 	reset        func()
 	emitted      bool
+	suppressed   bool
 	agentContent strings.Builder
+}
+
+type agentDeltaSinkCtxKey struct{}
+type canvasMessageEventEmitterCtxKey struct{}
+
+type componentExecutionOptionsCtxKey struct{}
+type deferredNodeRegistryCtxKey struct{}
+
+type deferredNodeRegistry struct {
+	mu          sync.Mutex
+	completions map[string]func()
+}
+
+// ComponentExecutionOptions carries compile-time graph decisions into a
+// component invocation without leaking internal flags into DSL parameters.
+type ComponentExecutionOptions struct {
+	DeferAgentToMessage        bool
+	SuppressAgentMessageEvents bool
+}
+
+func WithComponentExecutionOptions(ctx context.Context, opts ComponentExecutionOptions) context.Context {
+	return context.WithValue(ctx, componentExecutionOptionsCtxKey{}, opts)
+}
+
+func ComponentExecutionOptionsFromContext(ctx context.Context) ComponentExecutionOptions {
+	opts, _ := ctx.Value(componentExecutionOptionsCtxKey{}).(ComponentExecutionOptions)
+	return opts
+}
+
+// WithDeferredNodeRegistry installs the per-run callbacks used to delay an
+// Agent node_finished event until its downstream Message has consumed the
+// lazy stream.
+func WithDeferredNodeRegistry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, deferredNodeRegistryCtxKey{}, &deferredNodeRegistry{
+		completions: make(map[string]func()),
+	})
+}
+
+func RegisterDeferredNode(ctx context.Context, nodeID string, complete func()) {
+	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
+	if registry == nil || nodeID == "" || complete == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.completions[nodeID] = complete
+	registry.mu.Unlock()
+}
+
+func CompleteDeferredNode(ctx context.Context, nodeID string) {
+	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	complete := registry.completions[nodeID]
+	delete(registry.completions, nodeID)
+	registry.mu.Unlock()
+	if complete != nil {
+		complete()
+	}
+}
+
+func CompleteAllDeferredNodes(ctx context.Context) {
+	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	callbacks := make([]func(), 0, len(registry.completions))
+	for nodeID, complete := range registry.completions {
+		callbacks = append(callbacks, complete)
+		delete(registry.completions, nodeID)
+	}
+	registry.mu.Unlock()
+	for _, complete := range callbacks {
+		if complete != nil {
+			complete()
+		}
+	}
+}
+
+func WithAgentDeltaSink(ctx context.Context, sink AgentDeltaSink) context.Context {
+	if sink == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, agentDeltaSinkCtxKey{}, sink)
+}
+
+func agentDeltaSinkFromContext(ctx context.Context) AgentDeltaSink {
+	sink, _ := ctx.Value(agentDeltaSinkCtxKey{}).(AgentDeltaSink)
+	return sink
 }
 
 // WithState attaches *CanvasState to ctx for retrieval by
@@ -99,6 +204,16 @@ func WithCanvasMessageEmitter(ctx context.Context, emit CanvasMessageEmitter) co
 	return context.WithValue(ctx, canvasMessageEmitterCtxKey{}, emit)
 }
 
+// WithCanvasMessageEventEmitter installs the Message presentation callback.
+// It is separate from CanvasMessageEmitter so existing plain-content callers
+// remain source-compatible while Message can surface thinking boundaries.
+func WithCanvasMessageEventEmitter(ctx context.Context, emit CanvasMessageEventEmitter) context.Context {
+	if emit == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, canvasMessageEventEmitterCtxKey{}, emit)
+}
+
 // HasAgentMessageEmitter reports whether the service layer installed an
 // Agent message stream callback on ctx.
 func HasAgentMessageEmitter(ctx context.Context) bool {
@@ -109,9 +224,21 @@ func HasAgentMessageEmitter(ctx context.Context) bool {
 // EmitAgentMessage emits Agent answer/thinking deltas when the service layer
 // installed a callback. It returns true when a callback was present.
 func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) bool {
+	if sink := agentDeltaSinkFromContext(ctx); sink != nil {
+		// A deferred Agent is being consumed by Message. Do not call the
+		// service SSE emitter here; Message owns the visible event stream.
+		sink(contentDelta, thinkingDelta)
+		return true
+	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
 	if !ok || state == nil || state.emit == nil {
 		return false
+	}
+	if ComponentExecutionOptionsFromContext(ctx).SuppressAgentMessageEvents {
+		state.mu.Lock()
+		state.suppressed = true
+		state.mu.Unlock()
+		return true
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -123,6 +250,35 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 		state.agentContent.WriteString(contentDelta)
 	}
 	return true
+}
+
+func AgentMessageEventsSuppressed(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.suppressed
+}
+
+// EmitCanvasMessageEvent emits one already-presented Message event. When no
+// event callback is installed it falls back to the historical plain-content
+// callback, preserving existing component tests and non-streaming callers.
+func EmitCanvasMessageEvent(ctx context.Context, content string, startToThink, endToThink bool) bool {
+	if emit, ok := ctx.Value(canvasMessageEventEmitterCtxKey{}).(CanvasMessageEventEmitter); ok && emit != nil {
+		emit(content, startToThink, endToThink)
+		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil {
+			state.mu.Lock()
+			state.emitted = true
+			state.mu.Unlock()
+		}
+		return true
+	}
+	if startToThink || endToThink {
+		return false
+	}
+	return EmitCanvasMessage(ctx, content)
 }
 
 // EmitCanvasMessage emits already-rendered Message-component content through
@@ -199,6 +355,7 @@ func ResetAgentMessageEmission(ctx context.Context) {
 		state.reset()
 	}
 	state.emitted = false
+	state.suppressed = false
 	state.agentContent.Reset()
 }
 

@@ -1242,10 +1242,18 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			TaskID:    taskID,
 			SessionID: sessionID,
 		})
+		ctx2 = runtime.WithDeferredNodeRegistry(ctx2)
 		agentMessageEmit, agentMessageFinalize, agentMessageReset := makeAgentMessageDeltaEmitterWithFinalizer(emit)
 		ctx2 = runtime.WithAgentMessageEmitterControl(ctx2, agentMessageEmit, agentMessageFinalize, agentMessageReset)
 		ctx2 = runtime.WithCanvasMessageEmitter(ctx2, func(content string) {
 			emitAgentMessageEvent(emit, canvas.MessageEvent{Content: content})
+		})
+		ctx2 = runtime.WithCanvasMessageEventEmitter(ctx2, func(content string, startToThink, endToThink bool) {
+			emitAgentMessageEvent(emit, canvas.MessageEvent{
+				Content:      content,
+				StartToThink: startToThink,
+				EndToThink:   endToThink,
+			})
 		})
 
 		// Seed initial env/sys values from the Canvas DSL globals.
@@ -1410,8 +1418,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
+		// Release any deferred Agent node that was not consumed because the
+		// downstream Message was skipped by an exception/branch path.
+		runtime.CompleteAllDeferredNodes(ctx2)
 		runtime.FinalizeAgentMessage(ctx2)
 		messageEventsEmitted := runtime.AgentMessageEventsEmitted(ctx2)
+		messageEventsSuppressed := runtime.AgentMessageEventsSuppressed(ctx2)
+		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -1429,7 +1442,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
-				if answer != "" {
+				if answer != "" && shouldEmitMessage {
 					if !messageEventsEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 					}
@@ -1447,14 +1460,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
-				if !messageEventsEmitted {
+				if !messageEventsEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 				}
 
-				meData, _ := json.Marshal(canvas.MessageEndEvent{
-					Reference: referencePayload,
-				})
-				emit("message_end", string(meData))
+				if shouldEmitMessage {
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Reference: referencePayload,
+					})
+					emit("message_end", string(meData))
+				}
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
@@ -1481,14 +1496,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 		}
-		if !messageEventsEmitted {
+		if !messageEventsEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
 
-		meData, _ := json.Marshal(canvas.MessageEndEvent{
-			Reference: referencePayload,
-		})
-		emit("message_end", string(meData))
+		if shouldEmitMessage {
+			meData, _ := json.Marshal(canvas.MessageEndEvent{
+				Reference: referencePayload,
+			})
+			emit("message_end", string(meData))
+		}
 
 		// Emit workflow_finished with the final outputs and aggregated
 		// per-run token usage across all LLM calls in this turn.
