@@ -142,9 +142,20 @@ all_codecs = [
 
 def find_codec(blob):
     detected = chardet.detect(blob[:1024])
-    if detected["confidence"] > 0.5:
-        if detected["encoding"] == "ascii":
+    encoding = detected['encoding']
+    if encoding and detected['confidence'] > 0.5:
+        if encoding.lower() == "ascii":
             return "utf-8"
+        # Honor a confident detection when it actually decodes the sample.
+        # Otherwise the brute-force loop below returns the first codec that
+        # does not raise, and legacy single-byte codecs (e.g. cp037) decode
+        # arbitrary bytes without error, yielding garbage text.
+        try:
+            blob[:1024].decode(encoding)
+            return encoding
+        except (UnicodeDecodeError, LookupError) as e:
+            logging.debug("find_codec: confident detection %r (%.2f) did not decode the sample, "
+                          "falling back to brute force: %s", encoding, detected['confidence'], e)
 
     for c in all_codecs:
         try:
