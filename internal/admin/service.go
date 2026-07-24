@@ -241,7 +241,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	asrModel := ""
 	vlmModel := ""
 	rerankModel := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
 		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
@@ -857,7 +857,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	tenantID := userTenants[0].TenantID
 
 	// 3. Get API tokens by tenant ID
-	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, tenantID)
+	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API tokens: %w", err)
 	}
@@ -908,7 +908,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	// 4. Save API token
-	if err = s.apiTokenDAO.Create(ctx, apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(ctx, dao.DB, apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -940,7 +940,7 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	tenantID := userTenants[0].TenantID
 
 	// 3. Delete API token
-	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, tenantID, key)
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}

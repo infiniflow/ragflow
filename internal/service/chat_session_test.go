@@ -47,7 +47,7 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
-func (f *fakeSessionStore) GetByID(ctx context.Context, id string) (*entity.ChatSession, error) {
+func (f *fakeSessionStore) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	if f.getByIDErr != nil {
 		return nil, f.getByIDErr
 	}
@@ -58,8 +58,8 @@ func (f *fakeSessionStore) GetByID(ctx context.Context, id string) (*entity.Chat
 	return s, nil
 }
 
-func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, sessionID, chatID string) (*entity.ChatSession, error) {
-	s, err := f.GetByID(ctx, sessionID)
+func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
+	s, err := f.GetByID(ctx, db, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, sessionI
 	return s, nil
 }
 
-func (f *fakeSessionStore) Create(ctx context.Context, conv *entity.ChatSession) error {
+func (f *fakeSessionStore) Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -80,7 +80,7 @@ func (f *fakeSessionStore) Create(ctx context.Context, conv *entity.ChatSession)
 	return nil
 }
 
-func (f *fakeSessionStore) UpdateByID(ctx context.Context, id string, updates map[string]interface{}) error {
+func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.updateByIDErr != nil {
@@ -113,12 +113,12 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, id string, updates ma
 	return nil
 }
 
-func (f *fakeSessionStore) DeleteByID(ctx context.Context, id string) error {
+func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
 	delete(f.sessions, id)
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, chatID string) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
 		if s.DialogID == chatID {
@@ -128,7 +128,7 @@ func (f *fakeSessionStore) ListByChatID(ctx context.Context, chatID string) ([]*
 	return result, nil
 }
 
-func (f *fakeSessionStore) GetDialogByID(ctx context.Context, chatID string) (*entity.Chat, error) {
+func (f *fakeSessionStore) GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error) {
 	if f.getDialogErr != nil {
 		return nil, f.getDialogErr
 	}
@@ -139,7 +139,7 @@ func (f *fakeSessionStore) GetDialogByID(ctx context.Context, chatID string) (*e
 	return d, nil
 }
 
-func (f *fakeSessionStore) CheckDialogExists(ctx context.Context, tenantID, chatID string) (bool, error) {
+func (f *fakeSessionStore) CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error) {
 	key := tenantID + "|" + chatID
 	return f.dialogExists[key], nil
 }

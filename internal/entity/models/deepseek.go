@@ -52,6 +52,39 @@ func (d *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
+// DeepSeekChatResponse mirrors the response returned by DeepSeek's
+// POST /chat/completions endpoint. The shape follows the official OpenAI-
+// compatible response schema, including reasoning content, tool calls, and
+// the cache/reasoning token usage details.
+type DeepSeekChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created           int    `json:"created"`
+	Model             string `json:"model"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Object            string `json:"object"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		PromptCacheHitTokens    int `json:"prompt_cache_hit_tokens"`
+		PromptCacheMissTokens   int `json:"prompt_cache_miss_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
+}
+
 func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -68,79 +101,42 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+			break
+		case "low":
+			thinkingFlag = "disabled"
+			break
+		case "medium":
+			thinkingFlag = "disabled"
+			break
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+			break
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+			break
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "low":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "medium":
-					thinkingFlag = "disabled"
-					chatModelConfig.Thinking = nil
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-				default:
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = effort
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 
@@ -175,62 +171,36 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
+		var result DeepSeekChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	var content string
-	if c, ok := messageMap["content"].(string); ok {
-		content = c
-	}
-
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-		// if first char of reasonContent is \n remove the '\n'
+		choice := &result.Choices[0]
+		reasonContent := choice.Message.ReasoningContent
+		// DeepSeek may prefix reasoning content with a newline in non-streaming
+		// responses; keep the existing provider behavior of removing that prefix.
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
-	}
 
-	var toolCalls []map[string]interface{}
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]interface{}); ok {
-				toolCalls = append(toolCalls, tcMap)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
-		}
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -250,84 +220,38 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		var thinkingFlag string
+		effort := "high"
+		if chatModelConfig.Effort != nil {
+			effort = *chatModelConfig.Effort
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		switch effort {
+		case "none":
+			thinkingFlag = "disabled"
+		case "low":
+			thinkingFlag = "disabled"
+		case "medium":
+			thinkingFlag = "disabled"
+		case "high":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "default":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "high"
+		case "max":
+			thinkingFlag = "enabled"
+			reqBody["reasoning_effort"] = "max"
+		default:
+			return fmt.Errorf("invalid effort level")
 		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
+		reqBody["thinking"] = map[string]interface{}{
+			"type": thinkingFlag,
 		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
-		}
-
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "high"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none":
-					thinkingFlag = "disabled"
-					break
-				case "low":
-					thinkingFlag = "disabled"
-					break
-				case "medium":
-					thinkingFlag = "disabled"
-					break
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-					break
-				case "max":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "max"
-					break
-				default:
-					return fmt.Errorf("invalid effort level")
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+	} else {
+		reqBody["thinking"] = map[string]interface{}{
+			"type": "disabled",
 		}
 	}
 
@@ -363,6 +287,14 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -378,9 +310,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 			return nil
 		}
 
-		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
-			return nil
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {

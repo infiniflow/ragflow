@@ -187,6 +187,13 @@ class PipelineTaskType(StrEnum):
     MEMORY = "Memory"
     ARTIFACT = "Artifact"
     SKILL = "Skill"
+    # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
+    STRUCTURE_GRAPH = "StructureGraph"
+    STRUCTURE_MINDMAP = "StructureMindmap"
+    TIMELINE = "Timeline"
+    SESSION_GRAPH = "SessionGraph"
+    SESSION_ESSENCE = "SessionEssence"
+    STRUCTURE = "Structure"
 
 
 VALID_PIPELINE_TASK_TYPES = {
@@ -197,6 +204,12 @@ VALID_PIPELINE_TASK_TYPES = {
     PipelineTaskType.MINDMAP,
     PipelineTaskType.ARTIFACT,
     PipelineTaskType.SKILL,
+    PipelineTaskType.STRUCTURE_GRAPH,
+    PipelineTaskType.STRUCTURE_MINDMAP,
+    PipelineTaskType.TIMELINE,
+    PipelineTaskType.SESSION_GRAPH,
+    PipelineTaskType.SESSION_ESSENCE,
+    PipelineTaskType.STRUCTURE,
 }
 
 

@@ -55,7 +55,7 @@ type listDatasetsExt struct {
 	ParserID string   `json:"parser_id,omitempty"`
 }
 
-// NewDatasetsHandler creates a new datasets handler.
+// NewDatasetsHandler creates a new datasets' handler.
 func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
@@ -171,8 +171,10 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -208,19 +210,21 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 	}
 
 	var req service.UpdateDatasetRequest
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
 	// Detect an explicitly provided parser_config key (even {} or null) so it is not
-	// rejected as "No properties were modified", mirroring the Python contract.
+	// rejected as "no properties were modified", mirroring the Python contract.
 	var providedFields map[string]json.RawMessage
-	if err := json.Unmarshal(bodyBytes, &providedFields); err == nil {
+	if err = json.Unmarshal(bodyBytes, &providedFields); err == nil {
 		_, req.ParserConfigProvided = providedFields["parser_config"]
 	}
 
-	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, userID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -407,13 +411,14 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -470,7 +475,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	var graphData map[string]interface{}
-	if err := json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
+	if err = json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
 		common.SuccessWithData(c, result, "success")
 		return
 	}
@@ -577,13 +582,14 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -611,8 +617,6 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 // @Summary Remove Tags
 // @Description Remove tags from a dataset
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param dataset_id path string true "Dataset ID"
 // @Param request body object{tags []string} true "tags to remove"
@@ -631,13 +635,14 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -958,8 +963,6 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 // @Summary Search Datasets
 // @Description Search for relevant chunks across one or more datasets based on a question
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Param request body service.SearchDatasetsRequest true "search parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/search [post]
@@ -1034,8 +1037,6 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 // @Summary Search Dataset
 // @Description Search for relevant chunks within one dataset based on a question
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Param dataset_id path string true "dataset id"
 // @Param request body service.SearchDatasetRequest true "search parameters"
 // @Success 200 {object} map[string]interface{}

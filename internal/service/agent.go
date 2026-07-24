@@ -356,7 +356,7 @@ func NewAgentServiceWithOptions(
 // agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
 // and serialises each row.
 func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTemplate, error) {
-	return s.canvasTemplateDAO.GetAll(ctx)
+	return s.canvasTemplateDAO.GetAll(ctx, dao.DB)
 }
 
 // AgentItem is one entry in the list response.
@@ -668,7 +668,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 				return agentTitleAlreadyExistsError(title)
 			}
-			return errors.New("Agent title already exists.")
+			return errors.New("agent title already exists")
 		}
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
@@ -1020,7 +1020,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = normalisedDSLForRun(versionRow)
 	}
 	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, canvasID)
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, canvasID)
 		if sessionErr != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
 		}
@@ -1032,7 +1032,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 	if newSession && len(dsl) > 0 {
-		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow); err != nil {
+		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 	}
@@ -1528,15 +1528,19 @@ func (s *AgentService) createAgentRunSession(
 	sessionID, userID, agentID string,
 	runDSL map[string]any,
 	versionRow *entity.UserCanvasVersion,
+	userInput any,
 ) error {
 	if s == nil || s.api4ConversationDAO == nil {
 		return errors.New("agent session storage is not configured")
 	}
 	source := "agent"
+	name := deriveAgentSessionName(userInput)
 	session := &entity.API4Conversation{
 		ID:        sessionID,
+		Name:      &name,
 		DialogID:  agentID,
 		UserID:    userID,
+		ExpUserID: &userID,
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
 		Source:    &source,
@@ -1545,10 +1549,22 @@ func (s *AgentService) createAgentRunSession(
 	if versionRow != nil {
 		session.VersionTitle = versionRow.Title
 	}
-	return s.api4ConversationDAO.Create(ctx, session)
+	return s.api4ConversationDAO.Create(ctx, dao.DB, session)
 }
 
-// runIDFor builds the per-run CanvasState identifier: canvasID
+// deriveAgentSessionName mirrors Python's
+// `req.get("name") or (query[:250] if query else "") or ""` — the
+// session name defaults to the first 250 runes of the user's input
+// so the exploration sidebar shows a meaningful title.
+func deriveAgentSessionName(userInput any) string {
+	text := stringifyAgentUserInput(userInput)
+	runes := []rune(text)
+	if len(runes) > 250 {
+		runes = runes[:250]
+	}
+	return string(runes)
+}
+
 // alone for first-touch runs, canvasID + sessionID for resumed runs
 // (so two concurrent sessions on the same canvas don't collide in
 // the snapshot map).
@@ -1595,7 +1611,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, sessionID, agentID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 		return nil
@@ -1622,7 +1638,8 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
-	return s.api4ConversationDAO.Update(ctx, session)
+	session.Round++
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

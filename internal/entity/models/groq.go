@@ -63,48 +63,16 @@ func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
-func groqChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
+func applyGroqReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
 	modelLower := strings.ToLower(modelName)
 	if strings.Contains(modelLower, "gpt-oss") {
 		reqBody["include_reasoning"] = true
-		if chatModelConfig.Effort != nil {
-			reqBody["reasoning_effort"] = chatModelConfig.Effort
+		if chatModelConfig != nil && chatModelConfig.Effort != nil {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	} else if strings.Contains(modelLower, "qwen") || strings.Contains(modelLower, "deepseek") {
 		reqBody["reasoning_format"] = "parsed"
 	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-	}
-
-	return reqBody
 }
 
 type groqChatMessage struct {
@@ -141,7 +109,9 @@ func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -216,7 +186,9 @@ func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		return err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}

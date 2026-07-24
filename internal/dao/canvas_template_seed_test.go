@@ -49,18 +49,20 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 
 	seed := func() {
 		t.Helper()
-		entries, err := os.ReadDir(dir)
+		ctx := t.Context()
+		var entries []os.DirEntry
+		entries, err = os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("read templates: %v", err)
 		}
-		if _, err = seedCanvasTemplates(db, dir, entries); err != nil {
+		if _, err = seedCanvasTemplates(ctx, db, dir, entries); err != nil {
 			t.Fatalf("seed templates: %v", err)
 		}
 	}
 	seed()
 
 	writeTemplate("kept.json", "kept", "updated")
-	if err := os.Remove(filepath.Join(dir, "removed.json")); err != nil {
+	if err = os.Remove(filepath.Join(dir, "removed.json")); err != nil {
 		t.Fatalf("remove stale template file: %v", err)
 	}
 	seed()

@@ -387,7 +387,7 @@ type countMismatchedEmbedder struct{ want int }
 
 func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
 
-func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	out := make([]EmbeddingResult, c.want)
 	for i := range out {
 		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}

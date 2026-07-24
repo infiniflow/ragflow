@@ -37,10 +37,10 @@ func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
 }
 
 // LoadPipelineDSL loads the DSL JSON for a pipeline identified by parserID
-// (built-in) or pipelineID (custom canvas). When both are provided, isCanvas
+// (built-in) or pipelineID (custom canvas). When both are provided, isPipeline
 // selects which one to use.
-func LoadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte, error) {
-	if isCanvas {
+func LoadPipelineDSL(isPipeline bool, parserID string, pipelineID *string) ([]byte, error) {
+	if isPipeline {
 		return loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
@@ -62,10 +62,10 @@ func LoadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte
 // For builtin templates the DSL is loaded from the embedded registry; for custom
 // canvas pipelines it is loaded from the canvas row in the database.
 func ResolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
-	isCanvas := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
 	var cp map[string]map[string]any
 	var err error
-	if isCanvas {
+	if isPipeline {
 		dslJSON, lerr := loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
 		if lerr != nil {
 			return nil, fmt.Errorf("load canvas DSL: %w", lerr)
@@ -133,19 +133,4 @@ func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 		ids[i] = kb.EmbdID
 	}
 	return ids
-}
-
-// Backward-compat lowercase aliases for callers within the service package.
-// These will be removed when callers are updated to use the exported names.
-
-func loadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte, error) {
-	return LoadPipelineDSL(isCanvas, parserID, pipelineID)
-}
-
-func resolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
-	return ResolveComponentParamsDefaults(parserID, pipelineID)
-}
-
-func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
-	return ValidateDatasetEmbeddingModels(kbs)
 }

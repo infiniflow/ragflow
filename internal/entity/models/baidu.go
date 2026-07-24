@@ -65,33 +65,9 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 
 		if chatModelConfig.Thinking != nil {
 			lowerModelName := strings.ToLower(modelName)
@@ -132,12 +108,6 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 					}
 				}
 			}
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-		}
-		if chatModelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *chatModelConfig.ToolChoice
 		}
 	}
 
@@ -249,83 +219,45 @@ func (b *BaiduModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": buildChatMessages(messages),
-		"stream":   true,
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	if modelConfig != nil && modelConfig.Thinking != nil {
+		lowerModelName := strings.ToLower(modelName)
 
-	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
+		// `enable_think` for qwen and erine
+		if strings.HasPrefix(lowerModelName, "qwen") || strings.HasPrefix(lowerModelName, "ernie") {
+			reqBody["enable_thinking"] = *modelConfig.Thinking
+		} else {
+			if *modelConfig.Thinking {
+				thinkingFlag := "enabled"
 
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
-		}
-
-		if modelConfig.Thinking != nil {
-			lowerModelName := strings.ToLower(modelName)
-
-			// `enable_think` for qwen and erine
-			if strings.HasPrefix(lowerModelName, "qwen") || strings.HasPrefix(lowerModelName, "ernie") {
-				reqBody["enable_thinking"] = *modelConfig.Thinking
-			} else {
-				if *modelConfig.Thinking {
-					thinkingFlag := "enabled"
-
-					if strings.Contains(lowerModelName, "deepseek-v4") {
-						effort := "high"
-						if modelConfig.Effort != nil {
-							effort = *modelConfig.Effort
-						}
-						switch effort {
-						case "none", "low", "medium":
-							thinkingFlag = "disabled"
-						case "high", "default":
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = "high"
-						case "max":
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = "max"
-						default:
-							thinkingFlag = "enabled"
-							reqBody["reasoning_effort"] = effort
-						}
+				if strings.Contains(lowerModelName, "deepseek-v4") {
+					effort := "high"
+					if modelConfig.Effort != nil {
+						effort = *modelConfig.Effort
 					}
-
-					reqBody["thinking"] = map[string]interface{}{
-						"type": thinkingFlag,
-					}
-				} else {
-					reqBody["thinking"] = map[string]interface{}{
-						"type": "disabled",
+					switch effort {
+					case "none", "low", "medium":
+						thinkingFlag = "disabled"
+					case "high", "default":
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = "high"
+					case "max":
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = "max"
+					default:
+						thinkingFlag = "enabled"
+						reqBody["reasoning_effort"] = effort
 					}
 				}
-			}
-		}
 
-		if modelConfig.Tools != nil {
-			reqBody["tools"] = modelConfig.Tools
-		}
-		if modelConfig.ToolChoice != nil {
-			reqBody["tool_choice"] = *modelConfig.ToolChoice
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
 		}
 	}
 

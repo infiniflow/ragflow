@@ -44,9 +44,13 @@ from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
 from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
+    MERGE_SCOPE_DATASET,
+    MERGE_SCOPE_DOC,
     compile_structure_from_text,
     cleanup_timeline_isolated_entities,
     merge_compiled_structures,
+    rebuild_dataset_structure_graph_json,
+    rebuild_structure_graph_json,
 )
 
 
@@ -146,6 +150,99 @@ def split_tree_templates(
     return tree_templates, non_tree_templates
 
 
+def _is_page_index_template(parser_cfg: dict) -> bool:
+    kind = (parser_cfg or {}).get("kind")
+    if not isinstance(kind, str):
+        return False
+    return kind.strip().lower().replace("-", "_") in {"page_index", "pageindex"}
+
+
+def _page_index_graph_summary(graph: dict, limit: int = 80) -> str:
+    entities = graph.get("entities") if isinstance(graph, dict) else None
+    if not isinstance(entities, list):
+        return ""
+
+    lines: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name") or "").strip()
+        description = str(entity.get("discription") or entity.get("description") or "").strip()
+        text = f"{name}: {description}".strip(": ").strip()
+        if text:
+            lines.append(text)
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+async def _upsert_dataset_nav_from_page_index(
+    *,
+    active_templates: list[tuple[str, dict]],
+    chat_mdl_by_tid: dict[str, LLMBundle],
+    embedding_model: LLMBundle,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable[..., None],
+    cancel_check: Callable[[], bool],
+) -> None:
+    page_index_templates = [(template_id, parser_cfg) for template_id, parser_cfg in active_templates if _is_page_index_template(parser_cfg)]
+    if not page_index_templates:
+        return
+
+    summaries: list[str] = []
+    chat_mdl = None
+    for template_id, _ in page_index_templates:
+        if cancel_check():
+            raise TaskCanceledException("Task was cancelled before dataset navigation update")
+        try:
+            graph = await rebuild_structure_graph_json(
+                tenant_id,
+                kb_id,
+                doc_id,
+                "timeline",
+                compilation_template_id=template_id,
+            )
+        except Exception:
+            logging.exception(
+                "page_index: failed to rebuild graph summary for dataset_nav doc %s template %s",
+                doc_id,
+                template_id,
+            )
+            continue
+
+        summary = _page_index_graph_summary(graph)
+        if summary:
+            summaries.append(summary)
+            chat_mdl = chat_mdl or chat_mdl_by_tid.get(template_id)
+
+    if not summaries:
+        logging.info("page_index: no dataset_nav summary for doc %s", doc_id)
+        return
+
+    if cancel_check():
+        raise TaskCanceledException("Task was cancelled before dataset navigation upsert")
+    try:
+        from rag.advanced_rag.knowlege_compile.dataset_nav import (
+            upsert_dataset_nav_doc,
+        )
+
+        progress_cb(msg=f"page_index: updating dataset navigation for doc {doc_id} ...")
+        await upsert_dataset_nav_doc(
+            tenant_id,
+            kb_id,
+            doc_id,
+            "\n\n".join(summaries),
+            embd_mdl=embedding_model,
+            chat_mdl=chat_mdl,
+        )
+    except TaskCanceledException:
+        raise
+    except Exception:
+        logging.exception("page_index: dataset_nav upsert failed for doc %s", doc_id)
+
+
 # ----- non-tree compilation core -------------------------------------
 
 
@@ -185,12 +282,20 @@ async def run_structure_compile_over_batches(
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
     template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
+    # ``dataset_merge`` hyper-parameter (per template config): when truthy the
+    # merge dedups entities/relations across the whole dataset (KB), collapsing
+    # cross-document duplicates onto one canonical row, instead of merging only
+    # within the current document.
+    merge_scope_by_tid: dict[str, str] = {tid: (MERGE_SCOPE_DATASET if bool((cfg or {}).get("dataset_merge")) else MERGE_SCOPE_DOC) for tid, cfg in active_templates}
+    # compile_kwd(s) each template actually wrote, harvested from flush results
+    # so a dataset-scope template can rebuild its dataset graph once at the end.
+    compile_kwds_by_tid: dict[str, set[str]] = {tid: set() for tid, _ in active_templates}
     agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
     flush_sequence = 0
     flush_tasks: set[asyncio.Task[None]] = set()
-    es_condition = asyncio.Condition()
-    next_es_sequence = 0
+    doc_storage_condition = asyncio.Condition()
+    next_doc_storage_sequence = 0
 
     async def _flush(template_id: str) -> None:
         nonlocal flush_sequence
@@ -204,24 +309,24 @@ async def run_structure_compile_over_batches(
         timing_context = f"{doc_id}:{template_id}:flush-{flush_sequence}"
 
         async def _run_flush() -> None:
-            nonlocal next_es_sequence
-            es_acquired = False
-            es_released = False
+            nonlocal next_doc_storage_sequence
+            doc_storage_acquired = False
+            doc_storage_released = False
 
-            async def _wait_for_es() -> None:
-                nonlocal es_acquired
-                async with es_condition:
-                    await es_condition.wait_for(lambda: next_es_sequence == sequence)
-                    es_acquired = True
+            async def _wait_for_doc_storage() -> None:
+                nonlocal doc_storage_acquired
+                async with doc_storage_condition:
+                    await doc_storage_condition.wait_for(lambda: next_doc_storage_sequence == sequence)
+                    doc_storage_acquired = True
 
-            async def _release_es() -> None:
-                nonlocal next_es_sequence, es_released
-                async with es_condition:
-                    if next_es_sequence != sequence:
-                        raise RuntimeError(f"ES sequence mismatch: expected {next_es_sequence}, releasing {sequence}")
-                    next_es_sequence += 1
-                    es_released = True
-                    es_condition.notify_all()
+            async def _release_doc_storage() -> None:
+                nonlocal next_doc_storage_sequence, doc_storage_released
+                async with doc_storage_condition:
+                    if next_doc_storage_sequence != sequence:
+                        raise RuntimeError(f"ES sequence mismatch: expected {next_doc_storage_sequence}, releasing {sequence}")
+                    next_doc_storage_sequence += 1
+                    doc_storage_released = True
+                    doc_storage_condition.notify_all()
 
             kind = template_kinds.get(template_id, "")
             merge_chat_mdl = llm_pool.wrap(
@@ -244,18 +349,22 @@ async def run_structure_compile_over_batches(
                     chain_kind=kind,
                     chain_callback=progress_cb,
                     chain_timeout_seconds=STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
-                    es_waiter=_wait_for_es,
-                    es_releaser=_release_es,
+                    doc_storage_waiter=_wait_for_doc_storage,
+                    doc_storage_releaser=_release_doc_storage,
+                    merge_scope=merge_scope_by_tid[template_id],
                 )
             finally:
-                if not es_released:
-                    if not es_acquired:
-                        await _wait_for_es()
-                    await _release_es()
+                if not doc_storage_released:
+                    if not doc_storage_acquired:
+                        await _wait_for_doc_storage()
+                    await _release_doc_storage()
             if isinstance(info, dict):
                 agg = agg_infos[template_id]
                 for k in ("inserted", "updated", "duplicates_dropped"):
                     agg[k] = agg.get(k, 0) + int(info.get(k, 0) or 0)
+                for compile_kwd in info.get("compile_kwds") or []:
+                    if compile_kwd:
+                        compile_kwds_by_tid[template_id].add(str(compile_kwd))
 
         flush_tasks.add(asyncio.create_task(_run_flush()))
 
@@ -375,6 +484,59 @@ async def run_structure_compile_over_batches(
         finally:
             flush_tasks.clear()
 
+    # ── Dataset structure graph ──────────────────────────────────────────
+    # For dataset-scope templates the entity/relation rows are now merged
+    # across documents, so (re)project them into a single KB-wide graph. This
+    # runs once per document-parse completion; the last document to finish
+    # produces the complete dataset graph. Best-effort — a failure here must
+    # not fail the parse.
+    for template_id, _ in active_templates:
+        if merge_scope_by_tid[template_id] != MERGE_SCOPE_DATASET:
+            continue
+        # The row is filtered by the template's *top-level* kind (e.g.
+        # ``knowledge_graph``, ``session_graph``), which — unlike ``config.kind``
+        # — distinguishes the knowledge_graph family. Resolve it from the
+        # template record; on failure leave it unstamped (the read side falls
+        # back to resolving kind from the template id).
+        structure_kind = None
+        try:
+            saved_template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            if saved_template:
+                structure_kind = (saved_template.get("kind") or "").strip() or None
+        except Exception:
+            logging.exception("dataset structure graph: failed to resolve top-level kind for template %s", template_id)
+        for compile_kwd in sorted(compile_kwds_by_tid[template_id]):
+            if cancel_check():
+                raise TaskCanceledException("Task was cancelled before dataset structure graph rebuild")
+            try:
+                progress_cb(msg=f"Rebuilding dataset structure graph (compile_kwd={compile_kwd}) ...")
+                await rebuild_dataset_structure_graph_json(
+                    tenant_id,
+                    kb_id,
+                    compile_kwd,
+                    compilation_template_id=template_id,
+                    structure_kind=structure_kind,
+                )
+            except TaskCanceledException:
+                raise
+            except Exception:
+                logging.exception(
+                    "dataset structure graph rebuild failed for kb=%s compile_kwd=%s template=%s",
+                    kb_id,
+                    compile_kwd,
+                    template_id,
+                )
+
+    await _upsert_dataset_nav_from_page_index(
+        active_templates=active_templates,
+        chat_mdl_by_tid=chat_mdl_by_tid,
+        embedding_model=embedding_model,
+        tenant_id=tenant_id,
+        kb_id=kb_id,
+        doc_id=doc_id,
+        progress_cb=progress_cb,
+        cancel_check=cancel_check,
+    )
     # Timeline entity cleanup must happen after every flush has completed;
     # otherwise an entity can look isolated in one flush and be referenced by
     # a relation from a later flush. Keep this scoped to timeline templates.
