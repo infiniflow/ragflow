@@ -53,6 +53,7 @@ export function ChildrenDelimiterForm() {
   const form = useFormContext();
 
   const delimiterValue = form.watch('parser_config.children_delimiter');
+  const enableChildren = form.watch('parser_config.enable_children');
 
   return (
     <fieldset className="space-y-2">
@@ -87,7 +88,7 @@ export function ChildrenDelimiterForm() {
         )}
       />
 
-      {form.getValues('parser_config.enable_children') && (
+      {enableChildren && (
         <FormField
           control={form.control}
           name="parser_config.children_delimiter"

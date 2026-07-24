@@ -320,14 +320,29 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
 
     if req.get("parser_config"):
         # Flatten parent_child config into children_delimiter for the execution layer
-        pc = req["parser_config"].get("parent_child", {})
-        if pc.get("use_parent_child"):
-            req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
-            req["parser_config"]["enable_children"] = pc.get("use_parent_child", True)
+        pc = req["parser_config"].get("parent_child", {}) or {}
+        use_parent_child = bool(pc.get("use_parent_child")) or bool(
+            req["parser_config"].get("enable_children")
+        )
+        if use_parent_child:
+            children_delimiter = (
+                pc.get("children_delimiter")
+                or req["parser_config"].get("children_delimiter")
+                or "\n"
+            )
+            req["parser_config"]["children_delimiter"] = children_delimiter
+            req["parser_config"]["enable_children"] = True
+            req["parser_config"]["parent_child"] = {
+                "use_parent_child": True,
+                "children_delimiter": children_delimiter,
+            }
         else:
             req["parser_config"]["children_delimiter"] = ""
             req["parser_config"]["enable_children"] = False
-            req["parser_config"]["parent_child"] = {}
+            req["parser_config"]["parent_child"] = {
+                "use_parent_child": False,
+                "children_delimiter": "\n",
+            }
 
         parser_config = req["parser_config"]
         req_ext_fields = parser_config.pop("ext", {})
