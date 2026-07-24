@@ -60,11 +60,12 @@ func TestIsNamedPDFParseMethodWhitelistAligned(t *testing.T) {
 	}
 }
 
-// TestIsNamedPDFParseMethodLayoutSuffixes verifies the "@"-suffixed
-// layout_recognizer spelling is recognized per backend. "@mineru" must be
-// included to mirror the MinerU dispatch branch in maybeDispatchPDFVision
-// (pdf_vision_dispatch.go:64-68); without it a "foo@mineru" parse_method
-// would be misrouted to the generic vision path instead of MinerU.
+// TestIsNamedPDFParseMethodLayoutSuffixes verifies that "@"-suffixed
+// layout_recognizer spellings are NOT treated as named parse methods. They
+// are layout_recognizer selectors (resolved separately at
+// pdf_vision_dispatch.go:62-68), and Check() rejects them as parse_method,
+// so they must fall through to the CustomVLM/VLM path — consistent with the
+// (*ParserComponent).Check() whitelist (parser.go:200-203).
 func TestIsNamedPDFParseMethodLayoutSuffixes(t *testing.T) {
 	suffixed := []string{
 		"foo@mineru", "@mineru",
@@ -73,12 +74,12 @@ func TestIsNamedPDFParseMethodLayoutSuffixes(t *testing.T) {
 		"foo@opendataloader", "@opendataloader",
 	}
 	for _, v := range suffixed {
-		if !isNamedPDFParseMethod(v) {
-			t.Errorf("isNamedPDFParseMethod(%q) = false, want true (recognized layout suffix)", v)
+		if isNamedPDFParseMethod(v) {
+			t.Errorf("isNamedPDFParseMethod(%q) = true, want false (layout_recognizer selector, not a named parse_method)", v)
 		}
 	}
 
-	// A non-recognized suffix is a CustomVLM name, not a named method.
+	// An unknown suffix is also not a named method.
 	if isNamedPDFParseMethod("foo@unknown") {
 		t.Errorf("isNamedPDFParseMethod(%q) = true, want false", "foo@unknown")
 	}

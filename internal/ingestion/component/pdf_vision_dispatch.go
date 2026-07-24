@@ -370,18 +370,13 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 // here, otherwise it silently falls through to the CustomVLM vision path
 // instead of failing fast at construction.
 //
-// The "@"-suffixed spellings cover the layout_recognizer convention used to
-// select a specific backend (e.g. "foo@mineru"); "@mineru" mirrors the
-// MinerU branch in maybeDispatchPDFVision (pdf_vision_dispatch.go:64-68).
+// Note: "@"-suffixed spellings such as "foo@mineru" are layout_recognizer
+// selectors, not parse_method values. Check() rejects them as parse_method,
+// and the MinerU layout branch is resolved from the layout_recognizer field
+// separately (pdf_vision_dispatch.go:62-68), so they must NOT be recognized
+// here.
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	switch {
-	case strings.HasSuffix(method, "@mineru"),
-		strings.HasSuffix(method, "@paddleocr"),
-		strings.HasSuffix(method, "@somark"),
-		strings.HasSuffix(method, "@opendataloader"):
-		return true
-	}
 	switch method {
 	case "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
 		return true

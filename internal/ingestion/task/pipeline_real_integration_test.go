@@ -404,21 +404,20 @@ func mustLoadTaskTestConfig(t *testing.T) *server.Config {
 	return cfg
 }
 
-// mustOpenTaskTestDB opens an isolated on-disk sqlite database and migrates the
-// tables the real-pipeline contract tests seed and read. It does not connect to
-// any external MySQL; the temporary file is removed on test cleanup.
+// mustOpenTaskTestDB opens an isolated in-memory sqlite database and migrates
+// the tables the real-pipeline contract tests seed and read. It does not touch
+// the filesystem or any external MySQL. The connection pool is pinned to a
+// single connection (MaxOpenConns(1)) so the in-memory database is shared
+// across all statements — without that, gorm's default pool would hand each
+// statement a separate connection, and ":memory:" is per-connection (so seeds
+// on one connection would be invisible to reads on another).
 func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	f, err := os.CreateTemp("", "task-test-*.db")
-	if err != nil {
-		t.Fatalf("create temp sqlite db: %v", err)
-	}
-	_ = f.Close()
-	db, err := gorm.Open(sqlite.Open(f.Name()), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
-		t.Fatalf("open sqlite db: %v", err)
+		t.Fatalf("open in-memory sqlite db: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&entity.Tenant{},
@@ -436,7 +435,6 @@ func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	} else {
 		sqlDB.SetMaxOpenConns(1)
 	}
-	t.Cleanup(func() { _ = os.Remove(f.Name()) })
 	return db
 }
 
