@@ -30,7 +30,7 @@ func (s *FileService) UploadFromURL(ctx context.Context, tenantID, rawURL string
 		return nil, fmt.Errorf("invalid or unsafe URL")
 	}
 
-	data, headers, finalURL, err := utility.FetchRemoteFileSafely(rawURL, maxRemoteFileSize)
+	data, headers, finalURL, err := utility.FetchRemoteFileSafely(ctx, rawURL, maxRemoteFileSize)
 	if err != nil {
 		return nil, err
 	}

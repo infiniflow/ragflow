@@ -50,12 +50,10 @@ import (
 type agentFileService interface {
 	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
-	// returns lightweight descriptors. Mirrors python FileService.upload_info
-	// (multi-file path) used by the agent upload endpoint.
+	// returns lightweight descriptors.
 	UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	// UploadFromURL downloads a remote file (with SSRF protection) and
-	// stores it as an info blob. Mirrors python FileService.upload_info
-	// (single-file path with ?url=) used by the agent upload endpoint.
+	// stores it as an info blob.
 	UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error)
 }
 

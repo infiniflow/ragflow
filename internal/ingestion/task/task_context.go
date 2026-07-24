@@ -79,6 +79,7 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 	pipelineID := resolvePipelineID(doc, kb)
 
 	return &TaskContext{
+		Ctx:           ctx,
 		IngestionTask: ingestionTask,
 		PipelineID:    pipelineID,
 		Doc:           *doc,

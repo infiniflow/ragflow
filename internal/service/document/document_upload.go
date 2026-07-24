@@ -127,7 +127,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	}
 	for _, n := range names {
 		if n == name {
-			return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
+			return nil, common.CodeDataError, fmt.Errorf("duplicated document name in the same dataset")
 		}
 	}
 
@@ -249,7 +249,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		taken[n] = true
 	}
 
-	blob, headers, _, err := utility.FetchRemoteFileSafely(url, maxUploadDocSize)
+	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, maxUploadDocSize)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -263,7 +263,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 
 	filetype := utility.FilenameType(filename)
 	if filetype == utility.FileTypeOTHER {
-		return nil, common.CodeDataError, fmt.Errorf("This type of file has not been supported yet!")
+		return nil, common.CodeDataError, fmt.Errorf("this type of file has not been supported yet")
 	}
 
 	location := filename

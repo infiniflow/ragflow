@@ -559,7 +559,7 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, dao.DB, kbIDs)
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
 			if err != nil {
 				common.Warn("failed to get document IDs", zap.Error(err))
 			}

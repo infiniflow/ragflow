@@ -141,9 +141,9 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 
 // IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction
 func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Update document
-		if err := tx.Model(&entity.Document{}).
+		if err := tx.WithContext(ctx).Model(&entity.Document{}).
 			Where("id = ? AND kb_id = ?", docID, kbID).
 			Updates(map[string]interface{}{
 				"chunk_num":        gorm.Expr("chunk_num + ?", int64(chunkNum)),
@@ -154,7 +154,7 @@ func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID str
 		}
 
 		// Update knowledgebase
-		if err := tx.Model(&entity.Knowledgebase{}).
+		if err := tx.WithContext(ctx).Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
 				"chunk_num": gorm.Expr("chunk_num + ?", int64(chunkNum)),
@@ -191,7 +191,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
 	if !s.kbDAO.Accessible(datasetID, userID) {
-		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
+		return 0, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
 	// 2. Resolve document IDs

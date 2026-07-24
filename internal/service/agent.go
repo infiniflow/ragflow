@@ -796,7 +796,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, true)
 	var row *entity.UserCanvasVersion
 	if err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		if err := s.canvasDAO.UpdateTx(tx, canvasInstance); err != nil {
+		if err = s.canvasDAO.UpdateTx(tx, canvasInstance); err != nil {
 			return fmt.Errorf("publish agent %s: update parent: %w", canvasID, err)
 		}
 		saved, err := s.versionDAO.SaveOrReplaceLatestTx(tx, opts)

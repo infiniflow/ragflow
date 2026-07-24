@@ -105,7 +105,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			Schema:     nil,
 			Status:     common.CREATED,
 		}
-		task, err = s.CreateAndEnqueue(task)
+		task, err = s.CreateAndEnqueue(ctx, task)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -374,7 +374,7 @@ func (s *IngestionTaskService) transition(taskID string, to string) (*entity.Ing
 	return task, nil
 }
 
-func (s *IngestionTaskService) CreateAndEnqueue(task *entity.IngestionTask) (*entity.IngestionTask, error) {
+func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(task.DocumentID)
 	if err != nil {
 		return nil, err

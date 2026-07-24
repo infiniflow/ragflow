@@ -135,10 +135,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
-		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		if err := pipelinepkg.NormalizeParserConfigPages(map[string]any(req.ParserConfig)); err != nil {
+		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -148,7 +148,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
 		if *req.Pagerank < 0 || *req.Pagerank > 100 {
-			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
+			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
 			return nil, common.CodeServerError, errors.New("document engine is not initialized")

@@ -48,7 +48,7 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	if err := s.docEngine.UpdateMetadata(context.Background(), docID, doc.KbID, meta, tenantID); err != nil {
+	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
