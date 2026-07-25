@@ -58,7 +58,7 @@ func (e *serenedbEngine) DropMetadataStore(ctx context.Context, tenantID string)
 
 // MetadataStoreExists reports whether the tenant metadata table exists.
 func (e *serenedbEngine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
-	return e.tableExists(ctx, buildMetadataTableName(tenantID)), nil
+	return e.tableExists(ctx, buildMetadataTableName(tenantID))
 }
 
 func metaFieldsJSON(v interface{}) string {
@@ -82,7 +82,11 @@ func (e *serenedbEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 		return []string{}, nil
 	}
 	tableName := buildMetadataTableName(tenantID)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
 		if err := e.CreateMetadataStore(ctx, tenantID); err != nil {
 			return nil, err
 		}
@@ -101,7 +105,11 @@ func (e *serenedbEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 // caller did not send. Missing rows are inserted.
 func (e *serenedbEngine) UpdateMetadata(ctx context.Context, docID, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		if err := e.CreateMetadataStore(ctx, tenantID); err != nil {
 			return err
 		}
@@ -157,8 +165,15 @@ func (e *serenedbEngine) DeleteMetadataKeys(ctx context.Context, docID, datasetI
 // error.
 func (e *serenedbEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return 0, err
+	}
+	if !exists {
 		return 0, nil
+	}
+	if unknown := unrecognizedFilterKeys(condition); len(unknown) > 0 {
+		return 0, fmt.Errorf("serenedb: refusing to delete metadata from %s with unrecognized filter keys %v", tableName, unknown)
 	}
 	filters := buildFilters(condition)
 	if len(filters) == 0 {
@@ -181,12 +196,26 @@ func (e *serenedbEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	}
 	tableName := buildMetadataTableName(req.TenantID)
 	empty := &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}, Total: 0}
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
 		return empty, nil
 	}
+	// SelectFields is interpolated into the projection, so keep only real
+	// metadata columns.
 	fields := "*"
 	if len(req.SelectFields) > 0 {
-		fields = strings.Join(req.SelectFields, ", ")
+		valid := make([]string, 0, len(req.SelectFields))
+		for _, f := range req.SelectFields {
+			if _, ok := docMetaDDL[f]; ok {
+				valid = append(valid, f)
+			}
+		}
+		if len(valid) > 0 {
+			fields = strings.Join(valid, ", ")
+		}
 	}
 	filters := buildFilters(req.Filter)
 	where := filtersExpr(filters)

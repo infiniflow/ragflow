@@ -86,6 +86,40 @@ func toStringSlice(v interface{}) []interface{} {
 // scoped by table name (like the other engines), so callers strip it before
 // calling. Array columns filter with list_contains; exists/must_not map to
 // IS NULL / IS NOT NULL.
+// neverMatch is a predicate that matches no rows. An empty IN list (or empty
+// array-contains) reduces to it, and it keeps a DELETE/UPDATE from widening
+// scope when the caller asked to match "nothing".
+const neverMatch = "1 = 0"
+
+// recognizedFilterKey reports whether buildFilters emits a predicate for a key.
+// Callers that must not silently widen scope (DeleteChunks/UpdateChunks/
+// DeleteMetadata) reject conditions carrying unrecognized keys.
+func recognizedFilterKey(k string) bool {
+	return k == "exists" || k == "must_not" || isArrayColumn(k) || isKnownColumn(k)
+}
+
+// unrecognizedFilterKeys returns any condition keys buildFilters would drop.
+func unrecognizedFilterKeys(condition map[string]interface{}) []string {
+	var unknown []string
+	for k := range condition {
+		if !recognizedFilterKey(k) {
+			unknown = append(unknown, k)
+		}
+	}
+	return unknown
+}
+
+func inList(column string, vals []interface{}) string {
+	if len(vals) == 0 {
+		return neverMatch
+	}
+	parts := make([]string, 0, len(vals))
+	for _, x := range vals {
+		parts = append(parts, escapeLiteral(x))
+	}
+	return fmt.Sprintf("%s IN (%s)", column, strings.Join(parts, ", "))
+}
+
 func buildFilters(condition map[string]interface{}) []string {
 	var filters []string
 	for k, v := range condition {
@@ -114,27 +148,22 @@ func buildFilters(condition map[string]interface{}) []string {
 			}
 		case isArrayColumn(k):
 			vals := toStringSlice(v)
+			if len(vals) == 0 {
+				filters = append(filters, neverMatch)
+				continue
+			}
 			ors := make([]string, 0, len(vals))
 			for _, x := range vals {
 				ors = append(ors, fmt.Sprintf("list_contains(%s, %s)", k, escapeLiteral(x)))
 			}
-			if len(ors) > 0 {
-				filters = append(filters, "("+strings.Join(ors, " OR ")+")")
-			}
+			filters = append(filters, "("+strings.Join(ors, " OR ")+")")
 		case isKnownColumn(k):
-			if list, ok := v.([]interface{}); ok {
-				parts := make([]string, 0, len(list))
-				for _, x := range list {
-					parts = append(parts, escapeLiteral(x))
-				}
-				filters = append(filters, fmt.Sprintf("%s IN (%s)", k, strings.Join(parts, ", ")))
-			} else if list, ok := v.([]string); ok {
-				parts := make([]string, 0, len(list))
-				for _, x := range list {
-					parts = append(parts, escapeLiteral(x))
-				}
-				filters = append(filters, fmt.Sprintf("%s IN (%s)", k, strings.Join(parts, ", ")))
-			} else {
+			switch list := v.(type) {
+			case []interface{}:
+				filters = append(filters, inList(k, list))
+			case []string:
+				filters = append(filters, inList(k, toStringSlice(list)))
+			default:
 				filters = append(filters, fmt.Sprintf("%s = %s", k, escapeLiteral(v)))
 			}
 		}

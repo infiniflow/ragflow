@@ -81,7 +81,11 @@ func (e *serenedbEngine) CreateChunkStore(ctx context.Context, baseName, dataset
 // (empty datasetID) drops the table itself.
 func (e *serenedbEngine) DropChunkStore(ctx context.Context, baseName, datasetID string) error {
 	tableName := chunkTableName(baseName)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return nil
 	}
 	if datasetID != "" {
@@ -95,7 +99,7 @@ func (e *serenedbEngine) DropChunkStore(ctx context.Context, baseName, datasetID
 
 // ChunkStoreExists reports whether the tenant table exists.
 func (e *serenedbEngine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
-	return e.tableExists(ctx, chunkTableName(baseName)), nil
+	return e.tableExists(ctx, chunkTableName(baseName))
 }
 
 // toFloatSlice coerces a chunk vector value to []float64.
@@ -136,7 +140,7 @@ func toFloatSlice(v interface{}) ([]float64, bool) {
 // Vector columns get their L2-normalized shadow; unknown fields collapse into
 // the `extra` JSON column; JSON columns are serialized. ES field names are
 // preserved verbatim.
-func prepareChunkRow(chunk map[string]interface{}) ([]string, []interface{}) {
+func prepareChunkRow(chunk map[string]interface{}, defaultKbID string) ([]string, []interface{}) {
 	d := map[string]interface{}{}
 	extra := map[string]interface{}{}
 	vecCols := map[string][]float64{}
@@ -178,6 +182,13 @@ func prepareChunkRow(chunk map[string]interface{}) ([]string, []interface{}) {
 		}
 		b, _ := json.Marshal(merged)
 		d["extra"] = string(b)
+	}
+	// The table is shared across datasets, so kb_id identifies the row's
+	// dataset. Honour an explicit kb_id, otherwise stamp the target dataset.
+	if defaultKbID != "" {
+		if _, ok := d["kb_id"]; !ok {
+			d["kb_id"] = defaultKbID
+		}
 	}
 	for k, dv := range columnDefaults {
 		if _, ok := d[k]; !ok {
@@ -221,7 +232,11 @@ func (e *serenedbEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 		return []string{}, nil
 	}
 	tableName := chunkTableName(baseName)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
 		size := 0
 		for k := range chunks[0] {
 			if m := vectorColumnPattern.FindStringSubmatch(k); m != nil {
@@ -239,12 +254,7 @@ func (e *serenedbEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	}
 	groups := map[string]*group{}
 	for _, chunk := range chunks {
-		// The table is shared across datasets, so kb_id must identify the row's
-		// dataset. Honour an explicit kb_id, otherwise stamp the target dataset.
-		if _, ok := chunk["kb_id"]; !ok && datasetID != "" {
-			chunk["kb_id"] = datasetID
-		}
-		cols, vals := prepareChunkRow(chunk)
+		cols, vals := prepareChunkRow(chunk, datasetID)
 		key := strings.Join(cols, ",")
 		g := groups[key]
 		if g == nil {
@@ -294,11 +304,18 @@ func buildUpsert(tableName string, cols []string, rows [][]interface{}) (string,
 // array columns map to list_append/array_remove; other fields are set directly.
 func (e *serenedbEngine) UpdateChunks(ctx context.Context, condition, newValue map[string]interface{}, baseName, datasetID string) error {
 	tableName := chunkTableName(baseName)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return fmt.Errorf("serenedb: table %s does not exist", tableName)
 	}
 	cond := copyCondition(condition)
 	cond["kb_id"] = datasetID
+	if unknown := unrecognizedFilterKeys(cond); len(unknown) > 0 {
+		return fmt.Errorf("serenedb: refusing to update %s with unrecognized filter keys %v", tableName, unknown)
+	}
 	filters := buildFilters(cond)
 	if len(filters) == 0 {
 		return fmt.Errorf("serenedb: refusing to update %s without a filter", tableName)
@@ -362,11 +379,18 @@ func buildUpdateSets(newValue map[string]interface{}) []string {
 // table is not an error.
 func (e *serenedbEngine) DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName, datasetID string) (int64, error) {
 	tableName := chunkTableName(baseName)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return 0, err
+	}
+	if !exists {
 		return 0, nil
 	}
 	cond := copyCondition(condition)
 	cond["kb_id"] = datasetID
+	if unknown := unrecognizedFilterKeys(cond); len(unknown) > 0 {
+		return 0, fmt.Errorf("serenedb: refusing to delete from %s with unrecognized filter keys %v", tableName, unknown)
+	}
 	filters := buildFilters(cond)
 	if len(filters) == 0 {
 		return 0, nil
@@ -384,7 +408,11 @@ func (e *serenedbEngine) DeleteChunks(ctx context.Context, condition map[string]
 // the caller's datasets.
 func (e *serenedbEngine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
 	tableName := chunkTableName(baseName)
-	if !e.tableExists(ctx, tableName) {
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
 		return nil, nil
 	}
 	query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1", tableName)
@@ -394,7 +422,10 @@ func (e *serenedbEngine) GetChunk(ctx context.Context, baseName, chunkID string,
 		}
 	}
 	rows, err := e.queryMaps(ctx, query, chunkID)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
 		return nil, nil
 	}
 	return rows[0], nil

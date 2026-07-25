@@ -34,7 +34,11 @@ func asChunkMap(doc interface{}) (map[string]interface{}, error) {
 // ensureSkillTable creates the skill table (named by indexName) if absent,
 // inferring the vector size from the documents.
 func (e *serenedbEngine) ensureSkillTable(ctx context.Context, indexName string, docs []map[string]interface{}) error {
-	if e.tableExists(ctx, indexName) {
+	exists, err := e.tableExists(ctx, indexName)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	size := 0
@@ -65,7 +69,7 @@ func (e *serenedbEngine) IndexDocument(ctx context.Context, indexName, docID str
 	if err := e.ensureSkillTable(ctx, indexName, []map[string]interface{}{m}); err != nil {
 		return err
 	}
-	cols, vals := prepareChunkRow(m)
+	cols, vals := prepareChunkRow(m, "")
 	query, args := buildUpsert(indexName, cols, [][]interface{}{vals})
 	return e.exec(ctx, query, args...)
 }
@@ -87,7 +91,7 @@ func (e *serenedbEngine) BulkIndex(ctx context.Context, indexName string, docs [
 		return nil, err
 	}
 	for _, m := range maps {
-		cols, vals := prepareChunkRow(m)
+		cols, vals := prepareChunkRow(m, "")
 		query, args := buildUpsert(indexName, cols, [][]interface{}{vals})
 		if err := e.exec(ctx, query, args...); err != nil {
 			return nil, fmt.Errorf("serenedb: bulk index %s: %w", indexName, err)
@@ -98,7 +102,11 @@ func (e *serenedbEngine) BulkIndex(ctx context.Context, indexName string, docs [
 
 // DeleteDocument removes a skill document by id. A missing table is not an error.
 func (e *serenedbEngine) DeleteDocument(ctx context.Context, indexName, docID string) error {
-	if !e.tableExists(ctx, indexName) {
+	exists, err := e.tableExists(ctx, indexName)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return nil
 	}
 	return e.exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", indexName), docID)

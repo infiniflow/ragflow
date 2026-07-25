@@ -60,6 +60,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 import psycopg2
 import psycopg2.extras
@@ -214,7 +215,9 @@ class SereneDBConnection(DocStoreConnection):
             user = cfg.get("user", "postgres")
             password = cfg.get("password", "")
             dbname = cfg.get("db_name", "postgres")
-            dsn = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+            # URL-encode credentials so a password with @ / : / space does not
+            # corrupt the DSN.
+            dsn = f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{quote(dbname, safe='')}"
         except Exception:
             pass
         dsn = os.environ.get("SERENEDB_DSN", dsn or "postgresql://postgres@serenedb:7890/")
@@ -476,6 +479,9 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
 
     def _aggregation(self, result: SearchResult, index_name: str, agg_fields, filters_expr):
         for agg_field in agg_fields:
+            if agg_field not in COLUMN_DDL:
+                # agg_field is interpolated into SQL; only aggregate real columns.
+                continue
             if agg_field in ARRAY_COLUMNS:
                 rows, _ = self._run(f"SELECT u.v, count(*) FROM (SELECT unnest({agg_field}) AS v FROM {index_name} WHERE {filters_expr} AND {agg_field} IS NOT NULL) u GROUP BY u.v")
             else:

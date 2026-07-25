@@ -74,7 +74,11 @@ func (e *serenedbEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 	result := &types.SearchResult{Chunks: []map[string]interface{}{}}
 	for _, tableName := range req.IndexNames {
-		if !e.tableExists(ctx, tableName) {
+		exists, err := e.tableExists(ctx, tableName)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
 			continue
 		}
 		var query string

@@ -339,3 +339,54 @@ func TestGetScoresFromKNNStructure(t *testing.T) {
 		t.Errorf("GetScores = %v", got)
 	}
 }
+
+func TestBuildFiltersEmptyListNeverMatches(t *testing.T) {
+	// An empty IN / array list must not emit invalid `col IN ()`; it reduces to
+	// a never-match predicate so a DELETE/UPDATE cannot widen scope.
+	if got := buildFilters(map[string]interface{}{"doc_id": []interface{}{}}); len(got) != 1 || got[0] != neverMatch {
+		t.Errorf("empty IN filter = %v", got)
+	}
+	if got := buildFilters(map[string]interface{}{"tag_kwd": []interface{}{}}); len(got) != 1 || got[0] != neverMatch {
+		t.Errorf("empty array filter = %v", got)
+	}
+}
+
+func TestUnrecognizedFilterKeys(t *testing.T) {
+	unknown := unrecognizedFilterKeys(map[string]interface{}{
+		"doc_id": "x", "exists": "img_id", "must_not": nil, "tag_kwd": "t", "bogus": "y",
+	})
+	if len(unknown) != 1 || unknown[0] != "bogus" {
+		t.Errorf("unrecognized keys = %v, want [bogus]", unknown)
+	}
+}
+
+func TestValidIdentifier(t *testing.T) {
+	for _, ok := range []string{"ragflow_t1", "ragflow_doc_meta_abc", "_x"} {
+		if !validIdentifier(ok) {
+			t.Errorf("%q should be valid", ok)
+		}
+	}
+	for _, bad := range []string{"a; DROP TABLE t", "1abc", "a b", "a-b", "", "t';--"} {
+		if validIdentifier(bad) {
+			t.Errorf("%q should be invalid", bad)
+		}
+	}
+}
+
+func TestRedactDSN(t *testing.T) {
+	mustContain(t, redactDSN("host=h user=u password=secret sslmode=disable"), "password=***")
+	mustNotContain(t, redactDSN("host=h password=secret"), "secret")
+	// URL form (SERENEDB_DSN)
+	got := redactDSN("postgresql://u:secret@host:7890/db")
+	mustContain(t, got, "://u:***@host")
+	mustNotContain(t, got, "secret")
+}
+
+func TestQuoteDSNValue(t *testing.T) {
+	if got := quoteDSNValue("p'a ss"); got != `'p\'a ss'` {
+		t.Errorf("quoteDSNValue = %q", got)
+	}
+	if got := quoteDSNValue(`a\b`); got != `'a\\b'` {
+		t.Errorf("quoteDSNValue backslash = %q", got)
+	}
+}

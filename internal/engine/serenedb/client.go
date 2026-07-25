@@ -42,7 +42,27 @@ const (
 	connMaxLifetime = 30 * time.Minute
 )
 
-var dsnPasswordRe = regexp.MustCompile(`(password=)[^ ]+`)
+var (
+	dsnKeywordPwRe = regexp.MustCompile(`(password=)('(?:[^'\\]|\\.)*'|\S+)`)
+	dsnURLPwRe     = regexp.MustCompile(`(://[^:/@\s]+:)[^@\s]+(@)`)
+)
+
+// redactDSN hides the password in both the lib/pq keyword form (password=...)
+// and the URL form (scheme://user:password@host) used by SERENEDB_DSN.
+func redactDSN(dsn string) string {
+	dsn = dsnKeywordPwRe.ReplaceAllString(dsn, "${1}***")
+	dsn = dsnURLPwRe.ReplaceAllString(dsn, "${1}***${2}")
+	return dsn
+}
+
+// quoteDSNValue wraps a lib/pq keyword-DSN value in single quotes, escaping
+// backslashes and quotes, so hosts/users/passwords with spaces or special
+// characters do not break the DSN.
+func quoteDSNValue(v string) string {
+	r := strings.ReplaceAll(v, `\`, `\\`)
+	r = strings.ReplaceAll(r, `'`, `\'`)
+	return "'" + r + "'"
+}
 
 // serenedbEngine implements engine.DocEngine backed by SereneDB.
 type serenedbEngine struct {
@@ -63,7 +83,7 @@ func NewEngine(cfg config.SereneDBConfig) (*serenedbEngine, error) {
 	db.SetMaxIdleConns(poolMaxIdle)
 	db.SetConnMaxLifetime(connMaxLifetime)
 
-	e := &serenedbEngine{db: db, dsnSafe: dsnPasswordRe.ReplaceAllString(dsn, "${1}***")}
+	e := &serenedbEngine{db: db, dsnSafe: redactDSN(dsn)}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -97,14 +117,14 @@ func buildDSN(cfg config.SereneDBConfig) string {
 		dbName = cfg.DBName
 	}
 	parts := []string{
-		fmt.Sprintf("host=%s", host),
+		fmt.Sprintf("host=%s", quoteDSNValue(host)),
 		fmt.Sprintf("port=%d", port),
-		fmt.Sprintf("user=%s", user),
-		fmt.Sprintf("dbname=%s", dbName),
+		fmt.Sprintf("user=%s", quoteDSNValue(user)),
+		fmt.Sprintf("dbname=%s", quoteDSNValue(dbName)),
 		"sslmode=disable",
 	}
 	if password != "" {
-		parts = append(parts, fmt.Sprintf("password=%s", password))
+		parts = append(parts, fmt.Sprintf("password=%s", quoteDSNValue(password)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -176,10 +196,19 @@ func (e *serenedbEngine) queryMaps(ctx context.Context, query string, args ...in
 	return out, rows.Err()
 }
 
-// tableExists reports whether a relation exists by probing it.
-func (e *serenedbEngine) tableExists(ctx context.Context, tableName string) bool {
-	if err := e.exec(ctx, fmt.Sprintf("SELECT 1 FROM %s LIMIT 0", tableName)); err != nil {
-		return false
+// tableExists reports whether a relation exists. It validates the identifier
+// (table names cannot be parameterized) and queries the catalog, so a missing
+// table returns (false, nil) while a connectivity or permission failure is
+// surfaced as an error instead of being masked as "absent".
+func (e *serenedbEngine) tableExists(ctx context.Context, tableName string) (bool, error) {
+	if !validIdentifier(tableName) {
+		return false, fmt.Errorf("serenedb: invalid table name %q", tableName)
 	}
-	return true
+	rows, err := e.db.QueryContext(ctx,
+		"SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1", tableName)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
 }

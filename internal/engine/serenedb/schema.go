@@ -39,6 +39,15 @@ const dictionaryDDL = "CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS " + dictionar
 // vectorColumnPattern matches the ES vector field name, e.g. q_1024_vec.
 var vectorColumnPattern = regexp.MustCompile(`^q_(\d+)_vec$`)
 
+// identifierPattern is the shape a table name (derived from a tenant index
+// name) must have before it is interpolated into DDL/DML. Table names are not
+// parameterizable, so they are validated instead.
+var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func validIdentifier(name string) bool {
+	return identifierPattern.MatchString(name)
+}
+
 // Column groups keep the ES mapping names verbatim so the read path needs no
 // renames. The write path adapts Go values to SQL; the read path decodes JSON
 // columns back to structured values.
