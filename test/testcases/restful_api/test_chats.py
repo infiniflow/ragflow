@@ -131,8 +131,8 @@ def test_chat_crud_cycle(rest_client, clear_chats):
 @pytest.mark.parametrize(
     "name, expected_fragment",
     [
-        ("", "`name` is required."),
-        (" ", "`name` is required."),
+        ("", "`name` is required"),
+        (" ", "`name` is required"),
     ],
 )
 def test_chat_create_name_validation(rest_client, clear_chats, name, expected_fragment):
@@ -154,7 +154,7 @@ def test_chat_duplicate_name_validation(rest_client, clear_chats):
     assert second.status_code == 200
     second_payload = second.json()
     assert second_payload["code"] == 102, second_payload
-    assert "Duplicated chat name" in second_payload["message"], second_payload
+    assert "duplicated chat name" in second_payload["message"], second_payload
 
 
 @pytest.mark.p2
@@ -1635,7 +1635,7 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
 @pytest.mark.p2
 def test_chat_create_additional_guards_contract(rest_client, clear_chats):
     cases = [
-        ("reject tenant_id override", {"tenant_id": "tenant-should-not-pass"}, "`tenant_id` must not be provided."),
+        ("reject tenant_id override", {"tenant_id": "tenant-should-not-pass"}, "`tenant_id` must not be provided"),
         ("reject unknown rerank_id", {"rerank_id": "unknown-rerank-model"}, "`rerank_id` unknown-rerank-model doesn't exist"),
     ]
 
@@ -1682,13 +1682,13 @@ def test_chat_update_name_contract(rest_client, clear_chats):
             "name too long",
             {"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)},
             102,
-            f"Chat name length is {CHAT_ASSISTANT_NAME_LIMIT + 1} which is larger than {CHAT_ASSISTANT_NAME_LIMIT}.",
+            f"chat name length is {CHAT_ASSISTANT_NAME_LIMIT + 1} which is larger than {CHAT_ASSISTANT_NAME_LIMIT}",
             None,
         ),
-        ("name wrong type", {"name": 1}, 102, "Chat name must be a string.", None),
-        ("name empty", {"name": ""}, 102, "`name` cannot be empty.", None),
-        ("duplicate lowercase", {"name": "restful_chat_update_duplicate"}, 102, "Duplicated chat name.", None),
-        ("duplicate uppercase", {"name": "RESTFUL_CHAT_UPDATE_DUPLICATE"}, 102, "Duplicated chat name.", None),
+        ("name wrong type", {"name": 1}, 102, "chat name must be a string", None),
+        ("name empty", {"name": ""}, 102, "`name` cannot be empty", None),
+        ("duplicate lowercase", {"name": "restful_chat_update_duplicate"}, 102, "duplicated chat name", None),
+        ("duplicate uppercase", {"name": "RESTFUL_CHAT_UPDATE_DUPLICATE"}, 102, "duplicated chat name", None),
     ]
 
     for scenario_name, patch_payload, expected_code, expected_message, expected_name in cases:
@@ -1980,13 +1980,13 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     assert empty_name_res.status_code == 200
     empty_name_payload = empty_name_res.json()
     assert empty_name_payload["code"] == 102, empty_name_payload
-    assert empty_name_payload["message"] == "`name` cannot be empty.", empty_name_payload
+    assert empty_name_payload["message"] == "`name` cannot be empty", empty_name_payload
 
     duplicate_name_res = rest_client.patch(f"/chats/{chat_id}", json={"name": "restful_chat_update_mapping_duplicate"})
     assert duplicate_name_res.status_code == 200
     duplicate_name_payload = duplicate_name_res.json()
     assert duplicate_name_payload["code"] == 102, duplicate_name_payload
-    assert duplicate_name_payload["message"] == "Duplicated chat name.", duplicate_name_payload
+    assert duplicate_name_payload["message"] == "duplicated chat name", duplicate_name_payload
 
     prompt_without_placeholder_res = rest_client.patch(
         f"/chats/{chat_id}",

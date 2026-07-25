@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	taskpkg "ragflow/internal/ingestion/task"
@@ -33,14 +34,14 @@ type stubDocStateSvc struct {
 	incrementCalled bool
 }
 
-func (s *stubDocStateSvc) GetDocumentMetadataByID(docID string) (map[string]any, error) {
+func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error) {
 	if s.metaData == nil {
 		return make(map[string]any), nil
 	}
 	return s.metaData, nil
 }
 
-func (s *stubDocStateSvc) SetDocumentMetadata(docID string, meta map[string]any) error {
+func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
 	if s.metaData == nil {
 		s.metaData = make(map[string]any)
@@ -51,7 +52,7 @@ func (s *stubDocStateSvc) SetDocumentMetadata(docID string, meta map[string]any)
 	return nil
 }
 
-func (s *stubDocStateSvc) IncrementChunkNum(docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+func (s *stubDocStateSvc) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	s.incrementCalled = true
 	s.gotDocID = docID
 	s.gotKbID = kbID
@@ -64,7 +65,8 @@ func (s *stubDocStateSvc) IncrementChunkNum(docID, kbID string, chunkNum, tokenN
 func TestDocStateUpdater_NilResultIsNoop(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
-	u.apply(nil)
+	ctx := t.Context()
+	u.apply(ctx, nil)
 	if svc.setCalled || svc.incrementCalled {
 		t.Fatal("nil result must not touch document state")
 	}
@@ -73,7 +75,8 @@ func TestDocStateUpdater_NilResultIsNoop(t *testing.T) {
 func TestDocStateUpdater_EmptyMetadataSkipsMerge(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
-	u.apply(&taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 3, TokenConsumption: 100})
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 3, TokenConsumption: 100})
 	if svc.setCalled {
 		t.Fatal("empty metadata must not call SetDocumentMetadata")
 	}
@@ -88,7 +91,8 @@ func TestDocStateUpdater_EmptyMetadataSkipsMerge(t *testing.T) {
 func TestDocStateUpdater_MergesNewKeys(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"existing": "old"}}
 	u := &docStateUpdater{docSvc: svc}
-	u.apply(&taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"new_key": "value"}, ChunkCount: 1, TokenConsumption: 10})
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"new_key": "value"}, ChunkCount: 1, TokenConsumption: 10})
 	if svc.metaData["existing"] != "old" {
 		t.Errorf("existing key should be preserved: got %q", svc.metaData["existing"])
 	}
@@ -100,7 +104,8 @@ func TestDocStateUpdater_MergesNewKeys(t *testing.T) {
 func TestDocStateUpdater_PreservesExistingKey(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"author": "Alice"}}
 	u := &docStateUpdater{docSvc: svc}
-	u.apply(&taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"author": "Bob"}, ChunkCount: 1, TokenConsumption: 10})
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"author": "Bob"}, ChunkCount: 1, TokenConsumption: 10})
 	if svc.metaData["author"] != "Alice" {
 		t.Errorf("existing key must NOT be overwritten: got %q", svc.metaData["author"])
 	}
@@ -109,7 +114,8 @@ func TestDocStateUpdater_PreservesExistingKey(t *testing.T) {
 func TestDocStateUpdater_IncrementArgs(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
-	u.apply(&taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 10, TokenConsumption: 100})
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 10, TokenConsumption: 100})
 	if svc.gotDocID != "doc-1" || svc.gotKbID != "kb-1" {
 		t.Fatalf("docID=%q kbID=%q, want doc-1/kb-1", svc.gotDocID, svc.gotKbID)
 	}

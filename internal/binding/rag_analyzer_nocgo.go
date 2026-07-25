@@ -48,6 +48,8 @@ func (a *Analyzer) SetFineGrained(bool) {}
 
 func (a *Analyzer) SetEnablePosition(bool) {}
 
+func (a *Analyzer) SetLanguage(string) {}
+
 func (a *Analyzer) Analyze(text string) ([]Token, error) {
 	return nil, fmt.Errorf("rag_analyzer: cgo required for Analyze(%q)", text)
 }

@@ -16,6 +16,7 @@ import (
 	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -145,7 +146,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "missing-doc", "doc-2"},
 	})
 	if err == nil {
@@ -159,14 +161,14 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 
 	var taskCount int64
-	if err = dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+	if err = db.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount != 1 {
 		t.Fatalf("expected existing task to remain, got %d tasks", taskCount)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -184,8 +186,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 func TestParseRejectsInaccessibleDataset(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return false }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -200,9 +202,9 @@ func TestParseRejectsInaccessibleDataset(t *testing.T) {
 func TestParseRequiresDocumentIDs(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-
+	ctx := t.Context()
 	for _, req := range []*service.ParseFileRequest{nil, {DocumentIDs: nil}, {DocumentIDs: []string{}}} {
-		_, code, err := svc.Parse("user-1", "kb-1", req)
+		_, code, err := svc.Parse(ctx, "user-1", "kb-1", req)
 		if err == nil {
 			t.Fatal("expected parse to fail")
 		}
@@ -219,8 +221,8 @@ func TestParseReturnsDataErrorWhenDatasetMissing(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
 	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) { return nil, nil }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -242,8 +244,8 @@ func TestParseReturnsServerErrorWhenDocumentsQueryFails(t *testing.T) {
 	svc.getDocumentsByIDsFunc = func([]string) ([]*entity.Document, error) {
 		return nil, queryErr
 	}
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if !errors.Is(err, queryErr) {
 		t.Fatalf("expected query error, got %v", err)
 	}
@@ -261,12 +263,13 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, "doc-1", datasetID)
 	running := string(entity.TaskStatusRunning)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
 		t.Fatalf("mark doc running: %v", err)
 	}
 
 	svc := newParseTestService(t)
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -278,7 +281,131 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	}
 }
 
+func TestListSortsChunksByDocumentPosition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+
+	ctx := t.Context()
+	page := 1
+	size := 30
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if engine.searchReq.OrderBy == nil {
+		t.Fatal("expected OrderBy to be set")
+	}
+	want := []types.OrderByField{
+		{Field: "chunk_order_int", Type: types.SortAsc},
+		{Field: "page_num_int", Type: types.SortAsc},
+		{Field: "top_int", Type: types.SortAsc},
+		{Field: "create_timestamp_flt", Type: types.SortDesc},
+	}
+	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
+		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
+	}
+}
+
+func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+	ctx := t.Context()
+
+	page := 2
+	size := 5
+	resp, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+		Keywords:  "  invoice terms  ",
+	}, userID)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want 1", resp.Total)
+	}
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if engine.searchReq.Offset != 5 || engine.searchReq.Limit != 5 {
+		t.Fatalf("pagination = offset %d limit %d, want offset 5 limit 5", engine.searchReq.Offset, engine.searchReq.Limit)
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want %#v", engine.searchReq.KbIDs, []string{datasetID})
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if slices.Contains(engine.searchReq.SelectFields, "content") {
+		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
+	}
+	for _, field := range []string{"content_with_weight", "img_id", "position_int"} {
+		if !slices.Contains(engine.searchReq.SelectFields, field) {
+			t.Fatalf("SelectFields = %#v, missing %q", engine.searchReq.SelectFields, field)
+		}
+	}
+	if got := resp.Chunks[0]["content_with_weight"]; got != "weighted invoice terms body" {
+		t.Fatalf("formatted content_with_weight = %#v, want %q", got, "weighted invoice terms body")
+	}
+	if len(engine.searchReq.MatchExprs) != 1 {
+		t.Fatalf("MatchExprs length = %d, want 1", len(engine.searchReq.MatchExprs))
+	}
+	matchText, ok := engine.searchReq.MatchExprs[0].(*types.MatchTextExpr)
+	if !ok {
+		t.Fatalf("MatchExprs[0] = %T, want *types.MatchTextExpr", engine.searchReq.MatchExprs[0])
+	}
+	if matchText.MatchingText != "invoice terms" {
+		t.Fatalf("MatchingText = %q, want %q", matchText.MatchingText, "invoice terms")
+	}
+	if matchText.TopN != size {
+		t.Fatalf("TopN = %d, want %d", matchText.TopN, size)
+	}
+}
+
 func TestAddChunkSuccess(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -320,7 +447,7 @@ func TestAddChunkSuccess(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:         datasetID,
 		DocumentID:        documentID,
 		Content:           "chunk body",
@@ -370,6 +497,7 @@ func TestAddChunkSuccess(t *testing.T) {
 }
 
 func TestAddChunkValidationErrors(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1")
@@ -410,7 +538,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(svc)
 			}
-			_, err := svc.AddChunk(tt.req, "user-1")
+			_, err := svc.AddChunk(ctx, tt.req, "user-1")
 			if err == nil || !strings.Contains(err.Error(), tt.wantMsg) {
 				t.Fatalf("error = %v, want substring %q", err, tt.wantMsg)
 			}
@@ -419,6 +547,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 }
 
 func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -457,7 +586,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		},
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
@@ -469,7 +598,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 
 	validJPEG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pRZ0AAAAASUVORK5CYII="
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -479,7 +608,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		t.Fatalf("expected tag_feas validation error, got resp=%#v err=%v", resp, err)
 	}
 
-	resp, err = svc.AddChunk(&service.AddChunkRequest{
+	resp, err = svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
@@ -498,6 +627,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 }
 
 func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -533,7 +663,7 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -591,8 +721,8 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
 	}, "user-1")
@@ -615,7 +745,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		t.Fatalf("delete id condition = %#v", engine.deleteChunksCondition["id"])
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -656,8 +786,8 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 			return nil
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:     "doc-1",
 		DeleteAll: true,
 	}, "user-1")
@@ -690,8 +820,8 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 			return errors.New("stats update failed")
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2"},
 	}, "user-1")
@@ -719,8 +849,8 @@ func TestDecrementChunkStatsClampsCounters(t *testing.T) {
 	if err := svc.decrementChunkStats("doc-1", "kb-1", 5, 7, -1); err != nil {
 		t.Fatalf("decrementChunkStats() error = %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -747,8 +877,8 @@ func TestDecrementChunkStatsRollsBackWhenKnowledgebaseMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "knowledgebase not found") {
 		t.Fatalf("expected missing knowledgebase error, got %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -1028,6 +1158,26 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	return nil, e.insertErr
 }
 
+type listChunksSearchEngine struct {
+	parseTestDocEngine
+	searchReq *types.SearchRequest
+}
+
+func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return &types.SearchResult{
+		Chunks: []map[string]interface{}{
+			{
+				"id":                  "chunk-1",
+				"content":             "plain invoice terms body",
+				"content_with_weight": "weighted invoice terms body",
+				"doc_id":              "doc-1",
+			},
+		},
+		Total: 1,
+	}, nil
+}
+
 type chunkImageStorage struct {
 	exists    bool
 	oldBinary []byte
@@ -1082,47 +1232,47 @@ type stubEmbeddingDriver struct {
 
 func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
 func (d *stubEmbeddingDriver) Name() string                                     { return "stub" }
-func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage) (*models.ChatResponse, error) {
+func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
+func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) TranscribeAudioWithSender(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage) (*models.TTSResponse, error) {
+func (d *stubEmbeddingDriver) AudioSpeech(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage) (*models.TTSResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) AudioSpeechWithSender(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig, *common.ModelUsage) (*models.OCRFileResponse, error) {
+func (d *stubEmbeddingDriver) OCRFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.OCRConfig, *common.ModelUsage) (*models.OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig, *common.ModelUsage) (*models.ParseFileResponse, error) {
+func (d *stubEmbeddingDriver) ParseFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.ParseFileConfig, *common.ModelUsage) (*models.ParseFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ListModels(*models.APIConfig) ([]models.ListModelResponse, error) {
+func (d *stubEmbeddingDriver) ListModels(context.Context, *models.APIConfig) ([]models.ListModelResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) Balance(*models.APIConfig) (map[string]interface{}, error) {
+func (d *stubEmbeddingDriver) Balance(context.Context, *models.APIConfig) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) CheckConnection(*models.APIConfig) error { return nil }
-func (d *stubEmbeddingDriver) ListTasks(*models.APIConfig) ([]models.ListTaskStatus, error) {
+func (d *stubEmbeddingDriver) CheckConnection(context.Context, *models.APIConfig) error { return nil }
+func (d *stubEmbeddingDriver) ListTasks(context.Context, *models.APIConfig) ([]models.ListTaskStatus, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ShowTask(string, *models.APIConfig) (*models.TaskResponse, error) {
+func (d *stubEmbeddingDriver) ShowTask(context.Context, string, *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
 
@@ -1210,7 +1360,8 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	if err := svc.SwitchChunks("user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
+	ctx := t.Context()
+	if err = svc.SwitchChunks(ctx, "user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
 		t.Fatalf("SwitchChunks() error = %v", err)
 	}
 
@@ -1347,7 +1498,8 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-	_, _, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
+	ctx := t.Context()
+	_, _, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
 	if err == nil {
 		t.Fatal("expected error for RUNNING ingestion task, got nil")
 	}
@@ -1364,13 +1516,13 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 	svc.accessibleFunc = func(string, string) bool { return true }
 	var calledOpts document.StartParseOptions
 	var calledDocID string
-	svc.startParseDocumentsFunc = func(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
 		calledOpts = opts
 		calledDocID = doc.ID
 		return nil
 	}
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -1393,11 +1545,12 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 	insertChunkTestDoc(t, "doc-1", datasetID)
 
 	svc := newParseTestService(t)
-	svc.startParseDocumentsFunc = func(*entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
+	svc.startParseDocumentsFunc = func(context.Context, *entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
 		return nil
 	}
 
-	result, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
+	ctx := t.Context()
+	result, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "doc-1"},
 	})
 	if err == nil {
@@ -1425,12 +1578,12 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	var calledDocID string
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error {
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
 		calledDocID = doc.ID
 		return nil
 	}
-
-	_, _, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
 	}
@@ -1448,9 +1601,9 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	var called bool
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error { called = true; return nil }
-
-	_, code, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error { called = true; return nil }
+	ctx := t.Context()
+	_, code, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected error for document without ingestion task")
 	}
@@ -1477,21 +1630,21 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
-	svc.cancelIngestionTaskFunc = func(doc *entity.Document) error {
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
 		// Simulate CancelDocParse: set doc.run=CANCEL.
 		return dao.DB.Model(&entity.Document{}).Where("id = ?", doc.ID).
 			Update("run", string(entity.TaskStatusCancel)).Error
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine
-
-	_, _, err := svc.StopParsing("user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
 	}
 
 	// Counters must NOT be reset.
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("reload doc: %v", err)
 	}

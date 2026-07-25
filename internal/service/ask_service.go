@@ -72,7 +72,7 @@ type AskStreamOptions struct {
 
 // Retriever abstracts chunk retrieval for AskService.
 type Retriever interface {
-	RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+	RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
 }
 
 // StreamingLLM abstracts streaming chat for AskService.
@@ -159,7 +159,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	req.Page = &page
 	req.Size = &ps
 
-	result, err := s.retriever.RetrievalTest(req, userID)
+	result, err := s.retriever.RetrievalTest(ctx, req, userID)
 	if err != nil {
 		common.Warn("AskService retrieval failed", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "retrieval failed"}, ctx)
@@ -186,7 +186,12 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		{Role: "system", Content: sysPrompt},
 		{Role: "user", Content: question},
 	}
-	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1)}
+	// Thinking is disabled: summarization does not need reasoning. With
+	// thinking enabled, the reasoning (which drafts the summary) streams
+	// first, then collapses into a hidden think block, and the provider may
+	// emit only a fragment as the visible answer once the reasoning has
+	// consumed the output budget.
+	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1), Thinking: ptrBool(false)}
 
 	ch, err := llm.ChatStream(ctx, messages, genConf)
 	if err != nil {
@@ -219,7 +224,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	// Attempt citation insertion if embedder is available.
 	chunkVectors := ExtractChunkVectors(result.Chunks)
 	if len(chunkVectors) > 0 && s.embedder != nil {
-		if decorated, cited := InsertCitations(visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
+		if decorated, cited := InsertCitations(ctx, visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
 			visible = decorated
 		}
 	}
@@ -279,3 +284,4 @@ func toFloat64Slice(v interface{}) []float64 {
 
 func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
+func ptrBool(v bool) *bool          { return &v }

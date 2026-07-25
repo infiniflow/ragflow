@@ -12,7 +12,10 @@ import { useTranslation } from 'react-i18next';
 import { formatKindLabel } from '@/utils/compilation-template-util';
 
 import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
-import { DefaultTemplateValues } from '@/pages/user-setting/compilation-templates/create-next/utils';
+import {
+  DefaultTemplateValues,
+  generateTemplateName,
+} from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { useTemplateAddButton } from '../hooks/use-template-add-button';
 
@@ -128,11 +131,11 @@ export function TemplateSidebar({
     const nextIndex = fields.length;
     append({
       ...DefaultTemplateValues,
-      name: `${t('setting.template')} #${nextIndex + 1}`,
+      name: generateTemplateName(),
       llm_id: firstTemplateLlmId || '',
     });
     onSelectTemplate(nextIndex);
-  }, [append, fields.length, form, onSelectTemplate, t]);
+  }, [append, fields.length, form, onSelectTemplate]);
 
   const handleRemoveTemplate = useCallback(
     (index: number) => {

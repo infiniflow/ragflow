@@ -29,6 +29,7 @@ package chunker
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html"
 	"regexp"
@@ -98,7 +99,9 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："
-	eng := strings.EqualFold(c.param.Lang, "english") || c.param.Lang == ""
+	// Python qa.py defaults to Chinese when no language is supplied; only
+	// an explicit "english" switches to English prefixes (diff Chunker-2.13).
+	eng := strings.EqualFold(c.param.Lang, "english")
 	if eng {
 		qPrefix, aPrefix = "Question: ", "Answer: "
 	}
@@ -118,9 +121,11 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
+	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
 	for _, pair := range qaPairs {
-		contentLTKS, _ := tokenizer.Tokenize(pair.Question)
-		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
+		contentLTKS, _ := tok.Tokenize(pair.Question)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
 		answer := rmQAPrefix(pair.Answer)
 		if isMarkdown {
 			answer = renderMarkdown(answer)
@@ -130,6 +135,21 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			DocType:           "text",
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
+		}
+		// Restore metadata lost before diff Chunker-1.8: top_int (row
+		// index), image id + coordinates carried from the source item.
+		if pair.RowNum >= 0 {
+			chunk.TopInt = []int{pair.RowNum}
+		}
+		if pair.Image != "" {
+			chunk.Image = pair.Image
+			chunk.DocType = "image"
+		}
+		if len(pair.PDFPositions) > 0 {
+			chunk.PDFPositions = pair.PDFPositions
+		}
+		if len(pair.Positions) > 0 {
+			chunk.Positions = pair.Positions
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -146,9 +166,20 @@ func renderMarkdown(s string) string {
 type qaPair struct {
 	Question string
 	Answer   string
+	// RowNum is the 0-based source line/record index, mapped to Python's
+	// top_int (qa.py beAdoc(..., row_num=i)). -1 means unset.
+	RowNum int
+	// Image and positions are carried from the upstream item so the QA
+	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
+	// (diff Chunker-1.8).
+	Image        string
+	PDFPositions json.RawMessage
+	Positions    json.RawMessage
 }
 
-var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[ \t]*(?:[:：]|\t)[ \t]*`)
+// rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
+// chars, so "Q:: answer" is fully stripped (diff Chunker-2.12).
+var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
 
 func rmQAPrefix(txt string) string {
 	return strings.TrimSpace(rmQAPrefixRe.ReplaceAllString(txt, ""))
@@ -207,18 +238,19 @@ func extractQAMarkdown(md string) []qaPair {
 	var questionStack []string
 	var levelStack []int
 	var answer []string
+	curRow := -1
 	codeBlock := false
 
 	flushAnswer := func() {
 		joined := strings.TrimSpace(strings.Join(answer, "\n"))
 		if joined != "" && len(questionStack) > 0 {
 			sumQ := strings.Join(questionStack, "\n")
-			pairs = append(pairs, qaPair{Question: sumQ, Answer: joined})
+			pairs = append(pairs, qaPair{Question: sumQ, Answer: joined, RowNum: curRow})
 		}
 		answer = nil
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
 			codeBlock = !codeBlock
@@ -237,6 +269,7 @@ func extractQAMarkdown(md string) []qaPair {
 
 		flushAnswer()
 		question := strings.TrimSpace(line[level:])
+		curRow = i
 
 		for len(levelStack) > 0 && level <= levelStack[len(levelStack)-1] {
 			questionStack = questionStack[:len(questionStack)-1]
@@ -258,17 +291,26 @@ func extractQAText(text string) []qaPair {
 		return nil
 	}
 	lines := strings.Split(text, "\n")
-
 	delimiter := detectDelimiter(lines)
 
+	if delimiter == "\t" {
+		return extractQATextTab(lines)
+	}
+	return extractQATextCSV(text, lines)
+}
+
+// extractQATextTab handles tab-delimited Q&A where no CSV quoting
+// rules apply and physical lines always map 1:1 to records.
+func extractQATextTab(lines []string) []qaPair {
 	var pairs []qaPair
 	var question, answer string
+	var row int
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		parts := splitQA(line, delimiter)
+		parts := strings.Split(line, "\t")
 		if len(parts) != 2 {
 			if question != "" {
 				answer += "\n" + line
@@ -276,13 +318,78 @@ func extractQAText(text string) []qaPair {
 			continue
 		}
 		if question != "" && answer != "" {
-			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 		}
 		question = parts[0]
 		answer = parts[1]
+		row = i
 	}
 	if question != "" {
-		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+	}
+	return pairs
+}
+
+// extractQATextCSV uses a full-text csv.Reader so that quoted fields
+// that span multiple physical lines are parsed correctly (mirrors the
+// Python fix in infiniflow/ragflow#16881).
+//
+// Because csv.Reader can merge several physical lines into one record,
+// we track the byte offset via InputOffset() and map it back to the
+// original lines slice so that malformed rows append the correct raw
+// continuation text.
+func extractQATextCSV(text string, lines []string) []qaPair {
+	// Pre‑compute the byte offset where each physical line starts.
+	lineStarts := make([]int, len(lines)+1)
+	off := 0
+	for i, l := range lines {
+		lineStarts[i] = off
+		off += len(l) + 1 // +1 for '\n'
+	}
+	lineStarts[len(lines)] = off // sentinel
+
+	r := csv.NewReader(strings.NewReader(text))
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	var pairs []qaPair
+	var question, answer string
+	var row int
+	prevLine := 0
+	recIdx := -1
+
+	for {
+		record, err := r.Read()
+		if err != nil {
+			break
+		}
+		recIdx++
+
+		// Map InputOffset back to the physical lines consumed.
+		endOff := int(r.InputOffset())
+		curLine := prevLine
+		for curLine < len(lineStarts) && lineStarts[curLine] < endOff {
+			curLine++
+		}
+
+		raw := strings.Join(lines[prevLine:curLine], "\n")
+		prevLine = curLine
+
+		if len(record) != 2 {
+			if question != "" {
+				answer += "\n" + raw
+			}
+			continue
+		}
+		if question != "" && answer != "" {
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+		}
+		question = record[0]
+		answer = record[1]
+		row = recIdx
+	}
+	if question != "" {
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 	}
 	return pairs
 }
@@ -303,24 +410,6 @@ func detectDelimiter(lines []string) string {
 	return ","
 }
 
-func splitQA(line, delimiter string) []string {
-	if delimiter == "\t" {
-		parts := strings.Split(line, "\t")
-		if len(parts) == 2 {
-			return parts
-		}
-		return []string{line}
-	}
-	r := csv.NewReader(strings.NewReader(line))
-	r.Comma = ','
-	r.LazyQuotes = true
-	records, err := r.Read()
-	if err != nil || len(records) != 2 {
-		return []string{line}
-	}
-	return records
-}
-
 // ---------------------------------------------------------------------------
 // JSON / structured QA extraction
 // ---------------------------------------------------------------------------
@@ -333,7 +422,14 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 			continue
 		}
 		tmp := extractQAText(txt)
-		pairs = append(pairs, tmp...)
+		// Preserve the source item's image id and coordinates on each
+		// extracted pair (diff Chunker-1.8).
+		for _, p := range tmp {
+			p.Image = item.Image
+			p.PDFPositions = item.PDFPositions
+			p.Positions = item.Positions
+			pairs = append(pairs, p)
+		}
 	}
 	return pairs
 }

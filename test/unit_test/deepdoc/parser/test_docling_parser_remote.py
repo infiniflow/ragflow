@@ -159,3 +159,32 @@ def test_remote_chunked_request_with_ignored_flag_does_not_log_success(monkeypat
     flat = " ".join(record.getMessage() for record in caplog.records)
     assert "Successfully used native chunking" not in flat
     assert "Server ignored chunking request" in flat
+
+
+@pytest.mark.p2
+def test_crop_without_page_images_returns_none(monkeypatch):
+    """Position tags are emitted even when page rendering failed and left
+    ``page_images`` empty, so ``crop`` must bail out instead of raising
+    IndexError while indexing the empty list."""
+    module = _load_docling_parser(monkeypatch)
+    parser = module.DoclingParser(docling_server_url="http://docling.local")
+    parser.page_images = []
+
+    tag = "@@1\t1.0\t2.0\t3.0\t4.0##"
+    assert parser.crop(tag, need_position=True) == (None, None)
+    assert parser.crop(tag) is None
+
+
+@pytest.mark.p2
+def test_crop_drops_positions_beyond_rendered_pages(monkeypatch):
+    """A tag naming a page past the rendered range must be filtered out rather
+    than indexed, mirroring the range check in cropout_docling_table."""
+    module = _load_docling_parser(monkeypatch)
+    parser = module.DoclingParser(docling_server_url="http://docling.local")
+    # a single rendered page; the sentinel is never indexed because the
+    # out-of-range position is dropped first.
+    parser.page_images = [object()]
+
+    tag = "@@5\t1.0\t2.0\t3.0\t4.0##"
+    assert parser.crop(tag, need_position=True) == (None, None)
+    assert parser.crop(tag) is None

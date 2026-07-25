@@ -1,6 +1,5 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { useFetchAllCompilationTemplateGroups } from '@/hooks/use-compilation-template-group-request';
-import { useMemo } from 'react';
+import { useCompilationTemplateGroupOptions } from '@/hooks/use-compilation-template-group-request';
 import { useTranslation } from 'react-i18next';
 import { SelectWithSearch } from './originui/select-with-search';
 
@@ -14,12 +13,7 @@ export function CompilationTemplateFormField({
   name = 'parser_config.compilation_template_group_id',
 }: CompilationTemplateFormFieldProps) {
   const { t } = useTranslation();
-  const { groups } = useFetchAllCompilationTemplateGroups();
-
-  const options = useMemo(
-    () => groups?.map((group) => ({ label: group.name, value: group.id })),
-    [groups],
-  );
+  const options = useCompilationTemplateGroupOptions();
 
   return (
     <RAGFlowFormItem

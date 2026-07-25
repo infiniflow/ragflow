@@ -90,17 +90,11 @@ func DefaultRetryPolicy() RetryPolicy {
 // This is the shared backoff calculation used by both Pregel graph-node retries and
 // agent-level model-call retries.
 func (p *RetryPolicy) CalculateBackoff(attempt int) time.Duration {
-	backoff := time.Duration(float64(p.InitialInterval) * powFloat(p.BackoffFactor, attempt-1))
-	if backoff > p.MaxInterval {
-		backoff = p.MaxInterval
-	}
+	backoff := min(time.Duration(float64(p.InitialInterval)*powFloat(p.BackoffFactor, attempt-1)), p.MaxInterval)
 	if p.Jitter {
 		// Subtract up to 50% to spread retry bursts.
 		jitter := time.Duration(float64(backoff) * 0.5 * randFloat())
-		backoff = backoff - jitter
-		if backoff < 0 {
-			backoff = 0
-		}
+		backoff = max(backoff-jitter, 0)
 	}
 	return backoff
 }

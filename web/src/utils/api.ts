@@ -26,6 +26,9 @@ export default {
   // llm model
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
+  // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
+  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
+  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -178,6 +181,20 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/skills`,
   deleteDatasetSkillPage: (datasetId: string, skillKwd: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  getDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  getDatasetNavChildren: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/children`,
+  deleteDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  deleteDatasetNavNode: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,

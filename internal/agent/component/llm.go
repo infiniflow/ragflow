@@ -309,7 +309,7 @@ func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeReques
 	for i, m := range req.Messages {
 		ragMsgs[i] = models.Message{Role: m.Role, Content: m.Content}
 	}
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil)
+	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -474,14 +474,6 @@ func invokeWithTools(ctx context.Context, req ChatInvokeRequest, driver string, 
 	return out, nil
 }
 
-// chatURLSuffixFor returns the URLSuffix the factory should pass to
-// the driver for the chat endpoint. Each driver ChatWithMessages
-// builds `baseURL/URLSuffix.Chat`, so the suffix has to match the
-// provider actual chat path. We seed the common ones here; for any
-// driver the factory has no entry for, we fall through to a default
-// "chat/completions" path (the openai-compatible default), which
-// matches the dummy driver and any third-party openai-compatible
-// gateway.
 func chatURLSuffixFor(driver string) models.URLSuffix {
 	switch strings.ToLower(driver) {
 	case "anthropic":
@@ -506,7 +498,7 @@ func StreamingInvoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeRes
 		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
 	if len(req.Tools) == 0 {
-		// No tools → use standard non-streaming invoke. This path is
+		// No tools -> use standard non-streaming invoke. This path is
 		// the simple one-shot call; the Agent loop always has tools.
 		return getDefaultChatInvoker().Invoke(ctx, req)
 	}
@@ -528,7 +520,7 @@ func StreamingInvoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeRes
 	if driver == "" {
 		driver = "dummy"
 	}
-	// When the driver resolves to "dummy" (no real model found — typical
+	// When the driver resolves to "dummy" (no real model found -- typical
 	// in tests), fall back to the standard ChatInvoker.Invoke path. The
 	// direct HTTP path (invokeWithTools) requires a resolvable base URL
 	// and fails with "no base URL for driver" for "dummy".
@@ -581,7 +573,7 @@ func StreamContentStreaming(ctx context.Context, req ChatInvokeRequest, onChunk 
 		driver = "dummy"
 	}
 	if driver == "dummy" {
-		// No real model — just return the non-streaming content as a single chunk.
+		// No real model -- just return the non-streaming content as a single chunk.
 		resp, err := getDefaultChatInvoker().Invoke(ctx, req)
 		if err != nil {
 			return "", err
@@ -622,16 +614,12 @@ func StreamContentStreaming(ctx context.Context, req ChatInvokeRequest, onChunk 
 	}
 
 	var fullContent strings.Builder
-	err = cm.ModelDriver.ChatStreamlyWithSender(req.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil, func(content *string, reason *string) error {
+	err = cm.ModelDriver.ChatStreamlyWithSender(ctx, req.ModelName, ragMsgs, cm.APIConfig, chatCfg, nil, func(content *string, reason *string) error {
 		if content != nil && *content != "" {
 			if *content == "[DONE]" {
 				return nil
 			}
 			fullContent.WriteString(*content)
-			// Both content and reasoning from the final streaming round
-			// go to the main output (IsThink:false). The intermediate
-			// reasoning from tool-calling rounds is already in thinking;
-			// the final round's reasoning belongs with the answer.
 			onChunk(*content, false)
 		}
 		if reason != nil && *reason != "" {
@@ -646,6 +634,10 @@ func StreamContentStreaming(ctx context.Context, req ChatInvokeRequest, onChunk 
 	return fullContent.String(), nil
 }
 
+func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
+	return models.GetPreconfiguredDriver(driver, override)
+}
+
 // NewLLMComponent builds an LLMComponent from raw params.
 func NewLLMComponent(p LLMParam) *LLMComponent {
 	return &LLMComponent{param: p}
@@ -657,6 +649,17 @@ func (c *LLMComponent) Name() string { return "LLM" }
 // Invoke runs the LLM and returns the output map.
 func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -1321,37 +1324,4 @@ func cleanFormattedAnswer(ans string) string {
 	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
 	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
 	return ans
-}
-
-// newChatModelDriver resolves a provider driver by name and optionally
-// overrides the base URL. Returns a ModelDriver ready for invocation.
-func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
-	pm := models.GetProviderManager()
-	if pm != nil {
-		provider := pm.FindProvider(driver)
-		if provider != nil && provider.ModelDriver != nil {
-			modelDriver := provider.ModelDriver
-			if strings.TrimSpace(override) != "" {
-				modelDriver = modelDriver.NewInstance(
-					map[string]string{
-						"default": strings.TrimRight(override, "/"),
-					},
-				)
-				if modelDriver == nil {
-					return nil, fmt.Errorf("provider does not support a custom base_url")
-				}
-			}
-			return modelDriver, nil
-		}
-	}
-
-	// Dummy is an explicit test/development driver and has no provider config.
-	if strings.EqualFold(driver, "dummy") {
-		baseURL := map[string]string(nil)
-		if strings.TrimSpace(override) != "" {
-			baseURL = map[string]string{"default": strings.TrimRight(override, "/")}
-		}
-		return models.NewDummyModel(baseURL, models.URLSuffix{Chat: "chat/completions"}), nil
-	}
-	return nil, fmt.Errorf("provider is not configured")
 }

@@ -362,8 +362,8 @@ func NewAgentServiceWithOptions(
 // ListTemplates returns every canvas template. Mirrors Python
 // agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
 // and serialises each row.
-func (s *AgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
-	return s.canvasTemplateDAO.GetAll()
+func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTemplate, error) {
+	return s.canvasTemplateDAO.GetAll(ctx, dao.DB)
 }
 
 // AgentItem is one entry in the list response.
@@ -505,17 +505,17 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	title := strings.TrimSpace(*req.Title)
 	req.Title = &title
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, errors.New(title + " already exists.")
-	}
-
 	if req.Permission == "" {
 		req.Permission = "me"
 	}
 	if req.CanvasCategory == "" {
 		req.CanvasCategory = "agent_canvas"
+	}
+
+	if existing, err := s.canvasDAO.GetByUserAndTitle(req.UserID, title, req.CanvasCategory); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
+	} else if existing != nil {
+		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
@@ -532,9 +532,42 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		DSL:            req.DSL,
 	}
 	if err := s.canvasDAO.Create(row); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+		}
 		return nil, common.CodeServerError, fmt.Errorf("create agent: %w", err)
 	}
 	return row, common.CodeSuccess, nil
+}
+
+func agentTitleAlreadyExistsError(title string) error {
+	return errors.New(title + " already exists.")
+}
+
+func updatedAgentTitle(canvasInstance *entity.UserCanvas, updates map[string]interface{}) (string, bool) {
+	if value, ok := updates["title"]; ok {
+		title, ok := value.(string)
+		if !ok {
+			return "", false
+		}
+		return title, true
+	}
+	if _, ok := updates["canvas_category"]; !ok {
+		return "", false
+	}
+	if canvasInstance.Title == nil {
+		return "", false
+	}
+	return *canvasInstance.Title, true
+}
+
+func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[string]interface{}) string {
+	if value, ok := updates["canvas_category"]; ok {
+		if canvasCategory, ok := value.(string); ok {
+			return canvasCategory
+		}
+	}
+	return canvasInstance.CanvasCategory
 }
 
 // loadCanvasForUser is the shared IDOR guard used by every non-List
@@ -588,8 +621,15 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
+//
+// Permission is an owner-only setting: team members who have access to the
+// canvas can still update title/avatar/description, but any permission value
+// they send is ignored so they cannot make a team agent private (or vice
+// versa). The owner can change permission together with title/avatar in one
+// request.
 func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
 		return err
 	}
 
@@ -606,6 +646,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			updates[key] = value
 		}
 	}
+	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
+		if existing, err := s.canvasDAO.GetByUserAndTitle(userID, title, canvasCategory); err != nil {
+			return fmt.Errorf("check duplicate title: %w", err)
+		} else if existing != nil && existing.ID != canvasID {
+			return agentTitleAlreadyExistsError(title)
+		}
+	}
 	if dsl, ok := patch["dsl"]; ok && dsl != nil {
 		dslMap, ok := dsl.(map[string]interface{})
 		if !ok {
@@ -618,8 +666,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(entity.JSONMap(dslMap)))
 	}
 
-	_, err := s.canvasDAO.UpdateFields(canvasID, updates)
+	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
 	if err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+				return agentTitleAlreadyExistsError(title)
+			}
+			return errors.New("agent title already exists")
+		}
 		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	return nil
@@ -869,7 +923,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = dslpkg.NormalizeForCanvas(map[string]any(canvasRow.DSL))
 	}
 	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetBySessionID(sessionID, canvasID)
+		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, canvasID)
 		if sessionErr != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
 		}
@@ -881,7 +935,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 	if newSession && len(dsl) > 0 {
-		if err := s.createAgentRunSession(sessionID, userID, canvasID, dsl, versionRow); err != nil {
+		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 	}
@@ -1200,18 +1254,23 @@ func beginLayoutRecognize(c *canvas.Canvas) string {
 }
 
 func (s *AgentService) createAgentRunSession(
+	ctx context.Context,
 	sessionID, userID, agentID string,
 	runDSL map[string]any,
 	versionRow *entity.UserCanvasVersion,
+	userInput any,
 ) error {
 	if s == nil || s.api4ConversationDAO == nil {
 		return errors.New("agent session storage is not configured")
 	}
 	source := "agent"
+	name := deriveAgentSessionName(userInput)
 	session := &entity.API4Conversation{
 		ID:        sessionID,
+		Name:      &name,
 		DialogID:  agentID,
 		UserID:    userID,
+		ExpUserID: &userID,
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
 		Source:    &source,
@@ -1220,10 +1279,22 @@ func (s *AgentService) createAgentRunSession(
 	if versionRow != nil {
 		session.VersionTitle = versionRow.Title
 	}
-	return s.api4ConversationDAO.Create(session)
+	return s.api4ConversationDAO.Create(ctx, dao.DB, session)
 }
 
-// runIDFor builds the per-run CanvasState identifier: canvasID
+// deriveAgentSessionName mirrors Python's
+// `req.get("name") or (query[:250] if query else "") or ""` — the
+// session name defaults to the first 250 runes of the user's input
+// so the exploration sidebar shows a meaningful title.
+func deriveAgentSessionName(userInput any) string {
+	text := stringifyAgentUserInput(userInput)
+	runes := []rune(text)
+	if len(runes) > 250 {
+		runes = runes[:250]
+	}
+	return string(runes)
+}
+
 // alone for first-touch runs, canvasID + sessionID for resumed runs
 // (so two concurrent sessions on the same canvas don't collide in
 // the snapshot map).
@@ -1258,6 +1329,7 @@ func emptyDownloadValue(value any) bool {
 }
 
 func (s *AgentService) persistAgentRunSession(
+	ctx context.Context,
 	agentID, userID, sessionID, messageID string,
 	userInput any,
 	answer string,
@@ -1269,7 +1341,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
 		return nil
@@ -1296,7 +1368,8 @@ func (s *AgentService) persistAgentRunSession(
 	if state != nil {
 		session.DSL = buildPersistedAgentDSL(runDSL, state)
 	}
-	return s.api4ConversationDAO.Update(session)
+	session.Round++
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

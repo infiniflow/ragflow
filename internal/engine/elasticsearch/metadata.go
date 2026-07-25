@@ -564,10 +564,7 @@ func (e *elasticsearchEngine) SearchMetadata(ctx context.Context, req *types.Sea
 		}, nil
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 30

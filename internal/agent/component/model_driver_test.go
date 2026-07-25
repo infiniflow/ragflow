@@ -1,6 +1,7 @@
 package component
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,7 +28,7 @@ func TestNewChatModelDriverPreservesProviderChatSuffix(t *testing.T) {
 	}
 	apiKey := "test-key"
 	modelName := "qwen-flash"
-	resp, err := driver.ChatWithMessages(modelName, []models.Message{{Role: "user", Content: "hi"}}, &models.APIConfig{ApiKey: &apiKey}, &models.ChatConfig{}, nil)
+	resp, err := driver.ChatWithMessages(context.Background(), modelName, []models.Message{{Role: "user", Content: "hi"}}, &models.APIConfig{ApiKey: &apiKey}, &models.ChatConfig{}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}

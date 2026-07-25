@@ -1,4 +1,7 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
+import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Card,
@@ -12,9 +15,10 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
 import {
-  BuiltinPipelineItem,
-  ParseTypeItem,
-} from '@/pages/dataset/dataset-setting/configuration/common-item';
+  useActiveTab,
+  usePipelineOperatorNodes,
+  useResetParserConfigOnPipelineChange,
+} from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -26,14 +30,11 @@ import LinkDataSource, {
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import {
-  useActiveTab,
   useConnectorHandlers,
   useFetchDatasetSettingOnMount,
   usePipelineDataList,
-  usePipelineOperatorNodes,
   useSaveDatasetSetting,
 } from './hooks';
-import PipelineOperatorTabs from './pipeline-operator-tabs';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -51,6 +52,7 @@ export default function DatasetSetting() {
       description: '',
       avatar: null,
       permission: '',
+      language: 'English',
       embedding_model: '',
       pagerank: 0,
       connectors: [],
@@ -92,10 +94,35 @@ export default function DatasetSetting() {
     | Record<string, any>
     | undefined;
 
-  const { operatorNodes } = usePipelineOperatorNodes(
-    parseType === ParseType.Pipeline ? pipelineId : builtinPipelineId,
-    pipelineParserConfig,
-    parseType === ParseType.BuiltIn,
+  const isPipelineMode = parseType === ParseType.Pipeline;
+  const selectedPipelineId = isPipelineMode ? pipelineId : builtinPipelineId;
+  // The saved parser_config only belongs to the pipeline (and parse type) it
+  // was saved with — expose its id only while that exact pipeline is selected,
+  // so that after switching, defaults come purely from the new pipeline's DSL.
+  const savedParseType = knowledgeDetails?.pipeline_id
+    ? ParseType.Pipeline
+    : ParseType.BuiltIn;
+  const savedPipelineId =
+    parseType === savedParseType
+      ? isPipelineMode
+        ? knowledgeDetails?.pipeline_id
+        : knowledgeDetails?.parser_id
+      : undefined;
+
+  const { operatorNodes, loading: operatorNodesLoading } =
+    usePipelineOperatorNodes(
+      selectedPipelineId,
+      selectedPipelineId && selectedPipelineId === savedPipelineId
+        ? pipelineParserConfig
+        : undefined,
+      !isPipelineMode,
+    );
+
+  useResetParserConfigOnPipelineChange(
+    form,
+    selectedPipelineId,
+    savedPipelineId,
+    operatorNodes,
   );
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
@@ -211,7 +238,11 @@ export default function DatasetSetting() {
 
                 <ButtonLoading
                   type="submit"
-                  loading={datasetSettingLoading || saveLoading}
+                  loading={
+                    datasetSettingLoading ||
+                    saveLoading ||
+                    (operatorNodesLoading && operatorNodes.length === 0)
+                  }
                 >
                   {t('knowledgeConfiguration.save')}
                 </ButtonLoading>

@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -228,7 +229,7 @@ func datasetCleanEmbeddingText(s string) string {
 	return re.ReplaceAllString(s, "")
 }
 
-func datasetEncodeEmbedding(embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
+func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -237,7 +238,7 @@ func datasetEncodeEmbedding(embeddingModel *modelModule.EmbeddingModel, texts []
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

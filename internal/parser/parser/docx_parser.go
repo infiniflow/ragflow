@@ -19,225 +19,149 @@
 package parser
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"fmt"
 	"strings"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-// DOCXFigure represents one embedded image plus its surrounding text
-// context, mirroring the chunk-level shape that Python's
-// naive_merge_docx produces for vision_figure_parser_docx_wrapper_naive.
-type DOCXFigure struct {
-	Image        string `json:"image"`         // base64-encoded image bytes
-	ContextAbove string `json:"context_above"` // text before the image block
-	ContextBelow string `json:"context_below"` // text after the image block
-	Marker       string `json:"marker"`        // substring to locate image position in markdown
-}
-
+// DOCXParser is the cgo-backed DOCX parser. It is the only DOCX
+// entrypoint that depends on office_oxide; the IR data model and
+// postprocessing live in cgo-free files (docx_ir.go, docx_postprocess.go)
+// so they compile and test without native libraries. The !cgo build
+// provides a stub DOCXParser in office_parsers_no_cgo.go.
 type DOCXParser struct {
-	libType string
+	libType            string
+	outputFormat       string // from DSL config; "json" or "markdown"
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
 }
 
 func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
 }
 
-// ParseWithResult captures the office_oxide ToMarkdown output
-// and additionally extracts embedded images with their surrounding
-// text context so the downstream vision-figure dispatch can enrich
-// the markdown with LLM-generated image descriptions.
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "docx" family setup map. The output_format key drives whether
+// ParseWithResult produces JSON items (structured) or markdown.
+func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.outputFormat = v
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
+}
+
+// ParseWithResult produces structured JSON items (when
+// p.outputFormat == "json") or markdown (default) from a
+// docx document. Embedded images are extracted in both paths
+// for downstream vision-figure dispatch.
 //
-// Mirrors python naive.py: Docx() → naive_merge_docx() →
-// vision_figure_parser_docx_wrapper_naive().
-func (p *DOCXParser) ParseWithResult(filename string, data []byte) ParseResult {
+// JSON path mirrors python parser.py:_docx() output_format == "json".
+// Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
+func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "docx")
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("docx open: %w", err)}
 	}
 	defer doc.Close()
 
-	md, err := doc.ToMarkdown()
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
-	}
-
 	fileMeta := map[string]any{
 		"name":   filename,
 		"format": "docx",
 	}
 
-	// Extract embedded images with their text context from the
-	// office_oxide IR so the downstream vision dispatch can
-	// enrich them. The already-opened doc handle is reused
-	// (no second OpenFromBytes).
+	// Extract IR JSON for section building (JSON path) and
+	// embedded-image extraction (both paths).
 	irJSON, irErr := doc.ToIRJSON()
 	var figures []DOCXFigure
 	if irErr == nil {
 		figures = extractDOCXFiguresFromIR(irJSON)
 	}
 	if len(figures) > 0 {
-		figs := make([]map[string]any, 0, len(figures))
-		for _, f := range figures {
-			figs = append(figs, map[string]any{
-				"image":         f.Image,
-				"context_above": f.ContextAbove,
-				"context_below": f.ContextBelow,
-				"marker":        f.Marker,
-			})
-		}
-		fileMeta["figures"] = figs
+		fileMeta["figures"] = buildFiguresMap(figures)
 	}
 
+	if p.outputFormat == "json" {
+		if irErr != nil {
+			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
+		}
+		var sections []map[string]any
+		sections = buildDOCXJSONSections(irJSON)
+		// remove_header_footer: drop sections whose normalized text
+		// matches a docx header/footer entry (mirrors Python
+		// parser.py:889-891 extract_docx_header_footer_texts +
+		// remove_header_footer_docx_sections).
+		if p.RemoveHeaderFooter {
+			hfTexts := extractDOCXHeaderFooterTexts(data)
+			sections = removeDOCXHeaderFooterSections(sections, hfTexts)
+		}
+		// remove_toc: filter TOC entries using heading outlines
+		// (mirrors Python parser.py:892-893 remove_toc_word).
+		if p.RemoveTOC {
+			outlines := extractDOCXOutlines(irJSON)
+			sections = removeTOCWord(sections, outlines, false)
+		}
+		if len(sections) == 0 {
+			sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+		}
+		return ParseResult{
+			OutputFormat: "json",
+			File:         fileMeta,
+			JSON:         sections,
+		}
+	}
+
+	// Default / markdown path.
+	md, err := doc.ToMarkdown()
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
+	}
+	// remove_header_footer on markdown: filter lines by exact match
+	// (mirrors Python parser.py:923-926 split lines → filter → rejoin).
+	if p.RemoveHeaderFooter {
+		hfTexts := extractDOCXHeaderFooterTexts(data)
+		lines := strings.Split(md, "\n")
+		lineItems := make([]map[string]any, 0, len(lines))
+		for _, ln := range lines {
+			lineItems = append(lineItems, map[string]any{"text": ln})
+		}
+		lineItems = removeDOCXHeaderFooterSections(lineItems, hfTexts)
+		rebuilt := make([]string, 0, len(lineItems))
+		for _, item := range lineItems {
+			rebuilt = append(rebuilt, itemText(item))
+		}
+		md = strings.Join(rebuilt, "\n")
+	}
+	// remove_toc on markdown: split lines, filter, rejoin
+	// (mirrors Python parser.py:927-928 remove_toc_word on markdown).
+	if p.RemoveTOC && irErr == nil {
+		outlines := extractDOCXOutlines(irJSON)
+		lines := strings.Split(md, "\n")
+		lineItems := make([]map[string]any, 0, len(lines))
+		for _, ln := range lines {
+			lineItems = append(lineItems, map[string]any{"text": ln})
+		}
+		filtered := removeTOCWord(lineItems, outlines, false)
+		rebuilt := make([]string, 0, len(filtered))
+		for _, item := range filtered {
+			rebuilt = append(rebuilt, itemText(item))
+		}
+		md = strings.Join(rebuilt, "\n")
+	}
 	return ParseResult{
 		OutputFormat: "markdown",
 		File:         fileMeta,
 		Markdown:     md,
 	}
-}
-
-// extractDOCXFiguresFromIR parses the office_oxide IR JSON and
-// returns every embedded image block together with the plain text
-// immediately surrounding it. The context matches what Python's
-// naive_merge_docx attaches as context_above / context_below on
-// each chunk that carries an image.
-//
-// Reuses the IR already obtained from the doc handle in
-// ParseWithResult so the binary is not opened twice.
-func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
-	var ir docxIRDocument
-	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
-		return nil
-	}
-
-	var flat []flatBlock
-	for _, sec := range ir.Sections {
-		for _, el := range sec.Elements {
-			if el.Type == "image" {
-				b64 := base64.StdEncoding.EncodeToString(el.Data)
-				flat = append(flat, flatBlock{image: b64})
-				continue
-			}
-			text := joinDOCXIRRuns(el.Content)
-			flat = append(flat, flatBlock{text: text})
-		}
-	}
-
-	var figures []DOCXFigure
-	for i, block := range flat {
-		if block.image == "" {
-			continue
-		}
-		fig := DOCXFigure{Image: block.image}
-
-		// Collect text above (backward scan up to docxContextWindow
-		// chars, or until another image is hit).
-		above := collectDOCXPrevText(flat, i, 512)
-		fig.ContextAbove = strings.TrimSpace(above)
-
-		// Collect text below (forward scan up to docxContextWindow
-		// chars, or until another image is hit).
-		below := collectDOCXNextText(flat, i, 512)
-		fig.ContextBelow = strings.TrimSpace(below)
-
-		// Marker: text of the immediately preceding flat block,
-		// used by the vision dispatcher to locate the image position
-		// in the rendered markdown for inline insertion.
-		for j := i - 1; j >= 0; j-- {
-			if flat[j].text != "" {
-				fig.Marker = flat[j].text
-				break
-			}
-		}
-
-		figures = append(figures, fig)
-	}
-	return figures
-}
-
-// --- internal types ---
-
-// flatBlock is a flattened IR element used internally to collect
-// text / image context around embedded figures.
-type flatBlock struct {
-	text  string
-	image string // base64-encoded image data (empty for non-image)
-}
-
-const docxContextWindow = 512
-
-func collectDOCXPrevText(flat []flatBlock, idx, maxLen int) string {
-	var parts []string
-	remaining := maxLen
-	for i := idx - 1; i >= 0 && remaining > 0; i-- {
-		if flat[i].image != "" {
-			break // stop at previous image
-		}
-		if flat[i].text == "" {
-			continue
-		}
-		r := []rune(flat[i].text)
-		if len(r) > remaining {
-			r = r[len(r)-remaining:]
-		}
-		parts = append([]string{string(r)}, parts...)
-		remaining -= len(r)
-	}
-	return strings.Join(parts, "\n")
-}
-
-func collectDOCXNextText(flat []flatBlock, idx, maxLen int) string {
-	var parts []string
-	remaining := maxLen
-	for i := idx + 1; i < len(flat) && remaining > 0; i++ {
-		if flat[i].image != "" {
-			break // stop at next image
-		}
-		if flat[i].text == "" {
-			continue
-		}
-		r := []rune(flat[i].text)
-		if len(r) > remaining {
-			r = r[:remaining]
-		}
-		parts = append(parts, string(r))
-		remaining -= len(r)
-	}
-	return strings.Join(parts, "\n")
-}
-
-func joinDOCXIRRuns(runs []docxIRRun) string {
-	var b strings.Builder
-	for _, r := range runs {
-		if r.Type == "text" {
-			b.WriteString(r.Text)
-		}
-	}
-	return b.String()
-}
-
-// --- office_oxide IR types (local copy, independent of deepdoc) ---
-
-type docxIRDocument struct {
-	Sections []docxIRSection `json:"sections"`
-}
-
-type docxIRSection struct {
-	Title    string          `json:"title"`
-	Elements []docxIRElement `json:"elements"`
-}
-
-type docxIRElement struct {
-	Type    string      `json:"type"`
-	Content []docxIRRun `json:"content"`
-	Data    []byte      `json:"data"`
-}
-
-type docxIRRun struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
 }
 
 func (p *DOCXParser) String() string {

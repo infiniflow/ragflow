@@ -83,7 +83,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"] in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]:
                 continue
             model_types = sorted(set(model_type for llm in factory_info.get("llm", []) for model_type in _factory_model_types(llm))) if factory_info.get("llm", []) else []
-            if factory_info["name"] in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
+            if factory_info["name"] in ["MinerU", "PaddleOCR", "OpenDataLoader", "Mistral OCR"]:
                 model_types.append("ocr")
             provider = {"model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}
             if factory_info["name"].lower() == "siliconflow":
@@ -105,7 +105,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
             has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
             model_types = sorted(set(model_type for llm in factory_info.get("llm", []) for model_type in _factory_model_types(llm))) if factory_info.get("llm", []) else []
-            if name in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
+            if name in ["MinerU", "PaddleOCR", "OpenDataLoader", "Mistral OCR"]:
                 model_types.append("ocr")
 
             provider = {"has_instance": has_instance, "model_types": model_types, "name": factory_info["name"], "url": {"default": factory_info.get("url", "")}}

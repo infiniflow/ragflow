@@ -9,6 +9,7 @@ import { useParams } from 'react-router';
 
 import { ViewMode } from './constants';
 import { LlmWikiView } from './llm-wiki-view';
+import { NavTreeView } from './nav-tree-view';
 import { SkillsView } from './skills-view';
 
 export default function Compilation() {
@@ -24,6 +25,10 @@ export default function Compilation() {
 
   const handleSwitchToSkills = useCallback(() => {
     setViewMode(ViewMode.Skills);
+  }, []);
+
+  const handleSwitchToTree = useCallback(() => {
+    setViewMode(ViewMode.Tree);
   }, []);
 
   return (
@@ -54,6 +59,7 @@ export default function Compilation() {
             >
               {t('knowledgeDetails.llmWiki')}
             </Button>
+
             <Button
               variant={viewMode === ViewMode.Skills ? 'default' : 'outline'}
               size="sm"
@@ -61,11 +67,21 @@ export default function Compilation() {
             >
               To Skills
             </Button>
+
+            <Button
+              variant={viewMode === ViewMode.Tree ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleSwitchToTree}
+            >
+              {t('knowledgeDetails.navTree')}
+            </Button>
           </div>
         </section>
       </header>
 
-      {viewMode === ViewMode.LlmWiki ? <LlmWikiView /> : <SkillsView />}
+      {viewMode === ViewMode.LlmWiki && <LlmWikiView />}
+      {viewMode === ViewMode.Skills && <SkillsView />}
+      {viewMode === ViewMode.Tree && <NavTreeView />}
     </section>
   );
 }

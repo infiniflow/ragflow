@@ -36,9 +36,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -104,11 +109,34 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 // record-buckets for the merge pass).
 func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+	)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	ctx := newLevelContext(records, p)
+	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
 	levels := ctx.Levels()
+	// Count heading level distribution for debugging.
+	headingCounts := make(map[int]int)
+	for _, lvl := range levels {
+		if lvl < bodyLevel {
+			headingCounts[lvl]++
+		}
+	}
+	bodyCount := len(levels)
+	for _, c := range headingCounts {
+		bodyCount -= c
+	}
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+		zap.Int("body_level", bodyCount),
+		zap.Any("heading_levels", headingCounts),
+	)
 
 	// Mirror python group_chunker._resolve_group_target_level: when
 	// `hierarchy` is unset the target level is `most_level` directly
@@ -120,7 +148,18 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 	secIDs := buildSectionIDs(levels, targetLevel)
 
 	groups := groupRecords(records, secIDs, p)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("groups", len(groups)),
+	)
 	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("chunks", len(chunks)),
+		zap.Bool("plain_text", isPlainTextFormat(inputs)),
+	)
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -219,7 +258,10 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 		if len(g) == 0 {
 			continue
 		}
-		chunk := map[string]any{"text": joinGroupText(g)}
+		// Strip parser-emitted position tags (`@@...##`) from the
+		// joined text (diff 1.6 / 2.8). Mirrors common.py:255
+		// `RAGFlowPdfParser.remove_tag("".join(...))`.
+		chunk := map[string]any{"text": removeTag(joinGroupText(g))}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -228,6 +270,24 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 			if first.imgID != nil {
 				chunk["img_id"] = *first.imgID
 			}
+		}
+		// Merge PDF coordinate matrices across the merged records
+		// instead of keeping only the leading record's (diff 1.6).
+		// Mirrors pdf_chunk_metadata.py:127 merge_pdf_positions.
+		var pdfSrc, posSrc []json.RawMessage
+		for _, r := range g {
+			if len(r.pdfPositions) > 0 {
+				pdfSrc = append(pdfSrc, r.pdfPositions)
+			}
+			if len(r.positions) > 0 {
+				posSrc = append(posSrc, r.positions)
+			}
+		}
+		if m := mergePositionMatrix(pdfSrc...); m != nil {
+			chunk["_pdf_positions"] = m
+		}
+		if m := mergePositionMatrix(posSrc...); m != nil {
+			chunk["positions"] = m
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -239,6 +299,61 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 		chunks = chunks[1:]
 	}
 	return chunks
+}
+
+// posTagRemove matches parser-emitted position tags of the form
+// `@@<page>\t<left>\t<right>\t<top>\t<bottom>##`. Mirrors Python
+// pdf_parser.py:1934 `re.sub(r"@@[\t0-9.-]+?##", "", txt)`.
+var posTagRemove = regexp.MustCompile(`@@[\t0-9.-]+?##`)
+
+// removeTag strips parser-emitted position tags from a chunk's text.
+// Mirrors deepdoc RAGFlowPdfParser.remove_tag.
+func removeTag(text string) string {
+	return posTagRemove.ReplaceAllString(text, "")
+}
+
+// mergePositionMatrix aggregates multiple PDF coordinate matrices into a
+// single de-duplicated, sorted matrix. Mirrors Python
+// pdf_chunk_metadata.py:127 merge_pdf_positions: rows are 5-tuples
+// [page,left,right,top,bottom]; duplicates (by the first five columns)
+// are dropped and rows are sorted by (page, top, left). Returns nil when
+// no source carries any usable coordinates.
+func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
+	var out [][]float64
+	seen := make(map[string]bool)
+	for _, src := range sources {
+		if len(src) == 0 {
+			continue
+		}
+		var mat [][]float64
+		if err := json.Unmarshal(src, &mat); err != nil {
+			continue
+		}
+		for _, row := range mat {
+			if len(row) < 5 {
+				continue
+			}
+			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, row)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i][0] != out[j][0] {
+			return out[i][0] < out[j][0]
+		}
+		if out[i][3] != out[j][3] {
+			return out[i][3] < out[j][3]
+		}
+		return out[i][1] < out[j][1]
+	})
+	return out
 }
 
 // extractLineRecords reads the chunker inputs in the same order the
@@ -253,7 +368,7 @@ func extractLineRecords(inputs map[string]any) []lineRecord {
 	if docs := chunksFromInputs(inputs); docs != nil {
 		return recordsFromStructured(docs)
 	}
-	text, _ := stringFromInputs(inputs, "text", "content")
+	text, _ := stringFromInputs(inputs, "text", "content", "markdown", "html")
 	if text == "" {
 		return nil
 	}
@@ -296,11 +411,14 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 			meta[k] = json.RawMessage(v)
 		}
 		out = append(out, lineRecord{
-			text:       text,
-			docType:    dt,
-			imgID:      imgID,
-			layout:     it.Layout,
-			parentMeta: meta,
+			text:         text,
+			docType:      dt,
+			imgID:        imgID,
+			layout:       it.Layout,
+			ckType:       it.CKType,
+			pdfPositions: it.PDFPositions,
+			positions:    it.Positions,
+			parentMeta:   meta,
 		})
 	}
 	return out

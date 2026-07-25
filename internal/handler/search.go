@@ -51,7 +51,7 @@ func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProvid
 	h.askService = askService
 }
 
-func getSearchOwnerIDs(c *gin.Context) []string {
+func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
 	if len(values) == 0 {
 		values = c.QueryArray("owner_id")
@@ -114,7 +114,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	ownerIDs := getSearchOwnerIDs(c)
+	ownerIDs := getOwnerIDs(c)
 
 	// Keep body parsing as a compatibility fallback for existing callers that
 	// send owner_ids in a GET body. Python reads owner_ids from the query.

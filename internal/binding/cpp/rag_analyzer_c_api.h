@@ -40,6 +40,9 @@ void RAGAnalyzer_SetFineGrained(RAGAnalyzerHandle handle, bool fine_grained);
 // Set enable position tracking
 void RAGAnalyzer_SetEnablePosition(RAGAnalyzerHandle handle, bool enable_position);
 
+// Set the language for stemming (e.g. "English", "Dutch", "German")
+void RAGAnalyzer_SetLanguage(RAGAnalyzerHandle handle, const char* language);
+
 // Analyze text and call callback for each token
 // Returns: 0 on success, negative value on failure
 int RAGAnalyzer_Analyze(

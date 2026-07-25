@@ -75,7 +75,14 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Memory{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(
+		&entity.Memory{},
+		&entity.User{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
 		t.Fatalf("failed to migrate memory test tables: %v", err)
 	}
 
@@ -84,6 +91,118 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		ProviderName: "OpenAI",
+		TenantID:     "user-1",
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := dao.DB.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		InstanceName: "default",
+		ProviderID:   "provider-1",
+		APIKey:       "test-key",
+	}).Error; err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+	if err := dao.DB.Create(&entity.TenantModel{
+		ID:         "tenant-llm-1",
+		ModelName:  "gpt-4o",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("seed chat model: %v", err)
+	}
+	if err := dao.DB.Create(&entity.TenantModel{
+		ID:         "tenant-embd-1",
+		ModelName:  "text-embedding-3-small",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelType:  int(entity.ModelTypeEmbedding),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("seed embedding model: %v", err)
+	}
+
+	tenantLLMID := "tenant-llm-1"
+	tenantEmbdID := "tenant-embd-1"
+	if err := dao.DB.Create(&entity.Memory{
+		ID:               "mem-with-tenant-models",
+		Name:             "With tenant models",
+		TenantID:         "user-1",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		LLMID:            "gpt-4o@OpenAI",
+		TenantLLMID:      &tenantLLMID,
+		EmbdID:           "text-embedding-3-small@OpenAI",
+		TenantEmbdID:     &tenantEmbdID,
+		Permissions:      string(TenantPermissionMe),
+		ForgettingPolicy: string(ForgettingPolicyFIFO),
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	resp, err := NewMemoryService().ListMemories("user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 {
+		t.Fatalf("ListMemories returned total=%d len=%d, want 1", resp.TotalCount, len(resp.MemoryList))
+	}
+	memory := resp.MemoryList[0]
+	if got, want := memory["llm_id"], "gpt-4o@default@OpenAI"; got != want {
+		t.Fatalf("llm_id = %v, want %v", got, want)
+	}
+	if got, want := memory["embd_id"], "text-embedding-3-small@default@OpenAI"; got != want {
+		t.Fatalf("embd_id = %v, want %v", got, want)
+	}
+}
+
+func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Memory{
+		ID:               "mem-without-tenant-models",
+		Name:             "Without tenant models",
+		TenantID:         "user-1",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		LLMID:            "raw-llm",
+		EmbdID:           "raw-embd",
+		Permissions:      string(TenantPermissionMe),
+		ForgettingPolicy: string(ForgettingPolicyFIFO),
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	resp, err := NewMemoryService().ListMemories("user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 {
+		t.Fatalf("ListMemories returned total=%d len=%d, want 1", resp.TotalCount, len(resp.MemoryList))
+	}
+	memory := resp.MemoryList[0]
+	if got, want := memory["llm_id"], "raw-llm"; got != want {
+		t.Fatalf("llm_id = %v, want %v", got, want)
+	}
+	if got, want := memory["embd_id"], "raw-embd"; got != want {
+		t.Fatalf("embd_id = %v, want %v", got, want)
+	}
 }
 
 func seedMemoryMessages(t *testing.T) {

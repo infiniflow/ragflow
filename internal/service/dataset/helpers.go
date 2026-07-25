@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
 
@@ -228,6 +229,26 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 		return "", true, err
 	}
 	return embdID, true, nil
+}
+
+func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+	if next == nil {
+		next = entity.JSONMap{}
+	}
+	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
+		if incoming != nil {
+			if value, ok := incoming[key]; ok {
+				next[key] = value
+				continue
+			}
+		}
+		if existing != nil {
+			if value, ok := existing[key]; ok {
+				next[key] = value
+			}
+		}
+	}
+	return next
 }
 
 func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {

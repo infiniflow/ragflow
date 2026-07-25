@@ -285,6 +285,113 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	}
 }
 
+// TestMessage_MemorySave_FromDSLParams: memory_ids declared in the
+// DSL params (constructor) are honoured even when the runtime inputs
+// map does not carry memory_ids. This is the production path where
+// the pipeline only provides upstream component outputs.
+func TestMessage_MemorySave_FromDSLParams(t *testing.T) {
+	var saved MemorySaveRequest
+	saveFn := memSaverFunc(func(_ context.Context, req MemorySaveRequest) error {
+		saved = req
+		return nil
+	})
+	SetMemorySaver(&saveFn)
+	defer SetMemorySaver(nil)
+
+	c, _ := NewMessageComponent(map[string]any{
+		"text":       "hi",
+		"memory_ids": []string{"dsl-m1", "dsl-m2"},
+	})
+	state := canvas.NewCanvasState("run-dsl", "task-dsl")
+	state.Sys["query"] = "hello?"
+	ctx := withStateForTest(context.Background(), state)
+
+	// Inputs simulate what the pipeline actually provides: only upstream
+	// outputs, NO memory_ids or memory_save keys.
+	_, err := c.Invoke(ctx, map[string]any{
+		"text":   "hi",
+		"stream": false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(saved.MemoryIDs) != 2 || saved.MemoryIDs[0] != "dsl-m1" || saved.MemoryIDs[1] != "dsl-m2" {
+		t.Errorf("MemoryIDs from DSL params: %+v", saved.MemoryIDs)
+	}
+	if saved.AgentResponse != "hi" {
+		t.Errorf("AgentResponse: got %q, want hi", saved.AgentResponse)
+	}
+}
+
+// TestMessage_MemorySave_UserIDVariable: when user_id is a canvas
+// variable reference (e.g. "{begin@user_id}"), it is resolved
+// against the current state before being passed to the saver.
+// Mirrors Python agent/component/message.py:569-571.
+func TestMessage_MemorySave_UserIDVariable(t *testing.T) {
+	var saved MemorySaveRequest
+	saveFn := memSaverFunc(func(_ context.Context, req MemorySaveRequest) error {
+		saved = req
+		return nil
+	})
+	SetMemorySaver(&saveFn)
+	defer SetMemorySaver(nil)
+
+	c, _ := NewMessageComponent(map[string]any{
+		"text":    "hi",
+		"user_id": "{begin@user_id}",
+	})
+	state := canvas.NewCanvasState("run-uid", "task-uid")
+	state.Sys["query"] = "hello?"
+	state.SetVar("begin", "user_id", "resolved-user-123")
+	ctx := withStateForTest(context.Background(), state)
+
+	_, err := c.Invoke(ctx, map[string]any{
+		"text":        "hi",
+		"stream":      false,
+		"memory_save": true,
+		"memory_ids":  []string{"m1"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if saved.UserID != "resolved-user-123" {
+		t.Errorf("UserID: got %q, want resolved-user-123", saved.UserID)
+	}
+}
+
+// TestMessage_MemorySave_UserIDLiteral: a plain (non-variable)
+// user_id is passed through as-is.
+func TestMessage_MemorySave_UserIDLiteral(t *testing.T) {
+	var saved MemorySaveRequest
+	saveFn := memSaverFunc(func(_ context.Context, req MemorySaveRequest) error {
+		saved = req
+		return nil
+	})
+	SetMemorySaver(&saveFn)
+	defer SetMemorySaver(nil)
+
+	c, _ := NewMessageComponent(map[string]any{
+		"text":    "hi",
+		"user_id": "plain-user-456",
+	})
+	state := canvas.NewCanvasState("run-uid2", "task-uid2")
+	state.Sys["query"] = "hello?"
+	ctx := withStateForTest(context.Background(), state)
+
+	_, err := c.Invoke(ctx, map[string]any{
+		"text":        "hi",
+		"stream":      false,
+		"memory_save": true,
+		"memory_ids":  []string{"m1"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if saved.UserID != "plain-user-456" {
+		t.Errorf("UserID: got %q, want plain-user-456", saved.UserID)
+	}
+}
+
 // memSaverFunc adapts a closure to the MemorySaver interface so
 // tests can record the call inline.
 type memSaverFunc func(ctx context.Context, req MemorySaveRequest) error

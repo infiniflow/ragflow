@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,12 +15,12 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
-	file, err := s.fileDAO.GetByID(fileID)
+func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("Document not found!")
 	}
-	if !s.checkFilePerm(s.fileDAO, file, uid) {
+	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
 		return nil, fmt.Errorf("No authorization.")
 	}
 	return file, nil
@@ -27,9 +28,9 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 
 // GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
 // Matches Python's File2DocumentService.get_storage_address function
-func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
-	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	f2d, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 	if err != nil || len(f2d) == 0 {
 		return nil, fmt.Errorf("file2document mapping not found")
 	}
@@ -38,7 +39,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	if f2d[0].FileID == nil {
 		return nil, fmt.Errorf("file_id is nil in file2document mapping")
 	}
-	file, err := s.fileDAO.GetByID(*f2d[0].FileID)
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, *f2d[0].FileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("file not found")
 	}
@@ -60,7 +61,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	}
 
 	documentDAO := dao.NewDocumentDAO()
-	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	doc, err := documentDAO.GetByID(ctx, dao.DB, *f2d[0].DocumentID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
@@ -76,7 +77,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -94,9 +95,22 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 
 // GetFileContents fetches file contents (text + image) from storage
 // for the given file dicts.
+//
+// File dicts are the descriptors returned by the upload_info endpoint
+// (UploadInfos / storeUploadInfoBlob). They contain:
+//
+//   - "id":         storage location UUID (key in the downloads bucket)
+//   - "created_by": the user ID who owns the downloads bucket
+//   - "name":       the original filename
+//   - "mime_type":  the content type
+//
+// Blobs are stored directly in "{created_by}-downloads/{id}" in object
+// storage WITHOUT a corresponding File entity row in the database.
+// Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
+//
 //   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
 //   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
-func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -107,28 +121,36 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 		if id == "" {
 			continue
 		}
-		file, ferr := s.fileDAO.GetByID(id)
-		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
-			continue
+		name, _ := fd["name"].(string)
+		mimeType, _ := fd["mime_type"].(string)
+		createdBy, _ := fd["created_by"].(string)
+		if createdBy == "" {
+			createdBy = uid
 		}
-		if !s.checkFilePerm(s.fileDAO, file, uid) {
+		// Permission: only the owner can access their uploads bucket.
+		if createdBy != uid {
 			return nil, nil, fmt.Errorf("No authorization.")
 		}
-		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+
+		data, derr := storageImpl.Get(createdBy+"-downloads", id)
 		if derr != nil || len(data) == 0 {
 			continue
 		}
-		ft := utility.FilenameType(file.Name)
+
+		ft := utility.FilenameType(name)
 		if ft == utility.FileTypeVISUAL {
 			if raw {
 				images = append(images, string(data))
 			} else {
-				ext := utility.GetFileExtension(file.Name)
-				mime := utility.GetContentType(ext, string(ft))
-				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+				mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+				if mediaType == "" {
+					ext := utility.GetFileExtension(name)
+					mediaType = utility.GetContentType(ext, string(ft))
+				}
+				images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 			}
 		} else {
-			texts = append(texts, parseFileContent(file.Name, data))
+			texts = append(texts, parseFileContent(ctx, name, data))
 		}
 	}
 	return texts, images, nil
@@ -136,7 +158,7 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 
 // parseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -169,7 +191,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 			continue
 		}
 
-		content, err := parseAgentUploadContent(name, data, layoutRecognize)
+		content, err := parseAgentUploadContent(ctx, name, data, layoutRecognize)
 		if err != nil {
 			return nil, fmt.Errorf("file %q: parse upload: %w", name, err)
 		}
@@ -178,7 +200,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 	return contents, nil
 }
 
-func parseAgentUploadContent(filename string, data []byte, layoutRecognize string) (string, error) {
+func parseAgentUploadContent(ctx context.Context, filename string, data []byte, layoutRecognize string) (string, error) {
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
@@ -189,7 +211,7 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
 		}
-		res := fp.ParseWithResult(filename, data)
+		res := fp.ParseWithResult(ctx, filename, data)
 		if res.Err != nil {
 			return "", res.Err
 		}
@@ -221,7 +243,7 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
 // Falls back to returning raw text if no parser is available.
-func parseFileContent(filename string, data []byte) string {
+func parseFileContent(ctx context.Context, filename string, data []byte) string {
 	fileType := utility.GetFileType(filename)
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
@@ -230,7 +252,7 @@ func parseFileContent(filename string, data []byte) string {
 	if err != nil {
 		return string(data)
 	}
-	res := fp.ParseWithResult(filename, data)
+	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return string(data)
 	}

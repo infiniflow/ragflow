@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +41,7 @@ type mockChunkService struct {
 	LastUserID      string
 }
 
-func (m *mockChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (m *mockChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	m.LastReq = req
 	m.LastUserID = userID
 	if m.retrievalTestFn != nil {
@@ -466,7 +467,7 @@ type fakeChunkRetriever struct {
 	err    error
 }
 
-func (f *fakeChunkRetriever) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (f *fakeChunkRetriever) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

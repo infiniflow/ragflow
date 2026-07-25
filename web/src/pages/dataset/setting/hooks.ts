@@ -1,13 +1,16 @@
 import { ParseType } from '@/constants/knowledge';
-import { useFetchPipelineDslByPipelineId } from '@/hooks/use-agent-request';
 import {
   useFetchDatasetPipelineConfiguration,
   useUpdateKnowledge,
 } from '@/hooks/use-knowledge-request';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { IConnector } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { checkEmbedding } from '@/services/knowledge-service';
+import {
+  getOperatorType,
+  transformApiConfigToForm,
+  transformFormConfigToApi,
+} from '@/utils/pipeline-operator';
 import { pick } from 'lodash';
 import {
   Dispatch,
@@ -15,18 +18,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useState,
 } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { useParams, useSearchParams } from 'react-router';
 import { z } from 'zod';
 import { formSchema } from './form-schema';
-import {
-  buildPipelineOperatorNodes,
-  getOperatorType,
-  transformApiConfigToForm,
-  transformFormConfigToApi,
-} from './utils';
 
 export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
@@ -102,6 +98,7 @@ export const useFetchDatasetSettingOnMount = (
         'description',
         'name',
         'permission',
+        'language',
         'connectors',
         'pagerank',
         'avatar',
@@ -121,23 +118,6 @@ export const useFetchDatasetSettingOnMount = (
   }, [form, knowledgeDetails, sourceData]);
 
   return { knowledgeDetails, loading, sourceData };
-};
-
-export const usePipelineOperatorNodes = (
-  pipelineId?: string,
-  pipelineParserConfig?: Record<string, any>,
-  isBuiltin = false,
-) => {
-  const { dsl, loading } = useFetchPipelineDslByPipelineId(
-    pipelineId,
-    isBuiltin,
-  );
-
-  const operatorNodes = useMemo(() => {
-    return buildPipelineOperatorNodes(dsl, pipelineParserConfig);
-  }, [dsl, pipelineParserConfig]);
-
-  return { operatorNodes, loading };
 };
 
 export const useSaveDatasetSetting = () => {
@@ -173,30 +153,6 @@ export const useSaveDatasetSetting = () => {
   );
 
   return { handleSave, loading };
-};
-
-export const useActiveTab = (operatorNodes: RAGFlowNodeType[]) => {
-  const [activeTab, setActiveTab] = useState('');
-
-  useEffect(() => {
-    if (operatorNodes.length > 0) {
-      const firstTab =
-        (operatorNodes[0].data as Record<string, any>)?.operatorId ||
-        operatorNodes[0].data?.label ||
-        '';
-      const validTabs = operatorNodes.map(
-        (node) =>
-          (node.data as Record<string, any>)?.operatorId ||
-          node.data?.label ||
-          '',
-      );
-      setActiveTab((prev) => (validTabs.includes(prev) ? prev : firstTab));
-    } else {
-      setActiveTab('');
-    }
-  }, [operatorNodes]);
-
-  return { activeTab, setActiveTab };
 };
 
 export const usePipelineDataList = (sourceData: any[] | undefined) => {

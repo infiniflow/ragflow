@@ -57,8 +57,8 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 
 // LoadFromIngestionTask loads the full task context from an IngestionTask.
 // It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
-func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(ingestionTask.DocumentID)
+func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionTask) (*TaskContext, error) {
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, ingestionTask.DocumentID)
 	if err != nil {
 		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
 	}
@@ -79,6 +79,7 @@ func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, e
 	pipelineID := resolvePipelineID(doc, kb)
 
 	return &TaskContext{
+		Ctx:           ctx,
 		IngestionTask: ingestionTask,
 		PipelineID:    pipelineID,
 		Doc:           *doc,

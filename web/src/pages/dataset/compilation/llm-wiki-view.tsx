@@ -86,6 +86,7 @@ export function LlmWikiView() {
             onTabChange={handleLeftTabChange}
             selectedArtifact={selectedArtifact}
             onSelectArtifact={handleSelectArtifact}
+            onClearArtifact={clearSelectedArtifact}
             onClearWiki={clearSelectedArtifact}
           />
         </ResizablePanel>

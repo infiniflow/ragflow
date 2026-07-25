@@ -30,6 +30,10 @@ import { LLMFactory } from '@/constants/llm';
  * 4 model_* fields directly.
  */
 export const LIST_MODEL_PROVIDERS = new Set<string>([
+  // aimlapi.com serves its full /v1/models catalog (700+) via the AIMLAPI
+  // ModelMeta on the backend, so the dialog uses the list picker (mirror of
+  // that registry) instead of a single manual model_name field.
+  LLMFactory.AIMLAPI,
   LLMFactory.Ollama,
   LLMFactory.OpenRouter,
   LLMFactory.VLLM,

@@ -189,7 +189,7 @@ export interface ProviderModalProps {
   initialValues?: Record<string, any>;
   /**
    * Base URL options for the input+select combo (from IAvailableProvider.url)
-   * Used by base_url/api_base fields of type inputSelect
+   * Used by base_url fields of type inputSelect
    */
   baseUrlOptions?: SelectOption[];
   onOk: (payload: any, isVerify?: boolean) => Promise<any>;

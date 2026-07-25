@@ -282,8 +282,7 @@ var tavilyExtractEndpoint = "https://api.tavily.com/extract"
 func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p tavilyParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
-		return tavilyErrJSON(fmt.Errorf("tavily: parse arguments: %w", err)),
-			fmt.Errorf("tavily: parse arguments: %w", err)
+		return tavilyErrJSON(fmt.Errorf("tavily: parse arguments: %w", err)), nil
 	}
 	if p.Query == "" {
 		return tavilyJSON(tavilyEnvelope{Results: []map[string]any{}}), nil
@@ -297,9 +296,12 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 		apiKey = t.envKey()
 	}
 	if apiKey == "" {
-		return tavilyErrJSON(fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")),
-			fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")
+		return tavilyErrJSON(fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")), nil
 	}
+
+	// Match the Python implementation: always disable images and raw content.
+	p.IncludeImages = false
+	p.IncludeRawContent = false
 
 	body, _ := json.Marshal(tavilyRequestBody{
 		Query:                    p.Query,
@@ -320,19 +322,17 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string) (string,
 		map[string]string{"Authorization": "Bearer " + apiKey},
 	)
 	if err != nil {
-		return tavilyErrJSON(err), err
+		return tavilyErrJSON(err), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return tavilyErrJSON(fmt.Errorf("tavily: upstream returned %d", resp.StatusCode)),
-			fmt.Errorf("tavily: upstream returned %d", resp.StatusCode)
+		return tavilyErrJSON(fmt.Errorf("tavily: upstream returned %d", resp.StatusCode)), nil
 	}
 
 	var raw tavilyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return tavilyErrJSON(fmt.Errorf("tavily: decode response: %w", err)),
-			fmt.Errorf("tavily: decode response: %w", err)
+		return tavilyErrJSON(fmt.Errorf("tavily: decode response: %w", err)), nil
 	}
 	return tavilyJSON(tavilyEnvelope{Results: raw.Results}), nil
 }
@@ -508,14 +508,12 @@ func truncateTavilyRunes(value string, limit int) string {
 func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var runtimeParams tavilyExtractParams
 	if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: parse arguments: %w", err)),
-			fmt.Errorf("tavily_extract: parse arguments: %w", err)
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: parse arguments: %w", err)), nil
 	}
 	p := mergeTavilyExtractParams(t.defaults, runtimeParams)
 	urls := normalizeTavilyURLs(p.URLs)
 	if len(urls) == 0 {
-		return tavilyExtractErrJSON(fmt.Errorf("urls is required")),
-			fmt.Errorf("tavily_extract: urls is required")
+		return tavilyExtractErrJSON(fmt.Errorf("urls is required")), nil
 	}
 	if p.ExtractDepth == "" {
 		p.ExtractDepth = "basic"
@@ -529,8 +527,7 @@ func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (
 		apiKey = t.envKey()
 	}
 	if apiKey == "" {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")),
-			fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: api_key is required (or set TAVILY_API_KEY)")), nil
 	}
 
 	body, _ := json.Marshal(tavilyExtractRequestBody{
@@ -544,19 +541,17 @@ func (t *TavilyExtractTool) InvokableRun(ctx context.Context, argsJSON string) (
 		map[string]string{"Authorization": "Bearer " + apiKey},
 	)
 	if err != nil {
-		return tavilyExtractErrJSON(err), err
+		return tavilyExtractErrJSON(err), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)),
-			fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: upstream returned %d", resp.StatusCode)), nil
 	}
 
 	var raw tavilyExtractResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: decode response: %w", err)),
-			fmt.Errorf("tavily_extract: decode response: %w", err)
+		return tavilyExtractErrJSON(fmt.Errorf("tavily_extract: decode response: %w", err)), nil
 	}
 	return tavilyExtractJSON(tavilyExtractEnvelope{Results: raw.Results}), nil
 }

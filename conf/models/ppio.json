@@ -15,147 +15,210 @@
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-v4-pro",
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1/community",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-v3/community",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-v3",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1-distill-llama-70b",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1-distill-qwen-32b",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1-distill-qwen-14b",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-r1-distill-llama-8b",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen-2.5-72b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen-2-vl-72b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "meta-llama/llama-3.2-3b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen2.5-32b-instruct",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "baichuan/baichuan2-13b-chat",
       "max_tokens": 14336,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "meta-llama/llama-3.1-70b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "meta-llama/llama-3.1-8b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "01-ai/yi-1.5-34b-chat",
       "max_tokens": 16384,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "01-ai/yi-1.5-9b-chat",
       "max_tokens": 16384,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "thudm/glm-4-9b-chat",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen-2-7b-instruct",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     }
   ]
 }

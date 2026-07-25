@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -9,7 +10,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
@@ -25,7 +26,7 @@ func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[stri
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	status, err := d.documentDAO.GetParsingStatusByKBID(datasetID)
+	status, err := d.documentDAO.GetParsingStatusByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}

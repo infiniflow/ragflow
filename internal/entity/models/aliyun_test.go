@@ -39,6 +39,7 @@ func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"retrieval","arguments":"{\"query\":\"ragflow\"}"}}]}}]}`))
 	}))
 	defer server.Close()
+	ctx := t.Context()
 
 	model := NewAliyunModel(
 		map[string]string{"default": server.URL},
@@ -56,6 +57,7 @@ func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
 	messages := []Message{{Role: "user", Content: "find ragflow"}}
 
 	response, err := model.ChatWithMessages(
+		ctx,
 		"qwen-flash",
 		messages,
 		&APIConfig{ApiKey: &apiKey},
@@ -85,6 +87,7 @@ func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
 }
 
 func TestAliyunChatWithMessagesStopsQwenFlashAfterToolResult(t *testing.T) {
+	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
@@ -121,6 +124,7 @@ func TestAliyunChatWithMessagesStopsQwenFlashAfterToolResult(t *testing.T) {
 		{Role: "tool", Content: "retrieved text", ToolCallID: "previous-call"},
 	}
 	response, err := model.ChatWithMessages(
+		ctx,
 		"qwen-flash",
 		messages,
 		&APIConfig{ApiKey: &apiKey},
@@ -184,6 +188,7 @@ func TestAliyunToolChoiceStopsOnlyQwenFlashAfterToolResult(t *testing.T) {
 }
 
 func TestAliyunChatStreamlyWithSenderSupportsToolCalls(t *testing.T) {
+	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	requestPath := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +226,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ra
 	}
 	var streamed []string
 	err := model.ChatStreamlyWithSender(
+		ctx,
 		"qwen-flash",
 		[]Message{{Role: "user", Content: "find ragflow"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -276,6 +282,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ra
 }
 
 func TestAliyunChatStreamlyWithSenderRejectsStreamFalse(t *testing.T) {
+	ctx := t.Context()
 	model := NewAliyunModel(
 		map[string]string{"default": "https://dashscope.example"},
 		URLSuffix{Chat: "compatible-mode/v1/chat/completions"},
@@ -283,6 +290,7 @@ func TestAliyunChatStreamlyWithSenderRejectsStreamFalse(t *testing.T) {
 	apiKey := "test-key"
 	stream := false
 	err := model.ChatStreamlyWithSender(
+		ctx,
 		"qwen-flash",
 		[]Message{{Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey},

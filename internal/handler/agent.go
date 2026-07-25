@@ -49,15 +49,13 @@ import (
 // the FileHandler (handler/file.go), not by any agent handler, so
 // the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
-	// returns lightweight descriptors. Mirrors python FileService.upload_info
-	// (multi-file path) used by the agent upload endpoint.
-	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// returns lightweight descriptors.
+	UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	// UploadFromURL downloads a remote file (with SSRF protection) and
-	// stores it as an info blob. Mirrors python FileService.upload_info
-	// (single-file path with ?url=) used by the agent upload endpoint.
-	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
+	// stores it as an info blob.
+	UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion
@@ -356,8 +354,8 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
-	templates, err := h.agentService.ListTemplates()
+	ctx := c.Request.Context()
+	templates, err := h.agentService.ListTemplates(ctx)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -635,7 +633,8 @@ func (h *AgentHandler) ListAgentTemplates(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	rows, err := h.agentService.ListTemplates()
+	ctx := c.Request.Context()
+	rows, err := h.agentService.ListTemplates(ctx)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -715,8 +714,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	sessionID := c.Query("id")
 	expUserID := c.Query("user_id")
 	includeDSL := c.Query("dsl") == "true"
-
-	resp, code, err := h.agentService.ListAgentSessions(user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
+	ctx := c.Request.Context()
+	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
 		Page:       page,
 		PageSize:   pageSize,
 		Keywords:   keywords,
@@ -753,7 +752,8 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	row, code, err := h.agentService.CreateAgentSession(&service.CreateAgentSessionRequest{
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
 		UserID:  user.ID,
 		AgentID: canvasID,
 		Name:    body.Name,
@@ -776,7 +776,8 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
-	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
+	ctx := c.Request.Context()
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -791,10 +792,11 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
+	ctx := c.Request.Context()
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	if sessionID != "" {
-		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
+		ok, code, err := h.agentService.DeleteAgentSessionItem(ctx, user.ID, canvasID, sessionID)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -812,7 +814,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			}
 		}
 	}
-	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
+	result, code, err := h.agentService.DeleteAgentSessions(ctx, user.ID, canvasID, ids, deleteAll)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

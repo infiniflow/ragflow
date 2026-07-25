@@ -539,9 +539,9 @@ export default {
         'Kunci API dapat diperoleh dengan mendaftar ke penyedia LLM yang sesuai.',
       showMoreModels: 'Tampilkan lebih banyak model',
       hideModels: 'Sembunyikan model',
-      baseUrl: 'BASE URL',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan BASE URL ini dengan kunci API.',
+        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan Base URL ini dengan kunci API.',
       tongyiBaseUrlTip:
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -580,8 +580,8 @@ export default {
       modelNameMessage: 'Silakan masukkan nama model Anda!',
       modelType: 'Jenis Model',
       modelTypeMessage: 'Silakan masukkan jenis model Anda!',
-      addLlmBaseUrl: 'BASE URL',
-      baseUrlNameMessage: 'Silakan masukkan BASE URL Anda',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Silakan masukkan Base URL Anda',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
@@ -659,13 +659,13 @@ export default {
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'silakan masukkan APIKey Anda',
       yiyanModelNameMessage: 'Silakan masukkan nama model',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Silakan masukkan API KEY Anda',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Silakan masukkan API Key Anda',
       addyiyanSK: 'yiyan SECRET KEY',
       yiyanSKMessage: 'Silakan masukkan SECRET KEY Anda',
       FishAudioModelNameMessage: 'Silakan beri nama model sintesis ucapan Anda',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Silakan masukkan API KEY Anda',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Silakan masukkan API Key Anda',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Silakan masukkan Reference ID (biarkan kosong untuk menggunakan model default).',

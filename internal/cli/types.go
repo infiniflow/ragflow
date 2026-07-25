@@ -204,6 +204,7 @@ const (
 	TokenPreview
 	TokenOpenaiChat
 	TokenLog
+	TokenLogs
 	TokenLevel
 	TokenDebug
 	TokenInfo

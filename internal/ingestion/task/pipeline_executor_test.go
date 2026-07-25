@@ -417,14 +417,14 @@ type recordingProgressSink struct {
 	events   []pipelinepkg.ProgressEvent
 }
 
-func (r *recordingProgressSink) OnComponentTotal(taskID string, total int) {
+func (r *recordingProgressSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.total = total
 	r.totalSet = true
 }
 
-func (r *recordingProgressSink) OnComponentProgress(ev pipelinepkg.ProgressEvent) {
+func (r *recordingProgressSink) OnComponentProgress(ctx context.Context, ev pipelinepkg.ProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
@@ -475,5 +475,44 @@ func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 		if ev.DocumentID != "doc-1" {
 			t.Fatalf("event DocumentID = %q, want doc-1", ev.DocumentID)
 		}
+	}
+}
+
+func TestCountDistinctChunkIDs(t *testing.T) {
+	// Empty list
+	if n := countDistinctChunkIDs(nil); n != 0 {
+		t.Fatalf("nil chunks: got %d, want 0", n)
+	}
+
+	// All unique
+	chunks := []map[string]any{
+		{"id": "a"},
+		{"id": "b"},
+		{"id": "c"},
+	}
+	if n := countDistinctChunkIDs(chunks); n != 3 {
+		t.Fatalf("all unique: got %d, want 3", n)
+	}
+
+	// Duplicates present — this is the key case
+	chunks = []map[string]any{
+		{"id": "x"},
+		{"id": "y"},
+		{"id": "x"}, // duplicate of [0]
+		{"id": "z"},
+		{"id": "y"}, // duplicate of [1]
+	}
+	if n := countDistinctChunkIDs(chunks); n != 3 {
+		t.Fatalf("with duplicates: got %d, want 3", n)
+	}
+
+	// Missing id fields are skipped
+	chunks = []map[string]any{
+		{"id": "one"},
+		{"text": "no id"},
+		{"id": "two"},
+	}
+	if n := countDistinctChunkIDs(chunks); n != 2 {
+		t.Fatalf("mixed present/absent ids: got %d, want 2", n)
 	}
 }

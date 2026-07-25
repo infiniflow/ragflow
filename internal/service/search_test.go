@@ -33,6 +33,22 @@ func setupSearchServiceTestDB(t *testing.T) {
 	pushServiceDB(t, db)
 }
 
+func createSearchServiceTestSearch(t *testing.T, id, tenantID, name string) {
+	t.Helper()
+
+	status := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Search{
+		ID:           id,
+		TenantID:     tenantID,
+		Name:         name,
+		CreatedBy:    tenantID,
+		SearchConfig: entity.JSONMap{},
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create search: %v", err)
+	}
+}
+
 func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
@@ -104,5 +120,46 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 	if persisted.Name != "Updated Name" {
 		t.Fatalf("expected persisted name, got %q", persisted.Name)
+	}
+}
+
+func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
+	setupSearchServiceTestDB(t)
+
+	if err := dao.DB.Create(&entity.User{
+		ID:       "user-1",
+		Nickname: "search owner",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
+
+	result, err := NewSearchService().ListSearches("user-1", "", 0, 0, "create_time", true, nil)
+	if err != nil {
+		t.Fatalf("ListSearches failed: %v", err)
+	}
+	if result.Total != 1 || len(result.SearchApps) != 1 {
+		t.Fatalf("expected one search app, got total=%d len=%d", result.Total, len(result.SearchApps))
+	}
+	if got, want := result.SearchApps[0]["nickname"], "search owner"; got != want {
+		t.Fatalf("nickname = %v, want %v", got, want)
+	}
+}
+
+func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
+	setupSearchServiceTestDB(t)
+
+	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
+
+	result, err := NewSearchService().ListSearches("user-1", "", 0, 0, "create_time", true, nil)
+	if err != nil {
+		t.Fatalf("ListSearches failed: %v", err)
+	}
+	if result.Total != 1 || len(result.SearchApps) != 1 {
+		t.Fatalf("expected one search app, got total=%d len=%d", result.Total, len(result.SearchApps))
+	}
+	if got, want := result.SearchApps[0]["nickname"], "user-1"; got != want {
+		t.Fatalf("nickname = %v, want %v", got, want)
 	}
 }

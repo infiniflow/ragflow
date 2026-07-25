@@ -86,7 +86,7 @@ export const useHandleConnectToKnowledge = () => {
   const [record, setRecord] = useState<IFile>({} as IFile);
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [mode, setMode] = useState<ConnectFileToKnowledgeMode>('replace');
-  const knowledgeOptions = useSelectKnowledgeOptions();
+  const { options: knowledgeOptions } = useSelectKnowledgeOptions();
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)

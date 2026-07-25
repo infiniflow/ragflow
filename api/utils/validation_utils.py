@@ -417,6 +417,8 @@ class ParserConfig(Base):
     html4excel: Annotated[bool, Field(default=False)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
     parent_child: Annotated[ParentChildConfig, Field(default_factory=lambda: ParentChildConfig(use_parent_child=False))]
+    enable_children: Annotated[bool, Field(default=False)]
+    children_delimiter: Annotated[str, Field(default="", min_length=0)]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
     tag_kb_ids: Annotated[list[str], Field(default_factory=list)]
     topn_tags: Annotated[int, Field(default=1, ge=1, le=10)]

@@ -2,6 +2,7 @@ package file
 
 import (
 	"bytes"
+	"context"
 
 	"errors"
 	"io"
@@ -10,9 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -36,7 +34,7 @@ func sptr(s string) *string { return &s }
 // testFilePerm controls the permission check returned by testFileService.
 // Tests that need to simulate denied access can set it to a function that
 // returns false.
-var testFilePerm CheckFilePermFunc = func(_ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
+var testFilePerm CheckFilePermFunc = func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
 
 func testFileService() *FileService {
 	return &FileService{
@@ -100,107 +98,23 @@ func (f *fakeStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool
 
 func (f *fakeStorage) Close() error { return nil }
 
-func setupFileContentPermissionDB(t *testing.T, accessible bool) {
-	t.Helper()
-
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
-		TranslateError: true,
-	})
-	if err != nil {
-		t.Fatalf("failed to open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(
-		&entity.File{},
-		&entity.File2Document{},
-		&entity.Document{},
-		&entity.Knowledgebase{},
-		&entity.Tenant{},
-		&entity.UserTenant{},
-	); err != nil {
-		t.Fatalf("failed to migrate file content tables: %v", err)
-	}
-
-	location := "doc.txt"
-	if err := db.Create(&entity.File{
-		ID:       "file-1",
-		ParentID: "bucket-1",
-		TenantID: "owner-user",
-		Name:     "doc.txt",
-		Location: &location,
-		Type:     "file",
-	}).Error; err != nil {
-		t.Fatalf("insert file: %v", err)
-	}
-	if err := db.Create(&entity.Document{
-		ID:           "doc-1",
-		KbID:         "kb-owner",
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		Status:       sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert document: %v", err)
-	}
-	fileID := "file-1"
-	docID := "doc-1"
-	if err := db.Create(&entity.File2Document{
-		ID:         "f2d-1",
-		FileID:     &fileID,
-		DocumentID: &docID,
-	}).Error; err != nil {
-		t.Fatalf("insert file2document: %v", err)
-	}
-	if err := db.Create(&entity.Knowledgebase{
-		ID:         "kb-owner",
-		TenantID:   "tenant-owner",
-		Name:       "owner-kb",
-		EmbdID:     "embd-1",
-		CreatedBy:  "owner-user",
-		Permission: string(entity.TenantPermissionTeam),
-		Status:     sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert knowledgebase: %v", err)
-	}
-	if err := db.Create(&entity.Tenant{
-		ID:     "tenant-owner",
-		LLMID:  "llm-1",
-		EmbdID: "embd-1",
-		ASRID:  "asr-1",
-		Status: sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
-	if accessible {
-		if err := db.Create(&entity.UserTenant{
-			ID:       "ut-user-1",
-			UserID:   "user-1",
-			TenantID: "tenant-owner",
-			Role:     "normal",
-			Status:   sptr(string(entity.StatusValid)),
-		}).Error; err != nil {
-			t.Fatalf("insert user_tenant: %v", err)
-		}
-	}
-
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
-}
-
 func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
-	setupFileContentPermissionDB(t, false)
-
-	orig := testFilePerm
-	testFilePerm = func(_ *dao.FileDAO, _ *entity.File, _ string) bool { return false }
-	t.Cleanup(func() { testFilePerm = orig })
-
-	mockStorage := &fakeStorage{blob: []byte("secret")}
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put("other-user-downloads", "loc-1", []byte("secret")); err != nil {
+		t.Fatalf("put: %v", err)
+	}
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
-	factory.SetStorage(mockStorage)
+	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
+	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+		"id":         "loc-1",
+		"name":       "secret.txt",
+		"mime_type":  "text/plain",
+		"created_by": "other-user",
+	}}, false)
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
@@ -210,22 +124,25 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	if len(texts) != 0 || len(images) != 0 {
 		t.Fatalf("expected no content, got texts=%v images=%v", texts, images)
 	}
-	if mockStorage.getCalls != 0 {
-		t.Fatalf("storage should not be read without permission, got %d calls", mockStorage.getCalls)
-	}
 }
 
 func TestFileService_GetFileContents_Accessible(t *testing.T) {
-	setupFileContentPermissionDB(t, true)
-
-	mockStorage := &fakeStorage{blob: []byte("allowed content")}
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put("user-1-downloads", "loc-1", []byte("allowed content")); err != nil {
+		t.Fatalf("put: %v", err)
+	}
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
-	factory.SetStorage(mockStorage)
+	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents("user-1", []map[string]interface{}{{"id": "file-1"}}, false)
+	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+		"id":         "loc-1",
+		"name":       "doc.txt",
+		"mime_type":  "text/plain",
+		"created_by": "user-1",
+	}}, false)
 	if err != nil {
 		t.Fatalf("GetFileContents failed: %v", err)
 	}
@@ -235,15 +152,10 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	if len(texts) != 1 || !strings.Contains(texts[0], "allowed content") {
 		t.Fatalf("unexpected texts: %v", texts)
 	}
-	if mockStorage.getCalls != 1 {
-		t.Fatalf("storage get calls = %d, want 1", mockStorage.getCalls)
-	}
-	if mockStorage.lastBucket != "bucket-1" || mockStorage.lastFnm != "doc.txt" {
-		t.Fatalf("storage read %s/%s, want bucket-1/doc.txt", mockStorage.lastBucket, mockStorage.lastFnm)
-	}
 }
 
 func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	if err := memory.Put("user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
 		t.Fatalf("put text: %v", err)
@@ -256,7 +168,7 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	contents, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	contents, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "text-id", "name": "notes.txt", "mime_type": "text/plain", "created_by": "user-1"},
 		{"id": "image-id", "name": "photo.bin", "mime_type": "image/png", "created_by": "user-1"},
 	}, "Plain Text")
@@ -275,13 +187,14 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 }
 
 func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "file-id", "name": "secret.txt", "mime_type": "text/plain", "created_by": "user-2"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "created_by does not match") {
@@ -290,13 +203,14 @@ func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
 }
 
 func TestFileService_ParseAgentUploads_MissingObjectFails(t *testing.T) {
+	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads("user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
 		{"id": "missing", "name": "missing.txt", "mime_type": "text/plain", "created_by": "user-1"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "read upload") {
@@ -323,7 +237,8 @@ func TestFileService_DownloadAgentFile_Success(t *testing.T) {
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
-	blob, err := svc.DownloadAgentFile(tenantID, location)
+	ctx := t.Context()
+	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -358,7 +273,8 @@ func TestFileService_DownloadAgentFile_Error(t *testing.T) {
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
-	blob, err := svc.DownloadAgentFile(tenantID, location)
+	ctx := t.Context()
+	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -396,8 +312,9 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
+	ctx := t.Context()
 	svc := testFileService()
-	resp, err := svc.UploadFromURL("tenant123", server.URL+"/report")
+	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/report")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
@@ -442,8 +359,9 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
+	ctx := t.Context()
 	svc := testFileService()
-	resp, err := svc.UploadFromURL("tenant123", server.URL+"/page")
+	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/page")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}

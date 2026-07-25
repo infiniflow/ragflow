@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { LinkifyText } from '@/components/linkify-text';
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import {
   Tooltip,
@@ -56,7 +57,9 @@ function ModelFieldItem({
         {label}
         {tooltip && (
           <Tooltip>
-            <TooltipContent>{tooltip}</TooltipContent>
+            <TooltipContent>
+              <LinkifyText>{tooltip}</LinkifyText>
+            </TooltipContent>
             <TooltipTrigger>
               <CircleQuestionMark
                 size={12}

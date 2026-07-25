@@ -3191,10 +3191,12 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	case TokenProviders:
 		p.nextToken()
 		cmd = NewCommand("admin_list_user_providers")
+	case TokenLogs:
+		return p.parseAdminListUserLogs(userName)
 	case TokenDefault:
 		return p.parseAdminListUserDefaultModels(userName)
 	default:
-		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES or KEYS after USER")
+		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES or KEYS or LOGS after USER")
 	}
 
 	// Semicolon is optional
@@ -3292,6 +3294,31 @@ func (p *Parser) parseAdminListUserDefaultModels(userName string) (*Command, err
 
 	cmd := NewCommand("admin_list_user_default_models")
 	cmd.Params["user_name"] = userName
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST USER 'user_name' LOGS;
+// LIST USER 'user_name' LOGS 10;
+func (p *Parser) parseAdminListUserLogs(userName string) (*Command, error) {
+	p.nextToken() // consume LOGS
+
+	dayCount := 7
+
+	var err error
+	cmd := NewCommand("admin_list_user_operation_logs")
+	if p.curToken.Type == TokenNumber {
+		dayCount, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+	}
+	cmd.Params["user_name"] = userName
+	cmd.Params["days"] = dayCount
 
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

@@ -259,6 +259,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUserProviderInstanceModelsCommand(cmd)
 	case "admin_list_user_default_models":
 		return c.AdminListUserDefaultModelsCommand(cmd)
+	case "admin_list_user_operation_logs":
+		return c.AdminListUserLogsCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":

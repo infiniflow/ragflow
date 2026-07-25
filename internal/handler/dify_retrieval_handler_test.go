@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -131,12 +132,12 @@ func (m *mockRetrievalService) Retrieval(ctx context.Context, req *nlp.Retrieval
 
 type mockDocDAO struct {
 	DocumentDAOIface
-	getByIDsFn func(ids []string) ([]*entity.Document, error)
+	getByIDsFn func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error)
 }
 
-func (m *mockDocDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+func (m *mockDocDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if m.getByIDsFn != nil {
-		return m.getByIDsFn(ids)
+		return m.getByIDsFn(ctx, db, ids)
 	}
 	return []*entity.Document{
 		{ID: "doc1", Name: strPtr("Test Doc")},
@@ -382,7 +383,7 @@ func TestDifyRetrieval_KBDBError(t *testing.T) {
 func TestDifyRetrieval_DocLoadError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.docDAO = &mockDocDAO{
-		getByIDsFn: func(ids []string) ([]*entity.Document, error) {
+		getByIDsFn: func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 			return nil, errors.New("db unavailable")
 		},
 	}

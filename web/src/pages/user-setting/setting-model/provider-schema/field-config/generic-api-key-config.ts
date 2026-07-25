@@ -84,7 +84,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
     return {
       instance_name: values.instance_name,
       api_key: apiKey,
-      api_base: values.base_url || '',
+      base_url: values.base_url || '',
     };
   },
 };
@@ -98,4 +98,5 @@ export const FACTORIES_WITH_BASE_URL = [
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
   LLMFactory.SILICONFLOW,
+  LLMFactory.TencentHunYuan,
 ];

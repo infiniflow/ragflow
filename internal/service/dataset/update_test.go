@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -41,13 +42,16 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	permission := string(entity.TenantPermissionTeam)
 	chunkMethod := string(entity.ParserTypeBook)
 	embeddingModel := "BAAI/bge-large-zh-v1.5@Builtin"
+	parseType := 1
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name:           &name,
 		Description:    &description,
 		Language:       &language,
 		Permission:     &permission,
 		ParserID:       &chunkMethod,
+		ParseType:      &parseType,
 		EmbeddingModel: &embeddingModel,
 	})
 	if err != nil {
@@ -102,7 +106,8 @@ func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	chunkMethod := "book"
 	pipelineID := "abcdef0123456789abcdef0123456789"
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 	})
@@ -128,7 +133,8 @@ func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 1
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,
@@ -159,7 +165,8 @@ func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 2
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,
@@ -177,13 +184,100 @@ func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 	}
 }
 
+// TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas verifies that
+// with parse_type=2 and a dirty parser_id, parser_config is still cleaned
+// against the canvas DSL (not the builtin DSL). This locks in the
+// ResolveParseMode contract on the dataset path: mode is authoritative and
+// ignores the conflicting parser_id.
+func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original",
+		"abcdef0123456789abcdef0123456789")
+	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
+		datasetUpdateCanvasDSL("Parser:CustomP", "chunk_token_num"))
+
+	// Dirty parser_id that the builtin branch would otherwise use to load a
+	// builtin DSL. parse_type=2 must ignore it.
+	chunkMethod := "book"
+	pipelineID := "abcdef0123456789abcdef0123456789"
+	parseType := 2
+	override := map[string]interface{}{
+		"Parser:CustomP": map[string]interface{}{"chunk_token_num": float64(256)},
+	}
+
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:     &chunkMethod,
+		PipelineID:   &pipelineID,
+		ParseType:    &parseType,
+		ParserConfig: override,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	// Read back the persisted KB and verify parser_config was cleaned against
+	// the canvas DSL: it must carry the canvas component (Parser:CustomP), not
+	// a builtin-book component structure.
+	var kb entity.Knowledgebase
+	if err := dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("read back kb: %v", err)
+	}
+	cleaned, ok := kb.ParserConfig["Parser:CustomP"]
+	if !ok {
+		t.Fatalf("parser_config = %v, want Parser:CustomP component from canvas DSL", kb.ParserConfig)
+	}
+	cpn, ok := cleaned.(map[string]any)
+	if !ok {
+		t.Fatalf("Parser:CustomP = %T, want map", cleaned)
+	}
+	if v, _ := cpn["chunk_token_num"].(float64); v != 256 {
+		t.Fatalf("chunk_token_num = %v, want 256 (override applied on canvas defaults)", cpn["chunk_token_num"])
+	}
+}
+
+// TestUpdateDatasetRejectsInvalidPages verifies the fail-fast contract for the
+// "pages" range: an invalid range (from>to) aborts the request with
+// CodeDataError instead of being silently dropped or persisted.
+func TestUpdateDatasetRejectsInvalidPages(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	chunkMethod := "manual"
+	parseType := 1
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{
+					"pages": []interface{}{[]interface{}{float64(5), float64(3)}}, // from>to invalid
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected error for invalid pages range, got nil")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
 func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	datasetID := "11111111111141118111111111111111"
 	insertDatasetUpdateKB(t, datasetID, "tenant-1", "Original")
 
-	result, code, err := testDatasetUpdateService(t).GetDataset("11111111-1111-4111-8111-111111111111", "tenant-1")
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).GetDataset(ctx, "11111111-1111-4111-8111-111111111111", "tenant-1")
 	if err != nil {
 		t.Fatalf("GetDataset failed: %v", err)
 	}
@@ -207,14 +301,15 @@ func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	pushServiceDB(t, db)
 
 	name := "Renamed"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("missing-kb", "tenant-1", service.UpdateDatasetRequest{Name: &name})
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "missing-kb", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected missing dataset error")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "Dataset not found" {
+	if err.Error() != "dataset not found" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -225,7 +320,8 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
 	name := "Renamed"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-2", service.UpdateDatasetRequest{Name: &name})
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-2", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
@@ -237,20 +333,56 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+
+	permission := string(entity.TenantPermissionMe)
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "user-1", service.UpdateDatasetRequest{
+		Permission: &permission,
+	})
+	if err == nil {
+		t.Fatal("expected permission change error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if err.Error() != "only dataset owner can change permission" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get dataset: %v", err)
+	}
+	if persisted.Permission != string(entity.TenantPermissionTeam) {
+		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
 	name := "   "
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected name validation error")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "`name` is required." {
+	if err.Error() != "`name` is required" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -262,7 +394,8 @@ func TestDatasetServiceUpdateDatasetRejectsDuplicateName(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
 
 	name := "Existing"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected duplicate name error")
 	}
@@ -279,14 +412,15 @@ func TestDatasetServiceUpdateDatasetRejectsNoPropertiesModified(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{})
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{})
 	if err == nil {
 		t.Fatal("expected no-op update error")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "No properties were modified" {
+	if err.Error() != "no properties were modified" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -298,7 +432,8 @@ func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
 	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
 
 	autoParse := "0"
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
 	})
 	if err != nil {
@@ -327,6 +462,38 @@ func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceUpdateDatasetRejectsCrossTenantConnector(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-2")
+
+	autoParse := "0"
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
+	})
+	if err == nil {
+		t.Fatal("expected connector tenant mismatch error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if !dao.IsConnectorNotAccessibleErr(err) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.Connector2Kb{}).
+		Where("kb_id = ? AND connector_id = ?", "kb-1", "connector-1").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count connector link: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no connector link, got %d", count)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -336,7 +503,8 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
 	embeddingModel := "embedding-2@test@ZHIPU-AI"
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModel,
 	})
 	if err != nil {
@@ -366,8 +534,9 @@ func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
 	insertDatasetUpdateTenantModel(t, "aabbccdd11223344aabbccdd11223344", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
+	ctx := t.Context()
 	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModelID,
 	})
 	if err != nil {
@@ -397,8 +566,9 @@ func TestDatasetServiceUpdateDatasetRejectsEmptyConnectorID(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
+	ctx := t.Context()
 	connectors := []service.DatasetConnectorRequest{{ID: "  "}}
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Connectors: &connectors,
 	})
 	if err == nil {
@@ -429,11 +599,12 @@ func TestDatasetServiceUpdateDatasetRejectsInvalidEmbeddingModelFormat(t *testin
 		{"empty_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"},
 	}
 
+	ctx := t.Context()
 	svc := testDatasetUpdateService(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			embdModel := tc.embeddingModel
-			_, code, err := svc.UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+			_, code, err := svc.UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 				EmbeddingModel: &embdModel,
 			})
 			if err == nil {
@@ -455,8 +626,9 @@ func TestDatasetServiceUpdateDatasetRejectsDuplicateNameCaseInsensitive(t *testi
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
 
+	ctx := t.Context()
 	uppercaseName := "EXISTING"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &uppercaseName,
 	})
 	if err == nil {
@@ -482,8 +654,9 @@ func TestDatasetServiceUpdateDatasetPreservesUnmodifiedFields(t *testing.T) {
 		"language":    language,
 	})
 
+	ctx := t.Context()
 	newName := "Renamed Only"
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &newName,
 	})
 	if err != nil {
@@ -526,8 +699,9 @@ func TestDatasetServiceUpdateDatasetPreservesParserConfigOnEmptyUpdate(t *testin
 		"delimiter":       "\n",
 	})
 
+	ctx := t.Context()
 	name := "Updated Name"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &name,
 	})
 	if err != nil {
@@ -589,6 +763,13 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupServiceTestDB(t)
+	migrateDatasetUpdateTestTables(t, db)
+	return db
+}
+
+func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
 	if err := db.AutoMigrate(
 		&entity.Connector{},
 		&entity.Connector2Kb{},
@@ -596,11 +777,12 @@ func setupDatasetUpdateTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.TenantModelGroup{},
+		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
-	return db
 }
 
 func testDatasetUpdateService(t *testing.T) *DatasetService {
@@ -641,6 +823,20 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
 		t.Fatalf("insert test canvas: %v", err)
+	}
+}
+
+func insertDatasetUpdateTeamMember(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "normal",
+		InvitedBy: tenantID,
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user tenant: %v", err)
 	}
 }
 
@@ -707,13 +903,9 @@ func insertDatasetUpdateTenantModel(t *testing.T, id, providerID, instanceID, mo
 	}
 }
 
-// seedDatasetUpdateCanvas migrates user_canvas on the active test DB and
-// inserts a canvas row with the given DSL.
+// seedDatasetUpdateCanvas inserts a canvas row with the given DSL.
 func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 	t.Helper()
-	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
-		t.Fatalf("migrate user_canvas: %v", err)
-	}
 	var dslMap map[string]any
 	if err := json.Unmarshal(dslJSON, &dslMap); err != nil {
 		t.Fatalf("unmarshal seed dsl: %v", err)
@@ -779,7 +971,8 @@ func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
 				"no_such_param": 1,
@@ -815,7 +1008,8 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
 				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
@@ -850,6 +1044,101 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
+func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	incomingMetadata := []interface{}{map[string]interface{}{
+		"key":         "author",
+		"type":        "string",
+		"description": "Author",
+	}}
+	incomingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	parserConfig := map[string]interface{}{
+		"Parser:HipSignsRhyme": map[string]interface{}{
+			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+		},
+		"metadata":          incomingMetadata,
+		"built_in_metadata": incomingBuiltInMetadata,
+		"enable_metadata":   true,
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: parserConfig,
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], incomingMetadata) {
+		t.Fatalf("metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], incomingBuiltInMetadata) {
+		t.Fatalf("built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	}
+	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
+		t.Fatalf("component parser_config missing: %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	existingMetadata := []interface{}{map[string]interface{}{
+		"key":  "category",
+		"type": "string",
+	}}
+	existingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"metadata":          existingMetadata,
+		"built_in_metadata": existingBuiltInMetadata,
+		"enable_metadata":   true,
+	}).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], existingMetadata) {
+		t.Fatalf("existing metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], existingBuiltInMetadata) {
+		t.Fatalf("existing built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("existing enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	}
+}
+
 func TestUpdateDataset_StripsCanvasUnknownParam(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -857,7 +1146,8 @@ func TestUpdateDataset_StripsCanvasUnknownParam(t *testing.T) {
 	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:NoSuch": map[string]interface{}{
 				"pdf": map[string]interface{}{},
@@ -895,7 +1185,8 @@ func TestUpdateDataset_AcceptsValidCanvasComponentParams(t *testing.T) {
 	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
-	result, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
+	ctx := t.Context()
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:CustomRhyme": map[string]interface{}{
 				"pdf": map[string]interface{}{},
@@ -925,8 +1216,11 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
 	chunkMethod := "naive"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset("kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserID: &chunkMethod,
+	ctx := t.Context()
+	parseType := 1
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
 			// Valid for the "general" builtin template, not the canvas.
 			"Parser:HipSignsRhyme": map[string]interface{}{

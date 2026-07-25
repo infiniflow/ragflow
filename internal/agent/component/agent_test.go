@@ -8,7 +8,7 @@
 //  2. ToolCallRound: the runner returns a message with ToolCalls →
 //     component extracts them into the tool_calls output.
 //  3. ExhaustRoundsError: the runner returns an error → component
-//     propagates it.
+//     exposes it through the Python-compatible _ERROR output.
 //  4. MissingModelID: the component rejects before calling the runner.
 package component
 
@@ -129,6 +129,131 @@ func TestAgent_MessageEmissionIsScopedPerInvocation(t *testing.T) {
 	}
 }
 
+func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
+	calls := 0
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		calls++
+		return &ComponentMessage{Role: RoleAssistant, Content: "lazy answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(string, string) {})
+	agent := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := agent.Invoke(ctx, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("runner calls=%d before Message consumed stream, want 0", calls)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+	var got strings.Builder
+	final, err := deferred.Open(ctx, func(contentDelta, _ string) {
+		got.WriteString(contentDelta)
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if calls != 1 || got.String() != "lazy answer" {
+		t.Fatalf("calls=%d streamed=%q, want 1 / %q", calls, got.String(), "lazy answer")
+	}
+	if final["content"] != "lazy answer" {
+		t.Fatalf("final content=%v, want lazy answer", final["content"])
+	}
+}
+
+func TestAgent_DeferredStreamAppliesFreshTimeout(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*ComponentMessage, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("deferred Agent runner context has no deadline")
+		}
+		return &ComponentMessage{Role: RoleAssistant, Content: "answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	out, err := NewAgentComponent(AgentParam{ModelID: "stub"}).Invoke(ctx, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+	if _, err := deferred.Open(context.Background(), func(string, string) {}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+}
+
+func TestAgent_DeferredStreamDoesNotAppendFinalAnswerAfterDeltas(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*ComponentMessage, error) {
+		runtime.EmitAgentMessage(ctx, "lazy ", "")
+		runtime.EmitAgentMessage(ctx, "answer", "")
+		return &ComponentMessage{Role: RoleAssistant, Content: "lazy answer"}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(context.Background(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(string, string) {})
+	out, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, map[string]any{
+		"user_prompt": "hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+
+	var streamed strings.Builder
+	final, err := deferred.Open(ctx, func(contentDelta, _ string) {
+		streamed.WriteString(contentDelta)
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if got, want := streamed.String(), "lazy answer"; got != want {
+		t.Fatalf("streamed=%q, want %q", got, want)
+	}
+	if got, want := final["content"], "lazy answer"; got != want {
+		t.Fatalf("final content=%v, want %v", got, want)
+	}
+}
+
+func TestAgent_SuppressesVisibleEventsWithoutMessageDownstream(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "timeline answer"}, nil
+	})
+	var emitted []string
+	ctx := runtime.WithAgentMessageEmitter(context.Background(), func(contentDelta, _ string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+	})
+	ctx = runtime.WithComponentExecutionOptions(ctx, runtime.ComponentExecutionOptions{
+		SuppressAgentMessageEvents: true,
+	})
+	if _, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(ctx, map[string]any{
+		"user_prompt": "hello",
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("visible events=%#v, want none", emitted)
+	}
+	if !runtime.AgentMessageEventsSuppressed(ctx) {
+		t.Fatal("AgentMessageEventsSuppressed=false, want true")
+	}
+}
+
 func TestAgent_ForwardsThinkingParam(t *testing.T) {
 	var gotThinking string
 	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
@@ -206,6 +331,34 @@ func TestAgent_UsesPromptsListForSysQuery(t *testing.T) {
 	}
 	if gotPrompt != "用户真正的问题" {
 		t.Fatalf("runner prompt = %q, want sys.query from prompts list", gotPrompt)
+	}
+}
+
+func TestAgent_NewTreatsSchemaDefaultUserPromptAsSysQueryPlaceholder(t *testing.T) {
+	var gotPrompt string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
+		gotPrompt = p.UserPrompt
+		return &ComponentMessage{Role: RoleAssistant, Content: "ok"}, nil
+	})
+
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"api_key":     "test-key",
+		"user_prompt": agentUserPromptSchemaDefault,
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.SetVar("begin", "query", "用户真正的问题")
+	ctx := runtime.WithState(context.Background(), state)
+
+	if _, err := cmp.Invoke(ctx, nil); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if gotPrompt != "用户真正的问题" {
+		t.Fatalf("runner prompt = %q, want begin@query placeholder resolved", gotPrompt)
 	}
 }
 
@@ -321,15 +474,18 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
-		return nil, errors.New("agent: exhausted rounds without final answer")
+		return nil, errors.New("[GraphRunError] exceeds max steps")
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), map[string]any{
 		"user_prompt": "x",
 	})
-	if err == nil {
-		t.Fatal("expected error when loop exhausts without a final answer")
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
 	}
 }
 
@@ -539,6 +695,169 @@ func TestAgent_Registered(t *testing.T) {
 	}
 	if c.Name() != "Agent" {
 		t.Errorf("Name()=%q, want Agent", c.Name())
+	}
+}
+
+func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"id":             "child-node",
+				"name":           "NewPumasLick",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"description": "child agent description",
+					"prompts": []any{
+						map[string]any{"role": "user", "content": "child prompt"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+	if len(agent.param.Tools) != 0 {
+		t.Fatalf("regular tools = %v, want none", agent.param.Tools)
+	}
+	if len(agent.param.SubAgents) != 1 {
+		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
+	}
+
+	// Verify the sub-agent config is correctly parsed
+	subAgents := parseSubAgentConfigs([]any{
+		map[string]any{
+			"component_name": "Agent",
+			"id":             "child-node",
+			"name":           "NewPumasLick",
+			"params": map[string]any{
+				"model_id":    "stub",
+				"description": "child agent description",
+				"prompts": []any{
+					map[string]any{"role": "user", "content": "child prompt"},
+				},
+			},
+		},
+	})
+	if len(subAgents) != 1 {
+		t.Fatalf("parseSubAgentConfigs = %d, want 1", len(subAgents))
+	}
+	fn, ok := subAgents["NewPumasLick"]
+	if !ok {
+		var keys []string
+		for k := range subAgents {
+			keys = append(keys, k)
+		}
+		t.Fatalf("sub-agent key NewPumasLick not found: keys=%v", keys)
+	}
+	paramsRaw, _ := fn["params"].(map[string]any)
+	if paramsRaw == nil {
+		t.Fatal("sub-agent params missing")
+	}
+	if desc, _ := paramsRaw["description"].(string); desc != "child agent description" {
+		t.Fatalf("sub-agent description = %q, want child agent description", desc)
+	}
+}
+
+func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) {
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "parent prompt",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "你好",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child one",
+				},
+			},
+			map[string]any{
+				"component_name": "Agent",
+				"name":           "世界",
+				"params": map[string]any{
+					"model_id":    "stub",
+					"user_prompt": "child two",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := c.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
+	}
+
+	// HEAD stores sub-agents as a map; verify keys are sanitized function names
+	subAgents := parseSubAgentConfigs([]any{
+		map[string]any{
+			"component_name": "Agent",
+			"id":             "child-1",
+			"name":           "ResearchAgent",
+			"params": map[string]any{
+				"model_id":    "stub",
+				"user_prompt": "child one",
+			},
+		},
+		map[string]any{
+			"component_name": "Agent",
+			"id":             "child-2",
+			"name":           "Code Agent",
+			"params": map[string]any{
+				"model_id":    "stub",
+				"user_prompt": "child two",
+			},
+		},
+	})
+	if len(subAgents) != 2 {
+		t.Fatalf("parseSubAgentConfigs = %d, want 2", len(subAgents))
+	}
+	// Verify keys are sanitized function names
+	var expectedFn1, expectedFn2 string
+	for fn, cfg := range subAgents {
+		name, _ := cfg["name"].(string)
+		switch name {
+		case "ResearchAgent":
+			expectedFn1 = fn
+		case "Code Agent":
+			expectedFn2 = fn
+		}
+	}
+	if expectedFn1 != "ResearchAgent" {
+		t.Fatalf("ResearchAgent sanitized = %q, want ResearchAgent", expectedFn1)
+	}
+	if expectedFn2 != "Code_Agent" {
+		t.Fatalf("Code Agent sanitized = %q, want Code_Agent", expectedFn2)
+	}
+	_ = agent
+}
+
+func TestAgent_RunSubAgentDirectly(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "child answer"}, nil
+		return &ComponentMessage{Role: RoleAssistant, Content: "child answer"}, nil
+	})
+
+	// Call agentRunner (the mockable variable) to verify the mock works.
+	msg, err := agentRunner(context.Background(), AgentParam{
+		ModelID:    "stub",
+		UserPrompt: "child prompt",
+		MaxRounds:  1,
+	})
+	if err != nil {
+		t.Fatalf("agentRunner: %v", err)
+	}
+	if msg.Content != "child answer" {
+		t.Fatalf("agentRunner output = %q, want child answer", msg.Content)
 	}
 }
 

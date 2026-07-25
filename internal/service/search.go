@@ -80,7 +80,7 @@ type SearchShareDetail struct {
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	var searches []*entity.Search
+	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
@@ -115,7 +115,7 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 				}
 				searches = searches[start:end]
 			} else {
-				searches = []*entity.Search{}
+				searches = []*entity.SearchListItem{}
 			}
 		}
 	}
@@ -166,7 +166,7 @@ func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs [
 }
 
 // toSearchAppResponse converts search model to response format
-func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]interface{} {
+func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":            search.ID,
 		"tenant_id":     search.TenantID,
@@ -177,16 +177,15 @@ func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]in
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
 		"search_config": map[string]interface{}(search.SearchConfig),
+		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
 	if search.Avatar != nil {
 		result["avatar"] = *search.Avatar
 	}
-
-	// Add joined fields from user table
-	// Note: These fields are populated by the DAO query with Select clause
-	// but GORM will map them to the model's embedded fields if available
-	// We need to handle the extra fields manually
+	if search.TenantAvatar != nil {
+		result["tenant_avatar"] = *search.TenantAvatar
+	}
 
 	return result
 }

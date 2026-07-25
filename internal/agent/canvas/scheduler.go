@@ -279,6 +279,26 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (types.StateGraph, error) {
 	return sg, nil
 }
 
+// directMessageDownstream: only a direct
+// Message child enables lazy Agent execution. Intermediate nodes must not
+// accidentally change the Agent's execution mode.
+func directMessageDownstream(c *Canvas, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[cpnID]
+	if !ok {
+		return false
+	}
+	for _, downID := range comp.Downstream {
+		down, ok := c.Components[downID]
+		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return true
+		}
+	}
+	return false
+}
+
 // snapshotOutputs is retained as a thin wrapper around state.Snapshot()
 // for any leftover callers in test/bench files.
 func snapshotOutputs(src map[string]map[string]any) map[string]map[string]any {

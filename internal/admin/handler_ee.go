@@ -1968,3 +1968,60 @@ func (h *Handler) GetTokenStatsSummary(c *gin.Context) {
 
 	common.SuccessWithData(c, stats, "success")
 }
+
+func (h *Handler) ListLogs(c *gin.Context) {
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+	days := c.Query("days")
+	if days == "" {
+		days = "7"
+	}
+	daysInt, err := strconv.Atoi(days)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid days")
+		return
+	}
+
+	stats, err := h.service.ListLogs(userName, daysInt)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetFingerprint handle get system fingerprint
+func (h *Handler) GetFingerprint(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+type SetLicenseHTTPRequest struct {
+	License string `json:"license" binding:"required"`
+}
+
+// SetLicense to set system license
+func (h *Handler) SetLicense(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+type SetLicenseConfigHTTPRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+// ShowLicense to get system license
+func (h *Handler) ShowLicense(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}

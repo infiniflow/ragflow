@@ -58,6 +58,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioSpeechMaxBodyBytes)
 
 	var req chatAudioSpeechRequest
@@ -84,7 +85,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(&modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
+		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
@@ -154,6 +155,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Cap the body before any multipart parsing so an oversized upload is
 	// rejected instead of being drained into memory or spooled to disk.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioUploadMaxBytes)
@@ -234,7 +236,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err = driver.TranscribeAudioWithSender(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
+		if err = driver.TranscribeAudioWithSender(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -252,7 +254,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
+	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

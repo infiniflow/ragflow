@@ -16,6 +16,21 @@
 
 package schema
 
+// TagLabel is a single labeled record from the tag definition file:
+// a piece of content and the tags associated with it.
+type TagLabel struct {
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+}
+
+// TaggedChunk is the result of tagging a chunk: the chunk content, the
+// matched tags, and their computed relevance weights.
+type TaggedChunk struct {
+	Content    string         `json:"content"`
+	Tags       []string       `json:"tags"`
+	TagWeights map[string]int `json:"tag_weights,omitempty"`
+}
+
 // ExtractorFromUpstream is the upstream payload consumed by the
 // Extractor component.
 //
@@ -88,6 +103,17 @@ type ExtractorParam struct {
 	// AutoQuestions enables automatic question generation with a fixed
 	// prompt. The value determines the top-N count.
 	AutoQuestions int `json:"auto_questions,omitempty"`
+
+	// AutoTags enables tag assignment on chunks. When > 0, the
+	// component runs a two-phase tagger: Phase 1 uses Jaccard
+	// matching against tag source examples; Phase 2 uses the LLM
+	// for unmatched chunks. The value determines the top-N tags.
+	AutoTags int `json:"auto_tags,omitempty"`
+
+	// TagFileID references a tag-definition file stored in object
+	// storage. Used only when AutoTags > 0 and no inline tag
+	// source text is wired in.
+	TagFileID string `json:"tag_file_id"`
 }
 
 // Defaults returns the default ExtractorParam.
@@ -99,6 +125,8 @@ func (ExtractorParam) Defaults() ExtractorParam {
 		Prompt:        "",
 		AutoKeywords:  0,
 		AutoQuestions: 0,
+		AutoTags:      0,
+		TagFileID:     "",
 	}
 }
 

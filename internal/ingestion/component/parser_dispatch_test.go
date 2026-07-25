@@ -288,6 +288,21 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	}
 }
 
+func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
+	setups := defaultSetups()
+	docx, ok := setups["docx"]
+	if !ok {
+		t.Fatal("defaultSetups: docx key missing")
+	}
+	got, ok := docx["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: docx.output_format missing or not a string")
+	}
+	if got != "json" {
+		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	setups := defaultSetups()
 	got := &captureSetupConfigurer{}
@@ -415,7 +430,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		}
 		return nil, "resolved-vlm", nil, nil
 	}
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		if modelName != "resolved-vlm" {
 			return nil, fmt.Errorf("modelName = %q, want resolved-vlm", modelName)
 		}
@@ -493,7 +508,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 		return nil, "resolved-vlm", nil, nil
 	}
 	call := 0
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		call++
 		answer := ""
 		if call == 1 {
@@ -580,49 +595,49 @@ type mineruTestDriver struct{}
 
 func (d *mineruTestDriver) NewInstance(baseURL map[string]string) modelModule.ModelDriver { return d }
 func (d *mineruTestDriver) Name() string                                                  { return "mineru" }
-func (d *mineruTestDriver) ChatWithMessages(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
+func (d *mineruTestDriver) ChatWithMessages(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ChatStreamlyWithSender(modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Embed(modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (d *mineruTestDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Rerank(modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig, usage *common.ModelUsage) (*modelModule.RerankResponse, error) {
+func (d *mineruTestDriver) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig, usage *common.ModelUsage) (*modelModule.RerankResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) TranscribeAudio(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage) (*modelModule.ASRResponse, error) {
+func (d *mineruTestDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage) (*modelModule.ASRResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) AudioSpeech(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage) (*modelModule.TTSResponse, error) {
+func (d *mineruTestDriver) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage) (*modelModule.TTSResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *mineruTestDriver) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) OCRFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, usage *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+func (d *mineruTestDriver) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, usage *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ParseFile(modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig, usage *common.ModelUsage) (*modelModule.ParseFileResponse, error) {
+func (d *mineruTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig, usage *common.ModelUsage) (*modelModule.ParseFileResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ListModels(apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+func (d *mineruTestDriver) ListModels(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) Balance(apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
+func (d *mineruTestDriver) Balance(ctx context.Context, apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) CheckConnection(apiConfig *modelModule.APIConfig) error {
+func (d *mineruTestDriver) CheckConnection(ctx context.Context, apiConfig *modelModule.APIConfig) error {
 	return fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ListTasks(apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
+func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (d *mineruTestDriver) ShowTask(taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
+func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -833,4 +848,84 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 		t.Fatalf("Close zip: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// TestPythonFamilyName_FileTypeConstants pins the contract that every
+// utility.FileType semantic constant resolves to the setups key used by
+// defaultSetups / AllowedOutputFormat. Before the fix, FileTypeVISUAL mapped
+// to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
+// no case at all (returning ""), so output_format validation and
+// configureParserFromSetups were silently skipped for image/audio files.
+func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
+	cases := []struct {
+		ft   utility.FileType
+		want string
+	}{
+		{utility.FileTypePDF, "pdf"},
+		{utility.FileTypeDOC, "doc"},
+		{utility.FileTypeDOCX, "docx"},
+		{utility.FileTypePPT, "slides"},
+		{utility.FileTypePPTX, "slides"},
+		{utility.FileTypeXLS, "spreadsheet"},
+		{utility.FileTypeXLSX, "spreadsheet"},
+		{utility.FileTypeCSV, "spreadsheet"},
+		{utility.FileTypeHTML, "html"},
+		{utility.FileTypeMarkdown, "markdown"},
+		{utility.FileTypeTXT, "text&code"},
+		{utility.FileTypeEPUB, "epub"},
+		{utility.FileTypeJSON, "json"},
+		{utility.FileTypeVISUAL, "image"},
+		{utility.FileTypeAURAL, "audio"},
+		{utility.FileTypeVIDEO, "video"},
+		{utility.FileTypeEMAIL, "email"},
+	}
+	for _, c := range cases {
+		got := pythonFamilyName(string(c.ft))
+		if got != c.want {
+			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
+		}
+		// Every mapped family must have a matching setups key and
+		// allowed_output_format entry, otherwise output_format validation
+		// is silently skipped.
+		if _, ok := defaultSetups()[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
+		}
+		allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+		if _, ok := allowed[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no allowed_output_format entry", c.ft, got)
+		}
+	}
+}
+
+// TestConfigureParserFromSetups_VisualAural pins that image and audio
+// files pick up their setup (parse_method / lang / vlm) via the family
+// mapping. Before the fix, configureParserFromSetups silently skipped
+// configuration because resolveParserFamily returned "picture" / "aural",
+// neither of which existed in defaultSetups.
+func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+	setups := defaultSetups()
+
+	t.Run("visual resolves to image setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeVISUAL, setups)
+		want := map[string]any(setups["image"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeVISUAL")
+		}
+		if v, _ := got.setup["parse_method"].(string); v != want["parse_method"] {
+			t.Errorf("FileTypeVISUAL parse_method = %v, want %v", v, want["parse_method"])
+		}
+	})
+
+	t.Run("aural resolves to audio setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
+		want := map[string]any(setups["audio"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
+		}
+		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
+			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
+		}
+	})
 }

@@ -36,6 +36,8 @@ var registry = map[string]Factory{
 	"searxng":               buildSearXNGTool,
 	"tavily":                buildTavilyTool,
 	"tavily_extract":        buildTavilyExtractTool,
+	"tavilysearch":          buildTavilyTool,
+	"tavilyextract":         buildTavilyExtractTool,
 	"tushare":               noConfig("tushare", func() Tool { return NewTushareTool() }),
 	"wencai":                buildWencaiTool,
 	"web_crawler":           noConfig("web_crawler", func() Tool { return NewCrawlerTool() }),

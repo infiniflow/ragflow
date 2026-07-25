@@ -68,7 +68,8 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	}
 
 	// Call service to list chat sessions
-	result, err := h.chatSessionService.ListChatSessions(userID, chatID)
+	ctx := c.Request.Context()
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "Only owner of dialog authorized for this operation" {
@@ -247,7 +248,8 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	userID := user.ID
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
-	result, code, err := h.chatSessionService.GetSession(userID, chatID, sessionID)
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -288,7 +290,8 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		req = map[string]interface{}{}
 	}
 
-	result, code, err := h.chatSessionService.CreateSession(userID, chatID, req)
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
@@ -334,7 +337,8 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		req = map[string]interface{}{}
 	}
 
-	result, message, code, err := h.chatSessionService.DeleteSessions(userID, chatID, req)
+	ctx := c.Request.Context()
+	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, userID, chatID, req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
@@ -372,7 +376,8 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatSessionService.UpdateSession(userID, chatID, sessionID, req)
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -389,7 +394,8 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	userID := user.ID
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
-	result, code, err := h.chatSessionService.DeleteSessionMessage(userID, chatID, sessionID, msgID)
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())

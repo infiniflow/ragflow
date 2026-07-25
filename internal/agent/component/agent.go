@@ -12,9 +12,11 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"ragflow/internal/agent/component/prompts"
@@ -56,7 +58,18 @@ type AgentParam struct {
 	StreamFinal bool
 }
 
-const agentUserPromptSchemaDefault = "This is the order you need to send to the agent."
+// SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
+type SubAgentTool struct {
+	Name        string
+	Description string
+	Param       AgentParam
+}
+
+const (
+	agentUserPromptSchemaDefault         = "This is the order you need to send to the agent."
+	defaultAgentMessageHistoryWindowSize = 13
+	defaultAgentDeferredTimeout          = 10 * time.Minute
+)
 
 // AgentMeta declares the OpenAI-style function-call interface for the
 // Agent component. Mirrors ragflow Python's ToolMeta shape.
@@ -676,7 +689,8 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 // NewAgentComponent builds an AgentComponent from raw params.
 func NewAgentComponent(p AgentParam) *AgentComponent {
 	if p.MaxRounds <= 0 {
-		p.MaxRounds = 3
+		// Keep the Python Agent default (AgentParam.max_rounds = 5).
+		p.MaxRounds = 5
 	}
 	p.StreamFinal = true
 	return &AgentComponent{param: p}
@@ -685,9 +699,35 @@ func NewAgentComponent(p AgentParam) *AgentComponent {
 // Name returns the registered component name.
 func (c *AgentComponent) Name() string { return "Agent" }
 
-// Invoke runs the ReAct loop via the configured agentRunner and returns
-// the output map.
+// Invoke either returns a lazy Agent stream for a direct downstream Message,
+// or executes the Agent eagerly for all other graph shapes. The mode is a
+// compile-time canvas decision carried through context, not a DSL parameter.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferAgentToMessage {
+		// Preserve the Agent-class duration installed by the node wrapper, then
+		// start a fresh deadline when Message opens the lazy stream.
+		timeout := defaultAgentDeferredTimeout
+		if deadline, ok := ctx.Deadline(); ok {
+			if remaining := time.Until(deadline); remaining > 0 {
+				timeout = remaining
+			}
+		}
+		deferred := &runtime.DeferredStream{
+			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				agentCtx, cancel := context.WithTimeout(openCtx, timeout)
+				defer cancel()
+				return c.invokeNow(runtime.WithAgentDeltaSink(agentCtx, sink), inputs)
+			},
+		}
+		return map[string]any{"content": deferred}, nil
+	}
+	return c.invokeNow(ctx, inputs)
+}
+
+// invokeNow contains the original eager Agent execution path. Deferred
+// Message consumption calls this function later with an invocation-local
+// delta sink, so the same ReAct/citation/tool behavior is reused once.
+func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	runtime.ResetAgentMessageEmission(ctx)
 	defer runtime.FinalizeAgentMessage(ctx)
 
@@ -718,11 +758,11 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		}
 	}
 
-	// After template resolution: if user_prompt is still empty, try to
-	// read the Begin node's "query" output directly from canvas state.
-	// If that's also empty, fall back to system_prompt (so the model
-	// still sees the instructions), and finally to a generic placeholder.
-	if p.UserPrompt == "" {
+	// After template resolution: if user_prompt is still the default
+	// schema placeholder or empty, try to read the Begin node's "query"
+	// output directly from canvas state. If that's also empty, fall back
+	// to system_prompt, and finally to a generic placeholder.
+	if shouldFallbackToSysQuery(p.UserPrompt) {
 		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 			if raw, rErr := state.GetVar("begin@query"); rErr == nil {
 				if q, ok := raw.(string); ok && q != "" {
@@ -745,9 +785,9 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 
 	// Multi-turn conversation optimization. When the canvas state
 	// carries prior history and OptimizeMultiTurn is enabled
-	// (default), rephrase the user prompt into a self-contained
-	// question via a dedicated LLM call. The rephrased prompt is
-	// what the Agent runner actually consumes.
+	// explicitly, rephrase the user prompt into a self-contained question via
+	// a dedicated LLM call. The rephrased prompt is what the Agent runner
+	// actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
 			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.History); err == nil && rephrased != "" {
@@ -777,7 +817,15 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
+		// Python's LLM layer turns model/tool execution failures into an
+		// ``**ERROR**`` response, which Agent exposes as the `_ERROR`
+		// component output.  Preserve cancellation as a real graph error,
+		// but keep ordinary ReAct failures in the component data flow so
+		// Canvas exception branches can handle them.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
+			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
+		}
+		return map[string]any{"_ERROR": "**ERROR**: " + err.Error()}, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -830,10 +878,23 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	if !runtime.AgentMessageEventsEmitted(ctx) {
+	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	if !streamed {
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
+}
+
+// isAgentGraphRunError identifies ReAct graph failures that Python exposes
+// through the Agent component's _ERROR output. Construction/configuration
+// errors must remain real component errors so invalid canvases still fail
+// fast; only the graph execution limit/error is routed to exception branches.
+func isAgentGraphRunError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "[graphrunerror]") || strings.Contains(msg, "exceeds max steps")
 }
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the
@@ -879,7 +940,6 @@ func (c *AgentComponent) Outputs() map[string]string {
 	}
 }
 
-// buildAgentTools resolves tool names into tool instances.
 func buildAgentTools(p AgentParam) ([]agenttool.Tool, error) {
 	return agenttool.BuildAll(p.Tools, p.ToolParams)
 }
@@ -1098,8 +1158,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
-	if tools, params, ok := agentToolsFrom(inputs, "tools"); ok {
+	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
+		_ = subAgents // sub-agent tools passed as DSL config objects
 		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if sa := parseSubAgentConfigs(inputs["tools"]); sa != nil {
@@ -1122,18 +1183,20 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
 // []string; the canvas DSL shape stores tool component objects with
-// component_name and params.
-func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, bool) {
+// component_name and params. Child Agent objects are returned separately
+// because they are dynamic tools, not entries in the static tool registry.
+func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, []SubAgentTool, bool) {
 	v, ok := inputs[name]
 	if !ok {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	switch x := v.(type) {
 	case []string:
-		return x, nil, true
+		return x, nil, nil, true
 	case []any:
 		out := make([]string, 0, len(x))
 		params := make(map[string]map[string]any)
+		subAgents := make([]SubAgentTool, 0)
 		for _, item := range x {
 			switch tool := item.(type) {
 			case string:
@@ -1142,6 +1205,10 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 				}
 				out = append(out, tool)
 			case map[string]any:
+				if subAgent, ok := subAgentToolObject(tool); ok {
+					subAgents = append(subAgents, subAgent)
+					continue
+				}
 				toolName, toolParams, ok := agentToolObject(tool)
 				if !ok {
 					continue
@@ -1152,9 +1219,41 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 				}
 			}
 		}
-		return out, params, true
+		return out, params, subAgents, true
 	}
-	return nil, nil, false
+	return nil, nil, nil, false
+}
+
+func subAgentToolObject(item map[string]any) (SubAgentTool, bool) {
+	componentName, ok := stringFrom(item, "component_name")
+	if !ok || !strings.EqualFold(strings.TrimSpace(componentName), "Agent") {
+		return SubAgentTool{}, false
+	}
+
+	rawParams, _ := item["params"].(map[string]any)
+	param := agentParamFromMap(rawParams)
+	name, _ := stringFrom(item, "function_name")
+	if strings.TrimSpace(name) == "" {
+		name, _ = stringFrom(item, "name")
+	}
+	if strings.TrimSpace(name) == "" {
+		name, _ = stringFrom(item, "id")
+	}
+	description, _ := stringFrom(item, "description")
+
+	return SubAgentTool{
+		Name:        normalizeAgentToolName(name),
+		Description: description,
+		Param:       param,
+	}, true
+}
+
+func agentParamFromMap(params map[string]any) AgentParam {
+	return mergeAgentParam(AgentParam{}, params)
+}
+
+func normalizeAgentToolName(name string) string {
+	return sanitizeFnName(name)
 }
 
 func agentToolObject(item map[string]any) (string, map[string]any, bool) {
@@ -1266,7 +1365,7 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 // runSubAgent executes a sub-agent by building an AgentParam from the
 // sub-agent config and calling agentReActRunner. Calls agentReActRunner
 // directly (not through NewAgentComponent.Invoke) to avoid the init cycle
-// agentRunner → agentReActRunner → runSubAgent → Invoke → agentRunner.
+// agentRunner -> agentReActRunner -> runSubAgent -> Invoke -> agentRunner.
 func runSubAgent(ctx context.Context, cfg map[string]any, parentParam AgentParam, argsJSON string) string {
 	paramsRaw, _ := cfg["params"].(map[string]any)
 	if paramsRaw == nil {
@@ -1279,7 +1378,7 @@ func runSubAgent(ctx context.Context, cfg map[string]any, parentParam AgentParam
 		subParam.ModelID = v
 	}
 	// Only inherit parent provider credentials when the sub-agent does
-	// NOT specify its own model — otherwise use the sub-agent's own
+	// NOT specify its own model -- otherwise use the sub-agent's own
 	// provider chain (scheduler.go / service will resolve it).
 	if subParam.ModelID == "" {
 		subParam.Driver = parentParam.Driver
@@ -1366,7 +1465,7 @@ func init() {
 			f := v
 			p.TopP = &f
 		}
-		if tools, toolParams, ok := agentToolsFrom(params, "tools"); ok {
+		if tools, toolParams, _, ok := agentToolsFrom(params, "tools"); ok {
 			p.Tools = tools
 			p.ToolParams = mergeToolParams(p.ToolParams, toolParams)
 		}

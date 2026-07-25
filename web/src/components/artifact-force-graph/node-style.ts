@@ -6,6 +6,11 @@ export const ConceptNodeColor = '#4CACFF';
 export const MinNodeRadius = 4;
 export const MaxNodeRadius = 14;
 
+export const DefaultLinkWidth = 1;
+export const HighlightLinkWidth = 2;
+
+export const DimmedAlpha = 0.2;
+
 export const getNodeColor = (node: IArtifactGraphEntity): string => {
   if (node.type === 'entity') return EntityNodeColor;
   if (node.type === 'concept') return ConceptNodeColor;

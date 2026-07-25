@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -10,12 +11,12 @@ import (
 // dataset the file is linked to. It mirrors Python's check_file_team_permission
 // and is shared by FileService and File2DocumentService, which previously each
 // carried an identical copy of this logic.
-func CheckFileTeamPermission(fileDAO *dao.FileDAO, file *entity.File, userID string) bool {
+func CheckFileTeamPermission(ctx context.Context, fileDAO *dao.FileDAO, file *entity.File, userID string) bool {
 	if file.TenantID == userID {
 		return true
 	}
 
-	datasetIDs, err := fileDAO.GetDatasetIDByFileID(file.ID)
+	datasetIDs, err := fileDAO.GetDatasetIDByFileID(ctx, dao.DB, file.ID)
 	if err != nil || len(datasetIDs) == 0 {
 		return false
 	}

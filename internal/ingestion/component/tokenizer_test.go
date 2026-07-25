@@ -387,7 +387,7 @@ type countMismatchedEmbedder struct{ want int }
 
 func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
 
-func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	out := make([]EmbeddingResult, c.want)
 	for i := range out {
 		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}
@@ -591,6 +591,32 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	}
 }
 
+// Python tokenizer.py:95 passes the raw name to embedding without .strip();
+// Go must match — the title embedding must receive the original name, not a
+// TrimSpace'd copy. The empty-name guard still uses TrimSpace (mirroring
+// Python's `.strip()==""` check at tokenizer.py:200), but the value encoded
+// is the raw name.
+func TestTokenizerComponent_Embedding_UsesRawNameNotTrimmed(t *testing.T) {
+	requireTokenizerPool(t)
+	c, stub := withStubEmbedder(t, 2)
+
+	if _, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "  report.pdf  ",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 1 {
+		t.Fatalf("callInputs len = %d, want >= 1", len(stub.callInputs))
+	}
+	// First call is the title embedding; it must receive the raw name with
+	// surrounding whitespace preserved, matching Python.
+	if got := stub.callInputs[0][0]; got != "  report.pdf  " {
+		t.Fatalf("title embedding input = %q, want %q (raw, not trimmed)", got, "  report.pdf  ")
+	}
+}
+
 func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) {
 	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
@@ -748,7 +774,7 @@ func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
 		{Text: "("},
 		{Text: "*"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}
@@ -769,7 +795,7 @@ func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Summary: "   ", Text: "real content here"},
 	}
-	err := tokenizeChunks(chunks, "test")
+	err := tokenizeChunks(chunks, "test", "English")
 	if err != nil {
 		t.Fatalf("tokenizeChunks: %v", err)
 	}
