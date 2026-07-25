@@ -30,6 +30,7 @@ func TestCollectGroupedMembers_UsesParentMetadata(t *testing.T) {
 	}
 }
 
-func TestBuildParallelExpansion_PrefersGroupedMembersOverDescendants(t *testing.T) {
-	t.Skip("parallel expansion uses harness graph/graph/parallel.go")
-}
+// TestBuildParallelExpansion is intentionally removed because parallel
+// expansion is handled natively by harness graph/graph/parallel.go.
+// The canvas layer delegates parallel sub-graph execution to the
+// harness graph engine's built-in parallel support.

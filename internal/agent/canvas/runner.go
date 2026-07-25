@@ -77,6 +77,7 @@ type RunEvent struct {
 	SessionID string
 	MessageID string
 	TaskID    string
+	CreatedAt int64
 }
 
 // MessageEvent is the JSON payload for Type=="message" frames.

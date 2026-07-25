@@ -155,6 +155,11 @@ func WithSetupOverrides(m map[string]any) CompileOption {
 	return func(o *CompileOptions) { o.SetupOverrides = m }
 }
 
+// WithOverrideParams is an alias for WithSetupOverrides.
+func WithOverrideParams(m map[string]any) CompileOption {
+	return WithSetupOverrides(m)
+}
+
 // foldLegacyComponents mutates c in place, folding LoopItem/IterationItem
 // nodes out of the component topology before BuildWorkflow sees them.
 //
