@@ -1630,7 +1630,7 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 def get_delimiters(delimiters: str):
     dels = []
     s = 0
-    for m in re.finditer(r"`([^`]+)`", delimiters, re.I):
+    for m in re.finditer(r"`([^`]+)`", delimiters):
         f, t = m.span()
         dels.append(m.group(1))
         dels.extend(list(delimiters[s:f]))
