@@ -28,6 +28,10 @@ from PIL import Image
 
 import chardet
 
+# Re-exported below for backwards compatibility; the canonical parser lives
+# in ``rag.nlp.delim``.
+from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
+
 __all__ = ["rag_tokenizer"]
 
 all_codecs = [
@@ -1192,11 +1196,24 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             cks[-1] += t
             tk_nums[-1] += tnum
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # `has_custom` historically meant "any backtick-wrapped token exists";
+    # after the consolidation it's true whenever the helper produces any
+    # multi-character or wrapped single-character delimiter — i.e. the
+    # bare-char path is no longer reachable by typing `##` alone (it would
+    # be reachable by typing `##` without backticks, which produces the
+    # bare-chars `#, #` and falls into the non-custom path). To preserve
+    # the existing "custom delimiters ignore chunk_token_num" contract, we
+    # treat the field as custom whenever the parsed delimiters contain
+    # anything longer than one character (i.e. the user opted into a
+    # multi-character split). For mixed fields the helper has already
+    # deduped and sorted longest-first, so all splits appear in the
+    # pattern.
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = any(len(d) > 1 for d in parsed_dels)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, tk_nums = [], []
         for sec, pos in sections:
             split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL)
@@ -1214,7 +1231,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         return cks
 
     # Split oversized sections at sentence delimiters; add_chunk re-merges to size.
-    dels = get_delimiters(delimiter)
+    dels = compile_delimiter_pattern(parsed_dels)
     for sec, pos in sections:
         if not dels or num_tokens_from_string(sec) < chunk_token_num:
             add_chunk("\n" + sec, pos)
@@ -1266,11 +1283,15 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 result_images[-1] = concat_img(result_images[-1], image)
             tk_nums[-1] += tnum
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # See the matching block in ``naive_merge`` for the rationale on
+    # `has_custom` (multi-character delimiters opt into chunk-token-num
+    # bypass).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = any(len(d) > 1 for d in parsed_dels)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
             text_str = text[0] if isinstance(text, tuple) else text
@@ -1294,7 +1315,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
     # Split oversized sections at sentence delimiters; the section's image rides
     # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
-    dels = get_delimiters(delimiter)
+    dels = compile_delimiter_pattern(parsed_dels)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
@@ -1385,13 +1406,16 @@ def _build_cks(sections, delimiter):
     tables = []
     images = []
 
-    # extract custom delimiters wrapped by backticks: `##`, `---`, etc.
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # The original implementation only matched backtick-wrapped tokens and
+    # ignored bare characters — see issue #17383. After the consolidation,
+    # any character or backtick-wrapped token contributes.
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = any(len(d) > 1 for d in parsed_dels)
 
     if has_custom:
         # escape delimiters and build alternation pattern, longest first
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         # capture delimiters so they appear in re.split results
         pattern = r"(%s)" % custom_pattern
 
@@ -1628,22 +1652,8 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 
 
 def get_delimiters(delimiters: str):
-    dels = []
-    s = 0
-    for m in re.finditer(r"`([^`]+)`", delimiters, re.I):
-        f, t = m.span()
-        dels.append(m.group(1))
-        dels.extend(list(delimiters[s:f]))
-        s = t
-    if s < len(delimiters):
-        dels.extend(list(delimiters[s:]))
-
-    dels.sort(key=lambda x: -len(x))
-    dels = [re.escape(d) for d in dels if d]
-    dels = [d for d in dels if d]
-    dels_pattern = "|".join(dels)
-
-    return dels_pattern
+    """Backwards-compatible wrapper around the canonical delimiter parser."""
+    return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
 
 class Node:

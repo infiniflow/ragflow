@@ -20,6 +20,8 @@ import re
 
 from markdown import markdown
 
+from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
+
 logger = logging.getLogger(__name__)
 
 
@@ -157,9 +159,13 @@ class MarkdownElementExtractor:
         self.lines = markdown_content.split("\n")
 
     def get_delimiters(self, delimiters):
-        toks = re.findall(r"`([^`]+)`", delimiters)
-        toks = sorted(set(toks), key=lambda x: -len(x))
-        return "|".join(re.escape(t) for t in toks if t)
+        # Delegate to the canonical parser (#17383). The previous
+        # implementation matched only backtick-wrapped tokens and dropped
+        # bare characters, which silently made the shipped default
+        # (``\n!?;。；！？``) a no-op for the markdown path. The helper
+        # honors both bare chars and wrapped tokens, so the same field
+        # produces the same splits in every file type.
+        return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
     def _get_fence_marker(self, line):
         match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)
