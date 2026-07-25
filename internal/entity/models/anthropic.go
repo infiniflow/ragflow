@@ -496,6 +496,8 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 
 	sawTerminal := false
+	var streamUsage TokenUsage
+	sawUsage := false
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		eventType, _ := event["type"].(string)
 		switch eventType {
@@ -519,6 +521,27 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 					}
 				}
 			}
+		case "message_start":
+			message, ok := event["message"].(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			if usage, ok := message["usage"].(map[string]interface{}); ok {
+				if inputTokens, ok := usage["input_tokens"].(float64); ok {
+					streamUsage.PromptTokens = int(inputTokens)
+					sawUsage = true
+				}
+			}
+		case "message_delta":
+			// message_delta carries the running total of output tokens
+			// generated so far; the last event before message_stop is
+			// authoritative.
+			if usage, ok := event["usage"].(map[string]interface{}); ok {
+				if outputTokens, ok := usage["output_tokens"].(float64); ok {
+					streamUsage.CompletionTokens = int(outputTokens)
+					sawUsage = true
+				}
+			}
 		case "message_stop":
 			sawTerminal = true
 		case "error":
@@ -533,6 +556,11 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 	if !done && !sawTerminal {
 		return fmt.Errorf("anthropic: stream ended before message_stop")
+	}
+
+	if sawUsage {
+		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
+		applyStreamUsage(modelConfig, modelUsage, &streamUsage)
 	}
 
 	endOfStream := "[DONE]"

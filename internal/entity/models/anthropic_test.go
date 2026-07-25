@@ -318,13 +318,14 @@ func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var answer, reasoning strings.Builder
 	sawDone := false
+	modelUsage := &common.ModelUsage{}
 	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
 		ctx,
 		"claude-sonnet-4-5-20250929",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{},
-		&common.ModelUsage{},
+		modelUsage,
 		func(text, reason *string) error {
 			if text != nil {
 				if *text == "[DONE]" {
@@ -350,6 +351,15 @@ func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
 	}
 	if !sawDone {
 		t.Error("expected terminal [DONE] sender call")
+	}
+	if modelUsage.InputTokens != 5 {
+		t.Errorf("InputTokens=%d, want 5", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 2 {
+		t.Errorf("OutputTokens=%d, want 2", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 7 {
+		t.Errorf("TotalTokens=%d, want 7", modelUsage.TotalTokens)
 	}
 }
 
