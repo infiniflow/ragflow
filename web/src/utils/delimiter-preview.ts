@@ -35,6 +35,11 @@ const WHITESPACE_GLYPHS: Record<string, string> = {
   '\v': '␋', // VERTICAL TAB SYMBOL
 };
 
+/**
+ * Render a raw delimiter string for display by substituting visible
+ * Unicode glyphs for each whitespace character. Non-whitespace
+ * characters pass through unchanged.
+ */
 function toDisplay(raw: string): string {
   let out = '';
   for (const ch of raw) {
@@ -47,8 +52,10 @@ function toDisplay(raw: string): string {
  * Parse the delimiter field into a deduplicated, display-ready list.
  *
  * Differences from the backend `get_delimiters`:
- *  - Deduplicates by display form so the preview is readable. The
- *    backend does not always dedupe (see #17383).
+ *  - Deduplicates by raw value so distinct delimiters that happen to
+ *    share a display glyph (e.g. a literal `\n` and a user-typed `↵`)
+ *    are not silently merged. The backend does not always dedupe (see
+ *    #17383).
  *  - Preserves left-to-right input order rather than sorting
  *    longest-first; visual order is more intuitive for users.
  *  - Does not regex-escape the values (irrelevant for display).
@@ -64,10 +71,9 @@ export function parseDelimitersForDisplay(
   const seen = new Set<string>();
 
   const push = (raw: string) => {
-    const display = toDisplay(raw);
-    if (seen.has(display)) return;
-    seen.add(display);
-    result.push({ raw, display });
+    if (seen.has(raw)) return;
+    seen.add(raw);
+    result.push({ raw, display: toDisplay(raw) });
   };
 
   let cursor = 0;

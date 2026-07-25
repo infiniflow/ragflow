@@ -9,14 +9,15 @@ interface Props {
 }
 
 /**
- * Renders a live preview of the delimiters that the backend will derive
- * from `value`. Pure display — does not affect the stored value or the
- * chunking behavior.
+ * Renders a best-effort, informational preview of the delimiters
+ * derived from `value`. Pure display — does not affect the stored value
+ * or the chunking behavior. The preview may differ from what the
+ * backend actually parses (see #17383).
  *
- * The preview shows each delimiter as a small monospace badge; whitespace
- * characters (which would otherwise be invisible in the single-line input)
- * are rendered with visible Unicode glyphs (`↵` for newline, `⇥` for tab,
- * `␣` for space, etc.).
+ * Each delimiter is shown as a small monospace badge; whitespace
+ * characters (which would otherwise be invisible in the single-line
+ * input) are rendered with visible Unicode glyphs (`↵` for newline,
+ * `⇥` for tab, `␣` for space, etc.).
  */
 export function DelimiterPreview({ value }: Props) {
   const { t } = useTranslation();

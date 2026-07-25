@@ -619,11 +619,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter string is parsed into a list of delimiters. Backticks (` `) group characters into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
       enableChildrenDelimiter: 'Child chunk are used for retrieval',
       childrenDelimiter: 'Delimiter for text',
       childrenDelimiterTip:
-        'A delimiter string is parsed into a list of delimiters. Backticks (` `) group characters into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
       delimiterPreviewLabel: 'Splits at:',
       delimiterPreviewEmpty:
         'No delimiters — text will be chunked by size only.',
