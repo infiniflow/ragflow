@@ -324,6 +324,9 @@ func buildUpdateSets(newValue map[string]interface{}) []string {
 				items = m
 			}
 			for kk, vv := range items {
+				if _, known := columnDDL[kk]; !known {
+					continue
+				}
 				if vv == nil {
 					sets = append(sets, fmt.Sprintf("%s = NULL", kk))
 				} else if isArrayColumn(kk) {

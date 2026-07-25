@@ -589,6 +589,8 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             if k == "remove":
                 items = {v: None} if isinstance(v, str) else v
                 for kk, vv in items.items():
+                    if kk not in COLUMN_DDL:
+                        continue
                     if vv is None:
                         sets.append(f"{kk} = NULL")
                     elif kk in ARRAY_COLUMNS:

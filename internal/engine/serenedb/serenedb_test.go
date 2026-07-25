@@ -220,6 +220,23 @@ func TestBuildUpdateSetsAddRemove(t *testing.T) {
 	mustContain(t, joined, "tag_kwd = array_remove(tag_kwd, 'y')")
 }
 
+func TestBuildUpdateSetsRejectsUnknownColumns(t *testing.T) {
+	// Every branch must whitelist the identifier; an unknown key (including a
+	// remove-to-NULL, which is the only branch that emits a bare identifier)
+	// must never reach the SQL.
+	sets := buildUpdateSets(map[string]interface{}{
+		"remove":      map[string]interface{}{"evil = 1; DROP TABLE t; --": nil, "tag_kwd": nil},
+		"add":         map[string]interface{}{"not_a_column": "x"},
+		"bogus_field": "v",
+		"1=1; DROP":   "v",
+	})
+	joined := strings.Join(sets, " | ")
+	mustContain(t, joined, "tag_kwd = NULL")
+	mustNotContain(t, joined, "DROP")
+	mustNotContain(t, joined, "not_a_column")
+	mustNotContain(t, joined, "bogus_field")
+}
+
 func TestChunkTableNameIsTenantScoped(t *testing.T) {
 	// All datasets share the tenant table; datasetID never enters the name.
 	if got := chunkTableName("ragflow_t1"); got != "ragflow_t1" {
