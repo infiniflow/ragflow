@@ -53,7 +53,7 @@ func NewFileCommitService() *FileCommitService {
 // CreateCommit creates a new commit for a workspace folder
 func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 	// 1. Get the latest commit for this folder
-	latestCommit, _ := s.commitDAO.GetLatestByFolderID(folderID)
+	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 
 	// 2. Build tree state from latest commit
 	treeState := make(map[string]interface{})
@@ -235,26 +235,26 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 // ListCommits lists commits for a workspace folder with pagination
 func (s *FileCommitService) ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
-	return s.commitDAO.ListByFolderID(folderID, page, pageSize, orderBy, desc)
+	return s.commitDAO.ListByFolderID(ctx, dao.DB, folderID, page, pageSize, orderBy, desc)
 }
 
 // GetCommit gets a single commit by ID
 func (s *FileCommitService) GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error) {
-	return s.commitDAO.GetByID(commitID)
+	return s.commitDAO.GetByID(ctx, dao.DB, commitID)
 }
 
 // ListCommitFiles lists all file change items for a commit
 func (s *FileCommitService) ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error) {
-	return s.commitItemDAO.ListByCommitID(commitID)
+	return s.commitItemDAO.ListByCommitID(ctx, dao.DB, commitID)
 }
 
 // DiffCommits compares two commits and returns the diff
 func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error) {
-	fromItems, err := s.commitItemDAO.ListByCommitID(fromID)
+	fromItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, fromID)
 	if err != nil {
 		return nil, err
 	}
-	toItems, err := s.commitItemDAO.ListByCommitID(toID)
+	toItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, toID)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string
 	}
 
 	// Get tree state for file names (use to commit)
-	toCommit, err := s.commitDAO.GetByID(toID)
+	toCommit, err := s.commitDAO.GetByID(ctx, dao.DB, toID)
 	treeState := make(map[string]interface{})
 	if err == nil && toCommit != nil && toCommit.TreeState != nil {
 		json.Unmarshal([]byte(*toCommit.TreeState), &treeState)
@@ -351,7 +351,7 @@ func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string
 // Recursively scans all sub-folders.
 func (s *FileCommitService) GetUncommittedChanges(ctx context.Context, folderID string) ([]entity.DiffEntry, error) {
 	// Get latest commit tree state
-	latest, err := s.commitDAO.GetLatestByFolderID(folderID)
+	latest, err := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 	committedFiles := make(map[string]map[string]interface{})
 	if err == nil && latest != nil && latest.TreeState != nil {
 		var treeData map[string]interface{}
@@ -438,7 +438,7 @@ func (s *FileCommitService) collectAllFilesRecursive(ctx context.Context, folder
 
 // GetCommitTree gets the tree state snapshot for a commit as a hierarchical tree.
 func (s *FileCommitService) GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error) {
-	commit, err := s.commitDAO.GetByID(commitID)
+	commit, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
 	if err != nil {
 		return nil, err
 	}
@@ -541,12 +541,12 @@ func (s *FileCommitService) buildHierarchicalTree(ctx context.Context, flat map[
 
 // GetCommitFileContent gets file content as it existed in a given commit
 func (s *FileCommitService) GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error) {
-	_, err := s.commitDAO.GetByID(commitID)
+	_, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
 	if err != nil {
 		return nil, fmt.Errorf("commit not found: %w", err)
 	}
 
-	item, err := s.commitItemDAO.GetByCommitIDAndFileID(commitID, fileID)
+	item, err := s.commitItemDAO.GetByCommitIDAndFileID(ctx, dao.DB, commitID, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found in commit: %w", err)
 	}
@@ -579,7 +579,7 @@ func (s *FileCommitService) GetCommitFileContent(ctx context.Context, folderID, 
 
 // GetFileVersionHistory gets version history for a specific file
 func (s *FileCommitService) GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error) {
-	items, err := s.commitItemDAO.ListByFileID(fileID)
+	items, err := s.commitItemDAO.ListByFileID(ctx, dao.DB, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +587,7 @@ func (s *FileCommitService) GetFileVersionHistory(ctx context.Context, fileID st
 	var versions []entity.VersionEntry
 	for _, item := range items {
 		var commit *entity.FileCommit
-		commit, err = s.commitDAO.GetByID(item.CommitID)
+		commit, err = s.commitDAO.GetByID(ctx, dao.DB, item.CommitID)
 		if err != nil {
 			continue
 		}
