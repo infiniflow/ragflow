@@ -46,10 +46,10 @@
 //     Media-context attachment is per-item sequential; merge is
 //     index-deterministic.
 //
-//   - No PDF/outline awareness (Python `restore_pdf_text_previews`).
-//     That depends on deepdoc/parser which is out of scope for this
-//     phase; the chunker accepts the parser-style structured JSON
-//     payload and runs the same logic against it.
+//   - PDF text previews (Python `restore_pdf_text_previews`) are
+//     generated on demand for text chunks that carry PDF positions:
+//     cropImageChunks crops the text region and writes a preview image,
+//     then imageUploadDecorator uploads it to img_id. See pdfcrop_cgo.go.
 package chunker
 
 import (
@@ -285,6 +285,12 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	return chunkOutputs(flatten(merged))
 }
 
+// sentenceDelimiter is the sentence/clause-boundary regex used to split
+// oversized sections. It mirrors Python's default delimiter "\n。；！？"
+// plus the English ". " fallback, and also breaks on ASCII "!" and "?"
+// (diff Chunker-2.1).
+var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？]|\.\s)`)
+
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
 // Python's naive_merge (rag/nlp/__init__.py:1156). It uses
 // tokenizeStr (= tokenizer.NumTokensFromString, cl100k_base BPE) for
@@ -303,8 +309,10 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	}
 
 	// Sentence/clause-boundary regex for splitting oversized sections.
-	// Matches Python's default delimiter "\n。；！？" plus English ". " fallback.
-	sentenceDelim := regexp.MustCompile(`(\n|[。；！？]|\.\s)`)
+	// Matches Python's default delimiter "\n。；！？" plus English ". "
+	// fallback. The ASCII "!" and "?" are included to match Python's
+	// full delimiter set (diff Chunker-2.1).
+	sentenceDelim := sentenceDelimiter
 
 	var cks []string // chunk texts
 	var tkns []int   // token counts per chunk
@@ -319,7 +327,9 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			seg := segment
 			segTokens := tokens
 			if overlapPct > 0 && len(cks) > 0 {
-				prev := cks[len(cks)-1]
+				// Strip parser tags before computing the overlap suffix,
+				// matching Python nlp/__init__.py:1181 (diff Chunker-2.2).
+				prev := removeTag(cks[len(cks)-1])
 				// Take the last overlapped_percent of the previous chunk
 				// (in runes, matching Python's len(overlapped) * ratio).
 				prevRunes := []rune(prev)
@@ -656,23 +666,37 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 	return strings.Join(parts, "")
 }
 
-// takeFromEnd returns the last approx `tokens` worth of text (1 token
-// ≈ 4 bytes is the best-effort approximation used here; python uses
-// the actual tokenizer).
+// takeFromEnd returns the smallest tail of text whose token count is >=
+// tokens, counted exactly via tokenizeStr (diff Chunker-2.4). The previous
+// 4-bytes-per-token heuristic over-counted for CJK text.
 func takeFromEnd(text string, tokens int) string {
-	bytes := tokens * 4
-	if bytes >= len(text) {
-		return text
+	runes := []rune(text)
+	// The tail runes[i:] grows as i decreases, so the first (largest i,
+	// i.e. smallest tail) that meets the budget is the answer.
+	for i := len(runes); i > 0; i-- {
+		cand := string(runes[i:])
+		if tokenizeStr(cand) >= tokens {
+			return cand
+		}
 	}
-	return text[len(text)-bytes:]
+	return text
 }
 
+// takeFromStart returns the smallest prefix of text whose token count is >=
+// tokens, counted exactly via tokenizeStr (diff Chunker-2.4).
 func takeFromStart(text string, tokens int) string {
-	bytes := tokens * 4
-	if bytes >= len(text) {
-		return text
+	runes := []rune(text)
+	best := text
+	// Prefix grows as i increases; the first (smallest) qualifying prefix
+	// is the answer.
+	for i := 1; i <= len(runes); i++ {
+		cand := string(runes[:i])
+		if tokenizeStr(cand) >= tokens {
+			best = cand
+			break
+		}
 	}
-	return text[:bytes]
+	return best
 }
 
 // mergeByTokenSizeFromJSON mirrors `naive_merge` at
@@ -704,7 +728,10 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				//   t = overlapped[overlap_cut:] + t
 				//   tnum = num_tokens_from_string(t)
 				if len(merged) > 0 && merged[len(merged)-1].CKType == "text" && overlappedPct > 0 {
-					if prevText := merged[len(merged)-1].Text; prevText != "" {
+					// Strip parser tags before computing the overlap
+					// suffix, matching Python nlp/__init__.py:1181
+					// (diff Chunker-2.2).
+					if prevText := removeTag(merged[len(merged)-1].Text); prevText != "" {
 						runes := []rune(prevText)
 						cut := int(float64(len(runes)) * (100 - overlappedPct*100) / 100.0)
 						if cut < len(runes) {
@@ -718,10 +745,21 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			}
 			// Merge into the accumulated text chunk.
 			prev := &merged[len(merged)-1]
-			if prev.Text != "" {
+			// Mirror Python token_chunker.py:236-239: when the accumulated
+			// chunk has empty text, assign the incoming text directly instead
+			// of skipping it (diff Chunker-2.11).
+			if prev.Text == "" {
+				prev.Text = ck.Text
+			} else {
 				prev.Text = prev.Text + "\n" + ck.Text
-				prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 			}
+			prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
+			// Preserve PDF coordinates across the merge: extend the
+			// coordinate lists instead of dropping the incoming item's
+			// positions. Mirrors Python token_chunker.py:240
+			// `merged[prev][PDF_POSITIONS_KEY].extend(...)` (diffs 2.5 / 2.3).
+			prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
+			prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
 		}
 		perItem[idx] = merged
 	}
@@ -742,11 +780,46 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		v := *in.PageNumber
 		out.PageNumber = &v
 	}
+	// Deep-copy the coordinate byte slices so the clone does not alias
+	// the source's backing array (diff 2.5 defensive fix).
+	if in.PDFPositions != nil {
+		out.PDFPositions = append(json.RawMessage(nil), in.PDFPositions...)
+	}
+	if in.Positions != nil {
+		out.Positions = append(json.RawMessage(nil), in.Positions...)
+	}
 	if in.Extra != nil {
 		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
 		for k, v := range in.Extra {
 			out.Extra[k] = append(json.RawMessage(nil), v...)
 		}
+	}
+	return out
+}
+
+// extendRawJSONArray concatenates two JSON array payloads, mirroring
+// Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
+// empty; the result is always a valid JSON array (or an empty raw message).
+// It is used to accumulate PDF coordinate lists (`_pdf_positions`,
+// `positions`) when text chunks are merged (diffs 2.5 / 2.3).
+func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	var arrA, arrB []json.RawMessage
+	if err := json.Unmarshal(a, &arrA); err != nil {
+		return b
+	}
+	if err := json.Unmarshal(b, &arrB); err != nil {
+		return a
+	}
+	arrA = append(arrA, arrB...)
+	out, err := json.Marshal(arrA)
+	if err != nil {
+		return a
 	}
 	return out
 }

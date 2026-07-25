@@ -22,6 +22,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -320,5 +321,34 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"})
 	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
 		t.Fatalf("err = %v, want missing full_text tokens", err)
+	}
+}
+
+// TestChunkDocsToMaps_PreservesPDFPositions is the pool-free unit test for
+// Tokenizer-(T)1: the tokenizer emits chunks via schema.ChunkDocsToMaps
+// (ChunkDoc.ToMap), which must carry the raw `positions` / `_pdf_positions`
+// through untouched so the downstream executor stage
+// (internal/ingestion/task processChunkPositions → AddPositions) can convert
+// them into position_int / page_num_int / top_int exactly once. This does NOT
+// require the C++ analyzer pool, so it runs under plain `go test`.
+func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
+	pos := json.RawMessage(`[[1,10,20,30,40],[2,15,25,35,45]]`)
+	chunks := []schema.ChunkDoc{
+		{Text: "PDF paragraph", DocType: "text", CKType: "text",
+			Positions: pos, PDFPositions: pos},
+	}
+	maps := schema.ChunkDocsToMaps(chunks)
+
+	got, ok := maps[0]["positions"].([][]float64)
+	if !ok || len(got) != 2 {
+		t.Fatalf("positions not preserved through tokenizer output mapping: %#v", maps[0]["positions"])
+	}
+	if _, ok := maps[0]["_pdf_positions"].([][]float64); !ok {
+		t.Errorf("_pdf_positions not preserved through tokenizer output mapping: %#v", maps[0]["_pdf_positions"])
+	}
+	// Sanity: page numbers are still raw 1-indexed, i.e. not yet converted
+	// to page_num_int (the executor owns that step).
+	if int(got[0][0]) != 1 {
+		t.Errorf("positions page already converted; want raw 1-indexed page 1, got %v", got[0][0])
 	}
 }

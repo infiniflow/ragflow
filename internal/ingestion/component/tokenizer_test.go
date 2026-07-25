@@ -591,6 +591,32 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	}
 }
 
+// Python tokenizer.py:95 passes the raw name to embedding without .strip();
+// Go must match — the title embedding must receive the original name, not a
+// TrimSpace'd copy. The empty-name guard still uses TrimSpace (mirroring
+// Python's `.strip()==""` check at tokenizer.py:200), but the value encoded
+// is the raw name.
+func TestTokenizerComponent_Embedding_UsesRawNameNotTrimmed(t *testing.T) {
+	requireTokenizerPool(t)
+	c, stub := withStubEmbedder(t, 2)
+
+	if _, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "  report.pdf  ",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 1 {
+		t.Fatalf("callInputs len = %d, want >= 1", len(stub.callInputs))
+	}
+	// First call is the title embedding; it must receive the raw name with
+	// surrounding whitespace preserved, matching Python.
+	if got := stub.callInputs[0][0]; got != "  report.pdf  " {
+		t.Fatalf("title embedding input = %q, want %q (raw, not trimmed)", got, "  report.pdf  ")
+	}
+}
+
 func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) {
 	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)

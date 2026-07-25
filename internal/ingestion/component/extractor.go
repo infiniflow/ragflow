@@ -169,6 +169,13 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		}
 		if v, ok := params["prompt"].(string); ok {
 			p.Prompt = v
+		} else if v, ok := params["prompts"].(string); ok && v != "" {
+			// Python agent/component/llm.py:119-120 normalizes a bare-string
+			// prompts into [{"role":"user","content":prompts}]. Mirror that
+			// here so a front-end/template that emits prompts as a string
+			// (the graph.nodes form / dsl testdata) is not silently dropped
+			// by the .([]any) assertion on the list branch below.
+			p.Prompt = v
 		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
 			if first, ok := promptsRaw[0].(map[string]any); ok {
 				if content, ok := first["content"].(string); ok {

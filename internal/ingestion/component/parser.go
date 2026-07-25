@@ -302,7 +302,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -310,7 +310,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
+			"output_format": "text",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -478,9 +478,10 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
-		// DOCX vision figure enhancement: enrich the markdown
-		// with LLM-generated descriptions of embedded images.
-		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
+		// DOCX vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image items
+		// (doc_type_kwd "image"). Mirrors Python's
+		// enhance_media_sections_with_vision in parser.py:_doc.
 		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed

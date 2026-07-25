@@ -168,10 +168,17 @@ func maybeDispatchImage(
 		}
 	}
 
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "text"
-	}
+	// The image family always emits a structured JSON item carrying the
+	// image attachment (data URI) and doc_type_kwd, mirroring Python
+	// rag/app/picture.py:71-72 (doc["image"]=img, doc["doc_type_kwd"]=
+	// "image"). picture.py has no "text" output mode — it always returns
+	// a structured doc — so output_format is hardcoded to "json" and any
+	// setup override is ignored. The former behavior returned a bare Text
+	// string, which dropped the image attachment, set doc_type to "text",
+	// and on the default json path produced JSON=nil so downstream
+	// Chunkers rejected the payload with errRequiredField{"json"}.
+	imageB64 := base64.StdEncoding.EncodeToString(binary)
+	dataURI := "data:" + imageMIME(filename) + ";base64," + imageB64
 
 	// --- Phase 2: VLM description (when OCR text is short) ---
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
@@ -184,11 +191,7 @@ func maybeDispatchImage(
 		charCount := len(ocrText)
 		if (eng && wordCount > 32) || charCount > 32 {
 			// OCR returned substantial text — skip VLM.
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 	}
 
@@ -197,19 +200,11 @@ func maybeDispatchImage(
 	if err != nil {
 		// If VLM is unavailable but we have OCR text, return it.
 		if ocrText != "" {
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: picture image2text model: %w", err)
 	}
-
-	imageB64 := base64.StdEncoding.EncodeToString(binary)
-	mimeType := imageMIME(filename)
-	dataURI := "data:" + mimeType + ";base64," + imageB64
 
 	prompt := "Describe this image in detail."
 	// image family's contract key is system_prompt (parser.go:295),
@@ -229,11 +224,7 @@ func maybeDispatchImage(
 	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		if ocrText != "" {
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: picture describe: %w", err)
@@ -253,11 +244,23 @@ func maybeDispatchImage(
 			combined = vlmText
 		}
 	}
+	return imageDispatchResult(combined, dataURI), true, nil
+}
+
+// imageDispatchResult builds the structured JSON payload for the image
+// family: a single item carrying the combined text, the image attachment
+// (data URI), and doc_type_kwd "image". Mirrors Python
+// rag/app/picture.py:71-72.
+func imageDispatchResult(text, dataURI string) parserDispatchResult {
 	return parserDispatchResult{
-		OutputFormat: outputFormat,
+		OutputFormat: "json",
 		DocType:      "image",
-		Text:         combined,
-	}, true, nil
+		JSON: []map[string]any{{
+			"text":         text,
+			"image":        dataURI,
+			"doc_type_kwd": "image",
+		}},
+	}
 }
 
 // Audio dispatch: SPEECH2TEXT transcription ---
@@ -314,6 +317,21 @@ func maybeDispatchAudio(
 	outputFormat, _ := setup["output_format"].(string)
 	if outputFormat == "" {
 		outputFormat = "text"
+	}
+	// Diff 2.11: when output_format is "json" the transcription must be
+	// carried as a JSON item. Returning it only in Text made the Invoke
+	// switch silently drop it (the switch has no "json" branch and the
+	// JSON slice was empty). Mirror the JSON-item shape used by the
+	// other parser branches.
+	if outputFormat == "json" {
+		return parserDispatchResult{
+			OutputFormat: "json",
+			DocType:      "audio",
+			JSON: []map[string]any{{
+				"text":         transcription,
+				"doc_type_kwd": "audio",
+			}},
+		}, true, nil
 	}
 	return parserDispatchResult{
 		OutputFormat: outputFormat,

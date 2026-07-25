@@ -570,6 +570,48 @@ func TestNewExtractorComponent_PromptsArray_PromptWins(t *testing.T) {
 	}
 }
 
+// TestNewExtractorComponent_PromptsString verifies that a bare-string
+// "prompts" (the shape emitted by the front-end graph.nodes form and
+// the dsl/testdata templates) is normalized into Param.Prompt, mirroring
+// Python agent/component/llm.py:119-120 which coerces a string prompts
+// into [{"role":"user","content":prompts}]. Without this normalization
+// the string form is silently dropped (the .([]any) assertion fails).
+func TestNewExtractorComponent_PromptsString(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"prompts":    "Content: {TitleChunker:FlatMiceFix@chunks}",
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	want := "Content: {TitleChunker:FlatMiceFix@chunks}"
+	if ec.Param.Prompt != want {
+		t.Errorf("Prompt = %q, want %q (string prompts should be normalized)", ec.Param.Prompt, want)
+	}
+}
+
+// TestNewExtractorComponent_PromptsString_PromptWins verifies that
+// "prompt" (string) still takes priority over a string-form "prompts"
+// when both are present, matching the prompt>prompts precedence of
+// the list-form path (TestNewExtractorComponent_PromptsArray_PromptWins).
+func TestNewExtractorComponent_PromptsString_PromptWins(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"prompt":     "Direct prompt wins.",
+		"prompts":    "Should be ignored.",
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.Prompt != "Direct prompt wins." {
+		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
+	}
+}
+
 // TestNewExtractorComponent_SystemPromptWinsOverSysPrompt verifies
 // that "system_prompt" takes priority over "sys_prompt".
 func TestNewExtractorComponent_SystemPromptWinsOverSysPrompt(t *testing.T) {

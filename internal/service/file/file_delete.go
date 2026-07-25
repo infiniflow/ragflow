@@ -69,7 +69,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 	}
 
 	// 2. Handle associated documents
-	informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+	informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, file.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
-		if err = s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
+		if err = s.file2DocumentDAO.DeleteByFileID(ctx, dao.DB, file.ID); err != nil {
 			return fmt.Errorf("failed to delete file2document mapping: %w", err)
 		}
 	}

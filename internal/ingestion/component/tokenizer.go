@@ -434,7 +434,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if trimmedName == "" {
 		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
-		titleResults, err := encodeWithTimeout(ctx, embedder, []string{trimmedName})
+		// Encode the raw name (no TrimSpace) to mirror Python
+		// tokenizer.py:95 which passes name verbatim to embedding. The
+		// empty-name guard above still uses TrimSpace, matching Python's
+		// `.strip()==""` check at tokenizer.py:200.
+		titleResults, err := encodeWithTimeout(ctx, embedder, []string{name})
 		if err != nil {
 			return nil, 0, fmt.Errorf("Tokenizer: encode title: %w", err)
 		}

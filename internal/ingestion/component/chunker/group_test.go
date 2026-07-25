@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -228,6 +229,59 @@ func TestGroupChunker_StructuredMetadata(t *testing.T) {
 	if !found {
 		t.Fatal("no image chunk emitted")
 	}
+}
+
+// TestGroupChunker_MergesPDFPositionsAndRemovesTags is the TDD test for
+// migration diffs Chunker-1.6 / 2.8: when the group chunker merges
+// multiple adjacent text records into one chunk it must (a) strip the
+// parser-emitted `@@...##` position tags from the joined text, and
+// (b) MERGE (not drop) the `positions` coordinate matrices across the
+// merged records — mirroring common.py:255 remove_tag + merge.
+func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels": [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Heading", "doc_type_kwd": "text"},
+		{"text": "body one @@1\t10.0\t20.0\t30.0\t40.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 20, 30, 40}}},
+		{"text": "body two @@2\t15.0\t25.0\t35.0\t45.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{2, 15, 25, 35, 45}}},
+	}
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"name":          "doc",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("no chunks emitted")
+	}
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		// Only the merged body group carries both bodies.
+		if !strings.Contains(text, "body one") || !strings.Contains(text, "body two") {
+			continue
+		}
+		// (a) parser tags must be stripped from the text.
+		if strings.Contains(text, "@@") {
+			t.Errorf("parser position tags leaked into chunk text: %q", text)
+		}
+		// (b) positions must be merged across both records.
+		pos, ok := ck["positions"].([][]float64)
+		if !ok {
+			t.Fatalf("positions missing or wrong type %T on merged group chunk", ck["positions"])
+		}
+		if len(pos) != 2 {
+			t.Errorf("merged positions = %d groups, want 2 (both records)", len(pos))
+		}
+		return
+	}
+	t.Fatal("merged body group chunk not found in output")
 }
 
 func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {

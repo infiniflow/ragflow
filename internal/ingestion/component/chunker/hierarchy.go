@@ -148,7 +148,7 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	ctx := newLevelContext(records, p)
+	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
 	headingCounts := make(map[int]int)

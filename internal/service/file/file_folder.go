@@ -84,7 +84,7 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 			fileInfo.KbsInfo = []map[string]interface{}{}
 		} else {
 			// Get KB info for non-folder files
-			kbsInfo, err := s.file2DocumentDAO.GetKBInfoByFileID(file.ID)
+			kbsInfo, err := s.file2DocumentDAO.GetKBInfoByFileID(ctx, dao.DB, file.ID)
 			if err != nil {
 				kbsInfo = []map[string]interface{}{}
 			}
@@ -490,7 +490,7 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 		}
 
 		// Update associated document name if exists
-		informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+		informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, file.ID)
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()
@@ -589,7 +589,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 
 	// Update associated document name if renamed
 	if overrideName != "" {
-		informs, err := s.file2DocumentDAO.GetByFileID(sourceFile.ID)
+		informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, sourceFile.ID)
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()

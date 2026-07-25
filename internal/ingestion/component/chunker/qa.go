@@ -29,6 +29,7 @@ package chunker
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html"
 	"regexp"
@@ -98,7 +99,9 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："
-	eng := strings.EqualFold(c.param.Lang, "english") || c.param.Lang == ""
+	// Python qa.py defaults to Chinese when no language is supplied; only
+	// an explicit "english" switches to English prefixes (diff Chunker-2.13).
+	eng := strings.EqualFold(c.param.Lang, "english")
 	if eng {
 		qPrefix, aPrefix = "Question: ", "Answer: "
 	}
@@ -133,6 +136,21 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
 		}
+		// Restore metadata lost before diff Chunker-1.8: top_int (row
+		// index), image id + coordinates carried from the source item.
+		if pair.RowNum >= 0 {
+			chunk.TopInt = []int{pair.RowNum}
+		}
+		if pair.Image != "" {
+			chunk.Image = pair.Image
+			chunk.DocType = "image"
+		}
+		if len(pair.PDFPositions) > 0 {
+			chunk.PDFPositions = pair.PDFPositions
+		}
+		if len(pair.Positions) > 0 {
+			chunk.Positions = pair.Positions
+		}
 		chunks = append(chunks, chunk)
 	}
 
@@ -148,9 +166,20 @@ func renderMarkdown(s string) string {
 type qaPair struct {
 	Question string
 	Answer   string
+	// RowNum is the 0-based source line/record index, mapped to Python's
+	// top_int (qa.py beAdoc(..., row_num=i)). -1 means unset.
+	RowNum int
+	// Image and positions are carried from the upstream item so the QA
+	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
+	// (diff Chunker-1.8).
+	Image        string
+	PDFPositions json.RawMessage
+	Positions    json.RawMessage
 }
 
-var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[ \t]*(?:[:：]|\t)[ \t]*`)
+// rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
+// chars, so "Q:: answer" is fully stripped (diff Chunker-2.12).
+var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
 
 func rmQAPrefix(txt string) string {
 	return strings.TrimSpace(rmQAPrefixRe.ReplaceAllString(txt, ""))
@@ -209,18 +238,19 @@ func extractQAMarkdown(md string) []qaPair {
 	var questionStack []string
 	var levelStack []int
 	var answer []string
+	curRow := -1
 	codeBlock := false
 
 	flushAnswer := func() {
 		joined := strings.TrimSpace(strings.Join(answer, "\n"))
 		if joined != "" && len(questionStack) > 0 {
 			sumQ := strings.Join(questionStack, "\n")
-			pairs = append(pairs, qaPair{Question: sumQ, Answer: joined})
+			pairs = append(pairs, qaPair{Question: sumQ, Answer: joined, RowNum: curRow})
 		}
 		answer = nil
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
 			codeBlock = !codeBlock
@@ -239,6 +269,7 @@ func extractQAMarkdown(md string) []qaPair {
 
 		flushAnswer()
 		question := strings.TrimSpace(line[level:])
+		curRow = i
 
 		for len(levelStack) > 0 && level <= levelStack[len(levelStack)-1] {
 			questionStack = questionStack[:len(questionStack)-1]
@@ -273,8 +304,9 @@ func extractQAText(text string) []qaPair {
 func extractQATextTab(lines []string) []qaPair {
 	var pairs []qaPair
 	var question, answer string
+	var row int
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -286,13 +318,14 @@ func extractQATextTab(lines []string) []qaPair {
 			continue
 		}
 		if question != "" && answer != "" {
-			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 		}
 		question = parts[0]
 		answer = parts[1]
+		row = i
 	}
 	if question != "" {
-		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 	}
 	return pairs
 }
@@ -321,13 +354,16 @@ func extractQATextCSV(text string, lines []string) []qaPair {
 
 	var pairs []qaPair
 	var question, answer string
+	var row int
 	prevLine := 0
+	recIdx := -1
 
 	for {
 		record, err := r.Read()
 		if err != nil {
 			break
 		}
+		recIdx++
 
 		// Map InputOffset back to the physical lines consumed.
 		endOff := int(r.InputOffset())
@@ -346,13 +382,14 @@ func extractQATextCSV(text string, lines []string) []qaPair {
 			continue
 		}
 		if question != "" && answer != "" {
-			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 		}
 		question = record[0]
 		answer = record[1]
+		row = recIdx
 	}
 	if question != "" {
-		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer)})
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
 	}
 	return pairs
 }
@@ -385,7 +422,14 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 			continue
 		}
 		tmp := extractQAText(txt)
-		pairs = append(pairs, tmp...)
+		// Preserve the source item's image id and coordinates on each
+		// extracted pair (diff Chunker-1.8).
+		for _, p := range tmp {
+			p.Image = item.Image
+			p.PDFPositions = item.PDFPositions
+			p.Positions = item.Positions
+			pairs = append(pairs, p)
+		}
 	}
 	return pairs
 }
