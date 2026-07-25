@@ -37,6 +37,7 @@ const (
 	defaultPort     = 7890
 	defaultUser     = "postgres"
 	defaultDBName   = "postgres"
+	defaultSSLMode  = "disable"
 	poolMaxOpen     = 8
 	poolMaxIdle     = 2
 	connMaxLifetime = 30 * time.Minute
@@ -103,6 +104,7 @@ func buildDSN(cfg config.SereneDBConfig) string {
 		return env
 	}
 	host, port, user, password, dbName := defaultHost, defaultPort, defaultUser, "", defaultDBName
+	sslMode := defaultSSLMode
 	if cfg.Host != "" {
 		host = cfg.Host
 	}
@@ -116,12 +118,15 @@ func buildDSN(cfg config.SereneDBConfig) string {
 	if cfg.DBName != "" {
 		dbName = cfg.DBName
 	}
+	if cfg.SSLMode != "" {
+		sslMode = cfg.SSLMode
+	}
 	parts := []string{
 		fmt.Sprintf("host=%s", quoteDSNValue(host)),
 		fmt.Sprintf("port=%d", port),
 		fmt.Sprintf("user=%s", quoteDSNValue(user)),
 		fmt.Sprintf("dbname=%s", quoteDSNValue(dbName)),
-		"sslmode=disable",
+		fmt.Sprintf("sslmode=%s", quoteDSNValue(sslMode)),
 	}
 	if password != "" {
 		parts = append(parts, fmt.Sprintf("password=%s", quoteDSNValue(password)))
@@ -205,7 +210,8 @@ func (e *serenedbEngine) tableExists(ctx context.Context, tableName string) (boo
 		return false, fmt.Errorf("serenedb: invalid table name %q", tableName)
 	}
 	rows, err := e.db.QueryContext(ctx,
-		"SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1", tableName)
+		"SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1",
+		tableName)
 	if err != nil {
 		return false, err
 	}

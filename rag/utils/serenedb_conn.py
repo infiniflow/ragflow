@@ -218,6 +218,9 @@ class SereneDBConnection(DocStoreConnection):
             # URL-encode credentials so a password with @ / : / space does not
             # corrupt the DSN.
             dsn = f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{quote(dbname, safe='')}"
+            ssl_mode = cfg.get("ssl_mode")
+            if ssl_mode:
+                dsn += f"?sslmode={quote(str(ssl_mode), safe='')}"
         except Exception:
             pass
         dsn = os.environ.get("SERENEDB_DSN", dsn or "postgresql://postgres@serenedb:7890/")

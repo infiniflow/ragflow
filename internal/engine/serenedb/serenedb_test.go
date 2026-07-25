@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"ragflow/internal/engine/types"
+	"ragflow/internal/server/config"
 )
 
 func mustContain(t *testing.T, got, want string) {
@@ -389,4 +390,12 @@ func TestQuoteDSNValue(t *testing.T) {
 	if got := quoteDSNValue(`a\b`); got != `'a\\b'` {
 		t.Errorf("quoteDSNValue backslash = %q", got)
 	}
+}
+
+func TestBuildDSNSSLMode(t *testing.T) {
+	t.Setenv("SERENEDB_DSN", "") // force the config path, not the env override
+	def := buildDSN(config.SereneDBConfig{Host: "h", Port: 7890, User: "u"})
+	mustContain(t, def, "sslmode='disable'") // safe default preserved
+	enc := buildDSN(config.SereneDBConfig{Host: "h", User: "u", SSLMode: "require"})
+	mustContain(t, enc, "sslmode='require'")
 }
