@@ -239,13 +239,13 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	}
 
 	// Delete tasks from DB
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(docID)
+	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
 		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", doc.ID), err)
 		return err
 	}
 	if ingestionTask != nil {
-		taskInfo, err := s.ingestionTaskSvc.Remove(ingestionTask.ID, &ingestionTask.UserID)
+		taskInfo, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID)
 		if err != nil {
 			return err
 		}

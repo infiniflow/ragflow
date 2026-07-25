@@ -34,7 +34,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(doc, kb.TenantID); err != nil {
+		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
 			return err
 		}
 	}
@@ -49,9 +49,9 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 // in-flight (RUNNING/STOPPING) ingestion task. Used as a batch pre-check
 // before re-parsing so a single non-terminal doc rejects the whole request
 // up front instead of partially cleaning some docs then failing.
-func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
+func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(docID)
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
 			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
 		}
@@ -65,7 +65,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
 	return nil
 }
 
-func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenantID string) error {
+func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
@@ -74,7 +74,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
 	// corrupt the new run's results. The caller must stop the task first
 	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED.
-	if task, _ := s.ingestionTaskDAO.GetByDocumentID(doc.ID); task != nil {
+	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
@@ -84,7 +84,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
 	// between GetByDocumentID and the delete above cannot delete a task
 	// that just transitioned to RUNNING.
-	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(doc.ID); err != nil {
+	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID); err != nil {
 		return err
 	}
 
@@ -296,7 +296,7 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
-	task, err := s.ingestionTaskDAO.GetByDocumentID(doc.ID)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
 	}
@@ -304,7 +304,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
 	}
 
-	if _, err = s.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+	if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
 	}
 

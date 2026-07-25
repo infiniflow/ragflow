@@ -68,20 +68,20 @@ func newProgressSink(ctx context.Context, taskSvc *servicepkg.IngestionTaskServi
 
 func (s *progressSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	s.total.Store(int64(total))
-	if err := s.taskSvc.UpdateComponentTotal(taskID, total); err != nil {
+	if err := s.taskSvc.UpdateComponentTotal(ctx, taskID, total); err != nil {
 		common.Error(fmt.Sprintf("progressSink: update component_total for task %s failed: %v", taskID, err), err)
 	}
 }
 
 func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.ProgressEvent) {
-	if err := s.taskSvc.RecordComponentProgress(ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
+	if err := s.taskSvc.RecordComponentProgress(ctx, ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: record component progress for task %s failed: %v", ev.TaskID, err), err)
 	}
 	if ev.DocumentID == "" {
 		return
 	}
 	total := s.total.Load()
-	agg, err := s.taskSvc.AggregateTaskProgress(ev.TaskID, int(total))
+	agg, err := s.taskSvc.AggregateTaskProgress(ctx, ev.TaskID, int(total))
 	if err != nil {
 		common.Error(fmt.Sprintf("progressSink: aggregate task progress for task %s failed: %v", ev.TaskID, err), err)
 		return

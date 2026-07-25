@@ -11,7 +11,7 @@ import (
 )
 
 func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.ListByUser(userID, datasetID, page, pageSize)
+	return s.ingestionTaskSvc.ListByUser(ctx, userID, datasetID, page, pageSize)
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
@@ -24,11 +24,11 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID
 }
 
 func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, &userID)
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, &userID)
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, &userID)
 }
 
 func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
@@ -70,10 +70,10 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Batch pre-check for re-parse with delete: use the validated doc IDs
+	// Batch pre-check for reparse with delete: use the validated doc IDs
 	// so we don't silently skip non-existent or unauthorized documents.
 	if run == string(entity.TaskStatusRunning) && req.Delete {
-		if err = s.AssertIngestionTasksTerminal(validatedIDs); err != nil {
+		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
 			return common.CodeDataError, err
 		}
 	}

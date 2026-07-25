@@ -41,8 +41,9 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	if runDocCalled {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
+	testCtx := t.Context()
 	// Checkpoint must not have been bumped — no log row should exist.
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(testCtx, db, taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 		t.Fatalf("expected 0 checkpoint rows (ctx cancelled before checkpoint), got %d", len(logs))
 	}
 	// Task must be STOPPED, not left in RUNNING.
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	task, err := dao.NewIngestionTaskDAO().GetByID(testCtx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -96,7 +97,8 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -126,7 +128,8 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -163,7 +166,8 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked STOPPED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -195,7 +199,8 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -236,7 +241,8 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 	}
 
 	// Task must still be COMPLETED (MarkCompleted failed to transition it).
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -260,7 +266,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
 		// Simulate the user pressing Stop mid-pipeline: RUNNING->STOPPING.
-		if _, err := ingestor.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+		if _, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 			t.Fatalf("RequestStop: %v", err)
 		}
 		return nil // pipeline still finishes successfully
@@ -274,7 +280,8 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -304,7 +311,8 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 		t.Fatal("expected true (terminal: durably completed)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}

@@ -104,16 +104,16 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin()
+func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
+	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
 }
 
-func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
+func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
 }
 
-func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
+func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
 }
 
 // GetUserByToken get user by access token
