@@ -71,7 +71,7 @@ async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
     search results) keep whatever placeholder they were given. Other
     backends still carry vectors in the chunk, so we skip the round-trip.
     """
-    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
         return
     if not chunks:
         return
