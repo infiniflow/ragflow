@@ -624,6 +624,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       childrenDelimiter: 'Delimiter for text',
       childrenDelimiterTip:
         'A delimiter string is parsed into a list of delimiters. Backticks (` `) group characters into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
+      delimiterPreviewLabel: 'Splits at:',
+      delimiterPreviewEmpty:
+        'No delimiters — text will be chunked by size only.',
+      delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
