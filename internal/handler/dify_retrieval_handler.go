@@ -43,21 +43,21 @@ import (
 
 // KBServiceIface abstracts KnowledgebaseService for the Dify handler.
 type KBServiceIface interface {
-	GetByID(kbID string) (*entity.Knowledgebase, error)
-	Accessible(kbID, userID string) bool
+	GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	Accessible(ctx context.Context, kbID, userID string) bool
 }
 
 // ModelServiceIface abstracts ModelProviderService for the Dify handler.
 type ModelServiceIface interface {
-	GetEmbeddingModel(tenantID, embdID string) (*modelModule.EmbeddingModel, error)
+	GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
 	GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
 type MetadataServiceIface interface {
-	GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error)
-	SearchMetadataByKBs(kbIDs []string, size int) (*service.SearchMetadataResponse, error)
-	LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64
+	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
 // RetrievalServiceIface abstracts RetrievalService for the Dify handler.
@@ -204,7 +204,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	kb, err := h.kbSvc.GetByID(req.KnowledgeID)
+	ctx := c.Request.Context()
+	kb, err := h.kbSvc.GetByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
@@ -214,7 +215,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if !h.kbSvc.Accessible(req.KnowledgeID, user.ID) {
+	if !h.kbSvc.Accessible(ctx, req.KnowledgeID, user.ID) {
 		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeAuthenticationError, nil, "No authorization")
 		return
 	}
@@ -234,14 +235,14 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	// Get embedding model
-	embModel, err := h.modelSvc.GetEmbeddingModel(kb.TenantID, kb.EmbdID)
+	embModel, err := h.modelSvc.GetEmbeddingModel(ctx, kb.TenantID, kb.EmbdID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
 
 	// Metadata filter
-	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs([]string{req.KnowledgeID})
+	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
 	docIDs := make([]string, 0)
 	if metaErr == nil && req.MetadataCondition != nil {
 		logic := req.MetadataCondition.Logic
@@ -257,7 +258,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// Label question for rank features
 	kbs := []*entity.Knowledgebase{kb}
-	rankFeature := h.metadataSvc.LabelQuestion(req.Query, kbs)
+	rankFeature := h.metadataSvc.LabelQuestion(ctx, req.Query, kbs)
 
 	// Chunk retrieval
 	sr := &nlp.RetrievalRequest{
@@ -322,7 +323,6 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		allDocIDs = append(allDocIDs, id)
 	}
 
-	ctx := c.Request.Context()
 	docMap := make(map[string]*entity.Document)
 	if len(allDocIDs) > 0 {
 		var docs []*entity.Document
@@ -337,7 +337,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	metaMap := make(map[string]map[string]interface{})
-	metaResult, err := h.metadataSvc.SearchMetadataByKBs([]string{kb.ID}, 10000)
+	metaResult, err := h.metadataSvc.SearchMetadataByKBs(ctx, []string{kb.ID}, 10000)
 	if err == nil {
 		for _, metadata := range metaResult.MetadataRecords {
 			docID, ok := service.ExtractDocumentID(metadata)

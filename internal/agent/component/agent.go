@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"ragflow/internal/dao"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
@@ -304,7 +306,7 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 //
 // When the LLM call fails or there are no tool calls, the function
 // returns ("", nil) and the caller skips appending to history.
-func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (string, error) {
+func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *schema.Message) (string, error) {
 	calls := extractToolCalls(msg)
 	if len(calls) == 0 {
 		return "", nil
@@ -320,7 +322,7 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 	system := "You are a memory summarizer. Given a list of tool calls the assistant just made, output ONE short sentence (max 30 words) describing what the assistant did, suitable for a future-turn conversation history. Output ONLY the sentence, no preamble, no quotes."
 	user := "Tool calls: " + callsDesc.String()
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -347,7 +349,7 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 // Returns the grounded content on success, the original content
 // unchanged when no chunks are available or the call fails. Mirrors
 // Python's `cite_letter` / `generate_with_citation` flow.
-func applyCitationGrounding(ctx context.Context, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
+func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
 	}
@@ -359,7 +361,7 @@ func applyCitationGrounding(ctx context.Context, p AgentParam, content string, c
 	}
 	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -499,7 +501,7 @@ func (c *AgentComponent) Reset() {
 //   - the rephrase LLM call fails
 //
 // Window defaults to AgentParam.OptimizeHistoryWindow (3) when zero.
-func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[string]any) (string, error) {
+func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, history []map[string]any) (string, error) {
 	window := p.OptimizeHistoryWindow
 	if window <= 0 {
 		window = 3
@@ -527,7 +529,7 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 	system := "You are a question rephraser. Given conversation history and the user's latest input, rewrite the latest input as a self-contained question that does not require the history to understand. Output ONLY the rephrased question, no preamble, no quotes."
 	user := "Conversation history:\n" + histBuf.String() + "\n\nUser's latest input:\n" + p.UserPrompt
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -629,7 +631,7 @@ func (t *subAgentTool) InvokableRun(ctx context.Context, argsJSON string, _ ...e
 		}
 	}
 
-	out, err := NewAgentComponent(t.spec.Param).Invoke(ctx, inputs)
+	out, err := NewAgentComponent(t.spec.Param).Invoke(ctx, dao.DB, inputs)
 	if err != nil {
 		return "", fmt.Errorf("sub-agent tool %q: %w", normalizeAgentToolName(t.spec.Name), err)
 	}
@@ -715,7 +717,7 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // Invoke either returns a lazy Agent stream for a direct downstream Message,
 // or executes the Agent eagerly for all other graph shapes. The mode is a
 // compile-time canvas decision carried through context, not a DSL parameter.
-func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *AgentComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferAgentToMessage {
 		// Preserve the Agent-class duration installed by the node wrapper, then
 		// start a fresh deadline when Message opens the lazy stream.
@@ -729,18 +731,18 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
 				agentCtx, cancel := context.WithTimeout(openCtx, timeout)
 				defer cancel()
-				return c.invokeNow(runtime.WithAgentDeltaSink(agentCtx, sink), inputs)
+				return c.invokeNow(runtime.WithAgentDeltaSink(agentCtx, sink), db, inputs)
 			},
 		}
 		return map[string]any{"content": deferred}, nil
 	}
-	return c.invokeNow(ctx, inputs)
+	return c.invokeNow(ctx, db, inputs)
 }
 
 // invokeNow contains the original eager Agent execution path. Deferred
 // Message consumption calls this function later with an invocation-local
 // delta sink, so the same ReAct/citation/tool behavior is reused once.
-func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	runtime.ResetAgentMessageEmission(ctx)
 	defer runtime.FinalizeAgentMessage(ctx)
 
@@ -800,7 +802,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (
 	// actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, db, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
@@ -813,7 +815,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (
 	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
+			if summary, sErr2 := addToolCallMemory(ctx, db, p, msg); sErr2 == nil && summary != "" {
 				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
@@ -860,7 +862,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, inputs map[string]any) (
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {
-			grounded, gErr := applyCitationGrounding(ctx, p, content, chunks)
+			grounded, gErr := applyCitationGrounding(ctx, db, p, content, chunks)
 			if gErr == nil && grounded != content {
 				content = grounded
 				groundingStatus = "applied"
@@ -901,11 +903,11 @@ func isAgentGraphRunError(err error) bool {
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the
 // single payload through the channel.
-func (c *AgentComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (c *AgentComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 1)
 	go func() {
 		defer close(out)
-		result, err := c.Invoke(ctx, inputs)
+		result, err := c.Invoke(ctx, db, inputs)
 		if err != nil {
 			out <- map[string]any{"error": err.Error()}
 			return

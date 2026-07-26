@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 
 	"go.uber.org/zap"
 
@@ -13,14 +14,14 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
-func (d *DatasetService) SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	if datasetID == "" {
 		return nil, fmt.Errorf("dataset_id is required")
 	}
-	return d.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID), userID)
 }
 
-func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
@@ -76,7 +77,6 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	metadataFilter := req.MetadataFilter
 	crossLanguages := req.CrossLanguages
 
-	ctx := context.Background()
 	modelProviderSvc := service.NewModelProviderService()
 
 	// Access check for all datasets
@@ -84,12 +84,12 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if !d.kbDAO.Accessible(datasetID, userID) {
+		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
 			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
 		}
 
-		kb, err := d.kbDAO.GetByID(datasetID)
+		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
 			common.Warn("SearchDatasets dataset not found", zap.String("datasetID", datasetID))
 			return nil, fmt.Errorf("dataset %s not found", datasetID)
@@ -189,7 +189,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	copy(docIDs, req.DocIDs)
 	if len(metadataFilter) > 0 {
 		metadataSvc := service.NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
 		if err != nil {
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
@@ -225,7 +225,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 
 	// Get tag-based rank features via LabelQuestion
 	metadataSvc := service.NewMetadataService()
-	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
+	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel

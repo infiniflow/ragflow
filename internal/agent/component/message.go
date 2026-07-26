@@ -38,6 +38,8 @@ import (
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+
+	"gorm.io/gorm"
 )
 
 const componentNameMessage = "Message"
@@ -169,7 +171,7 @@ func (m *MessageComponent) Name() string { return m.name }
 // inputs["text"] takes precedence over the per-instance text so the
 // same node can be reused with different templates at run time when
 // the orchestrator wants to override the DSL-declared value.
-func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Message: %w", err)
@@ -506,11 +508,11 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 // Stream resolves the message and emits the content chunk. The outer
 // Agent SSE handler owns the final [DONE] frame, matching Python's
 // agent_api.py rather than leaking a component-local done marker.
-func (m *MessageComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (m *MessageComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	ch := make(chan map[string]any, 16)
 	go func() {
 		defer close(ch)
-		result, err := m.Invoke(ctx, inputs)
+		result, err := m.Invoke(ctx, db, inputs)
 		if err != nil {
 			select {
 			case ch <- map[string]any{"error": err.Error()}:

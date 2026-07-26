@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"regexp"
 
@@ -647,7 +648,7 @@ func ApplyMetaDataFilter(
 						"value": c.Value,
 					}
 				}
-				pushdownIDs := docEngine.FilterDocIdsByMetaPushdown(ctx, kbIDs, condMaps, logic)
+				pushdownIDs := docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, condMaps, logic)
 				// nil  = push-down not viable / errored -> fall back to in-memory
 				// non-nil (including empty slice) = push-down definitive -> use as-is
 				if pushdownIDs != nil {

@@ -356,12 +356,12 @@ type CreateChunkStoreResponse struct {
 }
 
 // CreateChunkStore creates a chunk store in the document engine for a knowledge base
-func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
 	if req == nil {
 		return nil, common.CodeDataError, fmt.Errorf("request is required")
 	}
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(req.KBID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, req.KBID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
@@ -393,9 +393,9 @@ func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*Creat
 }
 
 // DeleteChunkStore deletes the chunk store in the document engine for a knowledge base
-func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteChunkStore(ctx context.Context, kbID string) (common.ErrorCode, error) {
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(kbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)

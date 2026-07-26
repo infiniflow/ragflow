@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,11 +43,11 @@ type DatasetsHandler struct {
 }
 
 type searchDatasetsService interface {
-	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
 }
 
 type searchDatasetService interface {
-	SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
+	SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
 type listDatasetsExt struct {
@@ -116,7 +117,9 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		ownerIDs = ext.OwnerIDs
 	}
 
+	ctx := c.Request.Context()
 	data, total, code, err := h.datasetsService.ListDatasets(
+		ctx,
 		c.Query("id"),
 		c.Query("name"),
 		page,
@@ -154,7 +157,9 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.CreateDataset(&req, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -244,8 +249,10 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetMetadataConfig(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetMetadataConfig(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -268,7 +275,9 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.UpdateMetadataConfig(datasetID, user.ID, &req)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.UpdateMetadataConfig(ctx, datasetID, user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -336,7 +345,9 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	logType := c.DefaultQuery("log_type", "dataset")
 	keywords := c.Query("keywords")
 
-	result, code, err := h.datasetsService.ListIngestionLogs(datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -353,9 +364,11 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
 	logID := c.Param("log_id")
-	result, code, err := h.datasetsService.GetIngestionLog(datasetID, user.ID, logID)
+	result, code, err := h.datasetsService.GetIngestionLog(ctx, datasetID, user.ID, logID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -388,7 +401,9 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		ids = *req.IDs
 	}
 
-	result, code, err := h.datasetsService.DeleteDatasets(ids, req.DeleteAll, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -513,8 +528,10 @@ func (h *DatasetsHandler) ListTags(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	result, code, err := h.datasetsService.ListTags(datasetID, user.ID)
+	result, code, err := h.datasetsService.ListTags(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -559,7 +576,9 @@ func (h *DatasetsHandler) RenameTag(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.RenameTag(datasetID, user.ID, req.FromTag, req.ToTag)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.RenameTag(ctx, datasetID, user.ID, req.FromTag, req.ToTag)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -756,7 +775,9 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.AggregateTags(datasetIDs, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.AggregateTags(ctx, datasetIDs, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -815,8 +836,10 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	result, code, err := h.datasetsService.TraceIndex(datasetID, userID, indexType)
+	result, code, err := h.datasetsService.TraceIndex(ctx, datasetID, userID, indexType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -861,7 +884,9 @@ func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
 		wipe = false
 	}
 
-	code, err := h.datasetsService.DeleteIndex(userID, datasetID, indexType, wipe)
+	ctx := c.Request.Context()
+
+	code, err := h.datasetsService.DeleteIndex(ctx, userID, datasetID, indexType, wipe)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -905,15 +930,16 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(datasetID, user.ID) {
+		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
 			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
 			return
 		}
 	}
 
-	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(datasetIDs)
+	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get metadata: "+err.Error())
 		return
@@ -1026,7 +1052,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	resp, err := searchService.SearchDatasets(&req, user.ID)
+	ctx := c.Request.Context()
+
+	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
@@ -1080,7 +1108,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
-	resp, err := searchService.SearchDataset(datasetID, user.ID, &req)
+	ctx := c.Request.Context()
+
+	resp, err := searchService.SearchDataset(ctx, datasetID, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return

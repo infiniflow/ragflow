@@ -13,7 +13,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 )
 
-func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
@@ -31,10 +31,10 @@ func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
-		if !d.kbDAO.Accessible(datasetID, userID) {
+		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
 		}
-		kb, err := d.kbDAO.GetByID(datasetID)
+		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
@@ -96,7 +96,7 @@ func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 	return result, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
@@ -106,13 +106,13 @@ func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interf
 		return nil, common.CodeDataError, err
 	}
 	datasetID = normalizedID
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 	if d.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
 	}
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
 	}
@@ -189,7 +189,7 @@ func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interf
 	return result, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
 	fromTag = strings.TrimSpace(fromTag)
 	toTag = strings.TrimSpace(toTag)
 	datasetID, err := normalizeDatasetID(datasetID)
@@ -199,13 +199,13 @@ func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (ma
 	if strings.TrimSpace(datasetID) == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 	if d.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
 	}
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
 	}

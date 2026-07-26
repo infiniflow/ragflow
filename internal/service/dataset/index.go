@@ -270,11 +270,11 @@ func (d *DatasetService) RunIndex(ctx context.Context, userID, datasetID, indexT
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("invalid Dataset ID")
@@ -366,7 +366,7 @@ func (d *DatasetService) getDocumentsByDatasetForIndex(ctx context.Context, data
 	return documents, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
+func (d *DatasetService) TraceIndex(ctx context.Context, datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
@@ -374,11 +374,11 @@ func (d *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
@@ -423,11 +423,11 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
@@ -662,7 +662,7 @@ func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID str
 	return true, ""
 }
 
-func (d *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
+func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
 	if !checkType(indexType) {
 		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
 	}
@@ -671,11 +671,11 @@ func (d *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe b
 		return common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
 
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return common.CodeDataError, errors.New("Invalid Dataset ID")
@@ -734,7 +734,7 @@ func (d *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe b
 		updates[taskFinishAtField] = nil
 	}
 	if len(updates) > 0 {
-		if err := d.kbDAO.UpdateByID(kb.ID, updates); err != nil {
+		if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, updates); err != nil {
 			common.Warn("Failed to clear KB index task refs", zap.String("dataset_id", datasetID), zap.Error(err))
 		}
 	}

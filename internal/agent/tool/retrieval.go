@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -129,7 +130,7 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 // dispatches to the registered RetrievalService. When no
 // service is registered, the call surfaces
 // ErrRetrievalServiceMissing.
-func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (r *RetrievalTool) InvokableRun(ctx context.Context, db *gorm.DB, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	var args retrievalArgs
 	if argumentsInJSON != "" {
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -161,7 +162,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
 	svc := GetRetrievalService()
-	chunks, err := svc.Search(ctx, RetrievalRequest{
+	chunks, err := svc.Search(ctx, db, RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
 		TopN:                     args.TopN,

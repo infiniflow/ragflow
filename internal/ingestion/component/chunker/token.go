@@ -65,6 +65,8 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
@@ -146,7 +148,7 @@ func (c *TokenChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 //
 // Timeout: honours ctx cancellation only — there is no inner @timeout
 // decorator equivalent (plan §8 R1).
-func (c *TokenChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TokenChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 

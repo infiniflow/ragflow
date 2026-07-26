@@ -16,7 +16,7 @@ import (
 func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
-	if !d.Accessible(datasetID, userID) {
+	if !d.Accessible(ctx, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("You don't own the dataset.")
 	}
 
@@ -51,14 +51,14 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 }
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
-func (d *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
-	if !d.Accessible(datasetID, tenantID) {
+	if !d.Accessible(ctx, datasetID, tenantID) {
 		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Dataset not found")
@@ -76,15 +76,15 @@ func (d *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[stri
 }
 
 // UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
-func (d *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, tenantID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
 
-	if !d.Accessible(datasetID, tenantID) {
+	if !d.Accessible(ctx, datasetID, tenantID) {
 		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("Dataset not found")
@@ -115,7 +115,7 @@ func (d *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *s
 	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
 
-	if err = d.kbDAO.UpdateByID(kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("Update auto-metadata error.(Database error)")
 	}
 

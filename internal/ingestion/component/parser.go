@@ -84,6 +84,7 @@ import (
 	"unicode/utf8"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -392,7 +393,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 // that downstream Chunker / Tokenizer rely on for stable chunk
 // IDs (chunks that span pages must reference adjacent PageNumbers
 // in input order).
-func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
 	binary, err := readParserBinary(ctx, inputs)
 	if err != nil {

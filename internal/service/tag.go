@@ -261,7 +261,7 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 //  3. If cache miss, call GetAllTagsInPortion and cache the result (via SetTagsToCache)
 //  4. Get tag KBs by IDs
 //  5. Call TagQuery to get weighted tag features for the question
-func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) map[string]float64 {
+func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kbs []*Knowledgebase) map[string]float64 {
 	if len(kbs) == 0 || question == "" {
 		return nil
 	}
@@ -309,7 +309,7 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 
 	// Get tag_kbs by IDs
 	kbDAO := dao.NewKnowledgebaseDAO()
-	tagKBs, err := kbDAO.GetByIDs(tagKBIDs)
+	tagKBs, err := kbDAO.GetByIDs(ctx, dao.DB, tagKBIDs)
 	if err != nil || len(tagKBs) == 0 {
 		// Return nil if no tag_kbs found
 		return nil

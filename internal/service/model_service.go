@@ -3189,7 +3189,7 @@ func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, inst
 }
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
-func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
+func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
 	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, compositeModelName)
 	if err != nil {
 		return nil, err
