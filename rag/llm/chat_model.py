@@ -36,8 +36,12 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+<<<<<<< HEAD
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+=======
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_qianfan_credentials
+>>>>>>> c6d1af4b1 (fix(chat_model): raise clear ModelException when BaiduYiyan key is not a JSON object (#17389))
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -1335,7 +1339,12 @@ class BaiduYiyanChat(Base):
 
         import qianfan
 
-        key = json.loads(key)
+        # Parse via the shared helper. On non-JSON input (e.g. a plain Baidu
+        # API key like "bce-v3/...") the helper raises a clear ModelException
+        # pointing at the required schema; without this guard a raw
+        # json.loads would surface a JSONDecodeError from inside rag/llm
+        # internals (see #17389).
+        key = _resolve_qianfan_credentials(key)
         ak = key.get("yiyan_ak", "")
         sk = key.get("yiyan_sk", "")
         self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
