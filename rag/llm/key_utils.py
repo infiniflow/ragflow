@@ -58,14 +58,14 @@ def _resolve_qianfan_credentials(key):
     elif isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             logging.warning(
                 "BaiduYiyan key is not valid JSON; expected a JSON object with 'yiyan_ak' and 'yiyan_sk' (see conf/models/baidu.json).",
             )
             raise ModelException(
                 'BaiduYiyan requires a JSON key with at least \'yiyan_ak\' and \'yiyan_sk\'. Example: {"yiyan_ak": "...", "yiyan_sk": "..."}. See conf/models/baidu.json for the model class.',
                 retryable=False,
-            )
+            ) from exc
     else:
         logging.warning(
             "BaiduYiyan key is not a string or dict (got %s); expected a JSON object with 'yiyan_ak' and 'yiyan_sk'.",
