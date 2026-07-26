@@ -298,6 +298,32 @@ def dedupe_list(values: list) -> list:
     return deduped
 
 
+def normalize_extracted_metadata(meta: Any) -> dict[str, str | list[str]]:
+    """Normalize LLM-extracted metadata to the flat string-based schema."""
+    if isinstance(meta, str):
+        try:
+            meta = json_repair.loads(meta)
+        except Exception:
+            logging.error("Meta data format error.")
+            return {}
+    if not isinstance(meta, dict):
+        return {}
+
+    normalized = {}
+    for key, value in meta.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, (int, float, bool)):
+            normalized[key] = str(value)
+        elif isinstance(value, str):
+            normalized[key] = value
+        elif isinstance(value, list):
+            values = [item for item in value if isinstance(item, str)]
+            if values:
+                normalized[key] = dedupe_list(values)
+    return normalized
+
+
 def update_metadata_to(metadata, meta):
     if not meta:
         return metadata

@@ -43,7 +43,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
-from common.metadata_utils import turn2jsonschema, update_metadata_to
+from common.metadata_utils import normalize_extracted_metadata, turn2jsonschema, update_metadata_to
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import (
     collect_raptor_chunk_ids,
@@ -564,7 +564,7 @@ async def build_chunks(task, progress_callback):
             raise
         metadata = {}
         for doc in docs:
-            metadata = update_metadata_to(metadata, doc["metadata_obj"])
+            metadata = update_metadata_to(metadata, normalize_extracted_metadata(doc["metadata_obj"]))
             del doc["metadata_obj"]
         if metadata:
             existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])

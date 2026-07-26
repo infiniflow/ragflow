@@ -943,16 +943,23 @@ async def gen_metadata(chat_mdl, schema: dict, content: str):
     if "properties" not in schema:
         logging.warning("gen_metadata: schema has no 'properties' key: %s", schema)
         return ""
+    schema = deepcopy(schema)
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
         if "enum" in desc and not desc.get("enum"):
             del desc["enum"]
         if desc.get("enum"):
             desc["description"] += "\n** Extracted values must strictly match the given list specified by `enum`. **"
-    system_prompt = template.render(content=content, schema=schema)
-    user_prompt = "Output: "
+    schema_json = json.dumps(schema, ensure_ascii=False, indent=2)
+    system_prompt = template.render(content=content, schema=schema_json)
+    user_prompt = (
+        "Extract all schema fields that are explicitly present in the content. "
+        "Return a single flat JSON object. Do not output Markdown or explanations. "
+        "Do not output nested empty objects. If any schema field is explicitly present "
+        "in the content, you must not return {}. Omit fields that are not explicitly present."
+    )
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
+    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf={"temperature": 0})
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
