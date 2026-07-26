@@ -43,7 +43,8 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 			t.Errorf("Authorization=%q, want no header", got)
 		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
-			t.Fatalf("parse multipart form: %v", err)
+			t.Errorf("parse multipart form: %v", err)
+			return
 		}
 		if got := r.FormValue("model"); got != "fun-asr-nano" {
 			t.Errorf("model=%q, want fun-asr-nano", got)
@@ -52,7 +53,7 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	modelName := "fun-asr-nano"
+	modelName := " fun-asr-nano "
 	file := writeFunASRTestAudio(t)
 	resp, err := newFunASRForTest(srv.URL).TranscribeAudio(
 		context.Background(), &modelName, &file, &APIConfig{}, nil, nil,
@@ -68,11 +69,22 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
 	file := writeFunASRTestAudio(t)
 	apiKey := "test-key"
-	_, err := newFunASRForTest("http://unused").TranscribeAudio(
-		context.Background(), nil, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
-	)
-	if err == nil || !strings.Contains(err.Error(), "model name is missing") {
-		t.Fatalf("expected missing-model-name error, got %v", err)
+	blankModelName := "   "
+	for _, tc := range []struct {
+		name      string
+		modelName *string
+	}{
+		{name: "nil", modelName: nil},
+		{name: "whitespace", modelName: &blankModelName},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newFunASRForTest("http://unused").TranscribeAudio(
+				context.Background(), tc.modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
+			)
+			if err == nil || !strings.Contains(err.Error(), "model name is missing") {
+				t.Fatalf("expected missing-model-name error, got %v", err)
+			}
+		})
 	}
 }
 
