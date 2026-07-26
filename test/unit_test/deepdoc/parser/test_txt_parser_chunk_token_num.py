@@ -92,16 +92,21 @@ def test_single_oversized_segment_emitted_as_one_chunk_with_warning(caplog):
 
 
 @pytest.mark.p0
-def test_budget_larger_than_all_segments_no_warning():
+def test_budget_larger_than_all_segments_no_warning(caplog):
     """When the budget is bigger than any segment, no over-budget chunk
     exists and no warning is logged. The fix must be a no-op on inputs
     that already fit."""
+    import logging
+
     text = "\n".join(["hello world", "foo bar baz"])  # 2-3 tokens per line
-    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=128))
+    with caplog.at_level(logging.WARNING):
+        chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=128))
     # All input is one chunk; the budget is generous.
     assert all(_tok(c) <= 128 for c in chunks)
     # Both lines are present in the chunk union.
     assert "hello" in chunks[0] and "foo" in chunks[0]
+    # The no-warning contract is part of the documented behaviour.
+    assert not caplog.records
 
 
 # --------------------------------------------------------------------------- #

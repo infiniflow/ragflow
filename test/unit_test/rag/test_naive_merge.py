@@ -283,6 +283,7 @@ def test_hard_cap_with_images_single_oversized_segment_emitted_as_one_chunk(capl
         chunks, imgs = naive_merge_with_images([huge], [None], chunk_token_num=10, delimiter=DEFAULT_DELIMITER)
     chunks = _nonempty(chunks)
     assert len(chunks) == 1
+    assert len(imgs) == 1
     assert _tok(chunks[0]) == 50
     assert any("chunk_token_num" in r.message and "10" in r.message for r in caplog.records), [r.message for r in caplog.records]
 
