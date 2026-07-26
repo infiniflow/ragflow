@@ -113,18 +113,25 @@ class TestChatModelAzureOpenAIPlainKey:
 
         The conftest stub for ``rag.llm`` only enumerates a handful of
         providers in its ``SupportedLiteLLMProvider`` enum; we extend it
-        with ``OpenRouter``/``MiniMax`` here so the corresponding branches
-        inside ``LiteLLMBase.__init__`` resolve without ``AttributeError``.
+        with ``OpenRouter`` here so the corresponding branch inside
+        ``LiteLLMBase.__init__`` resolves without ``AttributeError``.
+        The addition is scoped to the context manager so it does not leak
+        into subsequent tests.
         """
         from unittest.mock import patch
 
         from rag.llm import chat_model
 
-        # Augment the stub enum with the providers referenced by chat_model.
-        chat_model.SupportedLiteLLMProvider.OpenRouter = "OpenRouter"
-        chat_model.SupportedLiteLLMProvider.MiniMax = "MiniMax"
-
-        with patch("rag.llm.chat_model.OpenAI"), patch("rag.llm.chat_model.AsyncOpenAI"):
+        with (
+            patch.object(
+                chat_model.SupportedLiteLLMProvider,
+                "OpenRouter",
+                "OpenRouter",
+                create=True,
+            ),
+            patch("rag.llm.chat_model.OpenAI"),
+            patch("rag.llm.chat_model.AsyncOpenAI"),
+        ):
             return chat_model.LiteLLMBase(
                 key,
                 "gpt-4o-mini",
