@@ -195,7 +195,7 @@ func (s *MetadataService) TagQuery(ctx context.Context, question string, tenantI
 		MatchExprs: []interface{}{matchTextExpr},
 	}
 
-	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
