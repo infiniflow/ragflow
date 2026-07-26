@@ -202,7 +202,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			defer cleanupEngine()
 
 			// Load task context
-			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
@@ -315,11 +315,11 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 
 			// Verify final task status can be marked completed
 			ingestSvc := service.NewIngestionTaskService()
-			if err := ingestSvc.MarkCompleted(taskID); err != nil {
+			if err = ingestSvc.MarkCompleted(ctx, taskID); err != nil {
 				t.Fatalf("MarkCompleted failed: %v", err)
 			}
 
-			finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+			finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}

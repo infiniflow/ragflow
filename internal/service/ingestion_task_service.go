@@ -67,11 +67,11 @@ func (s *IngestionTaskService) SetTaskPublisher(taskPublisher TaskPublisher) {
 	s.taskPublisher = taskPublisher
 }
 
-func (s *IngestionTaskService) ListByUser(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	if datasetID == nil {
-		return s.ingestionTaskDAO.ListByUserID(userID, page, pageSize)
+		return s.ingestionTaskDAO.ListByUserID(ctx, dao.DB, userID, page, pageSize)
 	}
-	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(userID, *datasetID, page, pageSize)
+	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(ctx, dao.DB, userID, *datasetID, page, pageSize)
 }
 
 func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
@@ -122,11 +122,11 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 	return responses, nil
 }
 
-func (s *IngestionTaskService) RequestStopMany(tasks []string, ownerUserID *string) ([]*entity.IngestionTask, error) {
+func (s *IngestionTaskService) RequestStopMany(ctx context.Context, tasks []string, ownerUserID *string) ([]*entity.IngestionTask, error) {
 	taskResponses := make([]*entity.IngestionTask, 0, len(tasks))
 	for _, taskID := range tasks {
 		if ownerUserID != nil {
-			task, err := s.GetTask(taskID)
+			task, err := s.GetTask(ctx, taskID)
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +134,7 @@ func (s *IngestionTaskService) RequestStopMany(tasks []string, ownerUserID *stri
 				return nil, errors.New("task does not belong to the user")
 			}
 		}
-		task, err := s.RequestStop(taskID)
+		task, err := s.RequestStop(ctx, taskID)
 		if err != nil {
 			return nil, err
 		}
@@ -143,11 +143,11 @@ func (s *IngestionTaskService) RequestStopMany(tasks []string, ownerUserID *stri
 	return taskResponses, nil
 }
 
-func (s *IngestionTaskService) RemoveMany(tasks []string, ownerUserID *string) ([]map[string]string, error) {
+func (s *IngestionTaskService) RemoveMany(ctx context.Context, tasks []string, ownerUserID *string) ([]map[string]string, error) {
 	deletedTasks := make([]map[string]string, 0, len(tasks))
 	for _, taskID := range tasks {
 		taskRecord := map[string]string{"task_id": taskID}
-		if _, err := s.Remove(taskID, ownerUserID); err != nil {
+		if _, err := s.Remove(ctx, taskID, ownerUserID); err != nil {
 			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {
 			taskRecord["remove"] = "success"
@@ -157,8 +157,8 @@ func (s *IngestionTaskService) RemoveMany(tasks []string, ownerUserID *string) (
 	return deletedTasks, nil
 }
 
-func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, error) {
-	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
+func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[string]interface{}, error) {
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(ctx, dao.DB, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -179,13 +179,13 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 			"status":      task.Status,
 		}
 
-		if count, ok := s.lastRunCount(task.ID); ok {
+		if count, ok := s.lastRunCount(ctx, task.ID); ok {
 			showTask["run_count"] = count
 		}
 
 		showTask["component_total"] = task.ComponentTotal
 		if task.ComponentTotal > 0 {
-			progress, err := s.ingestionTaskLogDAO.AggregateProgress(task.ID, task.ComponentTotal)
+			progress, err := s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, task.ID, task.ComponentTotal)
 			if err == nil {
 				showTask["component_done"] = progress.Done
 			} else {
@@ -201,13 +201,13 @@ func (s *IngestionTaskService) ListAllForAdmin() ([]map[string]interface{}, erro
 }
 
 func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
-	task, err := s.GetTask(taskID)
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	switch task.Status {
 	case common.CREATED:
-		task, err = s.transition(taskID, common.RUNNING)
+		task, err = s.transition(ctx, taskID, common.RUNNING)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +229,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		}
 		return task, nil
 	case common.STOPPING:
-		return s.transition(taskID, common.STOPPED)
+		return s.transition(ctx, taskID, common.STOPPED)
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
 	default:
@@ -237,16 +237,16 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 	}
 }
 
-func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask, error) {
-	task, err := s.GetTask(taskID)
+func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 	switch task.Status {
 	case common.CREATED:
-		return s.transition(taskID, common.STOPPED)
+		return s.transition(ctx, taskID, common.STOPPED)
 	case common.RUNNING:
-		task, err = s.transition(taskID, common.STOPPING)
+		task, err = s.transition(ctx, taskID, common.STOPPING)
 		if err != nil {
 			return nil, err
 		}
@@ -262,51 +262,51 @@ func (s *IngestionTaskService) RequestStop(taskID string) (*entity.IngestionTask
 	}
 }
 
-func (s *IngestionTaskService) MarkCompleted(taskID string) error {
-	task, err := s.GetTask(taskID)
+func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string) error {
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	if task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED {
 		return nil // already terminal, idempotent — mirrors MarkStopped
 	}
-	_, err = s.transition(taskID, common.COMPLETED)
+	_, err = s.transition(ctx, taskID, common.COMPLETED)
 	return err
 }
 
-func (s *IngestionTaskService) MarkFailed(taskID string) error {
-	task, err := s.GetTask(taskID)
+func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID string) error {
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
 		return nil // already terminal, idempotent — mirrors MarkStopped
 	}
-	_, err = s.transition(taskID, common.FAILED)
+	_, err = s.transition(ctx, taskID, common.FAILED)
 	return err
 }
 
 // MarkStopped transitions the task from STOPPING to STOPPED (terminal).
 // Idempotent: returns nil if the task is already in a terminal state
 // (STOPPED, COMPLETED, or FAILED).
-func (s *IngestionTaskService) MarkStopped(taskID string) error {
-	task, err := s.GetTask(taskID)
+func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) error {
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
 		return nil
 	}
-	_, err = s.transition(taskID, common.STOPPED)
+	_, err = s.transition(ctx, taskID, common.STOPPED)
 	return err
 }
 
-func (s *IngestionTaskService) Remove(taskID string, userID *string) (*dao.TaskInfo, error) {
-	return s.ingestionTaskDAO.Delete(taskID, userID)
+func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID *string) (*dao.TaskInfo, error) {
+	return s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
 }
 
-func (s *IngestionTaskService) GetTask(taskID string) (*entity.IngestionTask, error) {
-	task, err := s.ingestionTaskDAO.GetByID(taskID)
+func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.ingestionTaskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.ErrTaskNotFound
@@ -338,8 +338,8 @@ func validateTransition(from, to string) error {
 	return &InvalidTaskTransitionError{From: from, To: to}
 }
 
-func (s *IngestionTaskService) newTaskStatusConflictError(taskID, expectedFrom, attemptedTo string) error {
-	current, err := s.GetTask(taskID)
+func (s *IngestionTaskService) newTaskStatusConflictError(ctx context.Context, taskID, expectedFrom, attemptedTo string) error {
+	current, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -351,8 +351,8 @@ func (s *IngestionTaskService) newTaskStatusConflictError(taskID, expectedFrom, 
 	}
 }
 
-func (s *IngestionTaskService) transition(taskID string, to string) (*entity.IngestionTask, error) {
-	task, err := s.GetTask(taskID)
+func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -363,19 +363,19 @@ func (s *IngestionTaskService) transition(taskID string, to string) (*entity.Ing
 		}
 		return task, err
 	}
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(taskID, task.Status, to)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, task.Status, to)
 	if err != nil {
 		return nil, err
 	}
 	if !updated {
-		return nil, s.newTaskStatusConflictError(taskID, task.Status, to)
+		return nil, s.newTaskStatusConflictError(ctx, taskID, task.Status, to)
 	}
 	task.Status = to
 	return task, nil
 }
 
 func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
-	existing, err := s.ingestionTaskDAO.GetByDocumentID(task.DocumentID)
+	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
 		return nil, err
 	}
@@ -383,12 +383,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 		switch existing.Status {
 		case common.FAILED, common.STOPPED:
 			originalStatus := existing.Status
-			existing, err = s.transition(existing.ID, common.CREATED)
+			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {
 				return nil, err
 			}
 			if err = s.enqueueTask(existing.ID); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(existing.ID, originalStatus); rollbackErr != nil {
+				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
 					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
 				}
 				return nil, err
@@ -398,12 +398,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
 	}
-	created, err := s.ingestionTaskDAO.Create(task)
+	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
 	if err != nil {
 		return nil, err
 	}
 	if err = s.enqueueTask(created.ID); err != nil {
-		if rollbackErr := s.rollbackCreatedTask(created.ID); rollbackErr != nil {
+		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
 			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", created.ID, err, rollbackErr)
 		}
 		return nil, err
@@ -411,19 +411,19 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	return created, nil
 }
 
-func (s *IngestionTaskService) rollbackRetriedTask(taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(taskID, common.CREATED, status)
+func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
 	if err != nil {
 		return err
 	}
 	if !updated {
-		return s.newTaskStatusConflictError(taskID, common.CREATED, status)
+		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
 	}
 	return nil
 }
 
-func (s *IngestionTaskService) rollbackCreatedTask(taskID string) error {
-	_, err := s.ingestionTaskDAO.Delete(taskID, nil)
+func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {
+	_, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, nil)
 	return err
 }
 
@@ -437,15 +437,15 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph - the authoritative denominator for progress percentage.
-func (s *IngestionTaskService) UpdateComponentTotal(taskID string, total int) error {
-	return s.ingestionTaskDAO.UpdateComponentTotal(taskID, total)
+func (s *IngestionTaskService) UpdateComponentTotal(ctx context.Context, taskID string, total int) error {
+	return s.ingestionTaskDAO.UpdateComponentTotal(ctx, dao.DB, taskID, total)
 }
 
 // RecordComponentProgress appends a component lifecycle row to
 // ingestion_task_log (phase: 0 started / 1 done / 2 errored). The row's
 // Checkpoint is empty; component progress and step checkpoints are distinct
 // row models sharing the same table.
-func (s *IngestionTaskService) RecordComponentProgress(taskID, component string, phase int, message string) error {
+func (s *IngestionTaskService) RecordComponentProgress(ctx context.Context, taskID, component string, phase int, message string) error {
 	entry := &entity.IngestionTaskLog{
 		TaskID:     taskID,
 		Checkpoint: entity.JSONMap{},
@@ -453,20 +453,20 @@ func (s *IngestionTaskService) RecordComponentProgress(taskID, component string,
 		Component:  component,
 		Message:    message,
 	}
-	return s.ingestionTaskLogDAO.Create(entry)
+	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
 }
 
 // AggregateTaskProgress returns the SQL-aggregated component progress for a
 // task (done/failed/running/percent against the given total denominator).
-func (s *IngestionTaskService) AggregateTaskProgress(taskID string, total int) (*dao.TaskProgress, error) {
-	return s.ingestionTaskLogDAO.AggregateProgress(taskID, total)
+func (s *IngestionTaskService) AggregateTaskProgress(ctx context.Context, taskID string, total int) (*dao.TaskProgress, error) {
+	return s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, taskID, total)
 }
 
 // lastRunCount scans all task logs (newest first) for a run_count entry,
 // skipping component-progress rows whose Checkpoint is empty. It returns
 // the counter and whether one was found.
-func (s *IngestionTaskService) lastRunCount(taskID string) (int, bool) {
-	logs, err := s.ingestionTaskLogDAO.ListLogsByTaskID(taskID)
+func (s *IngestionTaskService) lastRunCount(ctx context.Context, taskID string) (int, bool) {
+	logs, err := s.ingestionTaskLogDAO.ListLogsByTaskID(ctx, dao.DB, taskID)
 	if err != nil {
 		return 0, false
 	}
@@ -488,14 +488,14 @@ func (s *IngestionTaskService) lastRunCount(taskID string) (int, bool) {
 // ignored). A failure to persist the new row is best-effort (logged) and
 // does not return an error — matching the legacy semantics that the run
 // proceeds even if the counter write fails.
-func (s *IngestionTaskService) IncrementRunCount(taskID string) error {
-	prevCount, _ := s.lastRunCount(taskID)
+func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID string) error {
+	prevCount, _ := s.lastRunCount(ctx, taskID)
 
 	entry := &entity.IngestionTaskLog{
 		TaskID:     taskID,
 		Checkpoint: entity.JSONMap{stepKeyRunCount: prevCount + 1},
 	}
-	if err := s.ingestionTaskLogDAO.Create(entry); err != nil {
+	if err := s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry); err != nil {
 		common.Error(fmt.Sprintf("Failed to persist run_count for task %s", taskID), err)
 	}
 	return nil

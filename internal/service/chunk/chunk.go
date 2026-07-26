@@ -626,7 +626,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
-		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(docID)
+		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
 		}
@@ -733,18 +733,18 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 		}
 	}
 	if len(notFound) > 0 {
-		return nil, common.CodeDataError, fmt.Errorf("Documents not found: %v", notFound)
+		return nil, common.CodeDataError, fmt.Errorf("documents not found: %v", notFound)
 	}
 	for _, docID := range docIDs {
 		doc := docByID[docID]
 		if doc.Run != nil && *doc.Run == string(entity.TaskStatusRunning) {
-			return nil, common.CodeDataError, fmt.Errorf("Can't parse document that is currently being processed")
+			return nil, common.CodeDataError, fmt.Errorf("can't parse document that is currently being processed")
 		}
 	}
 
 	// Batch pre-check: refuse the whole request if any document's ingestion
 	// task is non-terminal (RUNNING/STOPPING), so we never partially clean.
-	if err = (document.NewDocumentService().AssertIngestionTasksTerminal(docIDs)); err != nil {
+	if err = (document.NewDocumentService().AssertIngestionTasksTerminal(ctx, docIDs)); err != nil {
 		return nil, common.CodeDataError, err
 	}
 
@@ -1510,7 +1510,7 @@ func decodeChunkImageBase64(raw string) ([]byte, error) {
 	}
 	imageBinary, err := base64.StdEncoding.Strict().DecodeString(raw)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid `image_base64`")
+		return nil, fmt.Errorf("invalid `image_base64`")
 	}
 	if len(imageBinary) == 0 {
 		return nil, fmt.Errorf("`image_base64` is empty")

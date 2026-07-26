@@ -592,7 +592,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		Content:     "chunk body",
 		ImageBase64: strPtr("not-base64"),
 	}, userID)
-	if err == nil || !strings.Contains(err.Error(), "Invalid `image_base64`") {
+	if err == nil || !strings.Contains(err.Error(), "invalid `image_base64`") {
 		t.Fatalf("expected invalid image error, got %v", err)
 	}
 
