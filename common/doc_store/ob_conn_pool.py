@@ -99,7 +99,9 @@ class OceanBaseConnectionPool:
                     try:
                         self.client.engine.dispose()
                     except Exception:
-                        pass
+                        logger.exception(
+                            "Failed to dispose partially-initialized OceanBase engine before retry.",
+                        )
                 time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
                 continue
 

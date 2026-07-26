@@ -51,7 +51,9 @@ class ElasticSearchConnectionPool:
                     try:
                         self.es_conn.close()
                     except Exception:
-                        pass
+                        logging.exception(
+                            "Failed to close partially-initialized Elasticsearch client before retry.",
+                        )
                 time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
                 continue
 
